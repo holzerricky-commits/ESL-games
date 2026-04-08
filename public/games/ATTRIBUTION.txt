@@ -1,0 +1,13 @@
+Cover images for ESL Classroom Games hub (see lib/games.ts).
+
+1. timed-challenge.jpg
+   Unsplash — image id photo-1508669230826-1103efec2eed
+   License: https://unsplash.com/license
+
+2. dice-roll.jpg
+   Pexels — photo id 7317647 (dice on green felt)
+   License: https://www.pexels.com/license/
+
+3. picture-prompts.jpg
+   Unsplash — image id photo-1452587925148-ce544e77e70d
+   License: https://unsplash.com/license

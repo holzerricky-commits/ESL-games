@@ -1,0 +1,696 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+:root {
+  /* Dark energetic theme colors */
+  --background: #0a0f1a;
+  --foreground: #e8f0fe;
+  --card: #0f1829;
+  --card-foreground: #e8f0fe;
+  --popover: #0f1829;
+  --popover-foreground: #e8f0fe;
+  --primary: #3b82f6;
+  --primary-foreground: #ffffff;
+  --secondary: #1e293b;
+  --secondary-foreground: #e8f0fe;
+  --muted: #1e293b;
+  --muted-foreground: #64748b;
+  --accent: #facc15;
+  --accent-foreground: #0a0f1a;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --border: #1e3a5f;
+  --input: #1e293b;
+  --ring: #3b82f6;
+  --radius: 0.75rem;
+  --brand-blue: #3b82f6;
+  --brand-blue-bright: #60a5fa;
+  --brand-green: #22c55e;
+  --brand-green-bright: #4ade80;
+  --brand-yellow: #facc15;
+  --brand-red: #ef4444;
+  --surface-1: #0a0f1a;
+  --surface-2: #0f1829;
+  --surface-3: #1e293b;
+  --surface-4: #1e3a5f;
+  --chart-1: #3b82f6;
+  --chart-2: #22c55e;
+  --chart-3: #facc15;
+  --chart-4: #f97316;
+  --chart-5: #a855f7;
+  --sidebar: #0f1829;
+  --sidebar-foreground: #e8f0fe;
+  --sidebar-primary: #3b82f6;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #1e293b;
+  --sidebar-accent-foreground: #e8f0fe;
+  --sidebar-border: #1e3a5f;
+  --sidebar-ring: #3b82f6;
+}
+
+@theme inline {
+  --font-sans: var(--font-inter), 'Inter', system-ui, sans-serif;
+  --font-mono: var(--font-space-mono), 'Space Mono', monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-brand-blue: var(--brand-blue);
+  --color-brand-blue-bright: var(--brand-blue-bright);
+  --color-brand-green: var(--brand-green);
+  --color-brand-green-bright: var(--brand-green-bright);
+  --color-brand-yellow: var(--brand-yellow);
+  --color-brand-red: var(--brand-red);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-surface-4: var(--surface-4);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+}
+
+@keyframes countdown-in {
+  0% { transform: scale(2); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes slide-up {
+  0% { transform: translateY(20px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes slide-in-right {
+  0% { transform: translateX(60px); opacity: 0; }
+  100% { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes timer-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes confetti {
+  0% {
+    transform: translate(0, 0) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--confetti-end-x), var(--confetti-end-y)) rotate(720deg);
+    opacity: 0;
+  }
+}
+
+.animate-countdown-in {
+  animation: countdown-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.animate-slide-up {
+  animation: slide-up 0.4s ease-out forwards;
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.3s ease-out forwards;
+}
+
+.animate-timer-pulse {
+  animation: timer-pulse 1s ease-in-out infinite;
+}
+
+@keyframes answer-flash-green {
+  0% {
+    opacity: 0;
+  }
+  14% {
+    opacity: 1;
+  }
+  28% {
+    opacity: 0.32;
+  }
+  100% {
+    opacity: 0.24;
+  }
+}
+
+@keyframes answer-flash-red {
+  0% {
+    opacity: 0;
+  }
+  14% {
+    opacity: 1;
+  }
+  28% {
+    opacity: 0.38;
+  }
+  100% {
+    opacity: 0.3;
+  }
+}
+
+@keyframes answer-word-pop {
+  0% {
+    transform: scale(0.82);
+    opacity: 0;
+  }
+  55% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-answer-flash-green {
+  animation: answer-flash-green 3s ease-out forwards;
+}
+
+.animate-answer-flash-red {
+  animation: answer-flash-red 3s ease-out forwards;
+}
+
+.animate-answer-word-pop {
+  animation: answer-word-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes rise-fade {
+  0% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(var(--rise-distance));
+    opacity: 0;
+  }
+}
+
+@keyframes burst-out {
+  0% {
+    transform: translate(0, 0) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--burst-end-x), var(--burst-end-y)) scale(0);
+    opacity: 0;
+  }
+}
+
+@keyframes fall-sway {
+  0% {
+    transform: translateY(0) translateX(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(var(--fall-distance)) translateX(var(--sway-distance));
+    opacity: 0;
+  }
+}
+
+@keyframes float-up {
+  0% {
+    transform: translateY(0) translateX(0) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(var(--float-distance)) translateX(var(--float-sway)) scale(0.5);
+    opacity: 0;
+  }
+}
+
+@keyframes flash-burst {
+  0% {
+    opacity: 0.72;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/** Seamless vertical confetti stream (used with animation-iteration-count: infinite). */
+@keyframes confetti-fall {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  100% {
+    transform: translate3d(var(--confetti-sway, 0px), 115vh, 0) rotate(var(--confetti-rotate, 360deg));
+  }
+}
+
+/** Low-intensity looping backdrop for perfect score (does not block UI). */
+@keyframes perfect-ambient-glow {
+  0%,
+  100% {
+    opacity: 0.22;
+  }
+  50% {
+    opacity: 0.52;
+  }
+}
+
+@keyframes trophy-shine {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 28px rgba(250, 204, 21, 0.5));
+  }
+  50% {
+    filter: drop-shadow(0 0 52px rgba(250, 204, 21, 0.92));
+  }
+}
+
+.perfect-fx-ambient {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background:
+    radial-gradient(
+      circle at 50% 28%,
+      color-mix(in srgb, var(--brand-yellow) 28%, transparent) 0%,
+      transparent 52%
+    ),
+    radial-gradient(
+      circle at 18% 72%,
+      color-mix(in srgb, var(--chart-5) 14%, transparent) 0%,
+      transparent 48%
+    ),
+    radial-gradient(
+      circle at 82% 65%,
+      color-mix(in srgb, var(--brand-green) 14%, transparent) 0%,
+      transparent 48%
+    );
+  animation: perfect-ambient-glow 3.5s ease-in-out infinite alternate;
+}
+
+.perfect-fx-trophy {
+  animation: trophy-shine 1.8s ease-in-out infinite;
+}
+
+/** Perfect score headline: small → full size with a quick overshoot pop. */
+@keyframes perfect-score-title-in {
+  0% {
+    transform: scale(0.32);
+    opacity: 0;
+  }
+  65% {
+    transform: scale(1.09);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.perfect-score-headline {
+  margin-top: 0.5rem;
+  font-size: clamp(1.875rem, 5.5vw, 3rem);
+  line-height: 1.12;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  color: var(--brand-yellow);
+  text-wrap: balance;
+  text-shadow:
+    0 0 36px color-mix(in srgb, var(--brand-yellow) 40%, transparent),
+    0 2px 1px color-mix(in srgb, var(--surface-1) 80%, transparent);
+  animation: perfect-score-title-in 0.52s cubic-bezier(0.34, 1.55, 0.64, 1) forwards;
+  transform-origin: center center;
+}
+
+@keyframes encouragement-ambient-pulse {
+  0%,
+  100% {
+    opacity: 0.68;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+@keyframes encouragement-lift {
+  0% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0.72;
+  }
+  100% {
+    transform: translate3d(var(--enc-sway, 0px), var(--enc-rise, -25vh), 0);
+    opacity: 0;
+  }
+}
+
+/** Fail screen base wash: red/orange mood, slow “breathing” visibility. */
+.encouragement-fx-ambient {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background:
+    radial-gradient(
+      ellipse 130% 95% at 50% 88%,
+      color-mix(in srgb, var(--brand-red) 26%, transparent) 0%,
+      transparent 58%
+    ),
+    radial-gradient(
+      circle at 50% 35%,
+      color-mix(in srgb, var(--chart-4) 14%, transparent) 0%,
+      transparent 48%
+    ),
+    radial-gradient(
+      circle at 12% 55%,
+      color-mix(in srgb, var(--brand-red) 12%, transparent) 0%,
+      transparent 42%
+    );
+  animation: encouragement-ambient-pulse 7s ease-in-out infinite alternate;
+}
+
+/** Pulsing inner vignette (dying sign / bad power). */
+@keyframes encouragement-inset-pulse {
+  0%,
+  100% {
+    opacity: 0.42;
+  }
+  50% {
+    opacity: 0.68;
+  }
+}
+
+.encouragement-fx-inset {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  box-shadow:
+    inset 0 0 min(140px, 28vw) color-mix(in srgb, var(--brand-red) 20%, transparent),
+    inset 0 0 min(280px, 55vw) color-mix(in srgb, var(--chart-4) 8%, transparent);
+  animation: encouragement-inset-pulse 6.5s ease-in-out infinite alternate;
+}
+
+/** Stronger red pool + slow scale drift so motion reads on dark UI. */
+@keyframes encouragement-loop-bg-drift {
+  0% {
+    transform: scale(1) translate(0%, 0%);
+    opacity: 0.72;
+  }
+  50% {
+    transform: scale(1.1) translate(1.5%, -4%);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.04) translate(-1%, 2%);
+    opacity: 0.78;
+  }
+}
+
+.encouragement-fx-loop-bg {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background:
+    radial-gradient(
+      ellipse 110% 75% at 50% 74%,
+      color-mix(in srgb, var(--brand-red) 32%, transparent) 0%,
+      transparent 64%
+    ),
+    radial-gradient(
+      ellipse 70% 50% at 28% 92%,
+      color-mix(in srgb, var(--chart-4) 18%, transparent) 0%,
+      transparent 55%
+    );
+  background-repeat: no-repeat;
+  transform-origin: 50% 80%;
+  animation: encouragement-loop-bg-drift 10s ease-in-out infinite alternate;
+}
+
+.fail-star {
+  flex-shrink: 0;
+}
+
+/** First two stars: dead tubes — barely visible red, almost no glow. */
+.fail-star--steady {
+  fill: none;
+  color: color-mix(in srgb, var(--brand-red) 42%, var(--muted-foreground));
+  opacity: 0.28;
+  filter: drop-shadow(0 0 1px color-mix(in srgb, var(--brand-red) 18%, transparent));
+}
+
+/**
+ * Third star: dying fluorescent tube — erratic dimming, near-outs, weak restrikes.
+ */
+.fail-star--fluoro {
+  fill: color-mix(in srgb, var(--brand-red) 28%, transparent);
+  color: var(--brand-red);
+  transform-origin: center center;
+  animation: fail-star-fluoro-dying 2.75s linear infinite;
+}
+
+@keyframes fail-star-fluoro-dying {
+  0% {
+    opacity: 0.88;
+    transform: scale(1);
+    filter: drop-shadow(0 0 6px color-mix(in srgb, var(--brand-red) 72%, transparent))
+      drop-shadow(0 0 14px color-mix(in srgb, var(--brand-red) 48%, transparent));
+  }
+  3% {
+    opacity: 0.22;
+    transform: scale(0.99);
+    filter: drop-shadow(0 0 2px color-mix(in srgb, var(--brand-red) 40%, transparent));
+  }
+  4% {
+    opacity: 0;
+    filter: none;
+  }
+  5% {
+    opacity: 0.75;
+    filter: drop-shadow(0 0 8px color-mix(in srgb, var(--brand-red) 65%, transparent));
+  }
+  7% {
+    opacity: 0.85;
+    transform: scale(1);
+  }
+  10% {
+    opacity: 0.18;
+    transform: scale(0.98);
+    filter: drop-shadow(0 0 3px color-mix(in srgb, var(--brand-red) 45%, transparent));
+  }
+  11% {
+    opacity: 0.05;
+    filter: none;
+  }
+  12% {
+    opacity: 0.55;
+    filter: drop-shadow(0 0 5px color-mix(in srgb, var(--brand-red) 55%, transparent));
+  }
+  15% {
+    opacity: 0.9;
+    transform: scale(1.02);
+    filter: drop-shadow(0 0 7px color-mix(in srgb, var(--brand-red) 70%, transparent))
+      drop-shadow(0 0 18px color-mix(in srgb, var(--brand-red) 40%, transparent));
+  }
+  18% {
+    opacity: 0.35;
+    transform: scale(1);
+  }
+  22% {
+    opacity: 0.12;
+    filter: drop-shadow(0 0 1px color-mix(in srgb, var(--brand-red) 50%, transparent));
+  }
+  23% {
+    opacity: 0.92;
+    filter: drop-shadow(0 0 9px color-mix(in srgb, var(--brand-red) 78%, transparent))
+      drop-shadow(0 0 20px color-mix(in srgb, var(--brand-red) 45%, transparent));
+  }
+  28% {
+    opacity: 0.45;
+  }
+  32% {
+    opacity: 0.08;
+    filter: none;
+  }
+  33% {
+    opacity: 0.68;
+    filter: drop-shadow(0 0 6px color-mix(in srgb, var(--brand-red) 58%, transparent));
+  }
+  38% {
+    opacity: 0.82;
+    transform: scale(1.01);
+  }
+  42% {
+    opacity: 0.2;
+    transform: scale(0.99);
+  }
+  43% {
+    opacity: 0;
+  }
+  44% {
+    opacity: 0.48;
+    filter: drop-shadow(0 0 4px color-mix(in srgb, var(--brand-red) 50%, transparent));
+  }
+  48% {
+    opacity: 0.72;
+  }
+  52% {
+    opacity: 0.15;
+    filter: drop-shadow(0 0 2px color-mix(in srgb, var(--brand-red) 35%, transparent));
+  }
+  54% {
+    opacity: 0.88;
+    filter: drop-shadow(0 0 8px color-mix(in srgb, var(--brand-red) 68%, transparent))
+      drop-shadow(0 0 16px color-mix(in srgb, var(--brand-red) 42%, transparent));
+  }
+  58% {
+    opacity: 0.28;
+  }
+  60% {
+    opacity: 0.06;
+    filter: none;
+  }
+  61% {
+    opacity: 0.62;
+    transform: scale(1);
+  }
+  65% {
+    opacity: 0.79;
+    filter: drop-shadow(0 0 6px color-mix(in srgb, var(--brand-red) 60%, transparent));
+  }
+  70% {
+    opacity: 0.11;
+  }
+  71% {
+    opacity: 0.84;
+    filter: drop-shadow(0 0 10px color-mix(in srgb, var(--brand-red) 75%, transparent))
+      drop-shadow(0 0 22px color-mix(in srgb, var(--brand-red) 38%, transparent));
+  }
+  76% {
+    opacity: 0.4;
+    transform: scale(0.985);
+  }
+  80% {
+    opacity: 0.02;
+    filter: none;
+  }
+  81% {
+    opacity: 0.58;
+    filter: drop-shadow(0 0 5px color-mix(in srgb, var(--brand-red) 52%, transparent));
+  }
+  85% {
+    opacity: 0.24;
+  }
+  87% {
+    opacity: 0.91;
+    transform: scale(1);
+    filter: drop-shadow(0 0 7px color-mix(in srgb, var(--brand-red) 72%, transparent))
+      drop-shadow(0 0 15px color-mix(in srgb, var(--brand-red) 46%, transparent));
+  }
+  91% {
+    opacity: 0.19;
+  }
+  93% {
+    opacity: 0.07;
+    filter: none;
+  }
+  94% {
+    opacity: 0.76;
+    filter: drop-shadow(0 0 6px color-mix(in srgb, var(--brand-red) 62%, transparent));
+  }
+  97% {
+    opacity: 0.33;
+  }
+  100% {
+    opacity: 0.88;
+    transform: scale(1);
+    filter: drop-shadow(0 0 6px color-mix(in srgb, var(--brand-red) 72%, transparent))
+      drop-shadow(0 0 14px color-mix(in srgb, var(--brand-red) 48%, transparent));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .perfect-fx-ambient {
+    animation: none;
+    opacity: 0.18;
+  }
+
+  .perfect-fx-loop-burst,
+  .perfect-fx-confetti {
+    display: none !important;
+  }
+
+  .perfect-fx-trophy {
+    animation: none;
+  }
+
+  .perfect-fx-flash {
+    animation-duration: 0.35s !important;
+  }
+
+  .perfect-score-headline {
+    animation: none;
+    transform: none;
+    opacity: 1;
+  }
+
+  .encouragement-fx-ambient {
+    animation: none;
+    opacity: 0.75;
+  }
+
+  .encouragement-fx-inset {
+    animation: none;
+    opacity: 0.5;
+  }
+
+  .encouragement-fx-lift {
+    display: none !important;
+  }
+
+  .encouragement-fx-loop-bg {
+    animation: none;
+    transform: none;
+    opacity: 0.85;
+  }
+
+  .fail-star--fluoro {
+    animation: none;
+    opacity: 1;
+    transform: none;
+    filter: drop-shadow(0 0 8px color-mix(in srgb, var(--brand-red) 50%, transparent));
+  }
+}

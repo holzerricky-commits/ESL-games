@@ -1,0 +1,12 @@
+---
+description: Keep teacher app content in a defined working area
+alwaysApply: true
+---
+
+# Layout Working Area Rules
+
+- Keep the main app sidebar pinned to the far left of the viewport.
+- Do not stretch page content edge-to-edge when a shell/sidebar layout is used.
+- Define a bounded working area for primary page content (for example `max-w-7xl`) and center it inside the main pane.
+- Apply the same content-width pattern across top-level teacher pages for visual consistency.
+- Preserve existing project visual tokens and component style language when adjusting layout.

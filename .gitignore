@@ -1,0 +1,26 @@
+# v0 sandbox internal files
+__v0_runtime_loader.js
+__v0_devtools.tsx
+__v0_jsx-dev-runtime.ts
+.snowflake/
+.v0-trash/
+.vercel/
+next.user-config.*
+
+# Environment variables
+.env*.local
+
+# Local vocabulary suggestion cache (from Gemini)
+data/vocab-suggestions.json
+data/vocab-suggestions.json.tmp
+
+# Common ignores
+node_modules
+.next/
+.DS_Store
+dist/
+build/
+coverage/
+.env
+.env.*
+*.log
