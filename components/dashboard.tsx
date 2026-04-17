@@ -8,17 +8,19 @@ import { Badge } from '@/components/ui/badge'
 import type { Quiz } from '@/lib/types'
 import { getQuizzes, deleteQuiz } from '@/lib/storage'
 import { getQuizCardCoverUrl } from '@/lib/helpers'
+import { getFirstQuizQuestionPreview, getTotalQuestionCountAcrossTiers } from '@/lib/quiz-difficulty'
 import { SettingsModal } from './settings-modal'
 
 interface QuizCardProps {
   quiz: Quiz
   onPlay: (quiz: Quiz, mode: 'practice' | 'challenge') => void
   onEdit: (quiz: Quiz) => void
+  onAddPart: (quiz: Quiz) => void
   onDelete: (id: string) => void
 }
 
-export function QuizCard({ quiz, onPlay, onEdit, onDelete }: QuizCardProps) {
-  const firstQuestion = quiz.questions[0]
+export function QuizCard({ quiz, onPlay, onEdit, onAddPart, onDelete }: QuizCardProps) {
+  const firstQuestion = getFirstQuizQuestionPreview(quiz)
   const coverUrl = getQuizCardCoverUrl({
     quizId: quiz.id,
     quizName: quiz.name,
@@ -43,7 +45,7 @@ export function QuizCard({ quiz, onPlay, onEdit, onDelete }: QuizCardProps) {
           className="absolute right-3 top-3 shrink-0 bg-[var(--surface-4)]/90 text-[var(--brand-blue-bright)] border-[var(--brand-blue)] text-xs font-mono"
           variant="outline"
         >
-          {quiz.questions.length} Q
+          {getTotalQuestionCountAcrossTiers(quiz)} Q
         </Badge>
       </div>
 
@@ -56,6 +58,16 @@ export function QuizCard({ quiz, onPlay, onEdit, onDelete }: QuizCardProps) {
             )}
           </div>
           <div className="flex shrink-0 items-center gap-1 opacity-0 pointer-events-none transition-opacity duration-200 group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto">
+            <Button
+              onClick={() => onAddPart(quiz)}
+              variant="outline"
+              size="sm"
+              className="h-8 w-8 p-0 border-[var(--border)] text-foreground hover:bg-[var(--surface-3)] hover:border-[var(--brand-green)]"
+              title="Create next part"
+              aria-label={`Create next part from ${quiz.name}`}
+            >
+              <Plus size={14} />
+            </Button>
             <Button
               onClick={() => onEdit(quiz)}
               variant="outline"
@@ -112,11 +124,12 @@ export function QuizCard({ quiz, onPlay, onEdit, onDelete }: QuizCardProps) {
 interface DashboardProps {
   onCreateQuiz: () => void
   onEditQuiz: (quiz: Quiz) => void
+  onAddPartFromQuiz: (quiz: Quiz) => void
   onPlayQuiz: (quiz: Quiz, mode: 'practice' | 'challenge') => void
   onStudents: () => void
 }
 
-export function Dashboard({ onCreateQuiz, onEditQuiz, onPlayQuiz, onStudents }: DashboardProps) {
+export function Dashboard({ onCreateQuiz, onEditQuiz, onAddPartFromQuiz, onPlayQuiz, onStudents }: DashboardProps) {
   const [quizzes, setQuizzes] = useState<Quiz[]>([])
   const [showSettings, setShowSettings] = useState(false)
 
@@ -222,6 +235,7 @@ export function Dashboard({ onCreateQuiz, onEditQuiz, onPlayQuiz, onStudents }: 
                   quiz={quiz}
                   onPlay={onPlayQuiz}
                   onEdit={onEditQuiz}
+                  onAddPart={onAddPartFromQuiz}
                   onDelete={handleDelete}
                 />
               ))}

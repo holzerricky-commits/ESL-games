@@ -11,8 +11,21 @@ interface StudentProfilePageProps {
 export function StudentProfilePage({ student, studentId, activeTab }: StudentProfilePageProps) {
   return (
     <>
-      <StudentProfileHeader student={student} />
-      <StudentProfileTabs student={student} studentId={studentId} activeTab={activeTab} />
+      <StudentProfileHeader
+        student={student}
+        tabs={
+          <StudentProfileTabs
+            student={student}
+            studentId={studentId}
+            activeTab={activeTab}
+            showContent={false}
+            listClassName="border-[color:color-mix(in_oklab,var(--border)_70%,transparent)]"
+          />
+        }
+      />
+      <div className="mx-auto w-full max-w-7xl">
+        <StudentProfileTabs student={student} studentId={studentId} activeTab={activeTab} showList={false} />
+      </div>
     </>
   )
 }

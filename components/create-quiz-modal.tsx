@@ -6,11 +6,20 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
-import type { Quiz, QuizQuestion } from '@/lib/types'
+import type { DifficultyTier, Quiz, QuizQuestion } from '@/lib/types'
+import {
+  cloneQuestionsWithNewIds,
+  DIFFICULTY_TIER_LABELS,
+  DIFFICULTY_TIERS,
+  emptyQuestionsByTier,
+  normalizeQuizQuestions,
+  quizPayloadForSave,
+} from '@/lib/quiz-difficulty'
 import { getReliableImageUrl } from '@/lib/helpers'
 import { getCuratedImageSearchOverride } from '@/lib/quiz-image-queries'
 import { quizUiStyleFromStoredOrParam } from '@/lib/quiz-image-style'
-import { saveQuiz } from '@/lib/storage'
+import { buildNextPartSeed } from '@/lib/topic-series'
+import { getQuizzes, saveQuiz } from '@/lib/storage'
 import { getSuggestionFetchCount } from '@/lib/suggestion-constants'
 
 function generateId() {
@@ -80,6 +89,18 @@ function difficultyToApiBucket(d: Difficulty): 'easy' | 'medium' | 'hard' {
   if (d === 'Easy') return 'easy'
   if (d === 'Medium') return 'medium'
   return 'hard'
+}
+
+function mapUiDifficultyToTier(d: Difficulty): DifficultyTier {
+  if (d === 'Easy') return 'easy'
+  if (d === 'Medium') return 'mid'
+  return 'hard'
+}
+
+function tierToUiDifficulty(t: DifficultyTier): Difficulty {
+  if (t === 'easy') return 'Easy'
+  if (t === 'mid') return 'Medium'
+  return 'Hard'
 }
 
 /** Remove first `questionCount` visible (non-dismissed, non-selected) words from pool order — reveals buffer. */
@@ -631,36 +652,78 @@ function QuestionReviewCard({
 
 interface CreateQuizModalProps {
   editingQuiz?: Quiz | null
+  addPartFromQuiz?: Quiz | null
   onClose: () => void
   onSaved: (quiz: Quiz) => void
 }
 
-export function CreateQuizModal({ editingQuiz, onClose, onSaved }: CreateQuizModalProps) {
+function buildInitialQuestionsByTier(editing?: Quiz | null): Record<DifficultyTier, QuizQuestion[]> {
+  if (!editing) return emptyQuestionsByTier()
+  const n = normalizeQuizQuestions(editing)
+  const mapQ = (q: QuizQuestion) => ({
+    ...q,
+    mediaType: normalizeMediaType(q),
+    imageStyle: quizUiStyleFromStoredOrParam(q.imageStyle),
+  })
+  return {
+    easy: (n.questionsByTier?.easy ?? []).map(mapQ),
+    mid: (n.questionsByTier?.mid ?? []).map(mapQ),
+    hard: (n.questionsByTier?.hard ?? []).map(mapQ),
+  }
+}
+
+function buildInitialSelectedVocab(editing?: Quiz | null): SelectedVocabWord[] {
+  if (!editing) return []
+  const n = normalizeQuizQuestions(editing)
+  const out: SelectedVocabWord[] = []
+  for (const tier of DIFFICULTY_TIERS) {
+    const uiDiff = tierToUiDifficulty(tier)
+    for (const q of n.questionsByTier?.[tier] ?? []) {
+      out.push({
+        word: q.vocabularyWord.trim().toLowerCase(),
+        difficulty: uiDiff,
+        isPriority: Boolean(q.isPriority),
+      })
+    }
+  }
+  return out
+}
+
+function maxTierQuestionCount(editing?: Quiz | null): number {
+  if (!editing) return 0
+  const n = normalizeQuizQuestions(editing)
+  return Math.max(0, ...DIFFICULTY_TIERS.map((t) => n.questionsByTier?.[t]?.length ?? 0))
+}
+
+export function CreateQuizModal({ editingQuiz, addPartFromQuiz, onClose, onSaved }: CreateQuizModalProps) {
+  const partSeed = !editingQuiz && addPartFromQuiz ? buildNextPartSeed(addPartFromQuiz, getQuizzes()) : null
   const [step, setStep] = useState<'form' | 'review'>(editingQuiz ? 'review' : 'form')
-  const [quizName, setQuizName] = useState(editingQuiz?.name ?? '')
-  const [coverImageMode, setCoverImageMode] = useState<'auto' | 'manual'>(editingQuiz?.coverImageMode ?? 'auto')
-  const [coverImageUrl, setCoverImageUrl] = useState(editingQuiz?.coverImageUrl ?? '')
-  const [specialNotes, setSpecialNotes] = useState(editingQuiz?.description ?? '')
-  const [appliedSpecialNotes, setAppliedSpecialNotes] = useState(editingQuiz?.description ?? '')
+  const [quizName, setQuizName] = useState(editingQuiz?.name ?? partSeed?.name ?? '')
+  const [coverImageMode, setCoverImageMode] = useState<'auto' | 'manual'>(
+    editingQuiz?.coverImageMode ?? partSeed?.coverImageMode ?? 'auto',
+  )
+  const [coverImageUrl, setCoverImageUrl] = useState(editingQuiz?.coverImageUrl ?? partSeed?.coverImageUrl ?? '')
+  const [specialNotes, setSpecialNotes] = useState(editingQuiz?.description ?? partSeed?.description ?? '')
+  const [appliedSpecialNotes, setAppliedSpecialNotes] = useState(editingQuiz?.description ?? partSeed?.description ?? '')
   const [notesDirty, setNotesDirty] = useState(false)
   const [notesApplyTick, setNotesApplyTick] = useState(0)
   const [suggestionStatus, setSuggestionStatus] = useState('')
   const [questionCount, setQuestionCount] = useState(
-    editingQuiz?.challengeQuestionCount ?? Math.max(3, Math.min(12, editingQuiz?.questions.length ?? 6))
+    editingQuiz?.challengeQuestionCount ??
+      partSeed?.challengeQuestionCount ??
+      Math.max(3, Math.min(12, maxTierQuestionCount(editingQuiz) || 6)),
   )
   const [passThresholdTouched, setPassThresholdTouched] = useState(Boolean(editingQuiz))
   const [passThresholdInput, setPassThresholdInput] = useState(
-    String(editingQuiz?.passThreshold ?? getDefaultPassThreshold(6))
+    String(editingQuiz?.passThreshold ?? partSeed?.passThreshold ?? getDefaultPassThreshold(6))
   )
   const [manualWordInput, setManualWordInput] = useState('')
   const [selectedVocabWords, setSelectedVocabWords] = useState<SelectedVocabWord[]>(
     editingQuiz
-      ? editingQuiz.questions.map((q) => ({
-          word: q.vocabularyWord,
-          difficulty: 'Medium' as Difficulty,
-          isPriority: Boolean(q.isPriority),
-        }))
-      : []
+      ? buildInitialSelectedVocab(editingQuiz)
+      : addPartFromQuiz
+        ? buildInitialSelectedVocab(addPartFromQuiz)
+        : [],
   )
   const [difficultySuggestionPools, setDifficultySuggestionPools] = useState<Record<Difficulty, string[]>>({
     Easy: [],
@@ -676,13 +739,10 @@ export function CreateQuizModal({ editingQuiz, onClose, onSaved }: CreateQuizMod
   const [regeneratingBucket, setRegeneratingBucket] = useState<Difficulty | null>(null)
   /** Last load was memory/disk cache — Regenerate should call Gemini for a full new bucket, not rotate buffer. */
   const [suggestionsFromCache, setSuggestionsFromCache] = useState(false)
-  const [questions, setQuestions] = useState<QuizQuestion[]>(
-    (editingQuiz?.questions ?? []).map((q) => ({
-      ...q,
-      mediaType: normalizeMediaType(q),
-      imageStyle: quizUiStyleFromStoredOrParam(q.imageStyle),
-    }))
+  const [questionsByTier, setQuestionsByTier] = useState<Record<DifficultyTier, QuizQuestion[]>>(() =>
+    buildInitialQuestionsByTier(editingQuiz ?? addPartFromQuiz ?? null),
   )
+  const [reviewTierTab, setReviewTierTab] = useState<DifficultyTier>('mid')
   const [generating, setGenerating] = useState(false)
   const selectedVocabRef = useRef(selectedVocabWords)
   selectedVocabRef.current = selectedVocabWords
@@ -694,13 +754,17 @@ export function CreateQuizModal({ editingQuiz, onClose, onSaved }: CreateQuizMod
 
   // Global settings for Review screen
   const [globalStyle, setGlobalStyle] = useState<StyleType>(() => {
-    const qs = editingQuiz?.questions ?? []
-    if (qs.length === 0) return 'Photo'
-    return quizUiStyleFromStoredOrParam(qs[0].imageStyle)
+    const initial = buildInitialQuestionsByTier(editingQuiz ?? addPartFromQuiz ?? null)
+    const first =
+      initial.easy[0] ?? initial.mid[0] ?? initial.hard[0]
+    if (!first) return 'Photo'
+    return quizUiStyleFromStoredOrParam(first.imageStyle)
   })
-  const [globalMediaType, setGlobalMediaType] = useState<'static' | 'gif'>(
-    () => ((editingQuiz?.questions ?? []).some((q) => normalizeMediaType(q) === 'gif') ? 'gif' : 'static')
-  )
+  const [globalMediaType, setGlobalMediaType] = useState<'static' | 'gif'>(() => {
+    const initial = buildInitialQuestionsByTier(editingQuiz ?? addPartFromQuiz ?? null)
+    const all = [...initial.easy, ...initial.mid, ...initial.hard]
+    return all.some((q) => normalizeMediaType(q) === 'gif') ? 'gif' : 'static'
+  })
 
   const applyNotesToSuggestions = () => {
     setAppliedSpecialNotes(specialNotes)
@@ -940,7 +1004,9 @@ export function CreateQuizModal({ editingQuiz, onClose, onSaved }: CreateQuizMod
     setPassThresholdInput(String(getDefaultPassThreshold(questionCount)))
   }, [questionCount, passThresholdTouched])
 
-  const maxChallengeLength = Math.max(1, Math.min(questionCount, Math.max(questions.length, questionCount)))
+  const maxTierLen = Math.max(...DIFFICULTY_TIERS.map((t) => questionsByTier[t].length), 0)
+  const maxChallengeLength = Math.max(1, Math.min(questionCount, Math.max(maxTierLen, questionCount)))
+  const questions = questionsByTier[reviewTierTab]
   const maxPassThreshold = maxChallengeLength
   const normalizedPassThreshold = (() => {
     const numeric = Number.parseInt(passThresholdInput, 10)
@@ -1040,7 +1106,7 @@ export function CreateQuizModal({ editingQuiz, onClose, onSaved }: CreateQuizMod
           /* fall back to default stock queries */
         }
 
-        const newQuestions: QuizQuestion[] = wordsForQuestions.map((item) => {
+        const makeQuestion = (item: SelectedVocabWord): QuizQuestion => {
           const wNorm = item.word.trim().toLowerCase()
           const llmPhrase = phraseMap[wNorm]?.trim()
           const imageSearchQuery = getCuratedImageSearchOverride(wNorm)
@@ -1064,8 +1130,19 @@ export function CreateQuizModal({ editingQuiz, onClose, onSaved }: CreateQuizMod
             mediaType: globalMediaType,
             imageStyle: globalStyle,
           }
+        }
+
+        const byTier: Record<DifficultyTier, SelectedVocabWord[]> = { easy: [], mid: [], hard: [] }
+        for (const item of wordsForQuestions) {
+          byTier[mapUiDifficultyToTier(item.difficulty)].push(item)
+        }
+
+        setQuestionsByTier({
+          easy: byTier.easy.map(makeQuestion),
+          mid: byTier.mid.map(makeQuestion),
+          hard: byTier.hard.map(makeQuestion),
         })
-        setQuestions(newQuestions)
+        setReviewTierTab('mid')
         setStep('review')
       } finally {
         setGenerating(false)
@@ -1074,58 +1151,75 @@ export function CreateQuizModal({ editingQuiz, onClose, onSaved }: CreateQuizMod
   }
 
   const moveQuestion = (fromIndex: number, toIndex: number) => {
-    if (toIndex < 0 || toIndex >= questions.length) return
-    const newQuestions = [...questions]
+    const tier = reviewTierTab
+    const list = questionsByTier[tier]
+    if (toIndex < 0 || toIndex >= list.length) return
+    const newQuestions = [...list]
     const [moved] = newQuestions.splice(fromIndex, 1)
     newQuestions.splice(toIndex, 0, moved)
-    setQuestions(newQuestions)
+    setQuestionsByTier((prev) => ({ ...prev, [tier]: newQuestions }))
   }
 
   const applyGlobalStyle = (style: StyleType) => {
     setGlobalStyle(style)
-    setQuestions((prev) =>
-      prev.map((q) =>
-        q.customImageUrl
-          ? { ...q, imageStyle: style }
-          : {
-              ...q,
-              imageStyle: style,
-              imageUrl: getReliableImageUrl(
-                q.vocabularyWord,
-                generateId(),
-                normalizeMediaType(q),
-                q.imageSearchQuery,
-                style,
-                q.resolvedPreviewUrl
-              ),
-              resolvedPreviewUrl: undefined,
-            }
-      )
-    )
+    setQuestionsByTier((prev) => {
+      const next = { ...prev }
+      for (const tier of DIFFICULTY_TIERS) {
+        next[tier] = prev[tier].map((q) =>
+          q.customImageUrl
+            ? { ...q, imageStyle: style }
+            : {
+                ...q,
+                imageStyle: style,
+                imageUrl: getReliableImageUrl(
+                  q.vocabularyWord,
+                  generateId(),
+                  normalizeMediaType(q),
+                  q.imageSearchQuery,
+                  style,
+                  q.resolvedPreviewUrl
+                ),
+                resolvedPreviewUrl: undefined,
+              },
+        )
+      }
+      return next
+    })
   }
 
   const applyGlobalMediaType = (mediaType: 'static' | 'gif') => {
     setGlobalMediaType(mediaType)
-    // Apply to all questions that don't have custom settings
-    setQuestions((prev) =>
-      prev.map((q) =>
-        q.customImageUrl
-          ? { ...q }
-          : {
-              ...q,
-              mediaType,
-              imageUrl: getReliableImageUrl(
-                q.vocabularyWord,
-                generateId(),
+    setQuestionsByTier((prev) => {
+      const next = { ...prev }
+      for (const tier of DIFFICULTY_TIERS) {
+        next[tier] = prev[tier].map((q) =>
+          q.customImageUrl
+            ? { ...q }
+            : {
+                ...q,
                 mediaType,
-                q.imageSearchQuery,
-                q.imageStyle ?? globalStyle,
-                q.resolvedPreviewUrl
-              ),
-              resolvedPreviewUrl: undefined,
-            }
-      )
-    )
+                imageUrl: getReliableImageUrl(
+                  q.vocabularyWord,
+                  generateId(),
+                  mediaType,
+                  q.imageSearchQuery,
+                  q.imageStyle ?? globalStyle,
+                  q.resolvedPreviewUrl
+                ),
+                resolvedPreviewUrl: undefined,
+              },
+        )
+      }
+      return next
+    })
+  }
+
+  const copyTierFrom = (from: DifficultyTier, to: DifficultyTier) => {
+    if (from === to) return
+    setQuestionsByTier((prev) => ({
+      ...prev,
+      [to]: cloneQuestionsWithNewIds(prev[from]),
+    }))
   }
 
   const handleSave = () => {
@@ -1134,22 +1228,41 @@ export function CreateQuizModal({ editingQuiz, onClose, onSaved }: CreateQuizMod
       alert('Please enter a quiz name.')
       return
     }
-    if (questions.length === 0) {
-      alert('Add at least one question.')
+    const totalQs = DIFFICULTY_TIERS.reduce((acc, t) => acc + questionsByTier[t].length, 0)
+    if (totalQs === 0) {
+      alert('Add at least one question in at least one difficulty tier (Easy, Mid, or Hard).')
       return
     }
-    const quiz: Quiz = {
-      id: editingQuiz?.id ?? generateId(),
-      name: normalizedQuizName,
-      description: specialNotes.trim(),
-      questions: questions.map(({ resolvedPreviewUrl: _rp, ...rest }) => rest),
-      coverImageMode,
-      coverImageUrl: coverImageMode === 'manual' ? coverImageUrl.trim() || undefined : undefined,
-      challengeQuestionCount: maxChallengeLength,
-      passThreshold: normalizedPassThreshold,
-      createdAt: editingQuiz?.createdAt ?? new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+    const seriesId = editingQuiz?.seriesId ?? partSeed?.seriesId
+    const partIndex = editingQuiz?.partIndex ?? partSeed?.partIndex
+    if (!editingQuiz && seriesId && partIndex) {
+      const duplicatePart = getQuizzes().some(
+        (q) => q.seriesId === seriesId && q.partIndex === partIndex,
+      )
+      if (duplicatePart) {
+        alert(`Part ${partIndex} already exists for this topic series. Use Add Part from the newest part card.`)
+        return
+      }
     }
+    const quiz = quizPayloadForSave(
+      {
+        id: editingQuiz?.id ?? generateId(),
+        name: normalizedQuizName,
+        description: specialNotes.trim(),
+        seriesId,
+        seriesTitle: editingQuiz?.seriesTitle ?? partSeed?.seriesTitle,
+        partIndex,
+        partLabel: editingQuiz?.partLabel ?? partSeed?.partLabel,
+        sourceQuizId: editingQuiz?.sourceQuizId ?? partSeed?.sourceQuizId,
+        coverImageMode,
+        coverImageUrl: coverImageMode === 'manual' ? coverImageUrl.trim() || undefined : undefined,
+        challengeQuestionCount: maxChallengeLength,
+        passThreshold: normalizedPassThreshold,
+        createdAt: editingQuiz?.createdAt ?? new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      questionsByTier,
+    )
     saveQuiz(quiz)
     onSaved(quiz)
   }
@@ -1161,11 +1274,26 @@ export function CreateQuizModal({ editingQuiz, onClose, onSaved }: CreateQuizMod
         <div className="flex items-center justify-between border-b border-[var(--border)] px-6 py-4">
           <div>
             <h2 className="text-xl font-bold text-foreground">
-              {editingQuiz ? 'Edit Quiz' : step === 'form' ? 'Create New Quiz' : 'Review Questions'}
+              {editingQuiz
+                ? 'Edit Quiz'
+                : addPartFromQuiz
+                  ? step === 'form'
+                    ? 'Create Next Part'
+                    : 'Review Part Questions'
+                  : step === 'form'
+                    ? 'Create New Quiz'
+                    : 'Review Questions'}
             </h2>
             {step === 'review' && (
-              <p className="mt-0.5 text-sm text-muted-foreground">{questions.length} question{questions.length !== 1 ? 's' : ''}</p>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                Easy {questionsByTier.easy.length} · Mid {questionsByTier.mid.length} · Hard {questionsByTier.hard.length}
+              </p>
             )}
+            {!editingQuiz && addPartFromQuiz && step === 'form' ? (
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Linked from {addPartFromQuiz.name} ({partSeed?.partLabel ?? 'previous part'}).
+              </p>
+            ) : null}
           </div>
           <Button variant="ghost" size="icon" onClick={onClose} className="text-muted-foreground hover:text-foreground h-9 w-9">
             <X size={18} />
@@ -1561,6 +1689,9 @@ export function CreateQuizModal({ editingQuiz, onClose, onSaved }: CreateQuizMod
                 <p className="text-xs text-muted-foreground">
                   Starred words are more likely to appear in Challenge mode.
                 </p>
+                <p className="text-xs text-muted-foreground">
+                  Easy / Medium / Hard words become separate question banks. After you build the pool, use the Review tabs to edit each tier or copy one tier into another.
+                </p>
               </div>
 
               {selectedVocabWords.length > 0 && selectedVocabWords.length < questionCount && (
@@ -1592,6 +1723,43 @@ export function CreateQuizModal({ editingQuiz, onClose, onSaved }: CreateQuizMod
           {/* Review step */}
           {step === 'review' && (
             <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Difficulty tier</p>
+                <div className="flex flex-wrap gap-2">
+                  {DIFFICULTY_TIERS.map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setReviewTierTab(t)}
+                      className={`rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${
+                        reviewTierTab === t
+                          ? 'border-[var(--brand-blue)] bg-[var(--brand-blue)]/15 text-foreground'
+                          : 'border-[var(--border)] bg-[var(--surface-3)] text-muted-foreground hover:border-[var(--brand-blue)]/50'
+                      }`}
+                    >
+                      {DIFFICULTY_TIER_LABELS[t]}{' '}
+                      <span className="tabular-nums text-muted-foreground">({questionsByTier[t].length})</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-[var(--border)] bg-[var(--surface-3)] px-3 py-2 text-xs">
+                  <span className="text-muted-foreground">Copy into {DIFFICULTY_TIER_LABELS[reviewTierTab]} from:</span>
+                  {DIFFICULTY_TIERS.filter((t) => t !== reviewTierTab).map((t) => (
+                    <Button
+                      key={t}
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={questionsByTier[t].length === 0}
+                      className="h-7 border-[var(--border)] text-xs"
+                      onClick={() => copyTierFrom(t, reviewTierTab)}
+                    >
+                      {DIFFICULTY_TIER_LABELS[t]}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
               {/* Global controls */}
               <div className="rounded-xl border border-[var(--brand-blue)]/30 bg-[var(--brand-blue)]/5 p-4 flex flex-col gap-3">
                 <h3 className="text-sm font-bold text-foreground">Global Image Settings</h3>
@@ -1646,21 +1814,38 @@ export function CreateQuizModal({ editingQuiz, onClose, onSaved }: CreateQuizMod
                 </div>
               </div>
 
-              {/* Question cards */}
-              {questions.map((q, i) => (
-                <QuestionReviewCard
-                  key={q.id}
-                  question={q}
-                  index={i}
-                  total={questions.length}
-                  onChange={(updated) => setQuestions(prev => prev.map(x => x.id === updated.id ? updated : x))}
-                  onRemove={(id) => setQuestions(prev => prev.filter(x => x.id !== id))}
-                  onMoveUp={() => moveQuestion(i, i - 1)}
-                  onMoveDown={() => moveQuestion(i, i + 1)}
-                  globalStyle={globalStyle}
-                  globalMediaType={globalMediaType}
-                />
-              ))}
+              {/* Question cards (active tier) */}
+              {questions.length === 0 ? (
+                <p className="rounded-xl border border-[var(--border)] bg-[var(--surface-3)] px-4 py-6 text-center text-sm text-muted-foreground">
+                  No questions in {DIFFICULTY_TIER_LABELS[reviewTierTab]}. Go back to add vocabulary, or copy from another
+                  tier above.
+                </p>
+              ) : (
+                questions.map((q, i) => (
+                  <QuestionReviewCard
+                    key={q.id}
+                    question={q}
+                    index={i}
+                    total={questions.length}
+                    onChange={(updated) =>
+                      setQuestionsByTier((prev) => ({
+                        ...prev,
+                        [reviewTierTab]: prev[reviewTierTab].map((x) => (x.id === updated.id ? updated : x)),
+                      }))
+                    }
+                    onRemove={(id) =>
+                      setQuestionsByTier((prev) => ({
+                        ...prev,
+                        [reviewTierTab]: prev[reviewTierTab].filter((x) => x.id !== id),
+                      }))
+                    }
+                    onMoveUp={() => moveQuestion(i, i - 1)}
+                    onMoveDown={() => moveQuestion(i, i + 1)}
+                    globalStyle={globalStyle}
+                    globalMediaType={globalMediaType}
+                  />
+                ))
+              )}
             </div>
           )}
         </div>

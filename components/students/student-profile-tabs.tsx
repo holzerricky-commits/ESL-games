@@ -1,62 +1,79 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import Link from 'next/link'
 import { StudentOverviewTab } from '@/components/students/tabs/student-overview-tab'
 import { StudentPracticeTab } from '@/components/students/tabs/student-practice-tab'
 import { StudentChallengesTab } from '@/components/students/tabs/student-challenges-tab'
+import { StudentMapTab } from '@/components/students/tabs/student-map-tab'
 import { StudentAvatarTab } from '@/components/students/tabs/student-avatar-tab'
 import { StudentInfoTab } from '@/components/students/tabs/student-info-tab'
 import type { StudentProfileTab, StudentProfileView } from '@/lib/students/types'
+
+const profileTabTriggerClass =
+  'h-10 flex-none rounded-none border-x-0 border-t-0 border-b-2 border-transparent px-3 text-sm font-semibold text-muted-foreground transition-[color,border-color] ' +
+  'hover:border-b-[color:color-mix(in_oklab,var(--muted-foreground)_45%,transparent)]'
+
+const activeProfileTabClass =
+  'border-b-[color:var(--brand-yellow)] bg-transparent text-foreground shadow-none dark:border-b-[color:var(--brand-yellow)]'
 
 interface StudentProfileTabsProps {
   student: StudentProfileView
   studentId: string
   activeTab: StudentProfileTab
+  showList?: boolean
+  showContent?: boolean
+  listClassName?: string
 }
 
-export function StudentProfileTabs({ student, studentId, activeTab }: StudentProfileTabsProps) {
-  const router = useRouter()
+export function StudentProfileTabs({
+  student,
+  studentId,
+  activeTab,
+  showList = true,
+  showContent = true,
+  listClassName,
+}: StudentProfileTabsProps) {
+  const tabs: Array<{ value: StudentProfileTab; label: string }> = [
+    { value: 'overview', label: 'Overview' },
+    { value: 'practice', label: 'Practice' },
+    { value: 'challenges', label: 'Challenges' },
+    { value: 'map', label: 'Map' },
+    { value: 'avatar', label: 'Avatar' },
+    { value: 'info', label: 'Info' },
+  ]
 
-  const handleTabChange = (tabValue: string) => {
-    router.replace(`/students/${studentId}?tab=${tabValue}`)
-  }
+  const tabHref = (value: StudentProfileTab) => `/students/${studentId}?tab=${value}`
 
   return (
-    <Tabs value={activeTab} onValueChange={handleTabChange} className="gap-4">
-      <TabsList className="h-auto w-full flex-wrap justify-start gap-2 rounded-xl bg-[var(--surface-2)] p-2">
-        <TabsTrigger value="overview" className="flex-none">
-          Overview
-        </TabsTrigger>
-        <TabsTrigger value="practice" className="flex-none">
-          Practice
-        </TabsTrigger>
-        <TabsTrigger value="challenges" className="flex-none">
-          Challenges
-        </TabsTrigger>
-        <TabsTrigger value="avatar" className="flex-none">
-          Avatar
-        </TabsTrigger>
-        <TabsTrigger value="info" className="flex-none">
-          Info
-        </TabsTrigger>
-      </TabsList>
+    <div className="flex flex-col gap-5">
+      {showList ? (
+        <nav
+          aria-label="Student profile sections"
+          className={`flex h-auto w-full flex-wrap justify-start gap-1 rounded-none border-b border-[var(--border)] bg-transparent p-0 ${listClassName ?? ''}`}
+        >
+          {tabs.map((tab) => (
+            <Link
+              key={tab.value}
+              href={tabHref(tab.value)}
+              aria-current={activeTab === tab.value ? 'page' : undefined}
+              className={`${profileTabTriggerClass} ${activeTab === tab.value ? activeProfileTabClass : ''}`}
+            >
+              {tab.label}
+            </Link>
+          ))}
+        </nav>
+      ) : null}
 
-      <TabsContent value="overview">
-        <StudentOverviewTab student={student} />
-      </TabsContent>
-      <TabsContent value="practice">
-        <StudentPracticeTab student={student} />
-      </TabsContent>
-      <TabsContent value="challenges">
-        <StudentChallengesTab student={student} />
-      </TabsContent>
-      <TabsContent value="avatar">
-        <StudentAvatarTab student={student} />
-      </TabsContent>
-      <TabsContent value="info">
-        <StudentInfoTab student={student} />
-      </TabsContent>
-    </Tabs>
+      {showContent ? (
+        <>
+          {activeTab === 'overview' ? <StudentOverviewTab student={student} /> : null}
+          {activeTab === 'practice' ? <StudentPracticeTab student={student} /> : null}
+          {activeTab === 'challenges' ? <StudentChallengesTab student={student} /> : null}
+          {activeTab === 'map' ? <StudentMapTab key={student.id} student={student} /> : null}
+          {activeTab === 'avatar' ? <StudentAvatarTab student={student} /> : null}
+          {activeTab === 'info' ? <StudentInfoTab student={student} /> : null}
+        </>
+      ) : null}
+    </div>
   )
 }

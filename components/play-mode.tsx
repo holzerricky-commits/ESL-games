@@ -4,8 +4,16 @@ import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react'
 import { X, CheckCircle2, XCircle, RotateCcw, Trophy, Star, ChevronRight, UserPlus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import type { KnownStudentSummary, Quiz } from '@/lib/types'
-import { saveStudentResult, getAnimationSettings, getKnownStudentSummaries } from '@/lib/storage'
+import type { DifficultyTier, KnownStudentSummary, Quiz } from '@/lib/types'
+import { computePassThresholdForQuiz } from '@/lib/tier-challenge-progress'
+import { saveStudentResult, getAnimationSettings, getKnownStudentSummaries, getStudentProgressMap, saveStudentProgressMap } from '@/lib/storage'
+import {
+  applyChallengeAttempt,
+  createInitialProgressRecord,
+  ensureProgressAlignsWithCatalog,
+} from '@/lib/students/progression'
+import { getChallengeCatalogForStudentKey } from '@/lib/students/selectors'
+import { normalizeStudentKey } from '@/lib/students/identity'
 
 function generateId() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36)
@@ -35,11 +43,23 @@ interface PlayModeProps {
   quiz: Quiz
   mode: 'practice' | 'challenge'
   onExit: () => void
+  initialStudentName?: string
+  skipNameEntry?: boolean
+  /** Challenge bank used for this run (saved on results). */
+  playDifficultyTier?: DifficultyTier
 }
 
-export function PlayMode({ quiz, mode, onExit }: PlayModeProps) {
+export function PlayMode({
+  quiz,
+  mode,
+  onExit,
+  initialStudentName,
+  skipNameEntry = false,
+  playDifficultyTier,
+}: PlayModeProps) {
+  const fixedStudentName = initialStudentName?.trim() ?? ''
   const [phase, setPhase] = useState<PlayPhase>('enter-name')
-  const [studentName, setStudentName] = useState('')
+  const [studentName, setStudentName] = useState(fixedStudentName)
   const [knownStudents, setKnownStudents] = useState<KnownStudentSummary[]>([])
   const [addingNewStudent, setAddingNewStudent] = useState(false)
   const [currentIndex, setCurrentIndex] = useState(0)
@@ -49,13 +69,17 @@ export function PlayMode({ quiz, mode, onExit }: PlayModeProps) {
   const [answers, setAnswers] = useState<Answer[]>([])
   const [imgError, setImgError] = useState(false)
   const [enterTitleVisible, setEnterTitleVisible] = useState(true)
+  const [showReview, setShowReview] = useState(false)
+  const [showAllAnswers, setShowAllAnswers] = useState(false)
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const startQuizAfterTitleHideRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const autoStartedRef = useRef(false)
 
-  const question = quiz.questions[currentIndex]
-  const totalQuestions = quiz.questions.length
+  const playQuestions = quiz.questions ?? []
+  const question = playQuestions[currentIndex]
+  const totalQuestions = playQuestions.length
   const passThreshold = quiz.passThreshold === 0 ? totalQuestions : quiz.passThreshold
 
   // Format timer MM:SS
@@ -122,6 +146,24 @@ export function PlayMode({ quiz, mode, onExit }: PlayModeProps) {
     setKnownStudents(getKnownStudentSummaries())
   }, [])
 
+  useEffect(() => {
+    if (!fixedStudentName) return
+    setStudentName(fixedStudentName)
+    setAddingNewStudent(false)
+  }, [fixedStudentName])
+
+  useEffect(() => {
+    if (!skipNameEntry || autoStartedRef.current) return
+    const seededName = initialStudentName?.trim() ?? ''
+    if (!seededName) return
+    autoStartedRef.current = true
+    setStudentName(seededName)
+    setEnterTitleVisible(false)
+    setAnswers([])
+    setCurrentIndex(0)
+    startCountdown()
+  }, [initialStudentName, skipNameEntry, startCountdown])
+
   const handleStartQuiz = () => {
     if (!studentName.trim()) return
     if (startQuizAfterTitleHideRef.current != null) return
@@ -138,7 +180,7 @@ export function PlayMode({ quiz, mode, onExit }: PlayModeProps) {
     if (phase !== 'question') return
 
     const idx = currentIndex
-    const qId = quiz.questions[idx].id
+    const qId = playQuestions[idx].id
     const newAnswers = [...answers, { questionId: qId, correct: wasCorrect }]
     setAnswers(newAnswers)
 
@@ -146,6 +188,9 @@ export function PlayMode({ quiz, mode, onExit }: PlayModeProps) {
       stopTimer()
       if (mode === 'challenge') {
         const nextScore = newAnswers.filter((a) => a.correct).length
+        const attemptedAt = new Date().toISOString()
+        const needPass = computePassThresholdForQuiz(quiz, totalQuestions)
+        const passedChallenge = nextScore >= needPass
         saveStudentResult({
           id: generateId(),
           studentName: studentName.trim(),
@@ -154,8 +199,27 @@ export function PlayMode({ quiz, mode, onExit }: PlayModeProps) {
           score: nextScore,
           totalQuestions,
           answers: newAnswers,
-          completedAt: new Date().toISOString(),
+          completedAt: attemptedAt,
+          difficultyTier: playDifficultyTier,
+          passedChallenge,
         })
+
+        const challengeCatalog = getChallengeCatalogForStudentKey(normalizeStudentKey(studentName))
+        const challengeForQuiz = challengeCatalog.find((challenge) => challenge.quizId === quiz.id)
+        if (challengeForQuiz) {
+          const studentKey = normalizeStudentKey(studentName)
+          const progressMap = getStudentProgressMap()
+          const rawRecord = progressMap[studentKey] ?? createInitialProgressRecord(studentKey, challengeCatalog)
+          const currentRecord = ensureProgressAlignsWithCatalog(rawRecord, challengeCatalog)
+          const scorePct = (nextScore / Math.max(1, totalQuestions)) * 100
+          const updated = applyChallengeAttempt(currentRecord, challengeCatalog, {
+            challengeId: challengeForQuiz.id,
+            scorePct,
+            attemptedAt,
+          })
+          progressMap[studentKey] = updated
+          saveStudentProgressMap(progressMap)
+        }
       }
       setPhase('results')
       return
@@ -174,11 +238,23 @@ export function PlayMode({ quiz, mode, onExit }: PlayModeProps) {
 
   const score = answers.filter((a) => a.correct).length
   const passed = score >= passThreshold
+  const isPerfect = score === totalQuestions
   const answerByQuestionId = new Map(answers.map((a) => [a.questionId, a.correct]))
+
+  useEffect(() => {
+    if (phase !== 'results') return
+    // Keep the celebration hierarchy stable: collapse review for perfect/pass, open for failed.
+    setShowReview(mode === 'challenge' ? !passed : false)
+    setShowAllAnswers(false)
+  }, [mode, passed, phase])
 
   /* ── ENTER NAME SCREEN ── */
   if (phase === 'enter-name') {
-    const hasKnown = knownStudents.length > 0
+    const hasLockedStudent = !!fixedStudentName
+    const hasKnown = hasLockedStudent || knownStudents.length > 0
+    const knownChoices: KnownStudentSummary[] = hasLockedStudent
+      ? [{ name: fixedStudentName, lastDate: '', totalQuizzes: 0 }]
+      : knownStudents
     const splashTitleFont = 'var(--font-space-mono), ui-monospace, monospace'
     const splashTitleSize = 'clamp(3.5rem, min(15vw, 11vh), 11rem)'
 
@@ -270,7 +346,7 @@ export function PlayMode({ quiz, mode, onExit }: PlayModeProps) {
                   Who is playing?
                 </p>
                 <div className="flex flex-wrap justify-center gap-3 max-w-full">
-                  {knownStudents.map((s) => {
+                  {knownChoices.map((s) => {
                     const selected = studentName === s.name
                     return (
                       <button
@@ -294,22 +370,24 @@ export function PlayMode({ quiz, mode, onExit }: PlayModeProps) {
                     )
                   })}
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setAddingNewStudent(true)
-                    setStudentName('')
-                  }}
-                  className="w-full border-[var(--border)] text-foreground hover:bg-[var(--surface-3)] hover:border-[var(--brand-green)] gap-2 h-12 font-semibold"
-                >
-                  <UserPlus size={18} />
-                  New student
-                </Button>
+                {!hasLockedStudent ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setAddingNewStudent(true)
+                      setStudentName('')
+                    }}
+                    className="w-full border-[var(--border)] text-foreground hover:bg-[var(--surface-3)] hover:border-[var(--brand-green)] gap-2 h-12 font-semibold"
+                  >
+                    <UserPlus size={18} />
+                    New student
+                  </Button>
+                ) : null}
               </>
             )}
 
-            {(addingNewStudent || !hasKnown) && (
+            {!hasLockedStudent && (addingNewStudent || !hasKnown) && (
               <div className="flex flex-col gap-2">
                 {hasKnown && (
                   <Button
@@ -454,8 +532,6 @@ export function PlayMode({ quiz, mode, onExit }: PlayModeProps) {
   }
 
   /* ── RESULTS SCREEN ── */
-  const isPerfect = score === totalQuestions
-  
   // Get selected animations from localStorage
   const animationSettings = getAnimationSettings()
   const selectedAnimation =
@@ -644,8 +720,14 @@ export function PlayMode({ quiz, mode, onExit }: PlayModeProps) {
     return null
   }
 
+  const incorrectQuestions = playQuestions.filter((q) => answerByQuestionId.get(q.id) !== true)
+  const reviewQuestions: typeof playQuestions =
+    mode === 'challenge' && !passed && !showAllAnswers
+      ? incorrectQuestions
+      : playQuestions
+
   return (
-    <div className="fixed inset-0 z-50 flex flex-col items-center bg-[var(--surface-1)] p-6 overflow-y-auto">
+    <div className="fixed inset-0 z-50 bg-[var(--surface-1)] px-4 py-6 md:px-6 overflow-y-auto">
       <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden" aria-hidden>
         {renderAnimation()}
       </div>
@@ -659,136 +741,181 @@ export function PlayMode({ quiz, mode, onExit }: PlayModeProps) {
         <X size={20} />
       </Button>
 
-      <div className="relative z-10 w-full max-w-5xl flex flex-col items-center gap-8 animate-slide-up py-6">
-        {/* Trophy when passed; encouraging mark when not */}
-        {passed ? (
-          <Trophy
-            size={72}
-            className={
-              isPerfect ? 'text-[var(--brand-yellow)] perfect-fx-trophy' : 'text-[var(--brand-yellow)]'
-            }
-            style={
-              !isPerfect ? { filter: 'drop-shadow(0 0 32px rgba(250,204,21,0.6))' } : undefined
-            }
-          />
-        ) : (
-          <div
-            className="flex items-center justify-center gap-3"
-            aria-hidden
-          >
-            <Star size={52} className="fail-star fail-star--steady" strokeWidth={1.85} />
-            <Star size={52} className="fail-star fail-star--steady" strokeWidth={1.85} />
-            <Star size={52} className="fail-star fail-star--fluoro" strokeWidth={1.85} />
-          </div>
-        )}
-
-        <div className="text-center flex flex-col gap-2">
-          <p className="text-lg text-muted-foreground font-medium">{studentName}</p>
-          <div className="flex items-baseline justify-center gap-3">
-            <span
-              className="text-8xl font-black"
-              style={{
-                color: isPerfect ? 'var(--brand-yellow)' : passed ? 'var(--brand-green)' : 'var(--brand-blue-bright)',
-              }}
-            >
-              {score}
-            </span>
-            <span className="text-3xl font-bold text-muted-foreground">/ {totalQuestions}</span>
-          </div>
-          {isPerfect ? (
-            <p className="perfect-score-headline" aria-live="polite">
-              🎉 Perfect Score! 🎉
-            </p>
-          ) : mode === 'challenge' && passed ? (
-            <p className="text-2xl font-bold mt-2 text-[var(--brand-green)]">Congratulations! You passed!</p>
-          ) : mode === 'challenge' ? (
-            <>
-              <p className="text-2xl font-bold mt-2 text-foreground text-balance">
-                Nice try—ready for another round?
-              </p>
-              <p className="text-base text-muted-foreground mt-1 text-balance">
-                You got {score} of {totalQuestions}—great effort!
-              </p>
-            </>
-          ) : (
-            <p className="text-2xl font-bold mt-2 text-[var(--brand-blue-bright)]">Practice complete!</p>
-          )}
-        </div>
-
-        {/* Score breakdown */}
-        <div className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface-2)] p-5 flex items-center justify-around">
-          <div className="text-center">
-            <p className="text-3xl font-black text-[var(--brand-green)]">{score}</p>
-            <p className="text-sm text-muted-foreground mt-1">Correct</p>
-          </div>
-          <div className="w-px h-10 bg-[var(--border)]" />
-          <div className="text-center">
-            <p className="text-3xl font-black text-[var(--brand-red)]">{totalQuestions - score}</p>
-            <p className="text-sm text-muted-foreground mt-1">Incorrect</p>
-          </div>
-          {mode === 'challenge' && (
-            <>
-              <div className="w-px h-10 bg-[var(--border)]" />
-              <div className="text-center">
-                <p className="text-3xl font-black text-foreground">{passThreshold}</p>
-                <p className="text-sm text-muted-foreground mt-1">Needed to pass</p>
-              </div>
-            </>
-          )}
-        </div>
-
-        <div className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface-2)] p-4">
-          <p className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-            Answer review
-          </p>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {quiz.questions.map((q) => {
-              const markedCorrect = answerByQuestionId.get(q.id) === true
-              return (
-                <div key={q.id} className="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface-1)]">
-                  <div className="relative aspect-[4/3] bg-[var(--surface-3)]">
-                    <img
-                      src={q.imageUrl}
-                      alt={q.vocabularyWord}
-                      className="h-full w-full object-contain"
-                      crossOrigin="anonymous"
-                    />
-                  </div>
-                  <div className="flex items-center justify-between gap-2 px-3 py-2">
-                    <p className="text-sm font-bold text-foreground truncate">{q.vocabularyWord}</p>
-                    <span
-                      className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold ${
-                        markedCorrect
-                          ? 'border-[var(--brand-green)] text-[var(--brand-green)]'
-                          : 'border-[var(--brand-red)] text-[var(--brand-red)]'
-                      }`}
-                    >
-                      {markedCorrect ? 'Correct' : 'Incorrect'}
-                    </span>
-                  </div>
+      <div className="relative z-10 mx-auto flex min-h-[100svh] w-full max-w-5xl items-center justify-center py-6 md:py-8">
+        <div className="flex w-full flex-col items-center gap-5 md:gap-6 -translate-y-[2vh] animate-slide-up">
+          <div className="w-full max-w-3xl rounded-2xl border border-[var(--border)] bg-[var(--surface-2)]/85 backdrop-blur-sm px-5 py-6 md:px-7 md:py-7 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+            <div className="flex flex-col items-center gap-4 md:gap-5">
+              {/* Trophy when passed; encouraging mark when not */}
+              {passed ? (
+                <Trophy
+                  size={72}
+                  className={
+                    isPerfect ? 'text-[var(--brand-yellow)] perfect-fx-trophy' : 'text-[var(--brand-yellow)]'
+                  }
+                  style={
+                    !isPerfect ? { filter: 'drop-shadow(0 0 32px rgba(250,204,21,0.6))' } : undefined
+                  }
+                />
+              ) : (
+                <div
+                  className="flex items-center justify-center gap-3"
+                  aria-hidden
+                >
+                  <Star size={52} className="fail-star fail-star--steady" strokeWidth={1.85} />
+                  <Star size={52} className="fail-star fail-star--steady" strokeWidth={1.85} />
+                  <Star size={52} className="fail-star fail-star--fluoro" strokeWidth={1.85} />
                 </div>
-              )
-            })}
-          </div>
-        </div>
+              )}
 
-        <div className="flex gap-4 w-full">
-          {mode === 'challenge' && !passed && (
-            <Button
-              onClick={handleRetry}
-              className="flex-1 bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-bright)] text-white font-bold py-6 text-lg gap-2 shadow-[0_0_24px_rgba(59,130,246,0.3)]"
-            >
-              <RotateCcw size={18} />
-              Retry Quiz
-            </Button>
+              <div className="text-center flex flex-col gap-1.5">
+                <p className="text-sm text-muted-foreground font-medium">{studentName}</p>
+                <div className="flex items-baseline justify-center gap-3">
+                  <span
+                    className="text-[clamp(4rem,10vw,7.5rem)] font-black"
+                    style={{
+                      color: isPerfect ? 'var(--brand-yellow)' : passed ? 'var(--brand-green)' : 'var(--brand-blue-bright)',
+                    }}
+                  >
+                    {score}
+                  </span>
+                  <span className="text-3xl font-bold text-muted-foreground">/ {totalQuestions}</span>
+                </div>
+                {isPerfect ? (
+                  <p className="perfect-score-headline" aria-live="polite">
+                    🎉 Perfect Score! 🎉
+                  </p>
+                ) : mode === 'challenge' && passed ? (
+                  <p className="text-2xl font-bold mt-1 text-[var(--brand-green)]">Congratulations! You passed!</p>
+                ) : mode === 'challenge' ? (
+                  <>
+                    <p className="text-2xl font-bold mt-1 text-foreground text-balance">
+                      Nice try—ready for another round?
+                    </p>
+                    <p className="text-base text-muted-foreground mt-1 text-balance">
+                      You got {score} of {totalQuestions}—great effort!
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-2xl font-bold mt-1 text-[var(--brand-blue-bright)]">Practice complete!</p>
+                )}
+              </div>
+
+              {/* Score breakdown */}
+              <div className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface-1)] p-4 flex items-center justify-around">
+                <div className="text-center">
+                  <p className="text-3xl font-black text-[var(--brand-green)]">{score}</p>
+                  <p className="text-sm text-muted-foreground mt-1">Correct</p>
+                </div>
+                <div className="w-px h-10 bg-[var(--border)]" />
+                <div className="text-center">
+                  <p className="text-3xl font-black text-[var(--brand-red)]">{totalQuestions - score}</p>
+                  <p className="text-sm text-muted-foreground mt-1">Incorrect</p>
+                </div>
+                {mode === 'challenge' && (
+                  <>
+                    <div className="w-px h-10 bg-[var(--border)]" />
+                    <div className="text-center">
+                      <p className="text-3xl font-black text-foreground">{passThreshold}</p>
+                      <p className="text-sm text-muted-foreground mt-1">Needed to pass</p>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="flex w-full max-w-xl gap-4">
+                {mode === 'challenge' && !passed && (
+                  <Button
+                    onClick={handleRetry}
+                    className="flex-1 bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-bright)] text-white font-bold py-6 text-lg gap-2 shadow-[0_0_24px_rgba(59,130,246,0.3)]"
+                  >
+                    <RotateCcw size={18} />
+                    Retry Quiz
+                  </Button>
+                )}
+                <Button
+                  onClick={onExit}
+                  variant="outline"
+                  className={`${mode === 'challenge' && passed ? 'flex-1' : ''} border-[var(--border)] text-foreground hover:bg-[var(--surface-3)] py-6 text-lg`}
+                >
+                  Back to Dashboard
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <div className="w-full max-w-5xl rounded-2xl border border-[var(--border)] bg-[var(--surface-2)]/90 p-4 backdrop-blur-sm">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+              {mode === 'challenge' && !passed ? 'Mistakes to review' : 'Answer review'}
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              {mode === 'challenge' && !passed && incorrectQuestions.length > 0 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowAllAnswers((v) => !v)}
+                  className="border-[var(--border)] text-foreground hover:bg-[var(--surface-3)]"
+                >
+                  {showAllAnswers ? 'Show mistakes only' : 'Show all answers'}
+                </Button>
+              )}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowReview((v) => !v)}
+                className="border-[var(--border)] text-foreground hover:bg-[var(--surface-3)]"
+              >
+                {showReview ? 'Hide review' : 'Show review'}
+              </Button>
+            </div>
+          </div>
+
+          {showReview ? (
+            reviewQuestions.length > 0 ? (
+              <div className="max-h-[45vh] overflow-y-auto pr-1">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {reviewQuestions.map((q) => {
+                  const markedCorrect = answerByQuestionId.get(q.id) === true
+                  return (
+                    <div key={q.id} className="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface-1)]">
+                      <div className="relative aspect-[4/3] bg-[var(--surface-3)]">
+                        <img
+                          src={q.imageUrl}
+                          alt={q.vocabularyWord}
+                          className="h-full w-full object-contain"
+                          crossOrigin="anonymous"
+                        />
+                      </div>
+                      <div className="flex items-center justify-between gap-2 px-3 py-2">
+                        <p className="text-sm font-bold text-foreground truncate">{q.vocabularyWord}</p>
+                        <span
+                          className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold ${
+                            markedCorrect
+                              ? 'border-[var(--brand-green)] text-[var(--brand-green)]'
+                              : 'border-[var(--brand-red)] text-[var(--brand-red)]'
+                          }`}
+                        >
+                          {markedCorrect ? 'Correct' : 'Incorrect'}
+                        </span>
+                      </div>
+                    </div>
+                  )
+                })}
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No mistakes to review.</p>
+            )
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {mode === 'challenge' && !passed
+                ? `${incorrectQuestions.length} mistake${incorrectQuestions.length === 1 ? '' : 's'} ready for review.`
+                : 'Open review to see all answers.'}
+            </p>
           )}
-          <Button
-            onClick={onExit}
-            variant="outline"
-            className={`${mode === 'challenge' && passed ? 'flex-1' : ''} border-[var(--border)] text-foreground hover:bg-[var(--surface-3)] py-6 text-lg`}
-          >
-            Back to Dashboard
-          </Button>
+          </div>
         </div>
       </div>
     </div>

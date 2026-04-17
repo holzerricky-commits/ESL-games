@@ -20,48 +20,48 @@ Only tokens below are considered active design-system color tokens for this app 
 
 | Token | Hex | Semantic Use |
 |---|---|---|
-| `--background` | `#0a0f1a` | Base app background |
-| `--foreground` | `#e8f0fe` | Primary readable text |
-| `--card` | `#0f1829` | Card and modal panel background |
-| `--card-foreground` | `#e8f0fe` | Text on card surfaces |
-| `--popover` | `#0f1829` | Floating panel surface |
-| `--popover-foreground` | `#e8f0fe` | Text on popovers |
-| `--primary` | `#3b82f6` | Primary interactive color |
-| `--primary-foreground` | `#ffffff` | Text/icon on primary |
-| `--secondary` | `#1e293b` | Secondary surface/action |
-| `--secondary-foreground` | `#e8f0fe` | Text on secondary |
-| `--muted` | `#1e293b` | Quiet UI regions |
-| `--muted-foreground` | `#64748b` | Secondary/meta text |
-| `--accent` | `#facc15` | Highlight/attention |
-| `--accent-foreground` | `#0a0f1a` | Text on accent |
-| `--destructive` | `#ef4444` | Destructive/error base |
+| `--background` | `#0d1324` | Base app background (storybook-night dark) |
+| `--foreground` | `#edf3ff` | Primary readable text |
+| `--card` | `#131c34` | Card and modal panel background |
+| `--card-foreground` | `#edf3ff` | Text on card surfaces |
+| `--popover` | `#131c34` | Floating panel surface |
+| `--popover-foreground` | `#edf3ff` | Text on popovers |
+| `--primary` | `#72a8ff` | Primary interactive color |
+| `--primary-foreground` | `#091326` | Text/icon on primary |
+| `--secondary` | `#1e2946` | Secondary surface/action |
+| `--secondary-foreground` | `#edf3ff` | Text on secondary |
+| `--muted` | `#1b2641` | Quiet UI regions |
+| `--muted-foreground` | `#8a9abb` | Secondary/meta text |
+| `--accent` | `#f4b37a` | Warm highlight/attention |
+| `--accent-foreground` | `#1b1307` | Text on accent |
+| `--destructive` | `#ef6677` | Destructive/error base |
 | `--destructive-foreground` | `#ffffff` | Text on destructive |
-| `--border` | `#1e3a5f` | Structural borders/dividers |
-| `--input` | `#1e293b` | Input baseline surface |
-| `--ring` | `#3b82f6` | Focus ring |
-| `--brand-blue` | `#3b82f6` | Primary CTA color |
-| `--brand-blue-bright` | `#60a5fa` | Primary hover/brighter state |
-| `--brand-green` | `#22c55e` | Success/Correct |
-| `--brand-green-bright` | `#4ade80` | Success hover |
-| `--brand-yellow` | `#facc15` | Celebration/highlight |
-| `--brand-red` | `#ef4444` | Incorrect/danger |
-| `--surface-1` | `#0a0f1a` | Deepest page canvas |
-| `--surface-2` | `#0f1829` | Header/footer/modal shell |
-| `--surface-3` | `#1e293b` | Nested panel/input area |
-| `--surface-4` | `#1e3a5f` | Strong hover/elevated panel |
-| `--chart-1` | `#3b82f6` | Data/chart color 1 |
-| `--chart-2` | `#22c55e` | Data/chart color 2 |
-| `--chart-3` | `#facc15` | Data/chart color 3 |
-| `--chart-4` | `#f97316` | Data/chart color 4 |
-| `--chart-5` | `#a855f7` | Data/chart color 5 |
-| `--sidebar` | `#0f1829` | Sidebar surface |
-| `--sidebar-foreground` | `#e8f0fe` | Sidebar text |
-| `--sidebar-primary` | `#3b82f6` | Sidebar emphasis |
-| `--sidebar-primary-foreground` | `#ffffff` | Sidebar emphasis text |
-| `--sidebar-accent` | `#1e293b` | Sidebar secondary surface |
-| `--sidebar-accent-foreground` | `#e8f0fe` | Sidebar secondary text |
-| `--sidebar-border` | `#1e3a5f` | Sidebar border |
-| `--sidebar-ring` | `#3b82f6` | Sidebar focus ring |
+| `--border` | `#2a385d` | Structural borders/dividers |
+| `--input` | `#1c2845` | Input baseline surface |
+| `--ring` | `#86bbff` | Focus ring |
+| `--brand-blue` | `#72a8ff` | Primary CTA color |
+| `--brand-blue-bright` | `#9cc7ff` | Primary hover/brighter state |
+| `--brand-green` | `#45c39b` | Success/Correct |
+| `--brand-green-bright` | `#67d7b1` | Success hover |
+| `--brand-yellow` | `#f4b37a` | Celebration/highlight |
+| `--brand-red` | `#ef6677` | Incorrect/danger |
+| `--surface-1` | `#0d1324` | Deepest page canvas |
+| `--surface-2` | `#131c34` | Header/footer/modal shell |
+| `--surface-3` | `#1d2844` | Nested panel/input area |
+| `--surface-4` | `#2a385d` | Strong hover/elevated panel |
+| `--chart-1` | `#72a8ff` | Data/chart color 1 |
+| `--chart-2` | `#45c39b` | Data/chart color 2 |
+| `--chart-3` | `#f4b37a` | Data/chart color 3 |
+| `--chart-4` | `#f18a62` | Data/chart color 4 |
+| `--chart-5` | `#9a89ff` | Data/chart color 5 |
+| `--sidebar` | `#131c34` | Sidebar surface |
+| `--sidebar-foreground` | `#edf3ff` | Sidebar text |
+| `--sidebar-primary` | `#72a8ff` | Sidebar emphasis |
+| `--sidebar-primary-foreground` | `#091326` | Sidebar emphasis text |
+| `--sidebar-accent` | `#1e2946` | Sidebar secondary surface |
+| `--sidebar-accent-foreground` | `#edf3ff` | Sidebar secondary text |
+| `--sidebar-border` | `#2a385d` | Sidebar border |
+| `--sidebar-ring` | `#86bbff` | Sidebar focus ring |
 
 ### Controlled non-token colors currently used
 

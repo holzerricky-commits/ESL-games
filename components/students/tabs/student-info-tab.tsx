@@ -7,10 +7,12 @@ interface StudentInfoTabProps {
 
 export function StudentInfoTab({ student }: StudentInfoTabProps) {
   return (
-    <div className="space-y-4">
+    <div className="mx-auto max-w-7xl space-y-4">
       <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-4">
-        <p className="text-sm font-semibold text-foreground">Student Information</p>
-        <p className="mt-2 text-sm text-muted-foreground">{student.infoSummary}</p>
+        <p className="text-sm font-semibold text-foreground">About you</p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Your teacher sets your path and defaults from the plan screen. This tab is for your profile details later.
+        </p>
       </div>
 
       <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-4">
@@ -18,7 +20,9 @@ export function StudentInfoTab({ student }: StudentInfoTabProps) {
         <p className="mt-1 text-sm text-muted-foreground">Notes: --</p>
       </div>
 
-      <Button variant="outline">Edit info (placeholder)</Button>
+      <Button variant="outline" disabled>
+        Edit info (coming soon)
+      </Button>
     </div>
   )
 }

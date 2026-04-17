@@ -2,50 +2,50 @@
 @import 'tw-animate-css';
 
 :root {
-  /* Dark energetic theme colors */
-  --background: #0a0f1a;
-  --foreground: #e8f0fe;
-  --card: #0f1829;
-  --card-foreground: #e8f0fe;
-  --popover: #0f1829;
-  --popover-foreground: #e8f0fe;
-  --primary: #3b82f6;
-  --primary-foreground: #ffffff;
-  --secondary: #1e293b;
-  --secondary-foreground: #e8f0fe;
-  --muted: #1e293b;
-  --muted-foreground: #64748b;
-  --accent: #facc15;
-  --accent-foreground: #0a0f1a;
-  --destructive: #ef4444;
+  /* Storybook-night theme colors: dark base + softer playful accents */
+  --background: #0d1324;
+  --foreground: #edf3ff;
+  --card: #131c34;
+  --card-foreground: #edf3ff;
+  --popover: #131c34;
+  --popover-foreground: #edf3ff;
+  --primary: #72a8ff;
+  --primary-foreground: #091326;
+  --secondary: #1e2946;
+  --secondary-foreground: #edf3ff;
+  --muted: #1b2641;
+  --muted-foreground: #8a9abb;
+  --accent: #f4b37a;
+  --accent-foreground: #1b1307;
+  --destructive: #ef6677;
   --destructive-foreground: #ffffff;
-  --border: #1e3a5f;
-  --input: #1e293b;
-  --ring: #3b82f6;
+  --border: #2a385d;
+  --input: #1c2845;
+  --ring: #86bbff;
   --radius: 0.75rem;
-  --brand-blue: #3b82f6;
-  --brand-blue-bright: #60a5fa;
-  --brand-green: #22c55e;
-  --brand-green-bright: #4ade80;
-  --brand-yellow: #facc15;
-  --brand-red: #ef4444;
-  --surface-1: #0a0f1a;
-  --surface-2: #0f1829;
-  --surface-3: #1e293b;
-  --surface-4: #1e3a5f;
-  --chart-1: #3b82f6;
-  --chart-2: #22c55e;
-  --chart-3: #facc15;
-  --chart-4: #f97316;
-  --chart-5: #a855f7;
-  --sidebar: #0f1829;
-  --sidebar-foreground: #e8f0fe;
-  --sidebar-primary: #3b82f6;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #1e293b;
-  --sidebar-accent-foreground: #e8f0fe;
-  --sidebar-border: #1e3a5f;
-  --sidebar-ring: #3b82f6;
+  --brand-blue: #72a8ff;
+  --brand-blue-bright: #9cc7ff;
+  --brand-green: #45c39b;
+  --brand-green-bright: #67d7b1;
+  --brand-yellow: #f4b37a;
+  --brand-red: #ef6677;
+  --surface-1: #0d1324;
+  --surface-2: #131c34;
+  --surface-3: #1d2844;
+  --surface-4: #2a385d;
+  --chart-1: #72a8ff;
+  --chart-2: #45c39b;
+  --chart-3: #f4b37a;
+  --chart-4: #f18a62;
+  --chart-5: #9a89ff;
+  --sidebar: #131c34;
+  --sidebar-foreground: #edf3ff;
+  --sidebar-primary: #72a8ff;
+  --sidebar-primary-foreground: #091326;
+  --sidebar-accent: #1e2946;
+  --sidebar-accent-foreground: #edf3ff;
+  --sidebar-border: #2a385d;
+  --sidebar-ring: #86bbff;
 }
 
 @theme inline {
@@ -123,6 +123,28 @@
   100% { transform: translateX(0); opacity: 1; }
 }
 
+@keyframes map-hud-enter-top {
+  0% {
+    transform: translateY(calc(-100% - 1.5rem));
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes map-hud-enter-bottom {
+  0% {
+    transform: translateY(calc(100% + 1.5rem));
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
 @keyframes timer-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
@@ -139,6 +161,26 @@
   }
 }
 
+@keyframes tree1-leaf-sway {
+  0%,
+  100% {
+    transform: rotate(calc(-1 * var(--tree1-deg, 0.9deg)));
+  }
+  50% {
+    transform: rotate(var(--tree1-deg, 0.9deg));
+  }
+}
+
+.tree1-leaf-layer {
+  /* transform-origin set inline to match stem in image space */
+  animation-name: tree1-leaf-sway;
+  /* Softer than ease-in-out — less “mechanical” at the reversal */
+  animation-timing-function: cubic-bezier(0.42, 0.05, 0.58, 0.95);
+  animation-iteration-count: infinite;
+  animation-duration: var(--tree1-dur, 4.5s);
+  animation-delay: var(--tree1-delay, 0s);
+}
+
 .animate-countdown-in {
   animation: countdown-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
@@ -149,6 +191,14 @@
 
 .animate-slide-in-right {
   animation: slide-in-right 0.3s ease-out forwards;
+}
+
+.animate-map-hud-enter-top {
+  animation: map-hud-enter-top 560ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.animate-map-hud-enter-bottom {
+  animation: map-hud-enter-bottom 620ms cubic-bezier(0.22, 1, 0.36, 1) 70ms forwards;
 }
 
 .animate-timer-pulse {
@@ -642,7 +692,60 @@
   }
 }
 
+@keyframes level-quest-panel-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.82);
+  }
+  72% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes level-quest-button-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.78);
+  }
+  72% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-level-quest-panel {
+  animation: level-quest-panel-pop 0.45s cubic-bezier(0.34, 1.35, 0.64, 1) both;
+}
+
+.animate-level-quest-button {
+  animation: level-quest-button-pop 0.42s cubic-bezier(0.34, 1.35, 0.64, 1) both;
+  animation-delay: 0.14s;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .animate-level-quest-panel,
+  .animate-level-quest-button {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  .animate-map-hud-enter-top,
+  .animate-map-hud-enter-bottom {
+    animation: none;
+    transform: none;
+    opacity: 1;
+  }
+
   .perfect-fx-ambient {
     animation: none;
     opacity: 0.18;
@@ -692,5 +795,10 @@
     opacity: 1;
     transform: none;
     filter: drop-shadow(0 0 8px color-mix(in srgb, var(--brand-red) 50%, transparent));
+  }
+
+  .tree1-leaf-layer {
+    animation: none !important;
+    transform: none;
   }
 }

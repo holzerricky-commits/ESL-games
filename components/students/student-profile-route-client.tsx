@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { StudentProfilePage } from '@/components/students/student-profile-page'
 import { getStudentProfileView, isValidStudentProfileTab } from '@/lib/students/selectors'
 import type { StudentProfileTab } from '@/lib/students/types'
@@ -10,6 +11,20 @@ interface StudentProfileRouteClientProps {
 }
 
 export function StudentProfileRouteClient({ studentId, requestedTab }: StudentProfileRouteClientProps) {
+  const [isHydrated, setIsHydrated] = useState(false)
+
+  useEffect(() => {
+    setIsHydrated(true)
+  }, [])
+
+  if (!isHydrated) {
+    return (
+      <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--surface-2)] p-6">
+        <p className="text-sm text-muted-foreground">Loading student profile...</p>
+      </div>
+    )
+  }
+
   const student = getStudentProfileView(studentId)
   if (!student) {
     return (

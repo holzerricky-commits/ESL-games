@@ -1,8 +1,18 @@
-import type { Quiz, StudentResult, AnimationSettings, KnownStudentSummary } from './types'
+import type {
+  Quiz,
+  StudentResult,
+  AnimationSettings,
+  KnownStudentSummary,
+  StudentProgressRecord,
+  StudentRecord,
+} from './types'
+import { normalizeQuizQuestions } from './quiz-difficulty'
 
 const QUIZZES_KEY = 'esl_quizzes'
 const RESULTS_KEY = 'esl_student_results'
 const ANIMATION_SETTINGS_KEY = 'esl_animation_settings'
+const STUDENT_PROGRESS_KEY = 'esl_student_progress'
+const STUDENTS_KEY = 'esl_students'
 const DEFAULT_CHALLENGE_QUESTION_COUNT = 6
 
 function normalizeChallengeQuestionCount(rawCount: unknown, questionCount: number): number {
@@ -41,13 +51,22 @@ export function getQuizzes(): Quiz[] {
   try {
     const raw = localStorage.getItem(QUIZZES_KEY)
     const quizzes = raw ? (JSON.parse(raw) as Quiz[]) : []
-    return quizzes.map((quiz) => ({
-      ...quiz,
-      challengeQuestionCount: normalizeChallengeQuestionCount(
-        (quiz as Partial<Quiz>).challengeQuestionCount,
-        quiz.questions.length,
-      ),
-    }))
+    return quizzes.map((quiz) => {
+      const normalized = normalizeQuizQuestions(quiz)
+      const poolLen = Math.max(
+        normalized.questionsByTier?.easy?.length ?? 0,
+        normalized.questionsByTier?.mid?.length ?? 0,
+        normalized.questionsByTier?.hard?.length ?? 0,
+        quiz.questions?.length ?? 0,
+      )
+      return {
+        ...normalized,
+        challengeQuestionCount: normalizeChallengeQuestionCount(
+          (quiz as Partial<Quiz>).challengeQuestionCount,
+          poolLen || 1,
+        ),
+      }
+    })
   } catch {
     return []
   }
@@ -101,6 +120,60 @@ export function saveStudentResult(result: StudentResult): void {
   const results = getStudentResults()
   results.push(result)
   localStorage.setItem(RESULTS_KEY, JSON.stringify(results))
+}
+
+export function getStudents(): StudentRecord[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = localStorage.getItem(STUDENTS_KEY)
+    const parsed = raw ? (JSON.parse(raw) as StudentRecord[]) : []
+    const seen = new Set<string>()
+    const deduped: StudentRecord[] = []
+    for (const student of parsed) {
+      if (!student || typeof student.id !== 'string' || typeof student.name !== 'string') continue
+      if (seen.has(student.id)) continue
+      seen.add(student.id)
+      deduped.push(student)
+    }
+    return deduped
+  } catch {
+    return []
+  }
+}
+
+export function saveStudent(student: StudentRecord): void {
+  const students = getStudents()
+  const idx = students.findIndex((s) => s.id === student.id)
+  if (idx >= 0) {
+    students[idx] = student
+  } else {
+    students.push(student)
+  }
+  localStorage.setItem(STUDENTS_KEY, JSON.stringify(students))
+}
+
+export function saveStudents(students: StudentRecord[]): void {
+  localStorage.setItem(STUDENTS_KEY, JSON.stringify(students))
+}
+
+export function getStudentProgressMap(): Record<string, StudentProgressRecord> {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = localStorage.getItem(STUDENT_PROGRESS_KEY)
+    return raw ? (JSON.parse(raw) as Record<string, StudentProgressRecord>) : {}
+  } catch {
+    return {}
+  }
+}
+
+export function saveStudentProgressMap(map: Record<string, StudentProgressRecord>): void {
+  localStorage.setItem(STUDENT_PROGRESS_KEY, JSON.stringify(map))
+}
+
+export function upsertStudentProgressRecord(studentKey: string, record: StudentProgressRecord): void {
+  const map = getStudentProgressMap()
+  map[studentKey] = record
+  saveStudentProgressMap(map)
 }
 
 export function getAnimationSettings(): AnimationSettings {
