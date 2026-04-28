@@ -2,6 +2,8 @@
 
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
+import { LocateFixed, ZoomIn, ZoomOut } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { ChallengeMapCanvas } from '@/components/students/challenge-map/challenge-map-canvas'
 import { ChallengeMapEnvironment } from '@/components/students/challenge-map/challenge-map-environment'
 import { LevelQuestStartModal } from '@/components/students/challenge-map/level-quest-start-modal'
@@ -22,6 +24,13 @@ import {
 } from '@/lib/students/map-viewport-session'
 import type { StudentProfileView } from '@/lib/students/types'
 
+/** Peak follow zoom vs fit-width; lower = less zoom during mission intro / follow. */
+const MISSION_FOLLOW_ZOOM_FACTOR = 0.8
+
+const MAP_ZOOM_STEP = 1.12
+const MAP_MIN_SCALE_FACTOR = 0.5
+const MAP_MAX_SCALE_FACTOR = 4
+
 interface StudentMapTabProps {
   student: StudentProfileView
   fullscreen?: boolean
@@ -36,12 +45,21 @@ export function StudentMapTab({ student, fullscreen = false, introMode = null }:
   const pathSegments = useMemo(() => getStudentMapPathSegments(liveStudent.id), [liveStudent.id])
   const introStartSegment = useMemo(() => getStudentMapPathStartSegmentRaw(liveStudent.id), [liveStudent.id])
   const introLegacyStartPoint = useMemo(() => getStudentMapPathStartPoint(liveStudent.id), [liveStudent.id])
-  const initialViewport = useMemo(() => getInitialViewportState(student.id, fullscreen), [student.id, fullscreen])
+  /** Mission intro uses scripted follow camera; do not hydrate from session (second visit would set "restored" and block follow). */
+  const initialViewport = useMemo(() => {
+    if (fullscreen && introMode === 'mission') {
+      return { offset: { x: 0, y: 0 }, scale: 1, restored: false }
+    }
+    return getInitialViewportState(student.id, fullscreen)
+  }, [student.id, fullscreen, introMode])
   const [offset, setOffset] = useState(initialViewport.offset)
   const [scale, setScale] = useState(initialViewport.scale)
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const contentRef = useRef<HTMLDivElement | null>(null)
-  const hasDraggedRef = useRef(initialViewport.restored)
+  /** True only after the user actually pans the map (not session restore). */
+  const hasDraggedRef = useRef(false)
+  /** First paint: we reloaded offset/scale from sessionStorage — preserve it in syncViewport without treating it as user pan. */
+  const restoredFromSessionRef = useRef(initialViewport.restored)
   const prevViewportDepsRef = useRef<{
     introMode: typeof introMode
     liveStudentId: string
@@ -90,6 +108,7 @@ export function StudentMapTab({ student, fullscreen = false, introMode = null }:
   const introCompletedRef = useRef(introCompleted)
   introCompletedRef.current = introCompleted
 
+  /** Pan bounds: clamp desired offset so the scaled map stays inside the viewport. When the map is smaller than the viewport, offsets stay in [0, vw-cw] so a chosen point (not just the whole map) can be centered. */
   const clampOffset = useCallback((x: number, y: number, nextScale = 1) => {
     const viewport = viewportRef.current
     const content = contentRef.current
@@ -98,13 +117,13 @@ export function StudentMapTab({ student, fullscreen = false, introMode = null }:
     const viewportHeight = viewport.clientHeight
     const contentWidth = content.offsetWidth * nextScale
     const contentHeight = content.offsetHeight * nextScale
-    const centeredX = (viewportWidth - contentWidth) / 2
-    const centeredY = (viewportHeight - contentHeight) / 2
     const minX = Math.min(0, viewportWidth - contentWidth)
+    const maxX = Math.max(0, viewportWidth - contentWidth)
     const minY = Math.min(0, viewportHeight - contentHeight)
+    const maxY = Math.max(0, viewportHeight - contentHeight)
     return {
-      x: contentWidth <= viewportWidth ? centeredX : Math.max(minX, Math.min(0, x)),
-      y: contentHeight <= viewportHeight ? centeredY : Math.max(minY, Math.min(0, y)),
+      x: Math.max(minX, Math.min(maxX, x)),
+      y: Math.max(minY, Math.min(maxY, y)),
     }
   }, [])
 
@@ -138,12 +157,13 @@ export function StudentMapTab({ student, fullscreen = false, introMode = null }:
 
   const missionFollowZoom = useCallback(() => {
     const nextScale = getFitScale()
-    return Math.min(nextScale * 1.7, nextScale + 0.85)
+    const peak = Math.min(nextScale * 1.7, nextScale + 0.85)
+    return peak * MISSION_FOLLOW_ZOOM_FACTOR
   }, [getFitScale])
 
-  /** After the intro walk: stay on the character, slightly zoomed out vs the peak follow zoom. */
+  /** After the intro walk: keep the same follow zoom to avoid a visible snap. */
   const missionSettledFollowZoom = useCallback(() => {
-    return missionFollowZoom() * 0.88
+    return missionFollowZoom()
   }, [missionFollowZoom])
 
   const applySettledMissionCamera = useCallback(() => {
@@ -191,11 +211,15 @@ export function StudentMapTab({ student, fullscreen = false, introMode = null }:
       const nextScale = getFitScale()
       setScale(nextScale)
       setOffset((prev) => {
-        if (!fullscreen || hasDraggedRef.current) {
+        if (!fullscreen || hasDraggedRef.current || restoredFromSessionRef.current) {
           return clampOffset(prev.x, prev.y, nextScale)
         }
 
-        return clampOffset(0, 0, nextScale)
+        const vw = viewport.clientWidth
+        const vh = viewport.clientHeight
+        const cw = content.offsetWidth * nextScale
+        const ch = content.offsetHeight * nextScale
+        return clampOffset((vw - cw) / 2, (vh - ch) / 2, nextScale)
       })
     }
 
@@ -254,10 +278,15 @@ export function StudentMapTab({ student, fullscreen = false, introMode = null }:
   useEffect(() => {
     if (!fullscreen) return
     const id = liveStudent.id
+    const isMissionIntro = introMode === 'mission'
     return () => {
+      if (isMissionIntro) {
+        clearMapViewportSession(id)
+        return
+      }
       writeMapViewportSession(id, { offset: latestOffsetRef.current, scale: latestScaleRef.current })
     }
-  }, [fullscreen, liveStudent.id])
+  }, [fullscreen, liveStudent.id, introMode])
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (isAutoCamera) return
@@ -296,6 +325,53 @@ export function StudentMapTab({ student, fullscreen = false, introMode = null }:
     }
   }
 
+  const adjustZoom = useCallback(
+    (factor: number) => {
+      if (isAutoCamera) return
+      const viewport = viewportRef.current
+      const content = contentRef.current
+      if (!viewport || !content) return
+      const fit = getFitScale()
+      const minScale = fit * MAP_MIN_SCALE_FACTOR
+      const maxScale = fit * MAP_MAX_SCALE_FACTOR
+      const s0 = scale
+      let s1 = s0 * factor
+      if (s1 < minScale) s1 = minScale
+      if (s1 > maxScale) s1 = maxScale
+      if (Math.abs(s1 - s0) < 1e-6) return
+      const vw = viewport.clientWidth
+      const vh = viewport.clientHeight
+      const nx = vw / 2 - (vw / 2 - offset.x) * (s1 / s0)
+      const ny = vh / 2 - (vh / 2 - offset.y) * (s1 / s0)
+      hasDraggedRef.current = true
+      setScale(s1)
+      setOffset(clampOffset(nx, ny, s1))
+    },
+    [isAutoCamera, scale, offset, getFitScale, clampOffset],
+  )
+
+  const handleRecenter = useCallback(() => {
+    if (isAutoCamera) return
+    const viewport = viewportRef.current
+    const content = contentRef.current
+    if (!viewport || !content) return
+    hasDraggedRef.current = true
+    const ac = avatarCamera ?? lastMissionAvatarCameraRef.current
+    if (fullscreen && ac) {
+      const followZoom = missionFollowZoom()
+      setScale(followZoom)
+      setOffset(centerOnPoint(ac.position, followZoom))
+      return
+    }
+    const fit = getFitScale()
+    const vw = viewport.clientWidth
+    const vh = viewport.clientHeight
+    const cw = content.offsetWidth * fit
+    const ch = content.offsetHeight * fit
+    setScale(fit)
+    setOffset(clampOffset((vw - cw) / 2, (vh - ch) / 2, fit))
+  }, [isAutoCamera, fullscreen, avatarCamera, centerOnPoint, clampOffset, getFitScale, missionFollowZoom])
+
   return (
     <div className={fullscreen ? 'flex h-full min-h-0 w-full flex-col' : 'w-full'}>
       {nodes.length === 0 ? (
@@ -318,7 +394,7 @@ export function StudentMapTab({ student, fullscreen = false, introMode = null }:
           ref={viewportRef}
           className={[
             fullscreen
-              ? 'relative h-full min-h-0 w-full overflow-hidden bg-[var(--surface-2)]'
+              ? 'relative h-full min-h-0 w-full overflow-hidden overscroll-none bg-[var(--surface-2)]'
               : 'relative h-[calc(100dvh-7.5rem)] min-h-[32rem] w-full overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-2)]',
             isDragging ? 'cursor-grabbing' : 'cursor-grab',
           ].join(' ')}
@@ -354,6 +430,49 @@ export function StudentMapTab({ student, fullscreen = false, introMode = null }:
                   onWalkingAvatarMotionComplete={handleIntroMotionComplete}
                 />
               </div>
+            </div>
+          </div>
+
+          <div className="pointer-events-none absolute inset-0 z-30 flex items-end justify-end p-3">
+            <div
+              role="toolbar"
+              aria-label="Map view controls"
+              className="pointer-events-auto flex flex-col gap-1 rounded-xl border border-[var(--border)] bg-[var(--card)]/95 p-1 shadow-lg backdrop-blur-sm"
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-9 w-9"
+                aria-label="Zoom in"
+                disabled={isAutoCamera}
+                onClick={() => adjustZoom(MAP_ZOOM_STEP)}
+              >
+                <ZoomIn className="h-4 w-4" />
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-9 w-9"
+                aria-label="Zoom out"
+                disabled={isAutoCamera}
+                onClick={() => adjustZoom(1 / MAP_ZOOM_STEP)}
+              >
+                <ZoomOut className="h-4 w-4" />
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-9 w-9"
+                aria-label="Recenter map"
+                disabled={isAutoCamera}
+                onClick={handleRecenter}
+              >
+                <LocateFixed className="h-4 w-4" />
+              </Button>
             </div>
           </div>
         </div>

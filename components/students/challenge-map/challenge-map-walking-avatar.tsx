@@ -170,9 +170,15 @@ export function ChallengeMapWalkingAvatar({
 
   useEffect(() => {
     const startPt = pathPoints[0] ?? { xPct: 50, yCanvasPct: 50 }
+    const prevBeforeReset = prevPosRef.current
     prevPosRef.current = startPt
     setPos(startPt)
-    onPositionChangeRef.current?.({ position: startPt, progress: 0, isMoving: false })
+    const sameAsPrev =
+      Math.abs(prevBeforeReset.xPct - startPt.xPct) < 0.001 &&
+      Math.abs(prevBeforeReset.yCanvasPct - startPt.yCanvasPct) < 0.001
+    if (!sameAsPrev) {
+      onPositionChangeRef.current?.({ position: startPt, progress: 0, isMoving: false })
+    }
 
     if (pathPoints.length < 2 || totalLen <= 0) {
       const tickIdle = (now: number) => {
@@ -205,6 +211,10 @@ export function ChallengeMapWalkingAvatar({
       setSpriteSrc(moving ? WALK_FRAMES[frame] : idleFrameAtElapsed(now))
       onPositionChangeRef.current?.({ position: p, progress: t, isMoving: moving })
       if (mode === 'intro' && t >= 1) {
+        const terminalPoint = pointAtDistanceAlongPolyline(pathPoints, totalLen)
+        prevPosRef.current = terminalPoint
+        setPos(terminalPoint)
+        onPositionChangeRef.current?.({ position: terminalPoint, progress: 1, isMoving: false })
         onMotionCompleteRef.current?.()
         return
       }

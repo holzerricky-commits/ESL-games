@@ -60,6 +60,66 @@ export interface StudentResult {
   passedChallenge?: boolean
 }
 
+export type StudentClassStatus = 'planned' | 'prepared' | 'completed' | 'cancelled'
+
+export type BookSectionType = 'unit' | 'lesson' | 'part'
+
+export interface StudentBookSectionRef {
+  id: string
+  type: BookSectionType
+  bookId: string
+  bookTitle: string
+  unitId: string
+  unitTitle: string
+  lessonId?: string
+  lessonTitle?: string
+  partId?: string
+  partTitle?: string
+  title: string
+}
+
+export interface TeacherWeeklyScheduleConfig {
+  workingDays: number[]
+  startMinute: number
+  endMinute: number
+  slotMinutes: 30
+}
+
+export interface WeeklySlotAssignment {
+  id: string
+  dayOfWeek: number
+  startMinute: number
+  durationMinutes: 30 | 60
+  studentId: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface StudentClassSession {
+  id: string
+  title: string
+  scheduledFor: string
+  durationMin: number
+  status: StudentClassStatus
+  goals: string[]
+  activities: string[]
+  plannedVocabulary: string[]
+  /** Optional AI-generated vocabulary set linked to this class session. */
+  vocabularySetId?: string
+  vocabularySetStatus?: 'draft' | 'approved' | 'published'
+  selectedSection?: StudentBookSectionRef
+  /** Source weekly schedule slot id when session is generated automatically. */
+  sourceSlotId?: string
+  introducedWords: string[]
+  practicedWords: string[]
+  reviewedWords: string[]
+  learnedWords: string[]
+  teacherNotes?: string
+  aiPrepSummary?: string
+  createdAt: string
+  updatedAt: string
+}
+
 export interface StudentRecord {
   id: string
   name: string
@@ -84,6 +144,21 @@ export interface StudentRecord {
    * Optional polyline from entry to quest 1 (teacher-only). Last point is kept in sync with the first node.
    */
   mapPathStartSegment?: { points: Array<{ xPct: number; yCanvasPct: number }> }
+  /** Teacher-assigned curriculum books for local reader flow. */
+  assignedBookIds?: string[]
+  /** Teacher-assigned curriculum units (book+unit reference). */
+  assignedUnitRefs?: Array<{ bookId: string; unitId: string }>
+  /** Per-session reading history entries captured from the Books reader when opened from a student context. */
+  curriculumHistory?: Array<{
+    id: string
+    bookId: string
+    unitId: string
+    page: number
+    openedAt: string
+    closedAt?: string
+  }>
+  /** Scheduled class sessions for this student (teacher planning flow). */
+  scheduledClasses?: StudentClassSession[]
 }
 
 /** Distinct students from saved results, for pickers (same source as Student Results page). */

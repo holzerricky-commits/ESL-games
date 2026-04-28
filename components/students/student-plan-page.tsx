@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { StudentProfileHeader } from '@/components/students/student-profile-header'
 import { StudentPlanTabs } from '@/components/students/student-plan-tabs'
 import { TeacherDifficultyStripInline } from '@/components/students/teacher-difficulty-strip-inline'
+import { TeacherStudentDeletePanel } from '@/components/students/teacher-student-delete-panel'
 import type { StudentProfileTab, StudentProfileView } from '@/lib/students/types'
 
 interface StudentPlanPageProps {
@@ -33,7 +34,10 @@ export function StudentPlanPage({ student, studentId, activeTab, onDataUpdated }
           <TeacherDifficultyStripInline student={student} studentId={studentId} onUpdated={onDataUpdated} />
         }
       />
-      <StudentPlanTabs student={student} studentId={studentId} activeTab={activeTab} onDataUpdated={onDataUpdated} />
+      <div className="mx-auto w-full max-w-7xl">
+        <StudentPlanTabs student={student} studentId={studentId} activeTab={activeTab} onDataUpdated={onDataUpdated} />
+        <TeacherStudentDeletePanel studentId={studentId} studentName={student.name} />
+      </div>
     </>
   )
 }

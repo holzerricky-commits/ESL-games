@@ -1,0 +1,60 @@
+{
+  "books": [
+    {
+      "id": "cambridge-kids-1",
+      "title": "Cambridge Kids Book 1",
+      "description": "Primary ESL core book",
+      "units": [
+        {
+          "id": "unit-01",
+          "title": "Unit 1",
+          "filePath": "book-library/Cambridge-Kids-Book-1/Unit-01.pdf"
+        },
+        {
+          "id": "unit-02",
+          "title": "Unit 2",
+          "filePath": "book-library/Cambridge-Kids-Book-1/Unit-02.pdf"
+        }
+      ]
+    },
+    {
+      "id": "oxford-stars-2",
+      "title": "Oxford Stars Book 2",
+      "description": "Supplementary conversation practice",
+      "units": [
+        {
+          "id": "unit-01",
+          "title": "Unit 1",
+          "filePath": "book-library/Oxford-Stars-Book-2/Unit-01.pdf"
+        }
+      ]
+    },
+    {
+      "id": "example-one-pdf-many-units",
+      "title": "Example: one full PDF split into units",
+      "description": "Structure-only example with units, lessons, and parts.",
+      "units": [
+        {
+          "id": "unit-01",
+          "title": "Unit 1",
+          "filePath": "book-library/Example-Full-Book/full-book.pdf",
+          "lessons": [
+            {
+              "id": "lesson-01",
+              "title": "Lesson 1: Greetings",
+              "parts": [
+                { "id": "part-01", "title": "Warm-up" },
+                { "id": "part-02", "title": "Practice" }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "unit-02",
+          "title": "Unit 2",
+          "filePath": "book-library/Example-Full-Book/full-book.pdf"
+        }
+      ]
+    }
+  ]
+}

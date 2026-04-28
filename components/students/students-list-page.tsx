@@ -16,6 +16,7 @@ import {
 import { StudentsSearchBar } from '@/components/students/students-search-bar'
 import { StudentCard } from '@/components/students/student-card'
 import { StudentsEmptyState } from '@/components/students/students-empty-state'
+import type { BookLibraryPayload } from '@/lib/books/types'
 import { addStudentRecord, getStudentsListView } from '@/lib/students/selectors'
 import { DEFAULT_PLAY_TIER, DIFFICULTY_TIER_LABELS, DIFFICULTY_TIERS } from '@/lib/quiz-difficulty'
 import type { StudentListItemView } from '@/lib/students/types'
@@ -31,13 +32,35 @@ export function StudentsListPage() {
   const [defaultDifficultyTier, setDefaultDifficultyTier] = useState<DifficultyTier>(DEFAULT_PLAY_TIER)
   const [formError, setFormError] = useState('')
   const [reloadTick, setReloadTick] = useState(0)
+  const [bookLibrary, setBookLibrary] = useState<BookLibraryPayload | null>(null)
   useEffect(() => {
     setIsHydrated(true)
   }, [])
 
+  useEffect(() => {
+    let cancelled = false
+    void fetch('/api/books')
+      .then(async (res) => {
+        const payload = (await res.json()) as BookLibraryPayload | { error?: string }
+        if (!res.ok || !payload || !Array.isArray((payload as BookLibraryPayload).books)) {
+          return { books: [] } as BookLibraryPayload
+        }
+        return payload as BookLibraryPayload
+      })
+      .then((lib) => {
+        if (!cancelled) setBookLibrary(lib)
+      })
+      .catch(() => {
+        if (!cancelled) setBookLibrary({ books: [] })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const students: StudentListItemView[] = useMemo(
-    () => (isHydrated ? getStudentsListView() : []),
-    [isHydrated, reloadTick],
+    () => (isHydrated ? getStudentsListView(bookLibrary ?? undefined) : []),
+    [isHydrated, reloadTick, bookLibrary],
   )
 
   const filteredStudents = useMemo(() => {
@@ -87,7 +110,7 @@ export function StudentsListPage() {
       {filteredStudents.length === 0 ? (
         <StudentsEmptyState hasSearch={query.trim().length > 0} />
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-[repeat(auto-fill,minmax(18rem,1fr))] xl:grid-cols-[repeat(auto-fill,minmax(18.5rem,1fr))]">
           {filteredStudents.map((student) => (
             <StudentCard key={student.id} student={student} />
           ))}

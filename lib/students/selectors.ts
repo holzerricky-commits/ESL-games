@@ -1,4 +1,5 @@
 import { buildChallengeCatalogForQuizIds } from '@/lib/challenges'
+import { mapPdfPageToDisplayLabel, type PageNumberingMode } from '@/lib/books/page-numbering'
 import { DEFAULT_PLAY_TIER } from '@/lib/quiz-difficulty'
 import {
   getKnownStudentSummaries,
@@ -22,12 +23,104 @@ import {
   type MapPathPoint,
   type MapPathSegments,
 } from '@/lib/students/challenge-map-layout'
+import type { BookLibraryPayload, BookRecord, BookUnitRecord } from '@/lib/books/types'
 import type { StudentListItemView, StudentProfileTab, StudentProfileView } from '@/lib/students/types'
-import type { ChallengeDefinition, DifficultyTier, StudentProgressRecord, StudentRecord } from '@/lib/types'
+import type {
+  ChallengeDefinition,
+  BookSectionType,
+  DifficultyTier,
+  StudentBookSectionRef,
+  StudentClassSession,
+  StudentClassStatus,
+  StudentProgressRecord,
+  StudentRecord,
+  TeacherWeeklyScheduleConfig,
+  WeeklySlotAssignment,
+} from '@/lib/types'
 
-const PROFILE_TABS: StudentProfileTab[] = ['overview', 'practice', 'challenges', 'map', 'avatar', 'info']
+const NEXT_CLASS_LIST_PLACEHOLDER = 'No class scheduled.'
+const WEEKLY_SCHEDULE_CONFIG_KEY = 'esl_weekly_schedule_config'
+const WEEKLY_SLOT_ASSIGNMENTS_KEY = 'esl_weekly_slot_assignments'
+const SLOT_MINUTES = 30 as const
+
+const PROFILE_TABS: StudentProfileTab[] = ['challenges', 'curriculum', 'classes', 'map', 'avatar', 'info']
 export type StudentMapNodeLayout = Record<string, { xPct: number; yPct: number }>
 export type StudentMapPathSegments = MapPathSegments
+export interface StudentCurriculumSessionInput {
+  bookId: string
+  unitId: string
+  page: number
+  openedAt?: string
+  closedAt?: string
+}
+
+export interface StudentClassSessionInput {
+  title: string
+  scheduledFor: string
+  durationMin: number
+  status?: StudentClassStatus
+  goals?: string[]
+  activities?: string[]
+  plannedVocabulary?: string[]
+}
+
+export interface StudentClassOutcomeInput {
+  introducedWords?: string[]
+  practicedWords?: string[]
+  reviewedWords?: string[]
+  learnedWords?: string[]
+  teacherNotes?: string
+}
+
+export interface StudentClassPrepContext {
+  studentName: string
+  classTitle: string
+  scheduledFor: string
+  classDurationMin: number
+  plannedVocabulary: string[]
+  goals: string[]
+  activities: string[]
+  selectedSection?: StudentBookSectionRef
+  sectionContext?: {
+    title: string
+    type: BookSectionType
+    pathLabel: string
+    startPageHint?: number
+    endPageHint?: number
+    sectionVocabulary: string[]
+    checkpointIdeas: string[]
+    contentSummary: string
+  }
+  studentSnapshot: {
+    levelLabel: string
+    motivation: 'low' | 'medium' | 'high'
+    firstOrEarlyClasses: boolean
+  }
+  recentHistory: Array<{
+    title: string
+    status: StudentClassStatus
+    scheduledFor: string
+    selectedSectionTitle?: string
+    introducedWords: string[]
+    practicedWords: string[]
+    reviewedWords: string[]
+    learnedWords: string[]
+    notes?: string
+  }>
+}
+
+export interface WeeklySlotAssignmentInput {
+  dayOfWeek: number
+  startMinute: number
+  durationMinutes: 30 | 60
+  studentId: string
+}
+
+export interface StudentSectionOption extends StudentBookSectionRef {
+  pathLabel: string
+  startPageHint?: number
+  endPageHint?: number
+}
 
 function challengeIdToQuizId(challengeId: string): string {
   return challengeId.startsWith('challenge-') ? challengeId.slice('challenge-'.length) : challengeId
@@ -83,8 +176,236 @@ function formatLastActive(iso: string): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
-export function getStudentsListView(): StudentListItemView[] {
+function dedupeTrimmed(values: string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const raw of values) {
+    const v = raw.trim()
+    if (!v) continue
+    const key = v.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(v)
+  }
+  return out
+}
+
+function normalizeClassStatus(status: unknown): StudentClassStatus {
+  return status === 'prepared' || status === 'completed' || status === 'cancelled' ? status : 'planned'
+}
+
+function sanitizeSelectedSection(raw: unknown): StudentBookSectionRef | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const source = raw as Partial<StudentBookSectionRef>
+  const id = typeof source.id === 'string' ? source.id.trim() : ''
+  const title = typeof source.title === 'string' ? source.title.trim() : ''
+  const bookId = typeof source.bookId === 'string' ? source.bookId.trim() : ''
+  const bookTitle = typeof source.bookTitle === 'string' ? source.bookTitle.trim() : ''
+  const unitId = typeof source.unitId === 'string' ? source.unitId.trim() : ''
+  const unitTitle = typeof source.unitTitle === 'string' ? source.unitTitle.trim() : ''
+  const type: BookSectionType =
+    source.type === 'part' || source.type === 'lesson' || source.type === 'unit' ? source.type : 'unit'
+  if (!id || !title || !bookId || !bookTitle || !unitId || !unitTitle) return undefined
+  return {
+    id,
+    type,
+    bookId,
+    bookTitle,
+    unitId,
+    unitTitle,
+    lessonId: typeof source.lessonId === 'string' && source.lessonId.trim() ? source.lessonId.trim() : undefined,
+    lessonTitle:
+      typeof source.lessonTitle === 'string' && source.lessonTitle.trim() ? source.lessonTitle.trim() : undefined,
+    partId: typeof source.partId === 'string' && source.partId.trim() ? source.partId.trim() : undefined,
+    partTitle: typeof source.partTitle === 'string' && source.partTitle.trim() ? source.partTitle.trim() : undefined,
+    title,
+  }
+}
+
+function flattenUnitSections(book: BookRecord, unit: BookUnitRecord): StudentSectionOption[] {
+  const out: StudentSectionOption[] = []
+  const unitBase = {
+    bookId: book.id,
+    bookTitle: book.title,
+    unitId: unit.id,
+    unitTitle: unit.title,
+  }
+  if (!unit.lessons?.length) {
+    out.push({
+      id: `unit:${book.id}:${unit.id}`,
+      type: 'unit',
+      ...unitBase,
+      title: unit.title,
+      pathLabel: `${book.title} / ${unit.title}`,
+      startPageHint: unit.startPageHint,
+      endPageHint: unit.endPageHint,
+    })
+    return out
+  }
+  for (const lesson of unit.lessons) {
+    if (lesson.parts?.length) {
+      for (const part of lesson.parts) {
+        out.push({
+          id: `part:${book.id}:${unit.id}:${lesson.id}:${part.id}`,
+          type: 'part',
+          ...unitBase,
+          lessonId: lesson.id,
+          lessonTitle: lesson.title,
+          partId: part.id,
+          partTitle: part.title,
+          title: part.title,
+          pathLabel: `${book.title} / ${unit.title} / ${lesson.title} / ${part.title}`,
+          startPageHint: part.startPageHint ?? lesson.startPageHint ?? unit.startPageHint,
+          endPageHint: part.endPageHint ?? lesson.endPageHint ?? unit.endPageHint,
+        })
+      }
+      continue
+    }
+    out.push({
+      id: `lesson:${book.id}:${unit.id}:${lesson.id}`,
+      type: 'lesson',
+      ...unitBase,
+      lessonId: lesson.id,
+      lessonTitle: lesson.title,
+      title: lesson.title,
+      pathLabel: `${book.title} / ${unit.title} / ${lesson.title}`,
+      startPageHint: lesson.startPageHint ?? unit.startPageHint,
+      endPageHint: lesson.endPageHint ?? unit.endPageHint,
+    })
+  }
+  return out
+}
+
+function sanitizeClassSession(raw: Partial<StudentClassSession> | null | undefined): StudentClassSession | null {
+  if (!raw || typeof raw.id !== 'string' || typeof raw.title !== 'string' || typeof raw.scheduledFor !== 'string')
+    return null
+  const id = raw.id.trim()
+  const title = raw.title.trim()
+  const scheduledFor = raw.scheduledFor.trim()
+  if (!id || !title || !scheduledFor) return null
+  const now = new Date().toISOString()
+  return {
+    id,
+    sourceSlotId: typeof raw.sourceSlotId === 'string' && raw.sourceSlotId.trim() ? raw.sourceSlotId.trim() : undefined,
+    title,
+    scheduledFor,
+    durationMin:
+      typeof raw.durationMin === 'number' && Number.isFinite(raw.durationMin)
+        ? Math.max(15, Math.min(240, Math.floor(raw.durationMin)))
+        : 45,
+    status: normalizeClassStatus(raw.status),
+    goals: dedupeTrimmed(Array.isArray(raw.goals) ? raw.goals : []),
+    activities: dedupeTrimmed(Array.isArray(raw.activities) ? raw.activities : []),
+    plannedVocabulary: dedupeTrimmed(Array.isArray(raw.plannedVocabulary) ? raw.plannedVocabulary : []),
+    vocabularySetId:
+      typeof raw.vocabularySetId === 'string' && raw.vocabularySetId.trim() ? raw.vocabularySetId.trim() : undefined,
+    vocabularySetStatus:
+      raw.vocabularySetStatus === 'draft' || raw.vocabularySetStatus === 'approved' || raw.vocabularySetStatus === 'published'
+        ? raw.vocabularySetStatus
+        : undefined,
+    selectedSection: sanitizeSelectedSection(raw.selectedSection),
+    introducedWords: dedupeTrimmed(Array.isArray(raw.introducedWords) ? raw.introducedWords : []),
+    practicedWords: dedupeTrimmed(Array.isArray(raw.practicedWords) ? raw.practicedWords : []),
+    reviewedWords: dedupeTrimmed(Array.isArray(raw.reviewedWords) ? raw.reviewedWords : []),
+    learnedWords: dedupeTrimmed(Array.isArray(raw.learnedWords) ? raw.learnedWords : []),
+    teacherNotes: typeof raw.teacherNotes === 'string' && raw.teacherNotes.trim() ? raw.teacherNotes.trim() : undefined,
+    aiPrepSummary:
+      typeof raw.aiPrepSummary === 'string' && raw.aiPrepSummary.trim() ? raw.aiPrepSummary.trim() : undefined,
+    createdAt: typeof raw.createdAt === 'string' && raw.createdAt.trim() ? raw.createdAt : now,
+    updatedAt: typeof raw.updatedAt === 'string' && raw.updatedAt.trim() ? raw.updatedAt : now,
+  }
+}
+
+function sanitizeWeeklyScheduleConfig(
+  raw: Partial<TeacherWeeklyScheduleConfig> | null | undefined,
+): TeacherWeeklyScheduleConfig {
+  const rawDays = Array.isArray(raw?.workingDays) ? raw.workingDays : [1, 2, 3, 4, 5]
+  const workingDays = Array.from(
+    new Set(
+      rawDays
+        .map((day) => Number(day))
+        .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6),
+    ),
+  ).sort((a, b) => a - b)
+  const startMinute = Number.isFinite(raw?.startMinute) ? Number(raw?.startMinute) : 9 * 60
+  const endMinute = Number.isFinite(raw?.endMinute) ? Number(raw?.endMinute) : 17 * 60
+  const normalizedStart = Math.max(0, Math.min(23 * 60 + 30, Math.floor(startMinute / SLOT_MINUTES) * SLOT_MINUTES))
+  const normalizedEnd = Math.max(
+    normalizedStart + SLOT_MINUTES,
+    Math.min(24 * 60, Math.floor(endMinute / SLOT_MINUTES) * SLOT_MINUTES),
+  )
+  return {
+    workingDays: workingDays.length > 0 ? workingDays : [1, 2, 3, 4, 5],
+    startMinute: normalizedStart,
+    endMinute: normalizedEnd,
+    slotMinutes: SLOT_MINUTES,
+  }
+}
+
+function sanitizeWeeklySlotAssignment(raw: Partial<WeeklySlotAssignment> | null | undefined): WeeklySlotAssignment | null {
+  if (!raw || typeof raw.id !== 'string' || typeof raw.studentId !== 'string') return null
+  const id = raw.id.trim()
+  const studentId = raw.studentId.trim()
+  if (!id || !studentId) return null
+  const dayOfWeek = Number(raw.dayOfWeek)
+  const startMinute = Number(raw.startMinute)
+  const durationMinutes = Number(raw.durationMinutes) === 60 ? 60 : 30
+  if (!Number.isInteger(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6) return null
+  if (!Number.isFinite(startMinute)) return null
+  const nowIso = new Date().toISOString()
+  return {
+    id,
+    dayOfWeek,
+    startMinute: Math.max(0, Math.min(23 * 60 + 30, Math.floor(startMinute / SLOT_MINUTES) * SLOT_MINUTES)),
+    durationMinutes,
+    studentId,
+    createdAt: typeof raw.createdAt === 'string' && raw.createdAt.trim() ? raw.createdAt : nowIso,
+    updatedAt: typeof raw.updatedAt === 'string' && raw.updatedAt.trim() ? raw.updatedAt : nowIso,
+  }
+}
+
+function overlapsSlot(a: WeeklySlotAssignment, b: WeeklySlotAssignment): boolean {
+  if (a.dayOfWeek !== b.dayOfWeek) return false
+  const aStart = a.startMinute
+  const aEnd = a.startMinute + a.durationMinutes
+  const bStart = b.startMinute
+  const bEnd = b.startMinute + b.durationMinutes
+  return aStart < bEnd && bStart < aEnd
+}
+
+function isoForSlotDate(date: Date, startMinute: number): string {
+  const out = new Date(date)
+  out.setHours(0, 0, 0, 0)
+  out.setMinutes(startMinute)
+  return out.toISOString()
+}
+
+function sortClassesByDate(sessions: StudentClassSession[]): StudentClassSession[] {
+  return [...sessions].sort((a, b) => new Date(a.scheduledFor).getTime() - new Date(b.scheduledFor).getTime())
+}
+
+function computeNextClass(sessions: StudentClassSession[]): StudentClassSession | null {
+  const now = Date.now()
+  const upcoming = sessions
+    .filter((session) => {
+      if (session.status === 'completed' || session.status === 'cancelled') return false
+      const ms = new Date(session.scheduledFor).getTime()
+      return Number.isFinite(ms) && ms >= now
+    })
+    .sort((a, b) => new Date(a.scheduledFor).getTime() - new Date(b.scheduledFor).getTime())
+  return upcoming[0] ?? null
+}
+
+function formatNextClassLabel(nextClass: StudentClassSession | null): string {
+  if (!nextClass) return NEXT_CLASS_LIST_PLACEHOLDER
+  const date = new Date(nextClass.scheduledFor)
+  if (Number.isNaN(date.getTime())) return nextClass.title
+  return `${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · ${nextClass.title}`
+}
+
+export function getStudentsListView(library?: BookLibraryPayload | null): StudentListItemView[] {
   ensureStudentAssignmentsMigrated()
+  generateScheduledClassesWindow(30)
   const knownStudents = getKnownStudentSummaries()
   const storedStudents = getStudents()
   const studentsByKey = new Map(storedStudents.map((student) => [normalizeStudentKey(student.name), student]))
@@ -144,6 +465,14 @@ export function getStudentsListView(): StudentListItemView[] {
         ? `${Math.round((completedCount / catalog.length) * 100)}% progress`
         : estimateProgress(known?.totalQuizzes ?? 0)
 
+    const curriculum = resolveCurriculumForStudentCard(student, library)
+    const scheduledClasses = sortClassesByDate(
+      (student.scheduledClasses ?? [])
+        .map((session) => sanitizeClassSession(session))
+        .filter((session): session is StudentClassSession => !!session),
+    )
+    const nextClass = computeNextClass(scheduledClasses)
+
     return {
       id: student.id,
       studentKey,
@@ -154,6 +483,13 @@ export function getStudentsListView(): StudentListItemView[] {
       currentChallengeLabel,
       totalAttempts: known?.totalQuizzes ?? 0,
       lastActiveLabel: known ? formatLastActive(known.lastDate) : 'No activity yet',
+      nextClassLabel: formatNextClassLabel(nextClass),
+      curriculumBookLabel: curriculum.book,
+      curriculumUnitLabel: curriculum.unit,
+      curriculumPageLabel: curriculum.page,
+      curriculumThumbFilePath: curriculum.thumbFilePath,
+      curriculumThumbUnitId: curriculum.thumbUnitId,
+      curriculumThumbPage: curriculum.thumbPage,
     }
   })
 
@@ -162,6 +498,7 @@ export function getStudentsListView(): StudentListItemView[] {
 }
 
 export function getStudentProfileView(studentId: string): StudentProfileView | null {
+  generateScheduledClassesWindow(30)
   const students = getStudentsListView()
   const student =
     students.find((item) => item.id === studentId) ??
@@ -170,6 +507,11 @@ export function getStudentProfileView(studentId: string): StudentProfileView | n
     )
   if (!student) return null
   const registryRecord = getStudents().find((s) => s.id === student.id)
+  const scheduledClasses = sortClassesByDate(
+    (registryRecord?.scheduledClasses ?? [])
+      .map((session) => sanitizeClassSession(session))
+      .filter((session): session is StudentClassSession => !!session),
+  )
   const progress = getStudentProgressMap()[student.studentKey]
   const challengeItems = getChallengeItemsForStudent(student.studentKey)
   const challengeTitleById = new Map(challengeItems.map((item) => [item.id, item.title]))
@@ -212,6 +554,12 @@ export function getStudentProfileView(studentId: string): StudentProfileView | n
     avatarSummary: 'Avatar unlocks and cosmetics will plug in here.',
     infoSummary: 'Your teacher manages your path and settings from the plan screen.',
     defaultDifficultyTier: registryRecord?.defaultDifficultyTier ?? DEFAULT_PLAY_TIER,
+    assignedBookIds: dedupeStrings(registryRecord?.assignedBookIds ?? []),
+    assignedUnitRefs: dedupeUnitRefs(registryRecord?.assignedUnitRefs ?? []),
+    curriculumHistory: [...(registryRecord?.curriculumHistory ?? [])].sort(
+      (a, b) => new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime(),
+    ),
+    scheduledClasses,
   }
 }
 
@@ -253,12 +601,659 @@ function dedupeQuizIds(ids: string[]): string[] {
   return out
 }
 
+function dedupeStrings(ids: string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const id of ids) {
+    const trimmed = id.trim()
+    if (!trimmed || seen.has(trimmed)) continue
+    seen.add(trimmed)
+    out.push(trimmed)
+  }
+  return out
+}
+
+function dedupeUnitRefs(
+  refs: Array<{ bookId: string; unitId: string }>,
+): Array<{ bookId: string; unitId: string }> {
+  const seen = new Set<string>()
+  const out: Array<{ bookId: string; unitId: string }> = []
+  for (const ref of refs) {
+    const bookId = ref.bookId.trim()
+    const unitId = ref.unitId.trim()
+    if (!bookId || !unitId) continue
+    const key = `${bookId}::${unitId}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({ bookId, unitId })
+  }
+  return out
+}
+
+function resolveCurriculumForStudentCard(
+  record: StudentRecord,
+  library: BookLibraryPayload | null | undefined,
+  numberingMode: PageNumberingMode = 'mapped',
+): {
+  book: string
+  unit: string
+  page: string
+  thumbFilePath: string | null
+  thumbUnitId: string | null
+  thumbPage: number | null
+} {
+  const books = library?.books ?? []
+  const bookMap = new Map(books.map((b) => [b.id, b]))
+  const resolveBook = (bookId: string) => {
+    const t = bookMap.get(bookId)?.title?.trim()
+    return t || bookId || '—'
+  }
+  const resolveUnit = (bookId: string, unitId: string) => {
+    const unit = bookMap.get(bookId)?.units.find((u) => u.id === unitId)
+    const t = unit?.title?.trim()
+    return t || unitId || '—'
+  }
+  const unitFilePath = (bookId: string, unitId: string): string | null => {
+    const fp = bookMap.get(bookId)?.units.find((u) => u.id === unitId)?.filePath?.trim()
+    return fp || null
+  }
+
+  const history = [...(record.curriculumHistory ?? [])].sort(
+    (a, b) => new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime(),
+  )
+  if (history.length > 0) {
+    const h = history[0]
+    const pageNum = Number.isFinite(h.page) ? Math.max(1, Math.floor(h.page)) : 1
+    const histBook = bookMap.get(h.bookId)
+    const histUnit = histBook?.units.find((u) => u.id === h.unitId)
+    const displayPage = mapPdfPageToDisplayLabel(
+      pageNum,
+      histBook,
+      histUnit,
+      histUnit?.pdfPageRange?.end ?? null,
+      numberingMode,
+    )
+    const fp = unitFilePath(h.bookId, h.unitId)
+    return {
+      book: resolveBook(h.bookId),
+      unit: resolveUnit(h.bookId, h.unitId),
+      page: displayPage,
+      thumbFilePath: fp,
+      thumbUnitId: fp ? h.unitId : null,
+      thumbPage: fp ? pageNum : null,
+    }
+  }
+
+  const refs = dedupeUnitRefs(record.assignedUnitRefs ?? [])
+  if (refs.length > 0) {
+    const r = refs[0]
+    const fp = unitFilePath(r.bookId, r.unitId)
+    return {
+      book: resolveBook(r.bookId),
+      unit: resolveUnit(r.bookId, r.unitId),
+      page: '—',
+      thumbFilePath: fp,
+      thumbUnitId: fp ? r.unitId : null,
+      thumbPage: fp ? 1 : null,
+    }
+  }
+
+  const bookIds = record.assignedBookIds ?? []
+  if (bookIds.length > 0) {
+    const bid = bookIds[0]
+    return {
+      book: resolveBook(bid),
+      unit: '—',
+      page: '—',
+      thumbFilePath: null,
+      thumbUnitId: null,
+      thumbPage: null,
+    }
+  }
+
+  return {
+    book: 'Not assigned',
+    unit: '—',
+    page: '—',
+    thumbFilePath: null,
+    thumbUnitId: null,
+    thumbPage: null,
+  }
+}
+
 /** Ordered challenge path for a student; used by the teacher Challenges tab. */
 export function getStudentAssignedQuizIds(studentId: string): string[] | null {
   ensureStudentAssignmentsMigrated()
   const student = getStudents().find((s) => s.id === studentId)
   if (!student) return null
   return Array.isArray(student.assignedQuizIds) ? [...student.assignedQuizIds] : []
+}
+
+export function getTeacherWeeklyScheduleConfig(): TeacherWeeklyScheduleConfig {
+  if (typeof window === 'undefined') return sanitizeWeeklyScheduleConfig(null)
+  try {
+    const raw = localStorage.getItem(WEEKLY_SCHEDULE_CONFIG_KEY)
+    const parsed = raw ? (JSON.parse(raw) as Partial<TeacherWeeklyScheduleConfig>) : null
+    return sanitizeWeeklyScheduleConfig(parsed)
+  } catch {
+    return sanitizeWeeklyScheduleConfig(null)
+  }
+}
+
+export function saveTeacherWeeklyScheduleConfig(input: Partial<TeacherWeeklyScheduleConfig>): { ok: true } {
+  if (typeof window !== 'undefined') {
+    const next = sanitizeWeeklyScheduleConfig(input)
+    localStorage.setItem(WEEKLY_SCHEDULE_CONFIG_KEY, JSON.stringify(next))
+  }
+  generateScheduledClassesWindow(30)
+  return { ok: true }
+}
+
+export function getWeeklySlotAssignments(): WeeklySlotAssignment[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = localStorage.getItem(WEEKLY_SLOT_ASSIGNMENTS_KEY)
+    const parsed = raw ? (JSON.parse(raw) as Array<Partial<WeeklySlotAssignment>>) : []
+    return parsed
+      .map((item) => sanitizeWeeklySlotAssignment(item))
+      .filter((item): item is WeeklySlotAssignment => !!item)
+      .sort((a, b) => (a.dayOfWeek - b.dayOfWeek) || (a.startMinute - b.startMinute))
+  } catch {
+    return []
+  }
+}
+
+function saveWeeklySlotAssignments(next: WeeklySlotAssignment[]): void {
+  if (typeof window === 'undefined') return
+  localStorage.setItem(WEEKLY_SLOT_ASSIGNMENTS_KEY, JSON.stringify(next))
+}
+
+export function upsertWeeklySlotAssignment(
+  input: WeeklySlotAssignmentInput,
+): { ok: true; assignment: WeeklySlotAssignment } | { ok: false; error: string } {
+  const students = getStudents()
+  if (!students.some((student) => student.id === input.studentId)) {
+    return { ok: false, error: 'Student not found.' }
+  }
+  const dayOfWeek = Number(input.dayOfWeek)
+  const startMinute = Number(input.startMinute)
+  const durationMinutes = input.durationMinutes === 60 ? 60 : 30
+  if (!Number.isInteger(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6) {
+    return { ok: false, error: 'Invalid day of week.' }
+  }
+  if (!Number.isFinite(startMinute) || startMinute < 0 || startMinute > 23 * 60 + 30) {
+    return { ok: false, error: 'Invalid start time.' }
+  }
+  const assignment: WeeklySlotAssignment = {
+    id: `slot-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    dayOfWeek,
+    startMinute: Math.floor(startMinute / SLOT_MINUTES) * SLOT_MINUTES,
+    durationMinutes,
+    studentId: input.studentId,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }
+  const config = getTeacherWeeklyScheduleConfig()
+  const assignmentEnd = assignment.startMinute + assignment.durationMinutes
+  if (assignment.startMinute < config.startMinute || assignmentEnd > config.endMinute) {
+    return { ok: false, error: 'Slot is outside your configured teaching time range.' }
+  }
+  const assignments = getWeeklySlotAssignments()
+  const collision = assignments.find((existing) => overlapsSlot(existing, assignment))
+  if (collision) {
+    return { ok: false, error: 'This slot overlaps with another scheduled class.' }
+  }
+  const next = [...assignments, assignment].sort((a, b) => (a.dayOfWeek - b.dayOfWeek) || (a.startMinute - b.startMinute))
+  saveWeeklySlotAssignments(next)
+  generateScheduledClassesWindow(30)
+  return { ok: true, assignment }
+}
+
+export function removeWeeklySlotAssignment(slotId: string): { ok: true } | { ok: false; error: string } {
+  const assignments = getWeeklySlotAssignments()
+  const next = assignments.filter((assignment) => assignment.id !== slotId)
+  if (next.length === assignments.length) return { ok: false, error: 'Slot assignment not found.' }
+  saveWeeklySlotAssignments(next)
+  generateScheduledClassesWindow(30)
+  return { ok: true }
+}
+
+export function getStudentScheduledClasses(studentId: string): StudentClassSession[] {
+  generateScheduledClassesWindow(30)
+  const student = getStudents().find((row) => row.id === studentId)
+  if (!student) return []
+  return sortClassesByDate(
+    (student.scheduledClasses ?? [])
+      .map((session) => sanitizeClassSession(session))
+      .filter((session): session is StudentClassSession => !!session),
+  )
+}
+
+export function getStudentSectionOptions(studentId: string, library: BookLibraryPayload | null): StudentSectionOption[] {
+  if (!library?.books?.length) return []
+  const student = getStudents().find((row) => row.id === studentId)
+  if (!student) return []
+  const assignedUnitRefs = dedupeUnitRefs(student.assignedUnitRefs ?? [])
+  const out: StudentSectionOption[] = []
+  const pushUnitSections = (bookId: string, unitId: string) => {
+    const book = library.books.find((item) => item.id === bookId)
+    const unit = book?.units.find((item) => item.id === unitId)
+    if (!book || !unit) return
+    out.push(...flattenUnitSections(book, unit))
+  }
+  if (assignedUnitRefs.length) {
+    for (const ref of assignedUnitRefs) pushUnitSections(ref.bookId, ref.unitId)
+  } else {
+    for (const bookId of dedupeStrings(student.assignedBookIds ?? [])) {
+      const book = library.books.find((item) => item.id === bookId)
+      if (!book) continue
+      for (const unit of book.units) out.push(...flattenUnitSections(book, unit))
+    }
+  }
+  return out
+}
+
+export function resolveNextSectionForClass(
+  studentId: string,
+  classId: string,
+  library: BookLibraryPayload | null,
+): StudentSectionOption | null {
+  const options = getStudentSectionOptions(studentId, library)
+  if (!options.length) return null
+  const sessions = getStudentScheduledClasses(studentId)
+  const current = sessions.find((session) => session.id === classId)
+  if (!current) return options[0] ?? null
+  const completed = sessions
+    .filter(
+      (session) =>
+        session.id !== classId &&
+        session.status === 'completed' &&
+        !!session.selectedSection &&
+        new Date(session.scheduledFor).getTime() <= new Date(current.scheduledFor).getTime(),
+    )
+    .sort((a, b) => new Date(b.scheduledFor).getTime() - new Date(a.scheduledFor).getTime())
+  const lastCompletedId = completed[0]?.selectedSection?.id
+  if (!lastCompletedId) return options[0] ?? null
+  const index = options.findIndex((option) => option.id === lastCompletedId)
+  if (index < 0) return options[0] ?? null
+  return options[index + 1] ?? options[index] ?? options[0] ?? null
+}
+
+export function generateScheduledClassesWindow(daysAhead: number = 30): { ok: true } {
+  if (typeof window === 'undefined') return { ok: true }
+  const windowDays = Math.max(1, Math.min(90, Math.floor(daysAhead || 30)))
+  const assignments = getWeeklySlotAssignments()
+  if (assignments.length === 0) return { ok: true }
+
+  const students = getStudents()
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const horizon = new Date(today)
+  horizon.setDate(horizon.getDate() + windowDays)
+  const dayCursor = new Date(today)
+
+  const generatedByStudent = new Map<string, StudentClassSession[]>()
+  while (dayCursor < horizon) {
+    const day = dayCursor.getDay()
+    const dayAssignments = assignments.filter((slot) => slot.dayOfWeek === day)
+    for (const slot of dayAssignments) {
+      const student = students.find((row) => row.id === slot.studentId)
+      if (!student) continue
+      const scheduledFor = isoForSlotDate(dayCursor, slot.startMinute)
+      const existing = (student.scheduledClasses ?? []).find(
+        (session) => session.sourceSlotId === slot.id && new Date(session.scheduledFor).toISOString() === new Date(scheduledFor).toISOString(),
+      )
+      if (existing) continue
+      const nowIso = new Date().toISOString()
+      const generated: StudentClassSession = {
+        id: `class-${slot.id}-${scheduledFor.slice(0, 10)}`,
+        sourceSlotId: slot.id,
+        title: `${student.name} class`,
+        scheduledFor,
+        durationMin: slot.durationMinutes,
+        status: 'planned',
+        goals: [],
+        activities: [],
+        plannedVocabulary: [],
+        introducedWords: [],
+        practicedWords: [],
+        reviewedWords: [],
+        learnedWords: [],
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      }
+      generatedByStudent.set(slot.studentId, [...(generatedByStudent.get(slot.studentId) ?? []), generated])
+    }
+    dayCursor.setDate(dayCursor.getDate() + 1)
+  }
+
+  if (generatedByStudent.size === 0) return { ok: true }
+  for (const [studentId, generated] of generatedByStudent.entries()) {
+    const idx = students.findIndex((row) => row.id === studentId)
+    if (idx < 0) continue
+    const current = students[idx]
+    const merged = sortClassesByDate(
+      [...(current.scheduledClasses ?? []), ...generated]
+        .map((session) => sanitizeClassSession(session))
+        .filter((session): session is StudentClassSession => !!session),
+    )
+    saveStudent({
+      ...current,
+      scheduledClasses: merged,
+      updatedAt: new Date().toISOString(),
+    })
+  }
+  return { ok: true }
+}
+
+export function buildStudentClassPrepContext(
+  studentId: string,
+  classId: string,
+  library?: BookLibraryPayload | null,
+): StudentClassPrepContext | { error: string } {
+  const student = getStudents().find((row) => row.id === studentId)
+  if (!student) return { error: 'Student not found.' }
+  const sessions = getStudentScheduledClasses(studentId)
+  const target = sessions.find((session) => session.id === classId)
+  if (!target) return { error: 'Class session not found.' }
+  const sectionOptions = getStudentSectionOptions(studentId, library ?? null)
+  const resolvedSection =
+    target.selectedSection ??
+    resolveNextSectionForClass(studentId, classId, library ?? null) ??
+    sectionOptions[0] ??
+    undefined
+  const resolvedOption = resolvedSection ? sectionOptions.find((option) => option.id === resolvedSection.id) : undefined
+  const sectionVocabulary = dedupeTrimmed([
+    ...target.plannedVocabulary,
+    ...target.goals.flatMap((goal) => goal.split(/\s+/)),
+    ...target.activities.flatMap((activity) => activity.split(/\s+/)),
+  ]).filter((token) => token.length >= 4)
+  const checkpointIdeas: string[] =
+    resolvedOption?.type === 'part' && /vocab|word/i.test(resolvedOption.title)
+      ? ['Tap each target word and explain meaning in context.', 'Finish with a quick 4-item retrieval check.']
+      : ['Pause halfway for a comprehension check question.', 'End with a short recap and one transfer question.']
+  const recentHistory = sessions
+    .filter((session) => session.id !== classId)
+    .sort((a, b) => new Date(b.scheduledFor).getTime() - new Date(a.scheduledFor).getTime())
+    .slice(0, 3)
+    .map((session) => ({
+      title: session.title,
+      status: session.status,
+      scheduledFor: session.scheduledFor,
+      selectedSectionTitle: session.selectedSection?.title,
+      introducedWords: session.introducedWords,
+      practicedWords: session.practicedWords,
+      reviewedWords: session.reviewedWords,
+      learnedWords: session.learnedWords,
+      notes: session.teacherNotes,
+    }))
+  return {
+    studentName: student.name,
+    classTitle: target.title,
+    scheduledFor: target.scheduledFor,
+    classDurationMin: target.durationMin,
+    plannedVocabulary: target.plannedVocabulary,
+    goals: target.goals,
+    activities: target.activities,
+    selectedSection: resolvedSection,
+    sectionContext: resolvedSection
+      ? {
+          title: resolvedSection.title,
+          type: resolvedSection.type,
+          pathLabel: resolvedOption?.pathLabel ?? resolvedSection.title,
+          startPageHint: resolvedOption?.startPageHint,
+          endPageHint: resolvedOption?.endPageHint,
+          sectionVocabulary: sectionVocabulary.slice(0, 12),
+          checkpointIdeas,
+          contentSummary:
+            resolvedOption?.type === 'part'
+              ? `Focus on ${resolvedSection.title} as a sub-section in ${resolvedSection.lessonTitle ?? resolvedSection.unitTitle}.`
+              : `Focus on ${resolvedSection.title} in ${resolvedSection.unitTitle}.`,
+        }
+      : undefined,
+    studentSnapshot: {
+      levelLabel: estimateLevel(getKnownStudentSummaries().find((row) => normalizeStudentKey(row.name) === normalizeStudentKey(student.name))?.totalQuizzes ?? 0),
+      motivation: recentHistory.length === 0 ? 'medium' : 'high',
+      firstOrEarlyClasses:
+        recentHistory.filter((entry) => entry.status === 'completed').length < 3,
+    },
+    recentHistory,
+  }
+}
+
+export function updateStudentCurriculumAssignments(
+  studentId: string,
+  next: {
+    assignedBookIds: string[]
+    assignedUnitRefs: Array<{ bookId: string; unitId: string }>
+  },
+): { ok: true } | { ok: false; error: string } {
+  const students = getStudents()
+  const idx = students.findIndex((s) => s.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const prev = students[idx]
+  saveStudent({
+    ...prev,
+    assignedBookIds: dedupeStrings(next.assignedBookIds),
+    assignedUnitRefs: dedupeUnitRefs(next.assignedUnitRefs),
+    updatedAt: new Date().toISOString(),
+  })
+  return { ok: true }
+}
+
+export function appendStudentCurriculumSession(
+  studentId: string,
+  session: StudentCurriculumSessionInput,
+): { ok: true } | { ok: false; error: string } {
+  const students = getStudents()
+  const idx = students.findIndex((s) => s.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const prev = students[idx]
+  const nowIso = new Date().toISOString()
+  const item = {
+    id: `sess-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    bookId: session.bookId.trim(),
+    unitId: session.unitId.trim(),
+    page: Math.max(1, Math.floor(session.page || 1)),
+    openedAt: session.openedAt ?? nowIso,
+    closedAt: session.closedAt,
+  }
+  if (!item.bookId || !item.unitId) return { ok: false, error: 'Invalid curriculum session.' }
+  const history = [item, ...(prev.curriculumHistory ?? [])].slice(0, 500)
+  saveStudent({
+    ...prev,
+    curriculumHistory: history,
+    updatedAt: nowIso,
+  })
+  return { ok: true }
+}
+
+export function upsertStudentClassSession(
+  studentId: string,
+  input: StudentClassSessionInput,
+): { ok: true; session: StudentClassSession } | { ok: false; error: string } {
+  const students = getStudents()
+  const idx = students.findIndex((s) => s.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  const title = input.title.trim()
+  if (!title) return { ok: false, error: 'Class title is required.' }
+  const whenIso = input.scheduledFor.trim()
+  if (!whenIso) return { ok: false, error: 'Class date/time is required.' }
+  const nowIso = new Date().toISOString()
+  const sessionId = `class-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const session: StudentClassSession = {
+    id: sessionId,
+    title,
+    scheduledFor: whenIso,
+    durationMin: Math.max(15, Math.min(240, Math.floor(input.durationMin || 45))),
+    status: normalizeClassStatus(input.status),
+    goals: dedupeTrimmed(input.goals ?? []),
+    activities: dedupeTrimmed(input.activities ?? []),
+    plannedVocabulary: dedupeTrimmed(input.plannedVocabulary ?? []),
+    introducedWords: [],
+    practicedWords: [],
+    reviewedWords: [],
+    learnedWords: [],
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  }
+  const nextSessions = sortClassesByDate([...(student.scheduledClasses ?? []), session])
+  saveStudent({
+    ...student,
+    scheduledClasses: nextSessions,
+    updatedAt: nowIso,
+  })
+  return { ok: true, session }
+}
+
+export function transitionStudentClassStatus(
+  studentId: string,
+  classId: string,
+  status: StudentClassStatus,
+): { ok: true } | { ok: false; error: string } {
+  const students = getStudents()
+  const idx = students.findIndex((s) => s.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  const nowIso = new Date().toISOString()
+  let found = false
+  const nextSessions: StudentClassSession[] = (student.scheduledClasses ?? []).map((session) => {
+    if (session.id !== classId) return session
+    found = true
+    return { ...session, status: normalizeClassStatus(status), updatedAt: nowIso }
+  })
+  if (!found) return { ok: false, error: 'Class session not found.' }
+  saveStudent({
+    ...student,
+    scheduledClasses: nextSessions,
+    updatedAt: nowIso,
+  })
+  return { ok: true }
+}
+
+export function recordStudentClassOutcome(
+  studentId: string,
+  classId: string,
+  outcome: StudentClassOutcomeInput,
+): { ok: true } | { ok: false; error: string } {
+  const students = getStudents()
+  const idx = students.findIndex((s) => s.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  const nowIso = new Date().toISOString()
+  let found = false
+  const nextSessions: StudentClassSession[] = (student.scheduledClasses ?? []).map((session) => {
+    if (session.id !== classId) return session
+    found = true
+    return {
+      ...session,
+      status: session.status === 'cancelled' ? session.status : 'completed',
+      introducedWords: dedupeTrimmed(outcome.introducedWords ?? []),
+      practicedWords: dedupeTrimmed(outcome.practicedWords ?? []),
+      reviewedWords: dedupeTrimmed(outcome.reviewedWords ?? []),
+      learnedWords: dedupeTrimmed(outcome.learnedWords ?? []),
+      teacherNotes: outcome.teacherNotes?.trim() || undefined,
+      updatedAt: nowIso,
+    }
+  })
+  if (!found) return { ok: false, error: 'Class session not found.' }
+  saveStudent({
+    ...student,
+    scheduledClasses: nextSessions,
+    updatedAt: nowIso,
+  })
+  return { ok: true }
+}
+
+export function updateStudentClassSelectedSection(
+  studentId: string,
+  classId: string,
+  selectedSection: StudentBookSectionRef | null,
+): { ok: true } | { ok: false; error: string } {
+  const students = getStudents()
+  const idx = students.findIndex((s) => s.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  const nowIso = new Date().toISOString()
+  let found = false
+  const nextSessions = (student.scheduledClasses ?? []).map((session) => {
+    if (session.id !== classId) return session
+    found = true
+    return {
+      ...session,
+      selectedSection: selectedSection ?? undefined,
+      updatedAt: nowIso,
+    }
+  })
+  if (!found) return { ok: false, error: 'Class session not found.' }
+  saveStudent({
+    ...student,
+    scheduledClasses: nextSessions,
+    updatedAt: nowIso,
+  })
+  return { ok: true }
+}
+
+export function updateStudentClassPrepSummary(
+  studentId: string,
+  classId: string,
+  aiPrepSummary: string,
+): { ok: true } | { ok: false; error: string } {
+  const students = getStudents()
+  const idx = students.findIndex((s) => s.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  const nowIso = new Date().toISOString()
+  let found = false
+  const nextSessions = (student.scheduledClasses ?? []).map((session) => {
+    if (session.id !== classId) return session
+    found = true
+    return {
+      ...session,
+      status: session.status === 'planned' ? 'prepared' : session.status,
+      aiPrepSummary: aiPrepSummary.trim() || undefined,
+      updatedAt: nowIso,
+    }
+  })
+  if (!found) return { ok: false, error: 'Class session not found.' }
+  saveStudent({
+    ...student,
+    scheduledClasses: nextSessions,
+    updatedAt: nowIso,
+  })
+  return { ok: true }
+}
+
+export function updateStudentClassPublishedVocabulary(
+  studentId: string,
+  classId: string,
+  payload: { setId: string; status: 'draft' | 'approved' | 'published'; words: string[] },
+): { ok: true } | { ok: false; error: string } {
+  const students = getStudents()
+  const idx = students.findIndex((s) => s.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  const nowIso = new Date().toISOString()
+  let found = false
+  const nextSessions = (student.scheduledClasses ?? []).map((session) => {
+    if (session.id !== classId) return session
+    found = true
+    return {
+      ...session,
+      plannedVocabulary: dedupeTrimmed(payload.words),
+      vocabularySetId: payload.setId,
+      vocabularySetStatus: payload.status,
+      updatedAt: nowIso,
+    }
+  })
+  if (!found) return { ok: false, error: 'Class session not found.' }
+  saveStudent({
+    ...student,
+    scheduledClasses: nextSessions,
+    updatedAt: nowIso,
+  })
+  return { ok: true }
 }
 
 export function updateStudentChallengeAssignments(

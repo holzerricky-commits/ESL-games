@@ -1,8 +1,6 @@
 'use client'
 
 import Link from 'next/link'
-import { StudentOverviewTab } from '@/components/students/tabs/student-overview-tab'
-import { StudentPracticeTab } from '@/components/students/tabs/student-practice-tab'
 import { StudentChallengesTab } from '@/components/students/tabs/student-challenges-tab'
 import { StudentMapTab } from '@/components/students/tabs/student-map-tab'
 import { StudentAvatarTab } from '@/components/students/tabs/student-avatar-tab'
@@ -33,9 +31,9 @@ export function StudentProfileTabs({
   showContent = true,
   listClassName,
 }: StudentProfileTabsProps) {
+  const effectiveTab: StudentProfileTab =
+    activeTab === 'curriculum' || activeTab === 'classes' ? 'challenges' : activeTab
   const tabs: Array<{ value: StudentProfileTab; label: string }> = [
-    { value: 'overview', label: 'Overview' },
-    { value: 'practice', label: 'Practice' },
     { value: 'challenges', label: 'Challenges' },
     { value: 'map', label: 'Map' },
     { value: 'avatar', label: 'Avatar' },
@@ -55,8 +53,8 @@ export function StudentProfileTabs({
             <Link
               key={tab.value}
               href={tabHref(tab.value)}
-              aria-current={activeTab === tab.value ? 'page' : undefined}
-              className={`${profileTabTriggerClass} ${activeTab === tab.value ? activeProfileTabClass : ''}`}
+              aria-current={effectiveTab === tab.value ? 'page' : undefined}
+              className={`${profileTabTriggerClass} ${effectiveTab === tab.value ? activeProfileTabClass : ''}`}
             >
               {tab.label}
             </Link>
@@ -66,12 +64,10 @@ export function StudentProfileTabs({
 
       {showContent ? (
         <>
-          {activeTab === 'overview' ? <StudentOverviewTab student={student} /> : null}
-          {activeTab === 'practice' ? <StudentPracticeTab student={student} /> : null}
-          {activeTab === 'challenges' ? <StudentChallengesTab student={student} /> : null}
-          {activeTab === 'map' ? <StudentMapTab key={student.id} student={student} /> : null}
-          {activeTab === 'avatar' ? <StudentAvatarTab student={student} /> : null}
-          {activeTab === 'info' ? <StudentInfoTab student={student} /> : null}
+          {effectiveTab === 'challenges' ? <StudentChallengesTab student={student} /> : null}
+          {effectiveTab === 'map' ? <StudentMapTab key={student.id} student={student} /> : null}
+          {effectiveTab === 'avatar' ? <StudentAvatarTab student={student} /> : null}
+          {effectiveTab === 'info' ? <StudentInfoTab student={student} /> : null}
         </>
       ) : null}
     </div>

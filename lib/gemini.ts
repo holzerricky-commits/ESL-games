@@ -184,7 +184,8 @@ function sanitizeList(words: unknown, count: number): string[] {
 
 let resolvedApiKey: string | null | undefined
 
-async function resolveGeminiApiKey(): Promise<string | null> {
+/** Shared for Gemini-backed API routes (vocabulary and prep helpers). */
+export async function resolveGeminiApiKey(): Promise<string | null> {
   if (resolvedApiKey !== undefined) return resolvedApiKey
 
   const fromEnv = process.env.GEMINI_API_KEY?.trim()
@@ -1183,4 +1184,392 @@ Return only valid JSON: {"phrases":{"lemma":"phrase",...}} with every lemma abov
   const expected = new Set(normalized)
   const parsed = parseImagePhrases(result.text, expected)
   return parsed
+}
+
+export interface ClassPrepSuggestionInput {
+  studentName: string
+  classTitle: string
+  scheduledFor: string
+  classDurationMin: number
+  plannedVocabulary: string[]
+  goals: string[]
+  activities: string[]
+  selectedSection?: {
+    id: string
+    type: 'unit' | 'lesson' | 'part'
+    bookId: string
+    bookTitle: string
+    unitId: string
+    unitTitle: string
+    lessonId?: string
+    lessonTitle?: string
+    partId?: string
+    partTitle?: string
+    title: string
+  }
+  sectionContext?: {
+    title: string
+    type: 'unit' | 'lesson' | 'part'
+    pathLabel: string
+    startPageHint?: number
+    endPageHint?: number
+    sectionVocabulary: string[]
+    checkpointIdeas: string[]
+    contentSummary: string
+  }
+  studentSnapshot: {
+    levelLabel: string
+    motivation: 'low' | 'medium' | 'high'
+    firstOrEarlyClasses: boolean
+  }
+  recentHistory: Array<{
+    title: string
+    status: string
+    scheduledFor: string
+    selectedSectionTitle?: string
+    introducedWords: string[]
+    practicedWords: string[]
+    reviewedWords: string[]
+    learnedWords: string[]
+    notes?: string
+  }>
+}
+
+export interface ClassPrepSuggestionResult {
+  priorities: string[]
+  activities: string[]
+  timeBlocks: Array<{
+    label: string
+    minutes: number
+    objective: string
+    activityType: string
+    teacherMoves?: string[]
+    studentOutput?: string
+    checkForUnderstanding?: string
+  }>
+  checkpointMoments: string[]
+  differentiationTips: string[]
+  homeworkOrCarryOver: string[]
+  wordsToRevisit: Array<{ word: string; reason: string }>
+  summary: string
+}
+
+const CLASS_PREP_SYSTEM_PROMPT = `You are an ESL teaching assistant helping a teacher prepare one lesson.
+
+Return ONLY valid JSON with this shape:
+{
+  "priorities": ["..."],
+  "activities": ["..."],
+  "timeBlocks": [{ "label": "...", "minutes": 0, "objective": "...", "activityType": "...", "teacherMoves": ["..."], "studentOutput": "...", "checkForUnderstanding": "..." }],
+  "checkpointMoments": ["..."],
+  "differentiationTips": ["..."],
+  "homeworkOrCarryOver": ["..."],
+  "wordsToRevisit": [{ "word": "...", "reason": "..." }],
+  "summary": "..."
+}
+
+Rules:
+- Keep responses concise and practical for one class session.
+- Priorities: 2-5 items.
+- Activities: 2-5 items with concrete in-class actions.
+- TimeBlocks: 3-8 blocks and total minutes close to class duration.
+- For 25-30 minute lessons: compact pacing with quick review + one high-value checkpoint.
+- For 50-60 minute lessons: include deeper guided practice and a final quest/challenge.
+- Each TimeBlock should include short teacher moves, expected student output, and one quick check for understanding.
+- CheckpointMoments: 1-4 quick checks tied to the selected section.
+- DifferentiationTips: 1-4 tips adapted to student level and motivation.
+- HomeworkOrCarryOver: 1-3 actionable next-step tasks.
+- WordsToRevisit: include important words that need reinforcement based on history.
+- Summary: 1-2 sentences, max 300 characters.
+- Use plain ASCII text only.`
+
+function normalizeSuggestionLines(values: unknown, max: number): string[] {
+  if (!Array.isArray(values)) return []
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const raw of values) {
+    if (typeof raw !== 'string') continue
+    const line = raw.trim()
+    if (!line) continue
+    const key = line.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(line)
+    if (out.length >= max) break
+  }
+  return out
+}
+
+function parseClassPrepSuggestion(text: string): ClassPrepSuggestionResult | null {
+  const clean = text.trim()
+  let jsonText = clean
+  if (clean.startsWith('```')) {
+    jsonText = clean.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')
+  }
+  const parsed = JSON.parse(jsonText) as {
+    priorities?: unknown
+    activities?: unknown
+    timeBlocks?: unknown
+    checkpointMoments?: unknown
+    differentiationTips?: unknown
+    homeworkOrCarryOver?: unknown
+    wordsToRevisit?: unknown
+    summary?: unknown
+  }
+  const priorities = normalizeSuggestionLines(parsed.priorities, 5)
+  const activities = normalizeSuggestionLines(parsed.activities, 5)
+  const checkpointMoments = normalizeSuggestionLines(parsed.checkpointMoments, 4)
+  const differentiationTips = normalizeSuggestionLines(parsed.differentiationTips, 4)
+  const homeworkOrCarryOver = normalizeSuggestionLines(parsed.homeworkOrCarryOver, 3)
+  const timeBlocks = Array.isArray(parsed.timeBlocks)
+    ? parsed.timeBlocks
+        .map((entry) => {
+          if (!entry || typeof entry !== 'object') return null
+          const label = String((entry as { label?: unknown }).label ?? '').trim()
+          const minutes = Number((entry as { minutes?: unknown }).minutes ?? 0)
+          const objective = String((entry as { objective?: unknown }).objective ?? '').trim()
+          const activityType = String((entry as { activityType?: unknown }).activityType ?? '').trim()
+          if (!label || !objective || !activityType || !Number.isFinite(minutes) || minutes <= 0) return null
+          const teacherMoves = normalizeSuggestionLines((entry as { teacherMoves?: unknown }).teacherMoves, 4)
+          const studentOutput = String((entry as { studentOutput?: unknown }).studentOutput ?? '').trim() || undefined
+          const checkForUnderstanding =
+            String((entry as { checkForUnderstanding?: unknown }).checkForUnderstanding ?? '').trim() || undefined
+          return {
+            label,
+            minutes: Math.floor(minutes),
+            objective,
+            activityType,
+            teacherMoves,
+            studentOutput,
+            checkForUnderstanding,
+          }
+        })
+        .filter(
+          (
+            entry,
+          ): entry is {
+            label: string
+            minutes: number
+            objective: string
+            activityType: string
+            teacherMoves?: string[]
+            studentOutput?: string
+            checkForUnderstanding?: string
+          } => !!entry,
+        )
+        .slice(0, 8)
+    : []
+  const wordsToRevisit = Array.isArray(parsed.wordsToRevisit)
+    ? parsed.wordsToRevisit
+        .map((entry) => {
+          if (!entry || typeof entry !== 'object') return null
+          const word = String((entry as { word?: unknown }).word ?? '').trim()
+          const reason = String((entry as { reason?: unknown }).reason ?? '').trim()
+          if (!word || !reason) return null
+          return { word, reason }
+        })
+        .filter((entry): entry is { word: string; reason: string } => !!entry)
+        .slice(0, 8)
+    : []
+  const summary = typeof parsed.summary === 'string' ? parsed.summary.trim() : ''
+  if (
+    !summary &&
+    priorities.length === 0 &&
+    activities.length === 0 &&
+    wordsToRevisit.length === 0 &&
+    timeBlocks.length === 0
+  )
+    return null
+  return {
+    priorities,
+    activities,
+    timeBlocks,
+    checkpointMoments,
+    differentiationTips,
+    homeworkOrCarryOver,
+    wordsToRevisit,
+    summary: summary || 'Focus on high-value review words and active speaking practice this class.',
+  }
+}
+
+export async function generateClassPrepSuggestion(
+  input: ClassPrepSuggestionInput,
+): Promise<ClassPrepSuggestionResult> {
+  const key = await resolveGeminiApiKey()
+  if (!key) {
+    return {
+      priorities: ['Review key words from previous classes.', 'Keep speaking practice in short loops.'],
+      activities: ['3-minute warm-up recap', 'Pair sentence building with target words'],
+      timeBlocks: [
+        {
+          label: 'Warm-up review',
+          minutes: 6,
+          objective: 'Activate previous vocabulary.',
+          activityType: 'review',
+          teacherMoves: ['Prompt open speaking with 2 easy questions.'],
+          studentOutput: '2-3 spoken responses using known words.',
+          checkForUnderstanding: 'Can student answer without heavy prompting?',
+        },
+        {
+          label: 'Guided practice',
+          minutes: 14,
+          objective: 'Practice target section skills.',
+          activityType: 'practice',
+          teacherMoves: ['Model one item, then guide two examples.'],
+          studentOutput: 'Reads and uses key words in short sentences.',
+          checkForUnderstanding: '1 quick comprehension check at midpoint.',
+        },
+        {
+          label: 'Quick check and close',
+          minutes: 5,
+          objective: 'Check understanding and set next step.',
+          activityType: 'checkpoint',
+          teacherMoves: ['Ask one transfer question and summarize next step.'],
+          studentOutput: 'One short recap statement.',
+          checkForUnderstanding: 'Exit ticket: one correct answer and one sentence.',
+        },
+      ],
+      checkpointMoments: ['Midpoint comprehension check with one multiple-choice question.'],
+      differentiationTips: ['Use sentence frames if the student needs scaffolding.'],
+      homeworkOrCarryOver: ['Review five key words and create one sentence per word.'],
+      wordsToRevisit: [],
+      summary: 'Use a short review cycle and reinforce words that appeared recently but are not stable yet.',
+    }
+  }
+
+  const modelCandidates = await resolveModelCandidates(key)
+  const prompt = `Student: ${input.studentName}
+Class: ${input.classTitle}
+Scheduled: ${input.scheduledFor}
+Class duration (minutes): ${input.classDurationMin}
+Planned vocabulary: ${input.plannedVocabulary.join(', ') || '(none)'}
+Goals: ${input.goals.join(' | ') || '(none)'}
+Planned activities: ${input.activities.join(' | ') || '(none)'}
+Selected section: ${input.selectedSection ? `${input.selectedSection.title} [${input.selectedSection.type}]` : '(none)'}
+Selected section path: ${input.sectionContext?.pathLabel || '(none)'}
+Section content summary: ${input.sectionContext?.contentSummary || '(none)'}
+Section target vocabulary: ${input.sectionContext?.sectionVocabulary.join(', ') || '(none)'}
+Section checkpoint ideas: ${input.sectionContext?.checkpointIdeas.join(' | ') || '(none)'}
+Student level: ${input.studentSnapshot.levelLabel}
+Student motivation: ${input.studentSnapshot.motivation}
+First or early classes: ${input.studentSnapshot.firstOrEarlyClasses ? 'yes' : 'no'}
+
+Recent class history:
+${input.recentHistory
+  .map(
+    (entry, idx) =>
+      `${idx + 1}) ${entry.title} [${entry.status}] ${entry.scheduledFor}
+section: ${entry.selectedSectionTitle || '(none)'}
+introduced: ${entry.introducedWords.join(', ') || '(none)'}
+practiced: ${entry.practicedWords.join(', ') || '(none)'}
+reviewed: ${entry.reviewedWords.join(', ') || '(none)'}
+learned: ${entry.learnedWords.join(', ') || '(none)'}
+notes: ${entry.notes || '(none)'}`,
+  )
+  .join('\n\n')}`
+
+  const result = await callGeminiWithFallback(key, prompt, modelCandidates, CLASS_PREP_SYSTEM_PROMPT)
+  if (!result.ok) {
+    return {
+      priorities: ['Review high-value words from recent sessions.', 'Prioritize speaking output over passive recognition.'],
+      activities: ['Target-word role-play', 'Quick exit ticket with 3 sentences'],
+      timeBlocks: [
+        {
+          label: 'Warm-up',
+          minutes: 8,
+          objective: 'Reactivate previous learning.',
+          activityType: 'review',
+          teacherMoves: ['Lead free speaking around previous lesson keywords.'],
+          studentOutput: 'Short spoken answers with target vocabulary.',
+          checkForUnderstanding: 'Quick recall check on 3 prior words.',
+        },
+        {
+          label: 'Main section task',
+          minutes: 18,
+          objective: 'Practice the selected section actively.',
+          activityType: 'guided-practice',
+          teacherMoves: ['Model, then shift to student-led responses.'],
+          studentOutput: 'Reads and produces target language in context.',
+          checkForUnderstanding: 'MCQ or prompt question after key chunk.',
+        },
+        {
+          label: 'Mini challenge',
+          minutes: 8,
+          objective: 'Apply skills in a short challenge.',
+          activityType: 'challenge',
+          teacherMoves: ['Run time-boxed challenge and give immediate feedback.'],
+          studentOutput: 'Completes challenge task with minimal help.',
+          checkForUnderstanding: 'Score or correctness check at challenge end.',
+        },
+        {
+          label: 'Wrap-up',
+          minutes: 6,
+          objective: 'Assess understanding and set carry-over.',
+          activityType: 'reflection',
+          teacherMoves: ['Prompt recap and assign one carry-over task.'],
+          studentOutput: 'States one key takeaway and one next action.',
+          checkForUnderstanding: 'Exit prompt in one sentence.',
+        },
+      ],
+      checkpointMoments: ['Ask one key comprehension question after the main task.'],
+      differentiationTips: ['Increase support by modeling one answer before independent work.'],
+      homeworkOrCarryOver: ['Prepare three sentences using today’s target words.'],
+      wordsToRevisit: [],
+      summary: 'Run a review-heavy class and keep students producing target vocabulary in context.',
+    }
+  }
+
+  try {
+    const parsed = parseClassPrepSuggestion(result.text)
+    if (parsed) return parsed
+  } catch {
+    /* fall through */
+  }
+  return {
+    priorities: ['Review high-value words from recent sessions.', 'Prioritize speaking output over passive recognition.'],
+    activities: ['Target-word role-play', 'Quick exit ticket with 3 sentences'],
+    timeBlocks: [
+      {
+        label: 'Warm-up',
+        minutes: 8,
+        objective: 'Reactivate previous learning.',
+        activityType: 'review',
+        teacherMoves: ['Lead free speaking around previous lesson keywords.'],
+        studentOutput: 'Short spoken answers with target vocabulary.',
+        checkForUnderstanding: 'Quick recall check on 3 prior words.',
+      },
+      {
+        label: 'Main section task',
+        minutes: 18,
+        objective: 'Practice the selected section actively.',
+        activityType: 'guided-practice',
+        teacherMoves: ['Model, then shift to student-led responses.'],
+        studentOutput: 'Reads and produces target language in context.',
+        checkForUnderstanding: 'MCQ or prompt question after key chunk.',
+      },
+      {
+        label: 'Mini challenge',
+        minutes: 8,
+        objective: 'Apply skills in a short challenge.',
+        activityType: 'challenge',
+        teacherMoves: ['Run time-boxed challenge and give immediate feedback.'],
+        studentOutput: 'Completes challenge task with minimal help.',
+        checkForUnderstanding: 'Score or correctness check at challenge end.',
+      },
+      {
+        label: 'Wrap-up',
+        minutes: 6,
+        objective: 'Assess understanding and set carry-over.',
+        activityType: 'reflection',
+        teacherMoves: ['Prompt recap and assign one carry-over task.'],
+        studentOutput: 'States one key takeaway and one next action.',
+        checkForUnderstanding: 'Exit prompt in one sentence.',
+      },
+    ],
+    checkpointMoments: ['Ask one key comprehension question after the main task.'],
+    differentiationTips: ['Increase support by modeling one answer before independent work.'],
+    homeworkOrCarryOver: ['Prepare three sentences using today’s target words.'],
+    wordsToRevisit: [],
+    summary: 'Run a review-heavy class and keep students producing target vocabulary in context.',
+  }
 }

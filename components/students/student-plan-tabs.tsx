@@ -4,6 +4,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { TeacherChallengePathTab } from '@/components/students/teacher-challenge-path-tab'
+import { StudentCurriculumTab } from '@/components/students/tabs/student-curriculum-tab'
+import { StudentClassesTab } from '@/components/students/tabs/student-classes-tab'
 import type { StudentProfileTab, StudentProfileView } from '@/lib/students/types'
 
 interface StudentPlanTabsProps {
@@ -41,14 +43,14 @@ export function StudentPlanTabs({ student, studentId, activeTab, onDataUpdated }
   return (
     <Tabs value={activeTab} onValueChange={handleTabChange} className="gap-4">
       <TabsList className="h-auto w-full flex-wrap justify-start gap-2 rounded-xl bg-[var(--surface-2)] p-2">
-        <TabsTrigger value="overview" className="flex-none">
-          Overview
-        </TabsTrigger>
-        <TabsTrigger value="practice" className="flex-none">
-          Practice
-        </TabsTrigger>
         <TabsTrigger value="challenges" className="flex-none">
           Challenges
+        </TabsTrigger>
+        <TabsTrigger value="curriculum" className="flex-none">
+          Curriculum
+        </TabsTrigger>
+        <TabsTrigger value="classes" className="flex-none">
+          Classes
         </TabsTrigger>
         <TabsTrigger value="avatar" className="flex-none">
           Avatar
@@ -58,14 +60,14 @@ export function StudentPlanTabs({ student, studentId, activeTab, onDataUpdated }
         </TabsTrigger>
       </TabsList>
 
-      <TabsContent value="overview">
-        <OtherTabPlaceholder studentId={studentId} label="Overview" />
-      </TabsContent>
-      <TabsContent value="practice">
-        <OtherTabPlaceholder studentId={studentId} label="Practice" />
-      </TabsContent>
       <TabsContent value="challenges">
         <TeacherChallengePathTab student={student} onUpdated={onDataUpdated} />
+      </TabsContent>
+      <TabsContent value="curriculum">
+        <StudentCurriculumTab student={student} />
+      </TabsContent>
+      <TabsContent value="classes">
+        <StudentClassesTab student={student} onUpdated={onDataUpdated} />
       </TabsContent>
       <TabsContent value="avatar">
         <OtherTabPlaceholder studentId={studentId} label="Avatar" />

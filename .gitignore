@@ -24,3 +24,14 @@ coverage/
 .env
 .env.*
 *.log
+
+# Local-only book library (large PDFs, teacher assets)
+book-library/**
+!book-library/.gitkeep
+!book-library/README.md
+!book-library/books.example.json
+
+# Local-only student exports and homework (teacher machine)
+student-work/**
+!student-work/.gitkeep
+!student-work/README.md

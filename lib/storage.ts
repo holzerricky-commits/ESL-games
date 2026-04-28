@@ -6,6 +6,10 @@ import type {
   StudentProgressRecord,
   StudentRecord,
 } from './types'
+import { removeAnnotationsForStudent } from './books/annotation-storage'
+import { removeAllPageNotesForStudent } from './books/page-notes-storage'
+import { normalizeStudentKey } from './students/identity'
+import { clearMapViewportSession } from './students/map-viewport-session'
 import { normalizeQuizQuestions } from './quiz-difficulty'
 
 const QUIZZES_KEY = 'esl_quizzes'
@@ -191,4 +195,57 @@ export function getAnimationSettings(): AnimationSettings {
 
 export function saveAnimationSettings(settings: AnimationSettings): void {
   localStorage.setItem(ANIMATION_SETTINGS_KEY, JSON.stringify(settings))
+}
+
+/**
+ * Remove the student record and related browser data (progress, quiz results keyed by name,
+ * book annotations, page notes, map viewport session). Does not touch the `student-work` disk folder.
+ */
+export function removeStudentFromBrowserStorage(studentId: string): { ok: true; name: string } | { ok: false } {
+  if (typeof window === 'undefined') return { ok: false }
+  const students = getStudents()
+  const record = students.find((s) => s.id === studentId)
+  if (!record) return { ok: false }
+
+  const key = normalizeStudentKey(record.name)
+  saveStudents(students.filter((s) => s.id !== studentId))
+
+  const progressMap = getStudentProgressMap()
+  if (key in progressMap) {
+    const nextProgress = { ...progressMap }
+    delete nextProgress[key]
+    saveStudentProgressMap(nextProgress)
+  }
+
+  const results = getStudentResults()
+  const nextResults = results.filter((r) => normalizeStudentKey(r.studentName) !== key)
+  if (nextResults.length !== results.length) {
+    localStorage.setItem(RESULTS_KEY, JSON.stringify(nextResults))
+  }
+
+  removeAnnotationsForStudent(studentId)
+  removeAllPageNotesForStudent(studentId)
+  clearMapViewportSession(studentId)
+
+  return { ok: true, name: record.name }
+}
+
+/** Deletes `student-work/<studentId>` on the machine running the Next.js server (local dev / local start). */
+export async function removeStudentWorkFolderOnServer(studentId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const res = await fetch('/api/student-work/delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ studentId }),
+  })
+  let data: { error?: string; detail?: string } = {}
+  try {
+    data = (await res.json()) as { error?: string; detail?: string }
+  } catch {
+    /* ignore */
+  }
+  if (!res.ok) {
+    const detail = data.detail ? ` ${data.detail}` : ''
+    return { ok: false, error: `${data.error ?? 'Request failed'}${detail}`.trim() }
+  }
+  return { ok: true }
 }

@@ -1,0 +1,250 @@
+{
+  "id": "76229ce15ec703eb",
+  "status": "draft",
+  "context": {
+    "studentId": "stu_wu8oz216mo5xlnxl",
+    "classId": "class-slot-1776689989836-tw6lqj-2026-04-21",
+    "classTitle": "Cassie class",
+    "bookId": "journeys-g3-book-1",
+    "unitId": "unit-1-846acbd3",
+    "sectionId": "part:journeys-g3-book-1:unit-1-846acbd3:lesson-a77c6dd5:part-bb28e3c4",
+    "sectionTitle": "Vocabulary in Context",
+    "pageRange": {
+      "startPage": 10,
+      "endPage": 10
+    }
+  },
+  "entries": [
+    {
+      "id": "1c09f0dd4ce531d7",
+      "word": "admired",
+      "lemma": "admire",
+      "definition": "To look at someone with respect.",
+      "examples": [
+        "I admired my teacher for being so kind.",
+        "The boy admired the hero in the book."
+      ],
+      "synonyms": [
+        "respected"
+      ],
+      "antonyms": [
+        "disliked"
+      ],
+      "sourcePage": 10,
+      "approved": false,
+      "updatedAt": "2026-04-28T17:52:55.880Z"
+    },
+    {
+      "id": "f0012c10160f1bee",
+      "word": "classmate",
+      "lemma": "classmate",
+      "definition": "A person who is in the same class at school.",
+      "examples": [
+        "My classmate helped me with my homework.",
+        "I sat next to my classmate at lunch."
+      ],
+      "synonyms": [
+        "peer"
+      ],
+      "antonyms": [
+        "stranger"
+      ],
+      "sourcePage": 10,
+      "approved": false,
+      "updatedAt": "2026-04-28T17:52:55.881Z"
+    },
+    {
+      "id": "a2ce227b19fbeb05",
+      "word": "community",
+      "lemma": "community",
+      "definition": "A group of people who live in the same area.",
+      "examples": [
+        "Our community has a beautiful park.",
+        "Everyone in the community helped clean the street."
+      ],
+      "synonyms": [
+        "neighborhood"
+      ],
+      "antonyms": [
+        "individual"
+      ],
+      "sourcePage": 10,
+      "approved": false,
+      "updatedAt": "2026-04-28T17:52:55.881Z"
+    },
+    {
+      "id": "2b008411682671d8",
+      "word": "contribute",
+      "lemma": "contribute",
+      "definition": "To give something to help a group.",
+      "examples": [
+        "I want to contribute my ideas to the project.",
+        "We contribute food to the local food bank."
+      ],
+      "synonyms": [
+        "give"
+      ],
+      "antonyms": [
+        "take"
+      ],
+      "sourcePage": 10,
+      "approved": false,
+      "updatedAt": "2026-04-28T17:52:55.881Z"
+    },
+    {
+      "id": "6f0898672cba1a00",
+      "word": "practicing",
+      "lemma": "practice",
+      "definition": "Doing an activity often to become better.",
+      "examples": [
+        "She is practicing the piano every day.",
+        "The team is practicing for the big game."
+      ],
+      "synonyms": [
+        "training"
+      ],
+      "antonyms": [
+        "quitting"
+      ],
+      "sourcePage": 10,
+      "approved": false,
+      "updatedAt": "2026-04-28T17:52:55.881Z"
+    },
+    {
+      "id": "f7e67a00c9d1dc81",
+      "word": "pronounce",
+      "lemma": "pronounce",
+      "definition": "To make the sound of a word correctly.",
+      "examples": [
+        "It is hard to pronounce some long words.",
+        "The teacher showed us how to pronounce her name."
+      ],
+      "synonyms": [
+        "say"
+      ],
+      "antonyms": [
+        "mumble"
+      ],
+      "sourcePage": 10,
+      "approved": false,
+      "updatedAt": "2026-04-28T17:52:55.881Z"
+    },
+    {
+      "id": "eb3a1fb444032b00",
+      "word": "tumbled",
+      "lemma": "tumble",
+      "definition": "Fell over or dropped suddenly.",
+      "examples": [
+        "The blocks tumbled to the floor.",
+        "He tumbled down the small hill."
+      ],
+      "synonyms": [
+        "fell"
+      ],
+      "antonyms": [
+        "rose"
+      ],
+      "sourcePage": 10,
+      "approved": false,
+      "updatedAt": "2026-04-28T17:52:55.881Z"
+    },
+    {
+      "id": "0e750e99f0aef4c4",
+      "word": "scared",
+      "lemma": "scare",
+      "definition": "Feeling afraid or nervous.",
+      "examples": [
+        "The loud noise made me feel scared.",
+        "She was scared of the dark room."
+      ],
+      "synonyms": [
+        "afraid"
+      ],
+      "antonyms": [
+        "brave"
+      ],
+      "sourcePage": 10,
+      "approved": false,
+      "updatedAt": "2026-04-28T17:52:55.881Z"
+    },
+    {
+      "id": "2d671dd17c28ef89",
+      "word": "principal",
+      "lemma": "principal",
+      "definition": "The person in charge of a school.",
+      "examples": [
+        "The principal spoke to the students today.",
+        "Our principal is very friendly."
+      ],
+      "synonyms": [
+        "leader"
+      ],
+      "antonyms": [
+        "student"
+      ],
+      "sourcePage": 10,
+      "approved": false,
+      "updatedAt": "2026-04-28T17:52:55.881Z"
+    },
+    {
+      "id": "fe877684c00f37d2",
+      "word": "school",
+      "lemma": "school",
+      "definition": "A place where people go to learn.",
+      "examples": [
+        "I walk to school every morning.",
+        "The school has a big playground."
+      ],
+      "synonyms": [
+        "academy"
+      ],
+      "antonyms": [
+        "home"
+      ],
+      "sourcePage": 10,
+      "approved": false,
+      "updatedAt": "2026-04-28T17:52:55.881Z"
+    },
+    {
+      "id": "4f924f92728edaa8",
+      "word": "lesson",
+      "lemma": "lesson",
+      "definition": "A period of time when you learn something.",
+      "examples": [
+        "The math lesson was very interesting.",
+        "I learned a valuable lesson today."
+      ],
+      "synonyms": [
+        "class"
+      ],
+      "antonyms": [
+        "recess"
+      ],
+      "sourcePage": 10,
+      "approved": false,
+      "updatedAt": "2026-04-28T17:52:55.882Z"
+    },
+    {
+      "id": "4a9769f780d47800",
+      "word": "student",
+      "lemma": "student",
+      "definition": "A person who goes to school to learn.",
+      "examples": [
+        "The student asked a good question.",
+        "Every student must bring a pencil."
+      ],
+      "synonyms": [
+        "learner"
+      ],
+      "antonyms": [
+        "teacher"
+      ],
+      "sourcePage": 10,
+      "approved": false,
+      "updatedAt": "2026-04-28T17:52:55.882Z"
+    }
+  ],
+  "generationVersion": "v1",
+  "createdAt": "2026-04-28T17:52:55.882Z",
+  "updatedAt": "2026-04-28T17:52:55.882Z"
+}

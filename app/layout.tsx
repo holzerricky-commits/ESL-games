@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Inter, Space_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
+import { Toaster } from 'sonner'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
 const spaceMono = Space_Mono({ subsets: ['latin'], weight: ['400', '700'], variable: '--font-space-mono' })
@@ -36,8 +37,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body className={`${inter.variable} ${spaceMono.variable} font-sans antialiased`}>
+      <body
+        className={`${inter.variable} ${spaceMono.variable} font-sans antialiased`}
+        suppressHydrationWarning
+      >
         {children}
+        <Toaster richColors theme="dark" position="top-center" />
         <Analytics />
       </body>
     </html>

@@ -37,7 +37,7 @@ export function StudentProfileRouteClient({ studentId, requestedTab }: StudentPr
     )
   }
 
-  const activeTab: StudentProfileTab = isValidStudentProfileTab(requestedTab) ? requestedTab : 'overview'
+  const activeTab: StudentProfileTab = isValidStudentProfileTab(requestedTab) ? requestedTab : 'challenges'
 
   return <StudentProfilePage student={student} studentId={studentId} activeTab={activeTab} />
 }
