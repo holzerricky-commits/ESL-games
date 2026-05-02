@@ -1,0 +1,33 @@
+{
+  "id": "73da46756a8e5fdde282",
+  "kind": "part",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-3-3e7eaa87",
+  "lessonId": "lesson-90579426",
+  "partId": "part-5d581516",
+  "partTitle": "Comprehension: Author's Purpose • Summarize",
+  "partGoals": [
+    "Author's Purpose",
+    "Summarize",
+    "Word Choice: Technical Jargon",
+    "Ideas: Choosing an Important Event and Purpose"
+  ],
+  "activityNotes": [
+    "skill: Author's Purpose",
+    "strategy: Summarize",
+    "author s craft: Word Choice: Technical Jargon",
+    "focus trait: Ideas: Choosing an Important Event and Purpose"
+  ],
+  "languageFocus": {
+    "grammarNotes": [],
+    "writingNotes": []
+  },
+  "sourcePageRange": {
+    "startPage": 459,
+    "endPage": 459
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-05-01T21:00:22.117Z",
+  "updatedAt": "2026-05-01T21:00:22.117Z"
+}

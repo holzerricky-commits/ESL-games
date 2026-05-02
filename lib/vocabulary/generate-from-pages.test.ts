@@ -27,6 +27,7 @@ describe('generateVocabularySet', () => {
     expect(set.status).toBe('draft')
     expect(set.entries.length).toBe(2)
     expect(set.entries.map((entry) => entry.word)).toEqual(['river', 'forest'])
+    expect(set.entries[0]?.reviewFlags).toContain('low_confidence')
   })
 
   it('sanitizes model output and keeps requested count max', async () => {
@@ -50,6 +51,9 @@ describe('generateVocabularySet', () => {
                           examples: ['The river is long.', 'Fish live in the river.'],
                           synonyms: ['stream'],
                           antonyms: ['desert'],
+                          relevanceTags: ['skill_support'],
+                          confidence: 0.91,
+                          reviewFlags: [],
                           sourcePage: 100,
                         },
                         {
@@ -72,5 +76,7 @@ describe('generateVocabularySet', () => {
     expect(set.entries).toHaveLength(1)
     expect(set.entries[0]?.lemma).toBe('river')
     expect(set.entries[0]?.sourcePage).toBe(6)
+    expect(set.entries[0]?.relevanceTags).toContain('skill_support')
+    expect(set.entries[0]?.confidence).toBe(0.91)
   })
 })

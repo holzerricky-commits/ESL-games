@@ -1,0 +1,29 @@
+{
+  "id": "b3914493e320528a5e77",
+  "kind": "part",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-3-3e7eaa87",
+  "lessonId": "lesson-0de89d84",
+  "partId": "part-84813be8",
+  "partTitle": "Comprehension: Compare and Contrast • Analyze/Evaluate.",
+  "partGoals": [
+    "Compare and Contrast",
+    "Analyze/ Evaluate"
+  ],
+  "activityNotes": [
+    "skill: Compare and Contrast",
+    "strategy: Analyze/ Evaluate"
+  ],
+  "languageFocus": {
+    "grammarNotes": [],
+    "writingNotes": []
+  },
+  "sourcePageRange": {
+    "startPage": 429,
+    "endPage": 429
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-05-01T21:00:22.117Z",
+  "updatedAt": "2026-05-01T21:00:22.117Z"
+}

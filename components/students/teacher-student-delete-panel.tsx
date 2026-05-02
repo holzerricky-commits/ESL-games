@@ -70,7 +70,7 @@ export function TeacherStudentDeletePanel({ studentId, studentName }: TeacherStu
 
   return (
     <>
-      <div className="mt-10 rounded-xl border border-destructive/25 bg-destructive/5 p-4 sm:p-5">
+      <div className="rounded-xl border border-destructive/25 bg-destructive/5 p-4 sm:p-5">
         <p className="text-sm font-semibold text-destructive">Danger zone</p>
         <p className="mt-1 text-sm text-muted-foreground">
           Permanently remove {studentName} from this browser, including challenge progress and quiz history for this name.

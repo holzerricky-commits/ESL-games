@@ -1,0 +1,27 @@
+{
+  "id": "a295c54f84b64e0a6885",
+  "kind": "part",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-1-846acbd3",
+  "lessonId": "lesson-b42561f9",
+  "partId": "part-d405e236",
+  "partTitle": "Roberto Clemente",
+  "partGoals": [
+    "Roberto Clemente, Pride of the Pittsburgh Pirates"
+  ],
+  "activityNotes": [
+    "main selection: Roberto Clemente, Pride of the Pittsburgh Pirates"
+  ],
+  "languageFocus": {
+    "grammarNotes": [],
+    "writingNotes": []
+  },
+  "sourcePageRange": {
+    "startPage": 150,
+    "endPage": 150
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-05-01T21:00:22.117Z",
+  "updatedAt": "2026-05-01T21:00:22.117Z"
+}

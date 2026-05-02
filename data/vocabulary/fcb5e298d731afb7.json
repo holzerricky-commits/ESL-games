@@ -1,0 +1,334 @@
+{
+  "id": "fcb5e298d731afb7",
+  "status": "draft",
+  "context": {
+    "studentId": "stu_wu8oz216mo5xlnxl",
+    "classId": "class-slot-1776689989836-tw6lqj-2026-04-21",
+    "classTitle": "Cassie class",
+    "bookId": "journeys-g3-book-1",
+    "unitId": "unit-1-846acbd3",
+    "sectionId": "part:journeys-g3-book-1:unit-1-846acbd3:lesson-a77c6dd5:part-bb28e3c4",
+    "sectionTitle": "Vocabulary in Context",
+    "pageRange": {
+      "startPage": 10,
+      "endPage": 10
+    }
+  },
+  "entries": [
+    {
+      "id": "1c09f0dd4ce531d7",
+      "word": "admired",
+      "lemma": "admire",
+      "definition": "To look at someone or something with respect and approval.",
+      "examples": [
+        "I admired the beautiful painting in the hallway.",
+        "She is admired by everyone for her kindness."
+      ],
+      "synonyms": [
+        "respected",
+        "appreciated"
+      ],
+      "antonyms": [
+        "disliked",
+        "scorned"
+      ],
+      "relevanceTags": [
+        "theme_core",
+        "skill_support"
+      ],
+      "confidence": 0.95,
+      "reviewFlags": [],
+      "sourcePage": 10,
+      "approved": true,
+      "updatedAt": "2026-04-29T12:53:05.784Z"
+    },
+    {
+      "id": "ff4d6afe8c2f3a7f",
+      "word": "connections",
+      "lemma": "connection",
+      "definition": "Links or relationships between people, things, or ideas.",
+      "examples": [
+        "The book helped me make connections to my own life.",
+        "The train station has many connections to the city."
+      ],
+      "synonyms": [
+        "links",
+        "ties"
+      ],
+      "antonyms": [
+        "separations",
+        "disconnections"
+      ],
+      "relevanceTags": [
+        "theme_core",
+        "strategy_support"
+      ],
+      "confidence": 0.9,
+      "reviewFlags": [],
+      "sourcePage": 10,
+      "approved": true,
+      "updatedAt": "2026-04-29T12:53:05.784Z"
+    },
+    {
+      "id": "dd48c01ab22fdde3",
+      "word": "enjoy",
+      "lemma": "enjoy",
+      "definition": "To get pleasure or happiness from something.",
+      "examples": [
+        "I enjoy playing soccer with my friends.",
+        "We enjoy reading stories about heroes."
+      ],
+      "synonyms": [
+        "like",
+        "relish"
+      ],
+      "antonyms": [
+        "hate",
+        "dislike"
+      ],
+      "relevanceTags": [
+        "theme_core",
+        "skill_support"
+      ],
+      "confidence": 0.95,
+      "reviewFlags": [],
+      "sourcePage": 10,
+      "approved": true,
+      "updatedAt": "2026-04-29T12:53:05.784Z"
+    },
+    {
+      "id": "d8f08cb8ecfd48f8",
+      "word": "rely",
+      "lemma": "rely",
+      "definition": "To depend on someone or something for help.",
+      "examples": [
+        "I rely on my alarm clock to wake up for school.",
+        "Good friends rely on each other during hard times."
+      ],
+      "synonyms": [
+        "depend",
+        "trust"
+      ],
+      "antonyms": [
+        "distrust",
+        "doubt"
+      ],
+      "relevanceTags": [
+        "theme_core",
+        "skill_support"
+      ],
+      "confidence": 0.9,
+      "reviewFlags": [],
+      "sourcePage": 10,
+      "approved": true,
+      "updatedAt": "2026-04-29T12:53:05.784Z"
+    },
+    {
+      "id": "a612ea7fc5d008e2",
+      "word": "respond",
+      "lemma": "respond",
+      "definition": "To answer or react to something that has been said or done.",
+      "examples": [
+        "Please respond to my question quickly.",
+        "The dog will respond when you call its name."
+      ],
+      "synonyms": [
+        "answer",
+        "reply"
+      ],
+      "antonyms": [
+        "ignore",
+        "question"
+      ],
+      "relevanceTags": [
+        "theme_core",
+        "skill_support"
+      ],
+      "confidence": 0.95,
+      "reviewFlags": [],
+      "sourcePage": 10,
+      "approved": true,
+      "updatedAt": "2026-04-29T12:53:05.784Z"
+    },
+    {
+      "id": "fe877684c00f37d2",
+      "word": "school",
+      "lemma": "school",
+      "definition": "A place where children go to learn from teachers.",
+      "examples": [
+        "Our school has a very large playground.",
+        "I learn many new things at school every day."
+      ],
+      "synonyms": [
+        "academy",
+        "institute"
+      ],
+      "antonyms": [],
+      "relevanceTags": [
+        "theme_core",
+        "skill_support"
+      ],
+      "confidence": 1,
+      "reviewFlags": [],
+      "sourcePage": 10,
+      "approved": true,
+      "updatedAt": "2026-04-29T12:53:05.784Z"
+    },
+    {
+      "id": "4a9769f780d47800",
+      "word": "students",
+      "lemma": "student",
+      "definition": "People who are studying at a school or college.",
+      "examples": [
+        "The students are working quietly at their desks.",
+        "New students joined our class this morning."
+      ],
+      "synonyms": [
+        "pupils",
+        "learners"
+      ],
+      "antonyms": [
+        "teachers"
+      ],
+      "relevanceTags": [
+        "theme_core",
+        "skill_support"
+      ],
+      "confidence": 1,
+      "reviewFlags": [],
+      "sourcePage": 10,
+      "approved": true,
+      "updatedAt": "2026-04-29T12:53:05.784Z"
+    },
+    {
+      "id": "726bf1b0d12d2667",
+      "word": "teacher",
+      "lemma": "teacher",
+      "definition": "A person whose job is to help students learn.",
+      "examples": [
+        "The teacher explained how to solve the math problem.",
+        "My teacher is very patient and kind."
+      ],
+      "synonyms": [
+        "instructor",
+        "educator"
+      ],
+      "antonyms": [
+        "students"
+      ],
+      "relevanceTags": [
+        "theme_core",
+        "skill_support"
+      ],
+      "confidence": 1,
+      "reviewFlags": [],
+      "sourcePage": 10,
+      "approved": true,
+      "updatedAt": "2026-04-29T12:53:05.784Z"
+    },
+    {
+      "id": "a2ce227b19fbeb05",
+      "word": "community",
+      "lemma": "community",
+      "definition": "A group of people living in the same area or sharing interests.",
+      "examples": [
+        "We help clean up the park in our community.",
+        "A good citizen helps their community grow."
+      ],
+      "synonyms": [
+        "neighborhood",
+        "society"
+      ],
+      "antonyms": [],
+      "relevanceTags": [
+        "theme_core",
+        "writing_transfer"
+      ],
+      "confidence": 0.9,
+      "reviewFlags": [],
+      "sourcePage": 10,
+      "approved": true,
+      "updatedAt": "2026-04-29T12:53:05.784Z"
+    },
+    {
+      "id": "3c421d7c38c4c875",
+      "word": "respect",
+      "lemma": "respect",
+      "definition": "Treating others with honor and kindness.",
+      "examples": [
+        "It is important to show respect to your elders.",
+        "We should respect the rules of the classroom."
+      ],
+      "synonyms": [
+        "honor",
+        "politeness"
+      ],
+      "antonyms": [
+        "disrespect",
+        "rudeness"
+      ],
+      "relevanceTags": [
+        "theme_core",
+        "grammar_transfer"
+      ],
+      "confidence": 0.95,
+      "reviewFlags": [],
+      "sourcePage": 10,
+      "approved": true,
+      "updatedAt": "2026-04-29T12:53:05.784Z"
+    },
+    {
+      "id": "136e18bae5d2c32b",
+      "word": "responsibility",
+      "lemma": "responsibility",
+      "definition": "A duty or task that you are expected to do.",
+      "examples": [
+        "Feeding the dog is my responsibility.",
+        "Taking care of your books is a big responsibility."
+      ],
+      "synonyms": [
+        "duty",
+        "task"
+      ],
+      "antonyms": [],
+      "relevanceTags": [
+        "theme_core",
+        "writing_transfer"
+      ],
+      "confidence": 0.9,
+      "reviewFlags": [],
+      "sourcePage": 10,
+      "approved": true,
+      "updatedAt": "2026-04-29T12:53:05.784Z"
+    },
+    {
+      "id": "1905e3a1ead1ba96",
+      "word": "citizen",
+      "lemma": "citizen",
+      "definition": "A person who belongs to a particular town, city, or country.",
+      "examples": [
+        "A good citizen follows the laws of the land.",
+        "Every citizen has the right to vote."
+      ],
+      "synonyms": [
+        "resident",
+        "member"
+      ],
+      "antonyms": [
+        "foreigner"
+      ],
+      "relevanceTags": [
+        "theme_core",
+        "skill_support"
+      ],
+      "confidence": 0.95,
+      "reviewFlags": [],
+      "sourcePage": 10,
+      "approved": true,
+      "updatedAt": "2026-04-29T12:53:05.784Z"
+    }
+  ],
+  "generationVersion": "v1",
+  "createdAt": "2026-04-29T12:52:35.046Z",
+  "updatedAt": "2026-04-29T12:53:05.784Z"
+}

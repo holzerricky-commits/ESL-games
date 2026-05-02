@@ -108,6 +108,21 @@
   }
 }
 
+@layer utilities {
+  /*
+   * UI policy: keep surfaces simple.
+   * Avoid nested bordered containers ("border inside border").
+   * Use one primary surface and separate inner groups with spacing, tone, or typography instead of extra borders.
+   */
+  .ui-simple-surface {
+    @apply rounded-xl bg-[var(--surface-2)];
+  }
+
+  .ui-simple-block {
+    @apply rounded-md bg-background/70;
+  }
+}
+
 @keyframes countdown-in {
   0% { transform: scale(2); opacity: 0; }
   100% { transform: scale(1); opacity: 1; }

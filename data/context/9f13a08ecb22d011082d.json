@@ -1,0 +1,27 @@
+{
+  "id": "9f13a08ecb22d011082d",
+  "kind": "part",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-2-269922a3",
+  "lessonId": "lesson-de5fde9a",
+  "partId": "part-98bab42a",
+  "partTitle": "Jack Draws a Beanstalk",
+  "partGoals": [
+    "What Do Illustrators Do?, Genre: Informational Text; Paired Selection: Jack Draws a Beanstalk, Genre: Fairy Tale"
+  ],
+  "activityNotes": [
+    "main selection: What Do Illustrators Do?, Genre: Informational Text; Paired Selection: Jack Draws a Beanstalk, Genre: Fairy Tale"
+  ],
+  "languageFocus": {
+    "grammarNotes": [],
+    "writingNotes": []
+  },
+  "sourcePageRange": {
+    "startPage": 246,
+    "endPage": 246
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-05-01T21:00:22.117Z",
+  "updatedAt": "2026-05-01T21:00:22.117Z"
+}

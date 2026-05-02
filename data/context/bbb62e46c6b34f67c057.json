@@ -1,0 +1,27 @@
+{
+  "id": "bbb62e46c6b34f67c057",
+  "kind": "part",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-1-846acbd3",
+  "lessonId": "lesson-c312ed1b",
+  "partId": "part-740bcc41",
+  "partTitle": "Pop's Bridge",
+  "partGoals": [
+    "Pop's Bridge"
+  ],
+  "activityNotes": [
+    "main selection: Pop's Bridge"
+  ],
+  "languageFocus": {
+    "grammarNotes": [],
+    "writingNotes": []
+  },
+  "sourcePageRange": {
+    "startPage": 114,
+    "endPage": 114
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-05-01T21:00:22.117Z",
+  "updatedAt": "2026-05-01T21:00:22.117Z"
+}

@@ -1,0 +1,27 @@
+{
+  "id": "f4f65d27c993c9ae7615",
+  "kind": "part",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-3-3e7eaa87",
+  "lessonId": "lesson-f007ffa1",
+  "partId": "part-b83a25c3",
+  "partTitle": "The Science Fair",
+  "partGoals": [
+    "The Science Fair"
+  ],
+  "activityNotes": [
+    "main selection: The Science Fair"
+  ],
+  "languageFocus": {
+    "grammarNotes": [],
+    "writingNotes": []
+  },
+  "sourcePageRange": {
+    "startPage": 398,
+    "endPage": 398
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-05-01T21:00:22.117Z",
+  "updatedAt": "2026-05-01T21:00:22.117Z"
+}

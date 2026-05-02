@@ -1,0 +1,43 @@
+---
+description: Milestone-first shipping; detect polish drift; parking-lot capture
+alwaysApply: true
+---
+
+# Milestone-first and anti-drift
+
+Before proposing or implementing substantial work, read **`PROJECT_CONTEXT.md`** at the repo root for **stable product intent** (who uses the app, book-first model, map/RPG role, student knowledge tracking, AI prep vision). Read **`MILESTONE.md`** (if it exists) for **what ships next**—vision, current milestone, and explicit non-goals.
+
+## Proactive drift detection
+
+Whenever the **user’s messages, task description, or ongoing thread** suggests work that is likely **polish, perfectionism, large refactors, or deep subsystem tuning** without a clear line to the current milestone in `MILESTONE.md`, you MUST:
+
+1. **Name it briefly** — one short sentence that this may be parkable (not a lecture).
+2. **Tie to milestone** — what single user-facing step in `MILESTONE.md` does this unblock? If none, say so.
+3. **Recommend** pausing or **time-boxing** (e.g. 30–90 minutes) and returning to the next milestone task unless the user names a concrete blocker (bug, wrong output, cannot demo).
+4. **Append a parking-lot block** using the exact format under “Parking lot block” so the user can copy it into **`PARKING_LOT.md`** (or an issue) and resume later.
+
+**When to skip the parking block:** Pure factual answers, one-line fixes, typos, or questions with **no scope implication** (e.g. “what does this error mean?” with no multi-day refactor attached). In those cases, answer normally without the interrupt.
+
+**Drift signals (non-exhaustive):** extraction/LLM/OCR/parsing “more robustly” before one happy path works end-to-end; refactors or renames without a bug or requirement; expanding edge cases or rare formats before core flow ships; architecture “cleanup”; “while I’m here” unrelated changes; third pass on the same subsystem without a new requirement.
+
+## Relationship to other rules
+
+- **Critical advisor:** Still apply full critical analysis for **novel, risky, or ambiguous product/legal/security** ideas. For **routine implementation** clearly aligned with `MILESTONE.md`, do not block on “go ahead” for small, safe steps—but **do** flag drift as above when the work looks like polish.
+
+## Parking lot block (copy-paste format)
+
+When you trigger anti-drift, end the message with:
+
+```text
+--- PARKING_LOT (copy below) ---
+Date: YYYY-MM-DD
+Vision / North star: (from MILESTONE.md or user)
+Current milestone (smallest next ship): …
+What we were doing: …
+Why this is parkable: …
+Resume when: …
+Concrete next steps if resumed: …
+--- END PARKING_LOT ---
+```
+
+Encourage the user to paste entries into **`PARKING_LOT.md`** under `## Entries` so nothing is lost.

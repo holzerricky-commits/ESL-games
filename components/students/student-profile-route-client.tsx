@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import type { BookLibraryPayload } from '@/lib/books/types'
 import { StudentProfilePage } from '@/components/students/student-profile-page'
-import { getStudentProfileView, isValidStudentProfileTab } from '@/lib/students/selectors'
+import { getStudentDefaultBookUnitForReader, getStudentProfileView, isValidStudentProfileTab } from '@/lib/students/selectors'
 import type { StudentProfileTab } from '@/lib/students/types'
 
 interface StudentProfileRouteClientProps {
@@ -12,10 +13,43 @@ interface StudentProfileRouteClientProps {
 
 export function StudentProfileRouteClient({ studentId, requestedTab }: StudentProfileRouteClientProps) {
   const [isHydrated, setIsHydrated] = useState(false)
+  const [bookLibrary, setBookLibrary] = useState<BookLibraryPayload | null>(null)
 
   useEffect(() => {
     setIsHydrated(true)
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    void fetch('/api/books')
+      .then(async (res) => {
+        const payload = (await res.json()) as BookLibraryPayload | { error?: string }
+        if (!res.ok || !payload || !Array.isArray((payload as BookLibraryPayload).books)) {
+          return { books: [] } as BookLibraryPayload
+        }
+        return payload as BookLibraryPayload
+      })
+      .then((lib) => {
+        if (!cancelled) setBookLibrary(lib)
+      })
+      .catch(() => {
+        if (!cancelled) setBookLibrary({ books: [] })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const readerHref = useMemo(() => {
+    const pick = getStudentDefaultBookUnitForReader(studentId, bookLibrary)
+    if (!pick) return null
+    const q = new URLSearchParams({
+      student: studentId,
+      book: pick.bookId,
+      unit: pick.unitId,
+    })
+    return `/books?${q.toString()}`
+  }, [studentId, bookLibrary])
 
   if (!isHydrated) {
     return (
@@ -39,5 +73,5 @@ export function StudentProfileRouteClient({ studentId, requestedTab }: StudentPr
 
   const activeTab: StudentProfileTab = isValidStudentProfileTab(requestedTab) ? requestedTab : 'challenges'
 
-  return <StudentProfilePage student={student} studentId={studentId} activeTab={activeTab} />
+  return <StudentProfilePage student={student} studentId={studentId} activeTab={activeTab} readerHref={readerHref} />
 }

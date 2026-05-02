@@ -1,0 +1,29 @@
+{
+  "id": "34226b5c7e486b8f1c8e",
+  "kind": "part",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-3-3e7eaa87",
+  "lessonId": "lesson-a8d2adbd",
+  "partId": "part-1fb0bef3",
+  "partTitle": "Comprehension: Understanding Characters • Infer/Predict.",
+  "partGoals": [
+    "Understanding Characters",
+    "Infer/Predict"
+  ],
+  "activityNotes": [
+    "skill: Understanding Characters",
+    "strategy: Infer/Predict"
+  ],
+  "languageFocus": {
+    "grammarNotes": [],
+    "writingNotes": []
+  },
+  "sourcePageRange": {
+    "startPage": 489,
+    "endPage": 489
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-05-01T21:00:22.117Z",
+  "updatedAt": "2026-05-01T21:00:22.117Z"
+}

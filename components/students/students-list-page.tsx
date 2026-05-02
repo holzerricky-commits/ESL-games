@@ -112,7 +112,7 @@ export function StudentsListPage() {
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-[repeat(auto-fill,minmax(18rem,1fr))] xl:grid-cols-[repeat(auto-fill,minmax(18.5rem,1fr))]">
           {filteredStudents.map((student) => (
-            <StudentCard key={student.id} student={student} />
+            <StudentCard key={student.id} student={student} library={bookLibrary} />
           ))}
         </div>
       )}

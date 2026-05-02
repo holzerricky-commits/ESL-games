@@ -1,0 +1,27 @@
+{
+  "id": "1402e10ee29a25f34f8a",
+  "kind": "part",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-1-846acbd3",
+  "lessonId": "lesson-93983f2c",
+  "partId": "part-fbf4e174",
+  "partTitle": "The Trial of Cardigan Jones",
+  "partGoals": [
+    "The Trial of Cardigan Jones"
+  ],
+  "activityNotes": [
+    "main selection: The Trial of Cardigan Jones"
+  ],
+  "languageFocus": {
+    "grammarNotes": [],
+    "writingNotes": []
+  },
+  "sourcePageRange": {
+    "startPage": 46,
+    "endPage": 46
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-05-01T21:00:22.117Z",
+  "updatedAt": "2026-05-01T21:00:22.117Z"
+}

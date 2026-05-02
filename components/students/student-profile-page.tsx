@@ -6,13 +6,15 @@ interface StudentProfilePageProps {
   student: StudentProfileView
   studentId: string
   activeTab: StudentProfileTab
+  readerHref?: string | null
 }
 
-export function StudentProfilePage({ student, studentId, activeTab }: StudentProfilePageProps) {
+export function StudentProfilePage({ student, studentId, activeTab, readerHref }: StudentProfilePageProps) {
   return (
     <>
       <StudentProfileHeader
         student={student}
+        readerHref={readerHref}
         tabs={
           <StudentProfileTabs
             student={student}

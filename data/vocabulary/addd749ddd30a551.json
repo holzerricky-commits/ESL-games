@@ -1,0 +1,331 @@
+{
+  "id": "addd749ddd30a551",
+  "status": "draft",
+  "context": {
+    "studentId": "stu_wu8oz216mo5xlnxl",
+    "classId": "class-slot-1776689989836-tw6lqj-2026-04-21",
+    "classTitle": "Cassie class",
+    "bookId": "journeys-g3-book-1",
+    "unitId": "unit-1-846acbd3",
+    "sectionId": "part:journeys-g3-book-1:unit-1-846acbd3:lesson-a77c6dd5:part-bb28e3c4",
+    "sectionTitle": "Vocabulary in Context",
+    "pageRange": {
+      "startPage": 10,
+      "endPage": 10
+    }
+  },
+  "entries": [
+    {
+      "id": "1905e3a1ead1ba96",
+      "word": "citizen",
+      "lemma": "citizen",
+      "definition": "A person who belongs to a country or city.",
+      "examples": [
+        "As a good citizen, she always follows the rules.",
+        "Every citizen has the right to vote when they are old enough."
+      ],
+      "synonyms": [
+        "resident",
+        "member"
+      ],
+      "antonyms": [],
+      "relevanceTags": [
+        "theme_core",
+        "skill_support"
+      ],
+      "confidence": 0.9,
+      "reviewFlags": [],
+      "sourcePage": 10,
+      "approved": false,
+      "updatedAt": "2026-04-29T12:29:55.066Z"
+    },
+    {
+      "id": "a2ce227b19fbeb05",
+      "word": "community",
+      "lemma": "community",
+      "definition": "A group of people living in the same place or having a particular characteristic in common.",
+      "examples": [
+        "Our school is an important part of the local community.",
+        "We worked together to clean up the park for our community."
+      ],
+      "synonyms": [
+        "neighborhood",
+        "group"
+      ],
+      "antonyms": [],
+      "relevanceTags": [
+        "theme_core",
+        "skill_support"
+      ],
+      "confidence": 0.88,
+      "reviewFlags": [],
+      "sourcePage": 10,
+      "approved": false,
+      "updatedAt": "2026-04-29T12:29:55.066Z"
+    },
+    {
+      "id": "8705ce621f67b62e",
+      "word": "rule",
+      "lemma": "rule",
+      "definition": "An instruction that tells you what you can or cannot do.",
+      "examples": [
+        "It's a rule that you must not run in the hallways.",
+        "Following the rules helps everyone stay safe."
+      ],
+      "synonyms": [
+        "law",
+        "guideline"
+      ],
+      "antonyms": [],
+      "relevanceTags": [
+        "theme_core",
+        "skill_support"
+      ],
+      "confidence": 0.9,
+      "reviewFlags": [],
+      "sourcePage": 10,
+      "approved": false,
+      "updatedAt": "2026-04-29T12:29:55.066Z"
+    },
+    {
+      "id": "3c421d7c38c4c875",
+      "word": "respect",
+      "lemma": "respect",
+      "definition": "To show politeness and care for someone or something.",
+      "examples": [
+        "Always respect your elders and listen to their advice.",
+        "We should respect nature and keep our planet clean."
+      ],
+      "synonyms": [
+        "honor",
+        "admire"
+      ],
+      "antonyms": [
+        "disrespect"
+      ],
+      "relevanceTags": [
+        "theme_core",
+        "skill_support"
+      ],
+      "confidence": 0.85,
+      "reviewFlags": [],
+      "sourcePage": 10,
+      "approved": false,
+      "updatedAt": "2026-04-29T12:29:55.067Z"
+    },
+    {
+      "id": "b6d8bc0b02ccb5bc",
+      "word": "help",
+      "lemma": "help",
+      "definition": "To make it easier for someone to do something.",
+      "examples": [
+        "Can you help me carry these heavy books?",
+        "It's good to help others when they are in need."
+      ],
+      "synonyms": [
+        "assist",
+        "aid"
+      ],
+      "antonyms": [
+        "hinder"
+      ],
+      "relevanceTags": [
+        "theme_core",
+        "skill_support"
+      ],
+      "confidence": 0.92,
+      "reviewFlags": [],
+      "sourcePage": 10,
+      "approved": false,
+      "updatedAt": "2026-04-29T12:29:55.067Z"
+    },
+    {
+      "id": "e67f43e9d418a507",
+      "word": "share",
+      "lemma": "share",
+      "definition": "To let others use or have a part of something you own.",
+      "examples": [
+        "Please share your toys with your little brother.",
+        "We learned to share our ideas during the group project."
+      ],
+      "synonyms": [
+        "distribute",
+        "divide"
+      ],
+      "antonyms": [
+        "hoard",
+        "keep"
+      ],
+      "relevanceTags": [
+        "theme_core",
+        "skill_support"
+      ],
+      "confidence": 0.88,
+      "reviewFlags": [],
+      "sourcePage": 10,
+      "approved": false,
+      "updatedAt": "2026-04-29T12:29:55.067Z"
+    },
+    {
+      "id": "0a34facae26312c4",
+      "word": "kind",
+      "lemma": "kind",
+      "definition": "Friendly, generous, and considerate.",
+      "examples": [
+        "It was very kind of you to help me with my homework.",
+        "A kind person always thinks about others' feelings."
+      ],
+      "synonyms": [
+        "nice",
+        "caring"
+      ],
+      "antonyms": [
+        "mean",
+        "unkind"
+      ],
+      "relevanceTags": [
+        "theme_core",
+        "skill_support"
+      ],
+      "confidence": 0.9,
+      "reviewFlags": [],
+      "sourcePage": 10,
+      "approved": false,
+      "updatedAt": "2026-04-29T12:29:55.067Z"
+    },
+    {
+      "id": "0deb717de2e9d5e6",
+      "word": "fair",
+      "lemma": "fair",
+      "definition": "Treating everyone equally and in a way that is right or reasonable.",
+      "examples": [
+        "The teacher was fair when she gave everyone a chance.",
+        "It's not fair to take all the cookies for yourself."
+      ],
+      "synonyms": [
+        "just",
+        "equal"
+      ],
+      "antonyms": [
+        "unfair",
+        "biased"
+      ],
+      "relevanceTags": [
+        "theme_core",
+        "skill_support"
+      ],
+      "confidence": 0.87,
+      "reviewFlags": [],
+      "sourcePage": 10,
+      "approved": false,
+      "updatedAt": "2026-04-29T12:29:55.067Z"
+    },
+    {
+      "id": "ed4bb81ce08e998a",
+      "word": "responsible",
+      "lemma": "responsible",
+      "definition": "Having a duty to deal with something or someone.",
+      "examples": [
+        "You are responsible for cleaning your room every week.",
+        "A good citizen is responsible for their actions."
+      ],
+      "synonyms": [
+        "accountable",
+        "dependable"
+      ],
+      "antonyms": [
+        "irresponsible"
+      ],
+      "relevanceTags": [
+        "theme_core",
+        "skill_support"
+      ],
+      "confidence": 0.85,
+      "reviewFlags": [],
+      "sourcePage": 10,
+      "approved": false,
+      "updatedAt": "2026-04-29T12:29:55.067Z"
+    },
+    {
+      "id": "9a430bbe4dfafcfa",
+      "word": "polite",
+      "lemma": "polite",
+      "definition": "Having good manners and showing respect for others.",
+      "examples": [
+        "It's polite to say 'please' and 'thank you'.",
+        "She is always polite to her teachers and classmates."
+      ],
+      "synonyms": [
+        "courteous",
+        "well-mannered"
+      ],
+      "antonyms": [
+        "rude",
+        "impolite"
+      ],
+      "relevanceTags": [
+        "theme_core",
+        "skill_support"
+      ],
+      "confidence": 0.89,
+      "reviewFlags": [],
+      "sourcePage": 10,
+      "approved": false,
+      "updatedAt": "2026-04-29T12:29:55.067Z"
+    },
+    {
+      "id": "ba3c19c772dcd981",
+      "word": "cooperate",
+      "lemma": "cooperate",
+      "definition": "To work together with others to achieve a common goal.",
+      "examples": [
+        "We need to cooperate to finish this big puzzle.",
+        "The students learned to cooperate during their group project."
+      ],
+      "synonyms": [
+        "collaborate",
+        "work together"
+      ],
+      "antonyms": [
+        "disagree",
+        "work alone"
+      ],
+      "relevanceTags": [
+        "theme_core",
+        "skill_support"
+      ],
+      "confidence": 0.86,
+      "reviewFlags": [],
+      "sourcePage": 10,
+      "approved": false,
+      "updatedAt": "2026-04-29T12:29:55.067Z"
+    },
+    {
+      "id": "2cfd06f7aa681a31",
+      "word": "volunteer",
+      "lemma": "volunteer",
+      "definition": "To offer to do something without being paid, often to help others.",
+      "examples": [
+        "Many people volunteer their time to help at the animal shelter.",
+        "She decided to volunteer to read stories to younger children."
+      ],
+      "synonyms": [
+        "offer",
+        "help out"
+      ],
+      "antonyms": [],
+      "relevanceTags": [
+        "theme_core",
+        "skill_support"
+      ],
+      "confidence": 0.84,
+      "reviewFlags": [],
+      "sourcePage": 10,
+      "approved": false,
+      "updatedAt": "2026-04-29T12:29:55.067Z"
+    }
+  ],
+  "generationVersion": "v1",
+  "createdAt": "2026-04-29T12:29:55.067Z",
+  "updatedAt": "2026-04-29T12:29:55.067Z"
+}

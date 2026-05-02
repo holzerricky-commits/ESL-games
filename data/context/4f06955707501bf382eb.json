@@ -1,0 +1,27 @@
+{
+  "id": "4f06955707501bf382eb",
+  "kind": "part",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-3-3e7eaa87",
+  "lessonId": "lesson-a8d2adbd",
+  "partId": "part-fb038f1e",
+  "partTitle": "The Extra-good Sunday",
+  "partGoals": [
+    "The Extra-Good Sunday"
+  ],
+  "activityNotes": [
+    "main selection: The Extra-Good Sunday"
+  ],
+  "languageFocus": {
+    "grammarNotes": [],
+    "writingNotes": []
+  },
+  "sourcePageRange": {
+    "startPage": 490,
+    "endPage": 490
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-05-01T21:00:22.117Z",
+  "updatedAt": "2026-05-01T21:00:22.117Z"
+}

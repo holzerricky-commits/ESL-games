@@ -1,0 +1,29 @@
+{
+  "id": "7ce09ad496bb7233a923",
+  "kind": "part",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-1-846acbd3",
+  "lessonId": "lesson-18602cbd",
+  "partId": "part-1b59baee",
+  "partTitle": "Comprehension: Understanding Characters • Analyze/Evaluate.",
+  "partGoals": [
+    "Understanding Characters",
+    "Analyze/ Evaluate"
+  ],
+  "activityNotes": [
+    "skill: Understanding Characters",
+    "strategy: Analyze/ Evaluate"
+  ],
+  "languageFocus": {
+    "grammarNotes": [],
+    "writingNotes": []
+  },
+  "sourcePageRange": {
+    "startPage": 77,
+    "endPage": 77
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-05-01T21:00:22.117Z",
+  "updatedAt": "2026-05-01T21:00:22.117Z"
+}

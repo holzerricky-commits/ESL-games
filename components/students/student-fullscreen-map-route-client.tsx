@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { ClassSessionMapTimer } from '@/components/students/class-session-map-timer'
 import { FantasyHUD } from '@/components/students/fantasy-hud'
 import { FullscreenBookOverlay } from '@/components/students/fullscreen-book-overlay'
 import { StudentMapTab } from '@/components/students/tabs/student-map-tab'
@@ -9,9 +10,15 @@ import { getStudentProfileView } from '@/lib/students/selectors'
 interface StudentFullscreenMapRouteClientProps {
   studentId: string
   introMode: 'mission' | null
+  /** Optional class session id from `?classSession=` (live lesson). */
+  activeClassSessionId?: string | null
 }
 
-export function StudentFullscreenMapRouteClient({ studentId, introMode }: StudentFullscreenMapRouteClientProps) {
+export function StudentFullscreenMapRouteClient({
+  studentId,
+  introMode,
+  activeClassSessionId = null,
+}: StudentFullscreenMapRouteClientProps) {
   const [isHydrated, setIsHydrated] = useState(false)
   const [isBookOverlayOpen, setIsBookOverlayOpen] = useState(false)
 
@@ -48,6 +55,7 @@ export function StudentFullscreenMapRouteClient({ studentId, introMode }: Studen
   }
 
   const student = getStudentProfileView(studentId)
+
   if (!student) {
     return (
       <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--surface-2)] p-6">
@@ -59,8 +67,18 @@ export function StudentFullscreenMapRouteClient({ studentId, introMode }: Studen
     )
   }
 
+  const activeSession =
+    activeClassSessionId ? student.scheduledClasses?.find((s) => s.id === activeClassSessionId) : undefined
+
   return (
     <div className="fixed inset-0 z-0 overflow-hidden overscroll-none bg-background">
+      {activeSession?.status === 'in_progress' ? (
+        <ClassSessionMapTimer
+          studentId={student.id}
+          session={activeSession}
+          assignedBookIds={student.assignedBookIds ?? []}
+        />
+      ) : null}
       {/*
         Do not use flex here: FantasyHUD is `absolute inset-0` with only absolutely positioned children,
         so a flex sibling would collapse to zero height and clip the HUD. Map fills this `fixed inset-0` shell.

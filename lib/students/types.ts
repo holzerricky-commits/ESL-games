@@ -85,6 +85,8 @@ export interface StudentProfileView extends StudentListItemView {
   defaultDifficultyTier: DifficultyTier
   assignedBookIds: string[]
   assignedUnitRefs: StudentCurriculumUnitAssignmentView[]
+  /** Planned first lesson piece when no completed-class chain exists yet. */
+  curriculumAnchorSectionId?: string
   curriculumHistory: StudentCurriculumHistoryEntryView[]
   scheduledClasses: StudentClassSessionView[]
 }

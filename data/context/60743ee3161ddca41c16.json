@@ -1,0 +1,29 @@
+{
+  "id": "60743ee3161ddca41c16",
+  "kind": "unit",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-3-3e7eaa87",
+  "unitTitle": "Learning Lessons",
+  "theme": "Not specified",
+  "bigIdeas": [],
+  "crossCurricularLinks": [],
+  "targetLanguageDomains": [
+    "Selection",
+    "Phonics",
+    "Fluency",
+    "Comprehension",
+    "Listening/Speaking/Viewing",
+    "Vocabulary",
+    "Spelling",
+    "Grammar",
+    "Writing"
+  ],
+  "sourcePageRange": {
+    "startPage": 362,
+    "endPage": 486
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-05-01T21:00:22.117Z",
+  "updatedAt": "2026-05-01T21:00:22.117Z"
+}

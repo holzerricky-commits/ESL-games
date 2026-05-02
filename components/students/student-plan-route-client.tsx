@@ -1,8 +1,9 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import type { BookLibraryPayload } from '@/lib/books/types'
 import { StudentPlanPage } from '@/components/students/student-plan-page'
-import { getStudentProfileView, isValidStudentProfileTab } from '@/lib/students/selectors'
+import { getStudentDefaultBookUnitForReader, getStudentProfileView, isValidStudentProfileTab } from '@/lib/students/selectors'
 import type { StudentProfileTab } from '@/lib/students/types'
 
 interface StudentPlanRouteClientProps {
@@ -12,7 +13,40 @@ interface StudentPlanRouteClientProps {
 
 export function StudentPlanRouteClient({ studentId, requestedTab }: StudentPlanRouteClientProps) {
   const [version, setVersion] = useState(0)
+  const [bookLibrary, setBookLibrary] = useState<BookLibraryPayload | null>(null)
   const student = useMemo(() => getStudentProfileView(studentId), [studentId, version])
+
+  useEffect(() => {
+    let cancelled = false
+    void fetch('/api/books')
+      .then(async (res) => {
+        const payload = (await res.json()) as BookLibraryPayload | { error?: string }
+        if (!res.ok || !payload || !Array.isArray((payload as BookLibraryPayload).books)) {
+          return { books: [] } as BookLibraryPayload
+        }
+        return payload as BookLibraryPayload
+      })
+      .then((lib) => {
+        if (!cancelled) setBookLibrary(lib)
+      })
+      .catch(() => {
+        if (!cancelled) setBookLibrary({ books: [] })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const readerHref = useMemo(() => {
+    const pick = getStudentDefaultBookUnitForReader(studentId, bookLibrary)
+    if (!pick) return null
+    const q = new URLSearchParams({
+      student: studentId,
+      book: pick.bookId,
+      unit: pick.unitId,
+    })
+    return `/books?${q.toString()}`
+  }, [studentId, bookLibrary])
 
   if (!student) {
     return (
@@ -33,6 +67,7 @@ export function StudentPlanRouteClient({ studentId, requestedTab }: StudentPlanR
       studentId={studentId}
       activeTab={activeTab}
       onDataUpdated={() => setVersion((v) => v + 1)}
+      readerHref={readerHref}
     />
   )
 }

@@ -1,0 +1,29 @@
+{
+  "id": "05a8b7ee04a3d88f427d",
+  "kind": "part",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-3-3e7eaa87",
+  "lessonId": "lesson-f007ffa1",
+  "partId": "part-1d3e6ed0",
+  "partTitle": "Comprehension: Story Structure • Visualize",
+  "partGoals": [
+    "Story Structure",
+    "Visualize"
+  ],
+  "activityNotes": [
+    "skill: Story Structure",
+    "strategy: Visualize"
+  ],
+  "languageFocus": {
+    "grammarNotes": [],
+    "writingNotes": []
+  },
+  "sourcePageRange": {
+    "startPage": 397,
+    "endPage": 397
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-05-01T21:00:22.117Z",
+  "updatedAt": "2026-05-01T21:00:22.117Z"
+}

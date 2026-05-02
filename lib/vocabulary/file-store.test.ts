@@ -27,6 +27,9 @@ function makeSet(id: string): VocabularySet {
         examples: ['A river is long.'],
         synonyms: [],
         antonyms: [],
+        relevanceTags: ['theme_core'],
+        confidence: 0.8,
+        reviewFlags: [],
         sourcePage: 1,
         approved: false,
         updatedAt: now,
@@ -55,5 +58,49 @@ describe('FileVocabularyStore', () => {
 
     const removed = await store.removeEntry(setId, `${setId}-entry-1`)
     expect(removed?.entries).toHaveLength(0)
+  })
+
+  it('sorts by risk and supports guarded bulk updates', async () => {
+    const store = new FileVocabularyStore()
+    const setId = `test-set-risk-${Date.now()}`
+    const seed = makeSet(setId)
+    seed.entries = [
+      {
+        ...seed.entries[0],
+        id: `${setId}-safe`,
+        word: 'safe',
+        lemma: 'safe',
+        confidence: 0.9,
+        reviewFlags: [],
+      },
+      {
+        ...seed.entries[0],
+        id: `${setId}-low`,
+        word: 'low',
+        lemma: 'low',
+        confidence: 0.4,
+        reviewFlags: ['low_confidence'],
+      },
+      {
+        ...seed.entries[0],
+        id: `${setId}-offscope`,
+        word: 'offscope',
+        lemma: 'offscope',
+        confidence: 0.95,
+        reviewFlags: ['off_scope'],
+      },
+    ]
+    await store.saveDraftSet(seed)
+
+    const ordered = await store.listEntriesByRisk(setId, { excludeApproved: true })
+    expect(ordered?.map((entry) => entry.id)).toEqual([`${setId}-offscope`, `${setId}-low`, `${setId}-safe`])
+
+    const updated = await store.bulkUpdateEntries(
+      setId,
+      (entry) => (entry.confidence ?? 0) >= 0.75 && !(entry.reviewFlags ?? []).includes('off_scope'),
+      { approved: true },
+    )
+    expect(updated?.entries.find((entry) => entry.id === `${setId}-safe`)?.approved).toBe(true)
+    expect(updated?.entries.find((entry) => entry.id === `${setId}-offscope`)?.approved).toBe(false)
   })
 })

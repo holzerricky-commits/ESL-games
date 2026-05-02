@@ -1,0 +1,29 @@
+{
+  "id": "fbac0a59675e979ee3b3",
+  "kind": "part",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-1-846acbd3",
+  "lessonId": "lesson-b42561f9",
+  "partId": "part-cab341b5",
+  "partTitle": "Comprehension: Cause and Effect • Visualize.",
+  "partGoals": [
+    "Cause and Effect",
+    "Visualize"
+  ],
+  "activityNotes": [
+    "skill: Cause and Effect",
+    "strategy: Visualize"
+  ],
+  "languageFocus": {
+    "grammarNotes": [],
+    "writingNotes": []
+  },
+  "sourcePageRange": {
+    "startPage": 149,
+    "endPage": 149
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-05-01T21:00:22.117Z",
+  "updatedAt": "2026-05-01T21:00:22.117Z"
+}

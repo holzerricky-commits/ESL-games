@@ -52,6 +52,43 @@ export async function POST(req: Request) {
                 typeof body.sectionContext.contentSummary === 'string' ? body.sectionContext.contentSummary : '',
             }
           : undefined,
+      bookContext:
+        body.bookContext && typeof body.bookContext === 'object'
+          ? {
+              summary: typeof body.bookContext.summary === 'string' ? body.bookContext.summary : '',
+              goals: asStringArray(body.bookContext.goals),
+              pacing: asStringArray(body.bookContext.pacing),
+              instructionalPriorities: asStringArray(body.bookContext.instructionalPriorities),
+              focusAreas: asStringArray(body.bookContext.focusAreas),
+              materials: Array.isArray(body.bookContext.materials)
+                ? body.bookContext.materials
+                    .map((entry) => {
+                      if (!entry || typeof entry !== 'object') return null
+                      const type = typeof entry.type === 'string' ? entry.type : 'other'
+                      const title = typeof entry.title === 'string' ? entry.title.trim() : ''
+                      const url = typeof entry.url === 'string' ? entry.url.trim() : ''
+                      const notes = typeof entry.notes === 'string' ? entry.notes.trim() : ''
+                      const confidence =
+                        entry.confidence === 'high' || entry.confidence === 'medium' || entry.confidence === 'low'
+                          ? entry.confidence
+                          : 'low'
+                      if (!title) return null
+                      return { type, title, url, notes, confidence }
+                    })
+                    .filter(
+                      (
+                        entry,
+                      ): entry is {
+                        type: 'pacing-guide' | 'scope-sequence' | 'teacher-edition' | 'assessment' | 'intervention' | 'grammar-writing' | 'vocabulary' | 'digital-resource' | 'other'
+                        title: string
+                        url: string
+                        notes: string
+                        confidence: 'high' | 'medium' | 'low'
+                      } => !!entry,
+                    )
+                : [],
+            }
+          : undefined,
       studentSnapshot:
         body.studentSnapshot && typeof body.studentSnapshot === 'object'
           ? {

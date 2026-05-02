@@ -24,6 +24,9 @@ export interface VocabularyEntry {
   examples: string[]
   synonyms: string[]
   antonyms: string[]
+  relevanceTags: string[]
+  confidence: number
+  reviewFlags: string[]
   sourcePage: number | null
   approved: boolean
   updatedAt: string
@@ -43,4 +46,29 @@ export interface VocabularyGenerationInput {
   context: VocabularySourceContext
   requestedCount?: number
   seedWords?: string[]
+  unitContext?: {
+    theme?: string
+    bigIdeas?: string[]
+    targetLanguageDomains?: string[]
+  }
+  lessonContext?: {
+    textType?: string
+    comprehensionSkill?: string
+    strategy?: string
+    essentialQuestions?: string[]
+  }
+  outcomeContext?: {
+    introducedWords?: string[]
+    practicedWords?: string[]
+    reviewedWords?: string[]
+    learnedWords?: string[]
+    dueReviewWords?: string[]
+  }
+  feedbackContext?: {
+    tooEasyCount?: number
+    offThemeCount?: number
+    wrongSkillSupportCount?: number
+    editedMeaningCount?: number
+    recentlyRemovedWords?: string[]
+  }
 }

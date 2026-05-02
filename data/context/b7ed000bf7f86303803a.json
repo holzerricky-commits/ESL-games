@@ -1,0 +1,29 @@
+{
+  "id": "b7ed000bf7f86303803a",
+  "kind": "part",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-3-3e7eaa87",
+  "lessonId": "lesson-0de89d84",
+  "partId": "part-e45cc1a0",
+  "partTitle": "Vocabulary in Context",
+  "partGoals": [
+    "peak, fondly, rugged, mist, examined, steep, pausing, pleaded",
+    "Homophones/ Homographs"
+  ],
+  "activityNotes": [
+    "target vocabulary: peak, fondly, rugged, mist, examined, steep, pausing, pleaded",
+    "vocabulary strategies: Homophones/ Homographs"
+  ],
+  "languageFocus": {
+    "grammarNotes": [],
+    "writingNotes": []
+  },
+  "sourcePageRange": {
+    "startPage": 426,
+    "endPage": 426
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-05-01T21:00:22.117Z",
+  "updatedAt": "2026-05-01T21:00:22.117Z"
+}

@@ -1,0 +1,27 @@
+{
+  "id": "80d126e629c67cba6a9a",
+  "kind": "part",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-2-269922a3",
+  "lessonId": "lesson-b2e626c2",
+  "partId": "part-bc1a7dd6",
+  "partTitle": "The True Story of Kamishibai",
+  "partGoals": [
+    "Kamishibai Man, Genre: Realistic Fiction; Paired Selection: The True Story of Kamishibai, Genre: Informational Text"
+  ],
+  "activityNotes": [
+    "main selection: Kamishibai Man, Genre: Realistic Fiction; Paired Selection: The True Story of Kamishibai, Genre: Informational Text"
+  ],
+  "languageFocus": {
+    "grammarNotes": [],
+    "writingNotes": []
+  },
+  "sourcePageRange": {
+    "startPage": 314,
+    "endPage": 314
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-05-01T21:00:22.117Z",
+  "updatedAt": "2026-05-01T21:00:22.117Z"
+}

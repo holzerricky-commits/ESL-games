@@ -30,7 +30,7 @@ import {
   resolveEffectiveAnchorToPdfPage,
 } from '@/lib/books/page-alignment-runtime'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
@@ -840,9 +840,6 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button type="button" variant="secondary" size="sm" className="w-full">Map units from TOC</Button>
-      </DialogTrigger>
       <DialogContent className="flex h-[94vh] w-[98vw] max-h-[94vh] flex-col gap-4 overflow-hidden p-5 sm:max-w-[min(1800px,98vw)] sm:p-6">
         <DialogTitle className="sr-only">Structure-first book mapping</DialogTitle>
         <DialogDescription className="sr-only">

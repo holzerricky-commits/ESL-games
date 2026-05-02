@@ -1,0 +1,29 @@
+{
+  "id": "ff009ff8e78fe40dcbd4",
+  "kind": "part",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-1-846acbd3",
+  "lessonId": "lesson-b42561f9",
+  "partId": "part-2e14ae72",
+  "partTitle": "Vocabulary in Context",
+  "partGoals": [
+    "stand, fans, slammed, style, score, league, pronounced, polish",
+    "Prefix mis-"
+  ],
+  "activityNotes": [
+    "target vocabulary: stand, fans, slammed, style, score, league, pronounced, polish",
+    "vocabulary strategies: Prefix mis-"
+  ],
+  "languageFocus": {
+    "grammarNotes": [],
+    "writingNotes": []
+  },
+  "sourcePageRange": {
+    "startPage": 146,
+    "endPage": 146
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-05-01T21:00:22.117Z",
+  "updatedAt": "2026-05-01T21:00:22.117Z"
+}

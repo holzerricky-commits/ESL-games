@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
-import { Flag, Trophy } from 'lucide-react'
+import Link from 'next/link'
+import { BookOpen, Flag, Trophy } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import type { StudentProfileView } from '@/lib/students/types'
 
@@ -10,6 +12,8 @@ interface StudentProfileHeaderProps {
   teacherPlanIntro?: ReactNode
   /** Teacher plan: compact row above the level progress bar (e.g. default quiz difficulty). */
   teacherDifficultyStrip?: ReactNode
+  /** When set, shows a one-click link to the library reader at last-known book/unit for this student. */
+  readerHref?: string | null
 }
 
 interface AvatarBadgeProps {
@@ -145,7 +149,13 @@ function ProgressPanel({ levelLabel, progressLabel }: ProgressPanelProps) {
   )
 }
 
-export function StudentProfileHeader({ student, tabs, teacherPlanIntro, teacherDifficultyStrip }: StudentProfileHeaderProps) {
+export function StudentProfileHeader({
+  student,
+  tabs,
+  teacherPlanIntro,
+  teacherDifficultyStrip,
+  readerHref,
+}: StudentProfileHeaderProps) {
   return (
     <div className="mt-10 mb-6 md:mt-12">
       <div className="relative -mx-4 w-auto overflow-visible border-b border-[var(--border)] bg-[var(--card)] px-4 py-7 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 md:py-8">
@@ -155,6 +165,16 @@ export function StudentProfileHeader({ student, tabs, teacherPlanIntro, teacherD
           {teacherPlanIntro ? (
             <div className="mb-5 border-b border-[var(--border)]/60 pb-4 text-sm text-muted-foreground">
               {teacherPlanIntro}
+            </div>
+          ) : null}
+          {readerHref ? (
+            <div className="mb-4 flex justify-end">
+              <Button asChild variant="outline" size="sm" className="gap-1.5 border-[var(--border)]">
+                <Link href={readerHref}>
+                  <BookOpen size={14} aria-hidden />
+                  Open book
+                </Link>
+              </Button>
             </div>
           ) : null}
           <div className="grid gap-4 md:grid-cols-[auto_minmax(0,1fr)] md:items-center xl:grid-cols-[11rem_minmax(0,1fr)_minmax(0,24rem)] xl:items-center">

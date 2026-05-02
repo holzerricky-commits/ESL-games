@@ -1,0 +1,27 @@
+{
+  "id": "e50513ce92f48afd38b1",
+  "kind": "part",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-1-846acbd3",
+  "lessonId": "lesson-a77c6dd5",
+  "partId": "part-59c6f66f",
+  "partTitle": "A Fine, Fine School",
+  "partGoals": [
+    "A Fine, Fine School"
+  ],
+  "activityNotes": [
+    "main selection: A Fine, Fine School"
+  ],
+  "languageFocus": {
+    "grammarNotes": [],
+    "writingNotes": []
+  },
+  "sourcePageRange": {
+    "startPage": 14,
+    "endPage": 14
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-05-01T21:00:22.117Z",
+  "updatedAt": "2026-05-01T21:00:22.117Z"
+}

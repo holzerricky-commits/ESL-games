@@ -7,8 +7,32 @@ export interface VocabularyStore {
   updateEntry(
     setId: string,
     entryId: string,
-    patch: Partial<Pick<VocabularyEntry, 'word' | 'lemma' | 'definition' | 'examples' | 'synonyms' | 'antonyms' | 'sourcePage' | 'approved'>>,
+    patch: Partial<
+      Pick<
+        VocabularyEntry,
+        | 'word'
+        | 'lemma'
+        | 'definition'
+        | 'examples'
+        | 'synonyms'
+        | 'antonyms'
+        | 'relevanceTags'
+        | 'confidence'
+        | 'reviewFlags'
+        | 'sourcePage'
+        | 'approved'
+      >
+    >,
   ): Promise<VocabularySet | null>
   removeEntry(setId: string, entryId: string): Promise<VocabularySet | null>
+  bulkUpdateEntries(
+    setId: string,
+    predicate: (entry: VocabularyEntry) => boolean,
+    patch: Partial<VocabularyEntry>,
+  ): Promise<VocabularySet | null>
+  listEntriesByRisk(
+    setId: string,
+    options?: { onlyFlags?: boolean; excludeApproved?: boolean },
+  ): Promise<VocabularyEntry[] | null>
   setStatus(setId: string, status: VocabularySetStatus): Promise<VocabularySet | null>
 }

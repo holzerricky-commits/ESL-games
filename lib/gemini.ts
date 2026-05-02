@@ -1217,6 +1217,29 @@ export interface ClassPrepSuggestionInput {
     checkpointIdeas: string[]
     contentSummary: string
   }
+  bookContext?: {
+    summary: string
+    goals: string[]
+    pacing: string[]
+    instructionalPriorities: string[]
+    focusAreas: string[]
+    materials: Array<{
+      type:
+        | 'pacing-guide'
+        | 'scope-sequence'
+        | 'teacher-edition'
+        | 'assessment'
+        | 'intervention'
+        | 'grammar-writing'
+        | 'vocabulary'
+        | 'digital-resource'
+        | 'other'
+      title: string
+      url: string
+      notes: string
+      confidence: 'high' | 'medium' | 'low'
+    }>
+  }
   studentSnapshot: {
     levelLabel: string
     motivation: 'low' | 'medium' | 'high'
@@ -1450,6 +1473,12 @@ Selected section path: ${input.sectionContext?.pathLabel || '(none)'}
 Section content summary: ${input.sectionContext?.contentSummary || '(none)'}
 Section target vocabulary: ${input.sectionContext?.sectionVocabulary.join(', ') || '(none)'}
 Section checkpoint ideas: ${input.sectionContext?.checkpointIdeas.join(' | ') || '(none)'}
+Book context summary: ${input.bookContext?.summary || '(none)'}
+Book goals: ${input.bookContext?.goals.join(' | ') || '(none)'}
+Book pacing guidance: ${input.bookContext?.pacing.join(' | ') || '(none)'}
+Book instructional priorities: ${input.bookContext?.instructionalPriorities.join(' | ') || '(none)'}
+Book focus areas: ${input.bookContext?.focusAreas.join(' | ') || '(none)'}
+Book supporting materials: ${input.bookContext?.materials.map((item) => `${item.type}: ${item.title}`).join(' | ') || '(none)'}
 Student level: ${input.studentSnapshot.levelLabel}
 Student motivation: ${input.studentSnapshot.motivation}
 First or early classes: ${input.studentSnapshot.firstOrEarlyClasses ? 'yes' : 'no'}

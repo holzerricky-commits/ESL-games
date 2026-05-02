@@ -1,0 +1,29 @@
+{
+  "id": "786e403795ee2a2a2b04",
+  "kind": "unit",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-1-846acbd3",
+  "unitTitle": "Good Citizens",
+  "theme": "Citizenship and Community",
+  "bigIdeas": [],
+  "crossCurricularLinks": [],
+  "targetLanguageDomains": [
+    "Selection",
+    "Phonics",
+    "Fluency",
+    "Comprehension",
+    "Listening/Speaking/Viewing",
+    "Vocabulary",
+    "Spelling",
+    "Grammar",
+    "Writing"
+  ],
+  "sourcePageRange": {
+    "startPage": 10,
+    "endPage": 146
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-04-29T13:35:08.041Z",
+  "updatedAt": "2026-05-01T21:00:22.117Z"
+}

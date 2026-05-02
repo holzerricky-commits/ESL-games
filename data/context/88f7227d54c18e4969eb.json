@@ -1,0 +1,29 @@
+{
+  "id": "88f7227d54c18e4969eb",
+  "kind": "part",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-1-846acbd3",
+  "lessonId": "lesson-93983f2c",
+  "partId": "part-adbb712c",
+  "partTitle": "Comprehension: Conclusions • Infer/Predict.",
+  "partGoals": [
+    "Conclusions",
+    "Infer/Predict"
+  ],
+  "activityNotes": [
+    "skill: Conclusions",
+    "strategy: Infer/Predict"
+  ],
+  "languageFocus": {
+    "grammarNotes": [],
+    "writingNotes": []
+  },
+  "sourcePageRange": {
+    "startPage": 45,
+    "endPage": 45
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-05-01T21:00:22.117Z",
+  "updatedAt": "2026-05-01T21:00:22.117Z"
+}

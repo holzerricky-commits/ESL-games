@@ -1,0 +1,27 @@
+{
+  "id": "b2e90c44cba9ad49575f",
+  "kind": "part",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-1-846acbd3",
+  "lessonId": "lesson-18602cbd",
+  "partId": "part-63232d51",
+  "partTitle": "Destiny's Gift",
+  "partGoals": [
+    "Destiny's Gift"
+  ],
+  "activityNotes": [
+    "main selection: Destiny's Gift"
+  ],
+  "languageFocus": {
+    "grammarNotes": [],
+    "writingNotes": []
+  },
+  "sourcePageRange": {
+    "startPage": 78,
+    "endPage": 78
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-05-01T21:00:22.117Z",
+  "updatedAt": "2026-05-01T21:00:22.117Z"
+}

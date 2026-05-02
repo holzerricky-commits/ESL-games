@@ -1,0 +1,27 @@
+{
+  "id": "5642a564720ce245a500",
+  "kind": "part",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-1-846acbd3",
+  "lessonId": "lesson-93983f2c",
+  "partId": "part-452b8020",
+  "partTitle": "Grammar/Write to Narrate",
+  "partGoals": [],
+  "activityNotes": [
+    "writing mode: Write to Narrate: Friendly Letter"
+  ],
+  "languageFocus": {
+    "grammarNotes": [],
+    "writingNotes": [
+      "Write to Narrate: Friendly Letter"
+    ]
+  },
+  "sourcePageRange": {
+    "startPage": 70,
+    "endPage": 70
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-05-01T21:00:22.117Z",
+  "updatedAt": "2026-05-01T21:00:22.117Z"
+}

@@ -1,11 +1,17 @@
+'use client'
+
 import Link from 'next/link'
+import { useMemo } from 'react'
 import { BookOpen, Calendar, Play } from 'lucide-react'
+import type { BookLibraryPayload } from '@/lib/books/types'
+import { getStudentDefaultBookUnitForReader } from '@/lib/students/selectors'
 import { Button } from '@/components/ui/button'
 import { StudentCardLessonPreview } from '@/components/students/student-card-lesson-preview'
 import type { StudentListItemView } from '@/lib/students/types'
 
 interface StudentCardProps {
   student: StudentListItemView
+  library?: BookLibraryPayload | null
 }
 
 function initialsFromName(name: string) {
@@ -15,10 +21,16 @@ function initialsFromName(name: string) {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
 }
 
-export function StudentCard({ student }: StudentCardProps) {
+export function StudentCard({ student, library = null }: StudentCardProps) {
   const studentHref = `/students/${student.id}`
   const teacherHref = `/students/${student.id}/plan`
   const playHref = `/students/${student.id}/map`
+  const booksHref = useMemo(() => {
+    const base = `/books?student=${encodeURIComponent(student.id)}`
+    const pick = library ? getStudentDefaultBookUnitForReader(student.id, library) : null
+    if (!pick) return base
+    return `${base}&book=${encodeURIComponent(pick.bookId)}&unit=${encodeURIComponent(pick.unitId)}`
+  }, [student.id, library])
   const avatarSrc = student.avatarUrl?.trim()
 
   const thumbLabel =
@@ -87,7 +99,18 @@ export function StudentCard({ student }: StudentCardProps) {
         </div>
       </div>
 
-      <div className="mt-4 flex items-center justify-end gap-2 border-t border-[var(--border)] pt-3">
+      <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-[var(--border)] pt-3">
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground"
+        >
+          <Link href={booksHref} aria-label={`Open library reader for ${student.name}`}>
+            <BookOpen size={13} className="mr-1" />
+            Book
+          </Link>
+        </Button>
         <Button
           asChild
           variant="ghost"

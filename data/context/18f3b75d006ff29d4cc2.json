@@ -1,0 +1,29 @@
+{
+  "id": "18f3b75d006ff29d4cc2",
+  "kind": "part",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-1-846acbd3",
+  "lessonId": "lesson-c312ed1b",
+  "partId": "part-f49fe217",
+  "partTitle": "Comprehension: Compare and Contrast • Infer/Predict.",
+  "partGoals": [
+    "Compare and Contrast",
+    "Infer/Predict"
+  ],
+  "activityNotes": [
+    "skill: Compare and Contrast",
+    "strategy: Infer/Predict"
+  ],
+  "languageFocus": {
+    "grammarNotes": [],
+    "writingNotes": []
+  },
+  "sourcePageRange": {
+    "startPage": 113,
+    "endPage": 113
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-05-01T21:00:22.117Z",
+  "updatedAt": "2026-05-01T21:00:22.117Z"
+}

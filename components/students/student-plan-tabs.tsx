@@ -4,6 +4,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { TeacherChallengePathTab } from '@/components/students/teacher-challenge-path-tab'
+import { TeacherDifficultyStripInline } from '@/components/students/teacher-difficulty-strip-inline'
+import { TeacherStudentDeletePanel } from '@/components/students/teacher-student-delete-panel'
 import { StudentCurriculumTab } from '@/components/students/tabs/student-curriculum-tab'
 import { StudentClassesTab } from '@/components/students/tabs/student-classes-tab'
 import type { StudentProfileTab, StudentProfileView } from '@/lib/students/types'
@@ -64,7 +66,7 @@ export function StudentPlanTabs({ student, studentId, activeTab, onDataUpdated }
         <TeacherChallengePathTab student={student} onUpdated={onDataUpdated} />
       </TabsContent>
       <TabsContent value="curriculum">
-        <StudentCurriculumTab student={student} />
+        <StudentCurriculumTab student={student} onDataUpdated={onDataUpdated} />
       </TabsContent>
       <TabsContent value="classes">
         <StudentClassesTab student={student} onUpdated={onDataUpdated} />
@@ -72,8 +74,32 @@ export function StudentPlanTabs({ student, studentId, activeTab, onDataUpdated }
       <TabsContent value="avatar">
         <OtherTabPlaceholder studentId={studentId} label="Avatar" />
       </TabsContent>
-      <TabsContent value="info">
-        <OtherTabPlaceholder studentId={studentId} label="Student info" />
+      <TabsContent value="info" className="space-y-6">
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-4 sm:p-5">
+          <p className="text-sm font-semibold text-foreground">Student profile</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Avatar, map, and play experience live on the full profile. Open it when you want to preview or test as this
+            student.
+          </p>
+          <Link
+            href={`/students/${studentId}`}
+            className="mt-3 inline-block text-sm font-semibold text-[var(--brand-blue)] hover:underline"
+          >
+            Open student profile
+          </Link>
+        </div>
+
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-4 sm:p-5">
+          <p className="text-sm font-semibold text-foreground">Default quiz difficulty</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Sets the tier used for new challenges unless a quiz overrides it.
+          </p>
+          <div className="mt-4">
+            <TeacherDifficultyStripInline student={student} studentId={studentId} onUpdated={onDataUpdated} />
+          </div>
+        </div>
+
+        <TeacherStudentDeletePanel studentId={studentId} studentName={student.name} />
       </TabsContent>
     </Tabs>
   )

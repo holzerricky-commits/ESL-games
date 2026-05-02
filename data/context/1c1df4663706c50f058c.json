@@ -1,0 +1,31 @@
+{
+  "id": "1c1df4663706c50f058c",
+  "kind": "part",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-3-3e7eaa87",
+  "lessonId": "lesson-2d6f0fe0",
+  "partId": "part-c10071f3",
+  "partTitle": "Comprehension: Fact and Opinion • Question",
+  "partGoals": [
+    "Fact and Opinion",
+    "Question",
+    "Word Choice: Sensory Words and Details"
+  ],
+  "activityNotes": [
+    "skill: Fact and Opinion",
+    "strategy: Question",
+    "focus trait: Word Choice: Sensory Words and Details"
+  ],
+  "languageFocus": {
+    "grammarNotes": [],
+    "writingNotes": []
+  },
+  "sourcePageRange": {
+    "startPage": 365,
+    "endPage": 365
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-05-01T21:00:22.117Z",
+  "updatedAt": "2026-05-01T21:00:22.117Z"
+}

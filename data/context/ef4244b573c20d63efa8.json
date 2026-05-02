@@ -1,0 +1,29 @@
+{
+  "id": "ef4244b573c20d63efa8",
+  "kind": "part",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-1-846acbd3",
+  "lessonId": "lesson-93983f2c",
+  "partId": "part-dddb2ce4",
+  "partTitle": "Vocabulary in Context",
+  "partGoals": [
+    "convinced, jury, pointed, murmur, stand, trial, guilty, honest",
+    "Compound Words"
+  ],
+  "activityNotes": [
+    "target vocabulary: convinced, jury, pointed, murmur, stand, trial, guilty, honest",
+    "vocabulary strategies: Compound Words"
+  ],
+  "languageFocus": {
+    "grammarNotes": [],
+    "writingNotes": []
+  },
+  "sourcePageRange": {
+    "startPage": 42,
+    "endPage": 42
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-05-01T21:00:22.117Z",
+  "updatedAt": "2026-05-01T21:00:22.117Z"
+}

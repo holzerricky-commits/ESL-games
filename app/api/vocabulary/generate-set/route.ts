@@ -58,9 +58,81 @@ export async function POST(req: Request) {
     }
     const requestedCount = Number(body?.requestedCount ?? 12)
     const seedWords = Array.isArray(body?.seedWords) ? body.seedWords.map(String) : []
+    const unitContext =
+      body?.unitContext && typeof body.unitContext === 'object'
+        ? {
+            theme: typeof body.unitContext.theme === 'string' ? body.unitContext.theme : undefined,
+            bigIdeas: Array.isArray(body.unitContext.bigIdeas) ? body.unitContext.bigIdeas.map(String) : undefined,
+            targetLanguageDomains: Array.isArray(body.unitContext.targetLanguageDomains)
+              ? body.unitContext.targetLanguageDomains.map(String)
+              : undefined,
+          }
+        : undefined
+    const lessonContext =
+      body?.lessonContext && typeof body.lessonContext === 'object'
+        ? {
+            textType: typeof body.lessonContext.textType === 'string' ? body.lessonContext.textType : undefined,
+            comprehensionSkill:
+              typeof body.lessonContext.comprehensionSkill === 'string'
+                ? body.lessonContext.comprehensionSkill
+                : undefined,
+            strategy: typeof body.lessonContext.strategy === 'string' ? body.lessonContext.strategy : undefined,
+            essentialQuestions: Array.isArray(body.lessonContext.essentialQuestions)
+              ? body.lessonContext.essentialQuestions.map(String)
+              : undefined,
+          }
+        : undefined
+    const outcomeContext =
+      body?.outcomeContext && typeof body.outcomeContext === 'object'
+        ? {
+            introducedWords: Array.isArray(body.outcomeContext.introducedWords)
+              ? body.outcomeContext.introducedWords.map(String)
+              : undefined,
+            practicedWords: Array.isArray(body.outcomeContext.practicedWords)
+              ? body.outcomeContext.practicedWords.map(String)
+              : undefined,
+            reviewedWords: Array.isArray(body.outcomeContext.reviewedWords)
+              ? body.outcomeContext.reviewedWords.map(String)
+              : undefined,
+            learnedWords: Array.isArray(body.outcomeContext.learnedWords)
+              ? body.outcomeContext.learnedWords.map(String)
+              : undefined,
+            dueReviewWords: Array.isArray(body.outcomeContext.dueReviewWords)
+              ? body.outcomeContext.dueReviewWords.map(String)
+              : undefined,
+          }
+        : undefined
+    const feedbackContext =
+      body?.feedbackContext && typeof body.feedbackContext === 'object'
+        ? {
+            tooEasyCount: Number.isFinite(Number(body.feedbackContext.tooEasyCount))
+              ? Number(body.feedbackContext.tooEasyCount)
+              : undefined,
+            offThemeCount: Number.isFinite(Number(body.feedbackContext.offThemeCount))
+              ? Number(body.feedbackContext.offThemeCount)
+              : undefined,
+            wrongSkillSupportCount: Number.isFinite(Number(body.feedbackContext.wrongSkillSupportCount))
+              ? Number(body.feedbackContext.wrongSkillSupportCount)
+              : undefined,
+            editedMeaningCount: Number.isFinite(Number(body.feedbackContext.editedMeaningCount))
+              ? Number(body.feedbackContext.editedMeaningCount)
+              : undefined,
+            recentlyRemovedWords: Array.isArray(body.feedbackContext.recentlyRemovedWords)
+              ? body.feedbackContext.recentlyRemovedWords.map(String)
+              : undefined,
+          }
+        : undefined
 
     const store = getVocabularyStore()
-    const generated = await generateVocabularySet({ context, requestedCount, seedWords })
+    const generated = await generateVocabularySet({
+      context,
+      requestedCount,
+      seedWords,
+      unitContext,
+      lessonContext,
+      outcomeContext,
+      feedbackContext,
+    })
     const saved = await store.saveDraftSet(generated)
     return NextResponse.json({ ok: true, set: saved })
   } catch {

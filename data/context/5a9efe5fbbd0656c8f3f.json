@@ -1,0 +1,27 @@
+{
+  "id": "5a9efe5fbbd0656c8f3f",
+  "kind": "part",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-3-3e7eaa87",
+  "lessonId": "lesson-a8d2adbd",
+  "partId": "part-4095e2e7",
+  "partTitle": "Grammar/Write to Narrate",
+  "partGoals": [],
+  "activityNotes": [
+    "writing mode: Write to Narrate: Autobiography"
+  ],
+  "languageFocus": {
+    "grammarNotes": [],
+    "writingNotes": [
+      "Write to Narrate: Autobiography"
+    ]
+  },
+  "sourcePageRange": {
+    "startPage": 514,
+    "endPage": 514
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-05-01T21:00:22.117Z",
+  "updatedAt": "2026-05-01T21:00:22.117Z"
+}

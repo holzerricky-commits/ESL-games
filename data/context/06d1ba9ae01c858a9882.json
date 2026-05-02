@@ -1,0 +1,44 @@
+{
+  "id": "06d1ba9ae01c858a9882",
+  "kind": "lesson",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-1-846acbd3",
+  "lessonId": "lesson-a77c6dd5",
+  "lessonTitle": "Lesson 1",
+  "textType": "Humorous Fiction",
+  "lessonGoals": [
+    "Selection: Main Selection: A Fine, Fine School\nGenre: Humorous Fiction\nPaired Selection: One-Room Schoolhouses\nGenre: Informational Text",
+    "Phonics: Short vowels a, e, i, o, u\nWords with the VCCV Pattern",
+    "Fluency: Accuracy: Word Recognition",
+    "accuracy: Word Recognition",
+    "Comprehension: Skill: Story Structure\nStrategy: Summarize\nAuthor's Craft: Repetition",
+    "author s craft: Repetition",
+    "Listening/Speaking/Viewing: Listen for a Purpose",
+    "Vocabulary: Target Vocabulary: principal, proud, soared, fine, certainly, strolled, worried, announced\nVocabulary Strategies: Multiple-Meaning Words",
+    "Spelling: Spelling Principle: Short Vowels\nSpelling Words Basic: pop, thing, smell, shut, went, lunch, pumpkin, clock, gift, class, skip, swing\nReview: next, hug\nChallenge: hospital, fantastic",
+    "spelling principle: Short Vowels",
+    "spelling words basic: pop, thing, smell, shut, went, lunch, pumpkin, clock, gift, class, skip, swing",
+    "review: next, hug",
+    "challenge: hospital, fantastic",
+    "Grammar: Subjects and Predicates",
+    "Writing: Writing Mode: Write to Narrate: Descriptive Paragraph\nFocus Trait: Word Choice: Exact Words",
+    "focus trait: Word Choice: Exact Words"
+  ],
+  "comprehensionSkill": "Not specified",
+  "strategy": "Selection: Main Selection: A Fine, Fine School\nGenre: Humorous Fiction\nPaired Selection: One-Room Schoolhouses\nGenre: Informational Text",
+  "essentialQuestions": [],
+  "languageFocus": {
+    "grammarNotes": [
+      "Subjects and Predicates"
+    ],
+    "writingNotes": []
+  },
+  "sourcePageRange": {
+    "startPage": 10,
+    "endPage": 10
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-04-29T13:36:16.594Z",
+  "updatedAt": "2026-05-01T21:00:22.117Z"
+}

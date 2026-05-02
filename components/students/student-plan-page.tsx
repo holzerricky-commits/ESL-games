@@ -1,8 +1,6 @@
 import Link from 'next/link'
 import { StudentProfileHeader } from '@/components/students/student-profile-header'
 import { StudentPlanTabs } from '@/components/students/student-plan-tabs'
-import { TeacherDifficultyStripInline } from '@/components/students/teacher-difficulty-strip-inline'
-import { TeacherStudentDeletePanel } from '@/components/students/teacher-student-delete-panel'
 import type { StudentProfileTab, StudentProfileView } from '@/lib/students/types'
 
 interface StudentPlanPageProps {
@@ -10,9 +8,10 @@ interface StudentPlanPageProps {
   studentId: string
   activeTab: StudentProfileTab
   onDataUpdated: () => void
+  readerHref?: string | null
 }
 
-export function StudentPlanPage({ student, studentId, activeTab, onDataUpdated }: StudentPlanPageProps) {
+export function StudentPlanPage({ student, studentId, activeTab, onDataUpdated, readerHref }: StudentPlanPageProps) {
   const teacherPlanIntro = (
     <>
       <span className="font-semibold text-foreground">Teacher · Plan challenge path</span>
@@ -27,16 +26,9 @@ export function StudentPlanPage({ student, studentId, activeTab, onDataUpdated }
 
   return (
     <>
-      <StudentProfileHeader
-        student={student}
-        teacherPlanIntro={teacherPlanIntro}
-        teacherDifficultyStrip={
-          <TeacherDifficultyStripInline student={student} studentId={studentId} onUpdated={onDataUpdated} />
-        }
-      />
+      <StudentProfileHeader student={student} teacherPlanIntro={teacherPlanIntro} readerHref={readerHref} />
       <div className="mx-auto w-full max-w-7xl">
         <StudentPlanTabs student={student} studentId={studentId} activeTab={activeTab} onDataUpdated={onDataUpdated} />
-        <TeacherStudentDeletePanel studentId={studentId} studentName={student.name} />
       </div>
     </>
   )

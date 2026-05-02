@@ -1,0 +1,40 @@
+---
+description: Permanent — speak plain English to the user; no developer jargon unless they ask
+alwaysApply: true
+---
+
+# Plain English with you (permanent)
+
+**Standing rule:** In this project, the assistant talks to **you** like a person, not like a fellow engineer. This applies **every** time—there is no “tech mode” unless you clearly ask for it.
+
+## What to do
+
+- Use **everyday English**. Short beats long. Clear beats clever.
+- Say **what something means for you and the app** (what you’ll see, what you can try, what’s left to build)—not how the code is wired inside.
+- When you ask **“what did you do?”** or **“what’s next?”**, answer like you’re telling a friend—**no** file names, hook names, or “we fixed X by doing Y in Z” unless you explicitly asked where in the code it lives.
+- If a technical word is truly needed, **say the plain meaning right next to it**, or pick a simple everyday word instead.
+
+## What to skip (unless you asked for a technical deep dive)
+
+- Insider coding slang: e.g. “wire up,” “stub,” “schema,” “resolver,” “sanitize,” “selector,” “surface,” “edge case,” “persist,” “refactor,” “heuristic,” “TOC,” “data layer,” and similar.
+- Long lists of **file paths, class names, or function names** in chat. Put that detail in code or comments when you’re actually changing files—not in the message to you unless you asked “where in the code?”
+- Opening with a wall of repo jargon or a changelog-style dump.
+
+## Tiny before / after examples
+
+- **Instead of:** “We merged bookmarkAtEnd into curriculumHistory on end session.”  
+  **Say:** “When you end class, the app remembers which book page you were on.”
+
+- **Instead of:** “UnitId null breaks the seed path.”  
+  **Say:** “If no lesson unit is tied to that book, the reader might not open on the saved page—we can tighten that.”
+
+- **Instead of:** “Task 6 closed in CLASS_SESSION_FLOW.”  
+  **Say:** “The ‘save your place when class ends’ step is done.”
+
+## Code vs chat
+
+When **writing or editing code**, normal names inside the project stay as they are. This rule is about **how we talk to you in chat**, not about renaming your codebase.
+
+## Priority
+
+If anything else in the rules sounds more “engineer-y,” **this file wins for user-facing wording**: explain simply first; add technical depth only when you ask.

@@ -1,0 +1,203 @@
+{
+  "id": "042f73d9c44b168b7283",
+  "kind": "book",
+  "bookId": "journeys-g3-book-1",
+  "summary": "",
+  "goals": [],
+  "pacing": [],
+  "instructionalPriorities": [
+    "Selection",
+    "Phonics",
+    "Fluency",
+    "Comprehension",
+    "Listening/Speaking/Viewing",
+    "Vocabulary",
+    "Spelling",
+    "Grammar",
+    "Writing"
+  ],
+  "focusAreas": [
+    "Selection",
+    "Phonics",
+    "Fluency",
+    "Comprehension",
+    "Listening/Speaking/Viewing",
+    "Vocabulary",
+    "Spelling",
+    "Grammar",
+    "Writing"
+  ],
+  "focusNotesByLesson": {
+    "lesson-a77c6dd5": {
+      "Selection": "Main Selection: A Fine, Fine School\nGenre: Humorous Fiction\nPaired Selection: One-Room Schoolhouses\nGenre: Informational Text",
+      "Phonics": "Short vowels a, e, i, o, u\nWords with the VCCV Pattern",
+      "Fluency": "Accuracy: Word Recognition",
+      "Comprehension": "Skill: Story Structure\nStrategy: Summarize\nAuthor's Craft: Repetition",
+      "Listening/Speaking/Viewing": "Listen for a Purpose",
+      "Vocabulary": "Target Vocabulary: principal, proud, soared, fine, certainly, strolled, worried, announced\nVocabulary Strategies: Multiple-Meaning Words",
+      "Spelling": "Spelling Principle: Short Vowels\nSpelling Words Basic: pop, thing, smell, shut, went, lunch, pumpkin, clock, gift, class, skip, swing\nReview: next, hug\nChallenge: hospital, fantastic",
+      "Grammar": "Subjects and Predicates",
+      "Writing": "Writing Mode: Write to Narrate: Descriptive Paragraph\nFocus Trait: Word Choice: Exact Words"
+    },
+    "lesson-93983f2c": {
+      "Selection": "Main Selection: The Trial of Cardigan Jones\nGenre: Fantasy\nPaired Selection: Jury Duty\nGenre: Readers' Theater",
+      "Phonics": "Long Vowels a, e, i, o, u\nWords with the VCe Pattern",
+      "Fluency": "Phrasing: Punctuation",
+      "Comprehension": "Skill: Conclusions\nStrategy: Infer/Predict\nAuthor's Craft: Word Choice",
+      "Listening/Speaking/Viewing": "Use Nonverbal Cues",
+      "Vocabulary": "Target Vocabulary: convinced, jury, pointed, murmur, stand, trial, guilty, honest\nVocabulary Strategies: Compound Words",
+      "Spelling": "Spelling Principle: VCe Spellings\nSpelling Words Basic: spoke, mile, save, excuse, cone, invite, cube, price, erase, ripe, broke, flame, life, rule\nReview: those\nChallenge: surprise, decide",
+      "Grammar": "Kinds of Sentences",
+      "Writing": "Writing Mode: Write to Narrate: Friendly Letter\nFocus Trait: Ideas: Audience and Purpose"
+    },
+    "lesson-18602cbd": {
+      "Selection": "Main Selection: Destiny's Gift\nGenre: Realistic Fiction\nPaired Selection: Kids Making a Difference\nGenre: Informational Text",
+      "Phonics": "Common Vowel Pairs ai, ay, ee, ea",
+      "Fluency": "Accuracy: Words in Connected Text",
+      "Comprehension": "Skill: Understanding Characters\nStrategy: Analyze/ Evaluate\nAuthor's Craft: Mood",
+      "Listening/Speaking/Viewing": "Hold a Conversation or Discussion",
+      "Vocabulary": "Target Vocabulary: raise, earn, contacted, afford, spreading, figure, block, customers\nVocabulary Strategies: Antonyms",
+      "Spelling": "Spelling Principle: More Long a and Long e Spellings\nSpelling Words Basic: lay, real, trail, sweet, today, dream, seem, tea, treat, afraid, leave, bait, screen, speed\nReview: paint, please\nChallenge: yesterday, explain",
+      "Grammar": "Sentence Fragments and Run-Ons",
+      "Writing": "Writing Mode: Write to Narrate: Personal Narrative Paragraph\nFocus Trait: Voice: Express Thoughts and Feelings"
+    },
+    "lesson-c312ed1b": {
+      "Selection": "Main Selection: Pop's Bridge\nGenre: Historical Fiction\nPaired Selection: Bridges\nGenre: Informational Text",
+      "Phonics": "Long o Spelled oa, ow",
+      "Fluency": "Expression",
+      "Comprehension": "Skill: Compare and Contrast\nStrategy: Infer/Predict\nAuthor's Craft: Simile",
+      "Listening/Speaking/Viewing": "Give and Follow Directions",
+      "Vocabulary": "Target Vocabulary: balancing, crew, foggy, excitement, cling, tide, disappears, stretch\nVocabulary Strategies: Base Words and Endings –s, –es, –ed, –ing",
+      "Spelling": "Spelling Principle: More Long o Spellings\nSpelling Words Basic: load, open, told, yellow, soak, roam, follow, glow, sold, window, coach, almost, throat\nReview: cold, most\nChallenge: tomorrow, sailboats",
+      "Grammar": "Common and Proper Nouns",
+      "Writing": "Writing Mode: Write to Narrate: Personal Narrative\nFocus Trait: Ideas: Important, Interesting Details"
+    },
+    "lesson-b42561f9": {
+      "Selection": "Main Selection: Roberto Clemente, Pride of the Pittsburgh Pirates\nGenre: Biography\nPaired Selection: Baseball Poems\nGenre: Poetry",
+      "Phonics": "Long i spelled i, ie, igh",
+      "Fluency": "Intonation",
+      "Comprehension": "Skill: Cause and Effect\nStrategy: Visualize\nAuthor's Craft: Word Choice",
+      "Listening/Speaking/Viewing": "Computers: Review of the Basics",
+      "Vocabulary": "Target Vocabulary: stand, fans, slammed, style, score, league, pronounced, polish\nVocabulary Strategies: Prefix mis-",
+      "Spelling": "Spelling Principle: Spelling Long i\nSpelling Words Basic: slight, mild, sight, pie, mind, lie, pilot, might, tie, light, blind, fight, die, midnight\nReview: find, night\nChallenge: silent, frightening",
+      "Grammar": "Plural Nouns with –s and –es",
+      "Writing": "Writing Mode: Write to Narrate: Personal Narrative\nFocus Trait: Sentence Fluency: Time-Order (Transition) Words"
+    },
+    "lesson-766c1e86": {
+      "Selection": "Main Selection: Max's Words, Genre: Humorous Fiction; Paired Selection: Poems That Slither, Walk, and Fly, Genre: Poetry",
+      "Phonics": "Words with the VCV Pattern",
+      "Fluency": "Rate",
+      "Comprehension": "Skill: Sequence of Events; Strategy: Question; Author's Craft: Onomatopoeia",
+      "Listening/Speaking/Viewing": "Interpret Poems",
+      "Vocabulary": "Target Vocabulary: collect, orders, ragged, continued, scrambled, sorted, rapidly, darted; Vocabulary Strategies: Suffixes -er, -or",
+      "Spelling": "Spelling Principle: More Short and Long Vowels; Spelling Words: Basic Words: math, toast, easy, socks, Friday, stuff, paid, cheese, June, elbow, program, shiny, piles, sticky; Review Words: each, both; Challenge Words: comb, holiday",
+      "Grammar": "What is a Verb?",
+      "Writing": "Writing Mode: Write to Respond: Response Paragraph; Focus Trait: Ideas: Details and Examples"
+    },
+    "lesson-de5fde9a": {
+      "Selection": "Main Selection: What Do Illustrators Do?, Genre: Informational Text; Paired Selection: Jack Draws a Beanstalk, Genre: Fairy Tale",
+      "Phonics": "Three-Letter Clusters (scr-, spr-, str-, thr-)",
+      "Fluency": "Expression",
+      "Comprehension": "Skill: Text and Graphic Features; Strategy: Analyze/ Evaluate; Author's Craft: Organization",
+      "Listening/Speaking/Viewing": "Monitor Understanding and Ask Questions",
+      "Vocabulary": "Target Vocabulary: tracing, illustrate, sketches, textures, imagine, scribbles, research, tools; Vocabulary Strategies: Synonyms",
+      "Spelling": "Spelling Principle: Three-Letter Clusters; Spelling Words: Basic Words: three, scrap, street, spring, thrill, scream, strange, throw, string, scrape, spray, threw, strong, scratch; Review Words: think, they; Challenge Words: straight, scramble",
+      "Grammar": "Verb Tenses",
+      "Writing": "Writing Mode: Write to Respond: Compare/ Contrast Paragraph; Focus Trait: Organization: Topic Sentence"
+    },
+    "lesson-50876b6b": {
+      "Selection": "Main Selection: The Harvest Birds, Genre: Folktale; Paired Selection: The Farmer and the Dream, Genre: Readers' Theater",
+      "Phonics": "Silent Letters kn, wr",
+      "Fluency": "Stress",
+      "Comprehension": "Skill: Conclusions; Strategy: Infer/Predict; Author's Craft: Figurative Language",
+      "Listening/Speaking/Viewing": "Retell a Story",
+      "Vocabulary": "Target Vocabulary: harvest, ashamed, advice, patch, separate, borders, borrow, serious; Vocabulary Strategies: Multiple-Meaning Words",
+      "Spelling": "Spelling Principle: Unexpected Consonant Spellings; Spelling Words: Basic Words: itch, wreck, knee, patch, wrap, knot, watch, knife, stretch, write, knew, knock, match, wrong; Review Words: knew, catch; Challenge Words: wrinkle, knuckle",
+      "Grammar": "Commas in a Series",
+      "Writing": "Writing Mode: Write to Respond: Summary Paragraph; Focus Trait: Word Choice"
+    },
+    "lesson-b2e626c2": {
+      "Selection": "Main Selection: Kamishibai Man, Genre: Realistic Fiction; Paired Selection: The True Story of Kamishibai, Genre: Informational Text",
+      "Phonics": "Vowel Diphthongs ow, ou",
+      "Fluency": "Intonation",
+      "Comprehension": "Skill: Cause and Effect; Strategy: Monitor/Clarify; Author's Craft: Flashback",
+      "Listening/Speaking/Viewing": "Respond to Questions",
+      "Vocabulary": "Target Vocabulary: familiar, vacant, blurry, blasted, jerky, rickety, rude, applause; Vocabulary Strategies: Dictionary/Glossary Entry",
+      "Spelling": "Spelling Principle: Vowel Sound in town; Spelling Words: Basic Words: clown, round, bow, cloud, power, crown, thousand, crowd, sound, count, powder, blouse, frown, pound; Review Words: house, found; Challenge Words: mountain, coward",
+      "Grammar": "Simple Subjects and Simple Predicates",
+      "Writing": "Writing Mode: Write to Respond: Response to Literature; Focus Trait: Organization: Opinion Statement"
+    },
+    "lesson-db0a5a53": {
+      "Selection": "Main Selection: Young Thomas Edison, Genre: Biography; Paired Selection: Moving Pictures, Genre: Informational Text",
+      "Phonics": "Words with au, aw, al, o",
+      "Fluency": "Accuracy: Self-Correct",
+      "Comprehension": "Skill: Main Ideas and Details; Strategy: Summarize; Author's Craft: Figurative Language",
+      "Listening/Speaking/Viewing": "Computers: Dictionaries, Encyclopedias, and Databases",
+      "Vocabulary": "Target Vocabulary: signal, gadget, laboratory, occasional, electric, genius, invention, experiment; Vocabulary Strategies: Categorize and Classify",
+      "Spelling": "Spelling Principle: Vowel Sound in talk; Spelling Words: Basic Words: talk, cross, awful, law, cloth, cost, crawl, chalk, also, raw, salt, wall, lawn, always; Review Words: often, strawberry; Challenge Words:",
+      "Grammar": "Pronouns",
+      "Writing": "Writing Mode: Write to Respond: Response to Literature; Focus Trait: Sentence Fluency: Avoiding Redundancy"
+    },
+    "lesson-2d6f0fe0": {
+      "Selection": "Main Selection: Jump!\nGenre: Biography\nPaired Selection: Science for Sports Fans\nGenre: Informational Text",
+      "Phonics": "Vowel Diphthongs oi, oy",
+      "Fluency": "Phrasing: Natural Pauses",
+      "Comprehension": "Skill: Fact and Opinion\nStrategy: Question\nAuthor's Craft: Alliteration",
+      "Listening/Speaking/Viewing": "Computers: Introduce the Internet",
+      "Vocabulary": "Target Vocabulary: championship, professional, rooting, competitor, entire, power, athlete, court\nVocabulary Strategies: Suffixes –y, –ful, –ous",
+      "Spelling": "Spelling Principle: Vowel Sound in joy\nSpelling Words: Basic Words: joy, point, voice, join, oil, coin, noise, spoil, toy, joint, boy, soil, choice, boil\nReview Words: come, are\nChallenge Words: poison, destroy",
+      "Grammar": "More Plural Nouns",
+      "Writing": "Writing Mode: Write to Narrate: Descriptive Paragraph\nFocus Trait: Word Choice: Sensory Words and Details"
+    },
+    "lesson-f007ffa1": {
+      "Selection": "Main Selection: The Science Fair\nGenre: Realistic Fiction\nPaired Selection: Science Poems\nGenre: Poetry",
+      "Phonics": "Homophones\nWords Ending in –er, –le",
+      "Fluency": "Stress",
+      "Comprehension": "Skill: Story Structure\nStrategy: Visualize\nAuthor's Craft: Dialogue",
+      "Listening/Speaking/Viewing": "Interview",
+      "Vocabulary": "Target Vocabulary: report, presentation, educational, impressive, erupt, creative, certificate, charts\nVocabulary Strategies: Idioms",
+      "Spelling": "Spelling Principle: Homophones\nSpelling Words: Basic Words: hole, whole, its, it's, hear, here, won, one, our, hour, their, there, fur, fir\nReview Words: road, rode\nChallenge Words: peace, piece",
+      "Grammar": "More Proper Nouns",
+      "Writing": "Writing Mode: Write to Narrate: Humorous Poem\nFocus Trait: Word Choice: Onomatopoeia"
+    },
+    "lesson-0de89d84": {
+      "Selection": "Main Selection: Yonder Mountain: A Cherokee Legend\nGenre: Legend\nPaired Selection: The Trail of Tears\nGenre: Informational Text",
+      "Phonics": "Contractions with n't, 'd, 've",
+      "Fluency": "Rate",
+      "Comprehension": "Skill: Compare and Contrast\nStrategy: Analyze/ Evaluate\nAuthor's Craft: Imagery/ Symbols",
+      "Listening/Speaking/Viewing": "Listen for and Retell (Paraphrase) Main Ideas",
+      "Vocabulary": "Target Vocabulary: peak, fondly, rugged, mist, examined, steep, pausing, pleaded\nVocabulary Strategies: Homophones/ Homographs",
+      "Spelling": "Spelling Principle: Contractions\nSpelling Words: Basic: I'd, he's, haven't, doesn't, let's, there's, wouldn't, what's, she's, aren't, hasn't, couldn't, he'd, they're\nReview: can't, isn't\nChallenge: we're, weren't",
+      "Grammar": "Subject-Verb Agreement",
+      "Writing": "Writing Mode: Write to Narrate: Narrative Poem\nFocus Trait: Organization"
+    },
+    "lesson-90579426": {
+      "Selection": "Main Selection: Aero and Officer Mike\nGenre: Informational Text\nPaired Selection: Kids and Critters\nGenre: Informational Text",
+      "Phonics": "Words with ar, or, ore",
+      "Fluency": "Accuracy: Words in Connected Text",
+      "Comprehension": "Skill: Author's Purpose\nStrategy: Summarize\nAuthor's Craft: Word Choice: Technical Jargon",
+      "Listening/Speaking/Viewing": "Computer: Internet Strategy",
+      "Vocabulary": "Target Vocabulary: lying, partners, quiver, ability, loyal, shift, patrol, snap\nVocabulary Strategies: Prefixes in-, im-",
+      "Spelling": "Spelling Principle: Vowel + /r/ Sounds\nSpelling Words: Basic Words: horse, mark, storm, market, acorn, artist, March, north, barking, stork, thorn, forest, chore, restore\nReview Words: dark, story\nChallenge Words: partner, fortune",
+      "Grammar": "Pronouns and Verbs",
+      "Writing": "Writing Mode: Write to Narrate: Autobiography\nFocus Trait: Ideas: Choosing an Important Event and Purpose"
+    },
+    "lesson-a8d2adbd": {
+      "Selection": "Main Selection: The Extra-Good Sunday\nGenre: Humorous Fiction\nPaired Selection: Tia Luisa's Fruit Salad\nGenre: Readers' Theater",
+      "Phonics": "Words with er, ir, ur, or",
+      "Fluency": "Expression",
+      "Comprehension": "Skill: Understanding Characters\nStrategy: Infer/Predict\nAuthor's Craft: Metaphor",
+      "Listening/Speaking/Viewing": "Listen to Make Connections",
+      "Vocabulary": "Target Vocabulary: anxiously, tense, recommended, festive, cross, degrees, ingredients, remarked\nVocabulary Strategies: Using a Thesaurus",
+      "Spelling": "Spelling Principle: Vowel + /r/ Sounds\nSpelling Words: Basic Words: nurse, work, shirt, hurt, first, word, serve, curly, dirt, third, worry, turn, stir, firm\nReview Words: her, girl\nChallenge Words: perfect, hamburger",
+      "Grammar": "Forming the Past Tense",
+      "Writing": "Writing Mode: Write to Narrate: Autobiography\nFocus Trait: Voice: Using Details That Show Thoughts and Feelings"
+    }
+  },
+  "sourcePageRange": null,
+  "materials": [],
+  "evidence": [],
+  "contextVersion": "v1",
+  "createdAt": "2026-04-29T21:19:03.811Z",
+  "updatedAt": "2026-05-01T21:00:22.117Z"
+}

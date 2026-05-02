@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import type { VocabularySet, VocabularySetStatus, VocabularySourceContext } from '@/lib/vocabulary/types'
 import type { VocabularyStore } from '@/lib/vocabulary/store'
 import { createContextKey } from '@/lib/vocabulary/utils'
+import { getVocabularyRiskScore } from '@/lib/vocabulary/risk'
 
 const DATA_DIR = join(process.cwd(), 'data')
 const VOCAB_DIR = join(DATA_DIR, 'vocabulary')
@@ -33,6 +34,9 @@ function sanitizeSet(set: VocabularySet): VocabularySet {
       examples: entry.examples.map((line) => line.trim()).filter(Boolean).slice(0, 3),
       synonyms: entry.synonyms.map((line) => line.trim()).filter(Boolean).slice(0, 8),
       antonyms: entry.antonyms.map((line) => line.trim()).filter(Boolean).slice(0, 8),
+      relevanceTags: (entry.relevanceTags ?? []).map((line) => line.trim()).filter(Boolean).slice(0, 5),
+      confidence: Number.isFinite(Number(entry.confidence)) ? Math.max(0, Math.min(1, Number(entry.confidence))) : 0.5,
+      reviewFlags: (entry.reviewFlags ?? []).map((line) => line.trim()).filter(Boolean).slice(0, 4),
     }))
     .filter((entry) => {
       if (!entry.word || !entry.lemma || !entry.definition) return false
@@ -131,6 +135,46 @@ export class FileVocabularyStore implements VocabularyStore {
       await writeJson(this.setPath(setId), next)
       return next
     })
+  }
+
+  async bulkUpdateEntries(
+    setId: string,
+    predicate: (entry: VocabularySet['entries'][number]) => boolean,
+    patch: Partial<VocabularySet['entries'][number]>,
+  ): Promise<VocabularySet | null> {
+    return this.enqueueWrite(async () => {
+      const set = await this.getSet(setId)
+      if (!set) return null
+      const now = new Date().toISOString()
+      const entries = set.entries.map((entry) => {
+        if (!predicate(entry)) return entry
+        return { ...entry, ...patch, updatedAt: now }
+      })
+      const next = sanitizeSet({ ...set, entries, updatedAt: now })
+      await writeJson(this.setPath(setId), next)
+      return next
+    })
+  }
+
+  async listEntriesByRisk(
+    setId: string,
+    options?: { onlyFlags?: boolean; excludeApproved?: boolean },
+  ): Promise<VocabularySet['entries'] | null> {
+    const set = await this.getSet(setId)
+    if (!set) return null
+    let entries = [...set.entries]
+    if (options?.onlyFlags) {
+      entries = entries.filter((entry) => (entry.reviewFlags ?? []).length > 0)
+    }
+    if (options?.excludeApproved) {
+      entries = entries.filter((entry) => !entry.approved)
+    }
+    entries.sort((a, b) => {
+      const risk = getVocabularyRiskScore(b) - getVocabularyRiskScore(a)
+      if (risk !== 0) return risk
+      return (a.word ?? '').localeCompare(b.word ?? '')
+    })
+    return entries
   }
 
   async setStatus(setId: string, status: VocabularySetStatus): Promise<VocabularySet | null> {

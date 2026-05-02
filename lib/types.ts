@@ -60,7 +60,14 @@ export interface StudentResult {
   passedChallenge?: boolean
 }
 
-export type StudentClassStatus = 'planned' | 'prepared' | 'completed' | 'cancelled'
+export type StudentClassStatus = 'planned' | 'prepared' | 'in_progress' | 'completed' | 'cancelled'
+
+/** Bookmark captured when the teacher ends class (last viewed PDF page for that book). */
+export interface ClassSessionBookmarkAtEnd {
+  bookId: string
+  pdfPage: number
+  unitId?: string
+}
 
 export type BookSectionType = 'unit' | 'lesson' | 'part'
 
@@ -107,6 +114,8 @@ export interface StudentClassSession {
   /** Optional AI-generated vocabulary set linked to this class session. */
   vocabularySetId?: string
   vocabularySetStatus?: 'draft' | 'approved' | 'published'
+  unitContextId?: string
+  lessonContextId?: string
   selectedSection?: StudentBookSectionRef
   /** Source weekly schedule slot id when session is generated automatically. */
   sourceSlotId?: string
@@ -114,8 +123,45 @@ export interface StudentClassSession {
   practicedWords: string[]
   reviewedWords: string[]
   learnedWords: string[]
+  vocabularyFeedback?: {
+    tooEasy: number
+    offTheme: number
+    wrongSkillSupport: number
+    editedMeaning: number
+    removedWords: string[]
+  }
+  vocabularyReviewPlan?: Array<{
+    word: string
+    lastSeenAt: string
+    intervalDays: number
+    nextReviewAt: string
+  }>
+  practiceItems?: Array<{
+    id: string
+    type: 'meaning_match'
+    word: string
+    prompt: string
+    choices: string[]
+    correctChoiceIndex: number
+    createdAt: string
+  }>
   teacherNotes?: string
   aiPrepSummary?: string
+  /** When the teacher tapped Start class (ISO). */
+  classStartedAt?: string
+  /** When the teacher confirmed End class (ISO). */
+  classEndedAt?: string
+  /** Short recap after class (separate from prep `teacherNotes`). */
+  classEndNote?: string
+  /**
+   * Longer session log for this call: pages covered, what worked, plan for next time.
+   * Distinct from `classEndNote` (one-line recap).
+   */
+  sessionNote?: string
+  /** Teacher dismissed the optional “add a recap” prompt without adding text. */
+  postClassRecapPromptDismissed?: boolean
+  /** Last-viewed PDF page at end class, per your bookmark rule. */
+  bookmarkAtEnd?: ClassSessionBookmarkAtEnd
   createdAt: string
   updatedAt: string
 }
@@ -148,6 +194,11 @@ export interface StudentRecord {
   assignedBookIds?: string[]
   /** Teacher-assigned curriculum units (book+unit reference). */
   assignedUnitRefs?: Array<{ bookId: string; unitId: string }>
+  /**
+   * Optional `StudentSectionOption.id` from the book outline — where reading should start
+   * when there is no earlier completed class with a chosen section.
+   */
+  curriculumAnchorSectionId?: string
   /** Per-session reading history entries captured from the Books reader when opened from a student context. */
   curriculumHistory?: Array<{
     id: string
@@ -159,6 +210,8 @@ export interface StudentRecord {
   }>
   /** Scheduled class sessions for this student (teacher planning flow). */
   scheduledClasses?: StudentClassSession[]
+  /** Per-lesson page range overrides keyed by `bookId::unitId::lessonId`. */
+  lessonRangeOverrides?: Record<string, { startPage: number; endPage: number; updatedAt: string }>
 }
 
 /** Distinct students from saved results, for pickers (same source as Student Results page). */

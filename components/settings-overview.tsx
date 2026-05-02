@@ -1,10 +1,13 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
+import { LocalDataBackupCard } from '@/components/local-data-backup-card'
 
 export function SettingsOverview() {
   return (
     <div className="grid gap-4 lg:grid-cols-2">
+      <LocalDataBackupCard />
+
       <Card className="border-[var(--border)] bg-[var(--card)]">
         <CardHeader>
           <CardTitle>Class profile</CardTitle>

@@ -1,0 +1,29 @@
+{
+  "id": "a4e5cf88aefc65eb9dde",
+  "kind": "part",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-1-846acbd3",
+  "lessonId": "lesson-a77c6dd5",
+  "partId": "part-bb28e3c4",
+  "partTitle": "Vocabulary in Context",
+  "partGoals": [
+    "principal, proud, soared, fine, certainly, strolled, worried, announced",
+    "Multiple-Meaning Words"
+  ],
+  "activityNotes": [
+    "target vocabulary: principal, proud, soared, fine, certainly, strolled, worried, announced",
+    "vocabulary strategies: Multiple-Meaning Words"
+  ],
+  "languageFocus": {
+    "grammarNotes": [],
+    "writingNotes": []
+  },
+  "sourcePageRange": {
+    "startPage": 10,
+    "endPage": 10
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-05-01T21:00:22.117Z",
+  "updatedAt": "2026-05-01T21:00:22.117Z"
+}

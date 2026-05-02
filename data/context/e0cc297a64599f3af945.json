@@ -1,0 +1,27 @@
+{
+  "id": "e0cc297a64599f3af945",
+  "kind": "part",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-3-3e7eaa87",
+  "lessonId": "lesson-90579426",
+  "partId": "part-fb334c5b",
+  "partTitle": "Aero and Officer Mike",
+  "partGoals": [
+    "Aero and Officer Mike"
+  ],
+  "activityNotes": [
+    "main selection: Aero and Officer Mike"
+  ],
+  "languageFocus": {
+    "grammarNotes": [],
+    "writingNotes": []
+  },
+  "sourcePageRange": {
+    "startPage": 460,
+    "endPage": 460
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-05-01T21:00:22.117Z",
+  "updatedAt": "2026-05-01T21:00:22.117Z"
+}

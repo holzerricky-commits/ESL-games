@@ -14,6 +14,9 @@ interface ModelWordPayload {
     examples?: string[]
     synonyms?: string[]
     antonyms?: string[]
+    relevanceTags?: string[]
+    confidence?: number
+    reviewFlags?: string[]
     sourcePage?: number | null
   }>
 }
@@ -29,6 +32,9 @@ Return JSON only with shape:
       "examples": ["...", "..."],
       "synonyms": ["..."],
       "antonyms": ["..."],
+      "relevanceTags": ["theme_core", "skill_support"],
+      "confidence": 0.85,
+      "reviewFlags": [],
       "sourcePage": 1
     }
   ]
@@ -38,11 +44,22 @@ Rules:
 - Keep definitions short and simple.
 - Provide 2 examples per word.
 - Prefer concrete, teachable words.
+- Add relevance tags from: theme_core, skill_support, strategy_support, grammar_transfer, writing_transfer.
+- Confidence must be 0.0 to 1.0.
+- Add reviewFlags for uncertain items (low_confidence, ambiguous_meaning, off_scope).
 - sourcePage must be between selected start and end page.
 - Output plain ASCII text.
 `
 
 const MODEL_CANDIDATES = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest'] as const
+
+function normalizeTag(input: string): string {
+  return input
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_\s-]/g, '')
+    .replace(/\s+/g, '_')
+}
 
 function parseModelPayload(text: string): ModelWordPayload | null {
   const trimmed = text.trim()
@@ -73,6 +90,16 @@ function sanitizeEntries(input: ModelWordPayload['words'], minPage: number, maxP
     const antonyms = Array.isArray(raw?.antonyms) ? raw.antonyms.map((line) => normalizeWord(String(line))).filter(Boolean).slice(0, 8) : []
     const pageValue = Number(raw?.sourcePage)
     const sourcePage = Number.isFinite(pageValue) ? Math.max(minPage, Math.min(maxPage, Math.floor(pageValue))) : null
+    const relevanceTags = Array.isArray(raw?.relevanceTags)
+      ? raw.relevanceTags.map((line) => normalizeTag(String(line))).filter(Boolean).slice(0, 5)
+      : []
+    const confidenceRaw = Number(raw?.confidence)
+    const confidence = Number.isFinite(confidenceRaw) ? Math.max(0, Math.min(1, confidenceRaw)) : 0.65
+    const reviewFlags = Array.isArray(raw?.reviewFlags)
+      ? raw.reviewFlags.map((line) => normalizeTag(String(line))).filter(Boolean).slice(0, 4)
+      : confidence < 0.55
+        ? ['low_confidence']
+        : []
     const now = new Date().toISOString()
     entries.push({
       id: createStableId(`${lemma}:${minPage}:${maxPage}`),
@@ -82,6 +109,9 @@ function sanitizeEntries(input: ModelWordPayload['words'], minPage: number, maxP
       examples,
       synonyms,
       antonyms,
+      relevanceTags,
+      confidence,
+      reviewFlags,
       sourcePage,
       approved: false,
       updatedAt: now,
@@ -132,6 +162,9 @@ function buildFallbackEntries(input: VocabularyGenerationInput, count: number): 
       examples: [`I can use "${word}" in this lesson.`],
       synonyms: [],
       antonyms: [],
+      relevanceTags: ['theme_core'],
+      confidence: 0.5,
+      reviewFlags: ['low_confidence'],
       sourcePage: input.context.pageRange.startPage,
       approved: false,
       updatedAt: now,
@@ -153,6 +186,26 @@ export async function generateVocabularySet(input: VocabularyGenerationInput): P
     `Pages: ${minPage}-${maxPage}`,
     `Need ${requestedCount} words.`,
     `Candidate words: ${(input.seedWords ?? []).join(', ') || 'none provided'}`,
+    `Unit theme: ${input.unitContext?.theme ?? 'unknown'}`,
+    `Unit big ideas: ${(input.unitContext?.bigIdeas ?? []).join('; ') || 'none'}`,
+    `Unit language domains: ${(input.unitContext?.targetLanguageDomains ?? []).join('; ') || 'none'}`,
+    `Lesson text type: ${input.lessonContext?.textType ?? 'unknown'}`,
+    `Comprehension skill: ${input.lessonContext?.comprehensionSkill ?? 'unknown'}`,
+    `Strategy: ${input.lessonContext?.strategy ?? 'unknown'}`,
+    `Essential questions: ${(input.lessonContext?.essentialQuestions ?? []).join('; ') || 'none'}`,
+    `Recent introduced words: ${(input.outcomeContext?.introducedWords ?? []).join(', ') || 'none'}`,
+    `Recent practiced words: ${(input.outcomeContext?.practicedWords ?? []).join(', ') || 'none'}`,
+    `Recent reviewed words: ${(input.outcomeContext?.reviewedWords ?? []).join(', ') || 'none'}`,
+    `Recent learned words (deprioritize): ${(input.outcomeContext?.learnedWords ?? []).join(', ') || 'none'}`,
+    `Due spaced-review words (prioritize): ${(input.outcomeContext?.dueReviewWords ?? []).join(', ') || 'none'}`,
+    `Teacher feedback - too easy count: ${input.feedbackContext?.tooEasyCount ?? 0}`,
+    `Teacher feedback - off theme count: ${input.feedbackContext?.offThemeCount ?? 0}`,
+    `Teacher feedback - wrong skill support count: ${input.feedbackContext?.wrongSkillSupportCount ?? 0}`,
+    `Teacher feedback - edited meaning count: ${input.feedbackContext?.editedMeaningCount ?? 0}`,
+    `Recently removed words (avoid similar picks): ${(input.feedbackContext?.recentlyRemovedWords ?? []).join(', ') || 'none'}`,
+    'Bias selection toward reviewed/practiced words that still need reinforcement; avoid overusing learned words.',
+    'When due spaced-review words are provided, prioritize them unless clearly off-scope for the selected section.',
+    'If off-theme or wrong-skill feedback is high, prioritize section-core words and alignment with lesson skill/strategy.',
   ].join('\n')
 
   let entries: VocabularyEntry[] = []

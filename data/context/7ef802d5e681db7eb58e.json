@@ -1,0 +1,29 @@
+{
+  "id": "7ef802d5e681db7eb58e",
+  "kind": "part",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-3-3e7eaa87",
+  "lessonId": "lesson-f007ffa1",
+  "partId": "part-f1cfc1d0",
+  "partTitle": "Vocabulary in Context",
+  "partGoals": [
+    "report, presentation, educational, impressive, erupt, creative, certificate, charts",
+    "Idioms"
+  ],
+  "activityNotes": [
+    "target vocabulary: report, presentation, educational, impressive, erupt, creative, certificate, charts",
+    "vocabulary strategies: Idioms"
+  ],
+  "languageFocus": {
+    "grammarNotes": [],
+    "writingNotes": []
+  },
+  "sourcePageRange": {
+    "startPage": 394,
+    "endPage": 394
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-05-01T21:00:22.117Z",
+  "updatedAt": "2026-05-01T21:00:22.117Z"
+}

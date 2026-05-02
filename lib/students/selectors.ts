@@ -25,9 +25,11 @@ import {
 } from '@/lib/students/challenge-map-layout'
 import type { BookLibraryPayload, BookRecord, BookUnitRecord } from '@/lib/books/types'
 import type { StudentListItemView, StudentProfileTab, StudentProfileView } from '@/lib/students/types'
+import type { BookContextRecord } from '@/lib/context/types'
 import type {
   ChallengeDefinition,
   BookSectionType,
+  ClassSessionBookmarkAtEnd,
   DifficultyTier,
   StudentBookSectionRef,
   StudentClassSession,
@@ -90,6 +92,20 @@ export interface StudentClassPrepContext {
     sectionVocabulary: string[]
     checkpointIdeas: string[]
     contentSummary: string
+  }
+  bookContext?: {
+    summary: string
+    goals: string[]
+    pacing: string[]
+    instructionalPriorities: string[]
+    focusAreas: string[]
+    materials: Array<{
+      type: BookContextRecord['materials'][number]['type']
+      title: string
+      url: string
+      notes: string
+      confidence: BookContextRecord['materials'][number]['confidence']
+    }>
   }
   studentSnapshot: {
     levelLabel: string
@@ -190,8 +206,167 @@ function dedupeTrimmed(values: string[]): string[] {
   return out
 }
 
+function sanitizeVocabularyFeedback(raw: unknown): StudentClassSession['vocabularyFeedback'] | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const src = raw as Partial<NonNullable<StudentClassSession['vocabularyFeedback']>>
+  return {
+    tooEasy: Number.isFinite(Number(src.tooEasy)) ? Math.max(0, Math.floor(Number(src.tooEasy))) : 0,
+    offTheme: Number.isFinite(Number(src.offTheme)) ? Math.max(0, Math.floor(Number(src.offTheme))) : 0,
+    wrongSkillSupport: Number.isFinite(Number(src.wrongSkillSupport))
+      ? Math.max(0, Math.floor(Number(src.wrongSkillSupport)))
+      : 0,
+    editedMeaning: Number.isFinite(Number(src.editedMeaning)) ? Math.max(0, Math.floor(Number(src.editedMeaning))) : 0,
+    removedWords: dedupeTrimmed(Array.isArray(src.removedWords) ? src.removedWords.map(String) : []).slice(0, 20),
+  }
+}
+
+function sanitizeVocabularyReviewPlan(raw: unknown): NonNullable<StudentClassSession['vocabularyReviewPlan']> {
+  if (!Array.isArray(raw)) return []
+  const seen = new Set<string>()
+  const out: NonNullable<StudentClassSession['vocabularyReviewPlan']> = []
+  for (const row of raw) {
+    if (!row || typeof row !== 'object') continue
+    const src = row as Partial<NonNullable<StudentClassSession['vocabularyReviewPlan']>[number]>
+    const word = typeof src.word === 'string' ? src.word.trim() : ''
+    if (!word) continue
+    const key = word.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    const lastSeenAt = typeof src.lastSeenAt === 'string' && src.lastSeenAt.trim() ? src.lastSeenAt : new Date().toISOString()
+    const intervalDays = Number.isFinite(Number(src.intervalDays)) ? Math.max(1, Math.min(30, Math.floor(Number(src.intervalDays)))) : 3
+    const nextReviewAt =
+      typeof src.nextReviewAt === 'string' && src.nextReviewAt.trim()
+        ? src.nextReviewAt
+        : new Date(new Date(lastSeenAt).getTime() + intervalDays * 24 * 60 * 60 * 1000).toISOString()
+    out.push({ word, lastSeenAt, intervalDays, nextReviewAt })
+  }
+  return out
+}
+
+function sanitizePracticeItems(raw: unknown): NonNullable<StudentClassSession['practiceItems']> {
+  if (!Array.isArray(raw)) return []
+  const out: NonNullable<StudentClassSession['practiceItems']> = []
+  for (const row of raw) {
+    if (!row || typeof row !== 'object') continue
+    const src = row as Partial<NonNullable<StudentClassSession['practiceItems']>[number]>
+    const id = typeof src.id === 'string' ? src.id.trim() : ''
+    const word = typeof src.word === 'string' ? src.word.trim() : ''
+    const prompt = typeof src.prompt === 'string' ? src.prompt.trim() : ''
+    const choices = Array.isArray(src.choices) ? src.choices.map(String).map((v) => v.trim()).filter(Boolean).slice(0, 4) : []
+    const correctChoiceIndex = Number.isFinite(Number(src.correctChoiceIndex)) ? Number(src.correctChoiceIndex) : -1
+    if (!id || !word || !prompt || choices.length < 2 || correctChoiceIndex < 0 || correctChoiceIndex >= choices.length) continue
+    out.push({
+      id,
+      type: 'meaning_match',
+      word,
+      prompt,
+      choices,
+      correctChoiceIndex,
+      createdAt: typeof src.createdAt === 'string' && src.createdAt.trim() ? src.createdAt : new Date().toISOString(),
+    })
+    if (out.length >= 24) break
+  }
+  return out
+}
+
+function sanitizeLessonRangeOverrides(raw: unknown): NonNullable<StudentRecord['lessonRangeOverrides']> {
+  if (!raw || typeof raw !== 'object') return {}
+  const out: NonNullable<StudentRecord['lessonRangeOverrides']> = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof key !== 'string' || !value || typeof value !== 'object') continue
+    const src = value as { startPage?: unknown; endPage?: unknown; updatedAt?: unknown }
+    const start = Number(src.startPage)
+    const end = Number(src.endPage)
+    if (!Number.isFinite(start) || !Number.isFinite(end)) continue
+    const startPage = Math.max(1, Math.floor(start))
+    const endPage = Math.max(startPage, Math.floor(end))
+    out[key] = {
+      startPage,
+      endPage,
+      updatedAt: typeof src.updatedAt === 'string' && src.updatedAt.trim() ? src.updatedAt : new Date().toISOString(),
+    }
+  }
+  return out
+}
+
+function intervalForWord(
+  word: string,
+  outcome: StudentClassOutcomeInput,
+  existingIntervalDays?: number,
+): number {
+  const lower = word.toLowerCase()
+  const inList = (list?: string[]) => (list ?? []).some((item) => item.trim().toLowerCase() === lower)
+  const learned = inList(outcome.learnedWords)
+  const reviewed = inList(outcome.reviewedWords)
+  const practiced = inList(outcome.practicedWords)
+  let base = learned ? 14 : reviewed ? 7 : practiced ? 3 : 2
+  if (typeof existingIntervalDays === 'number' && Number.isFinite(existingIntervalDays)) {
+    base = Math.max(base, Math.min(30, existingIntervalDays + (learned ? 4 : reviewed ? 2 : 0)))
+  }
+  return base
+}
+
+function buildUpdatedReviewPlan(
+  previous: NonNullable<StudentClassSession['vocabularyReviewPlan']>,
+  outcome: StudentClassOutcomeInput,
+  sessionIso: string,
+): NonNullable<StudentClassSession['vocabularyReviewPlan']> {
+  const map = new Map(previous.map((item) => [item.word.toLowerCase(), item]))
+  const touched = dedupeTrimmed([
+    ...(outcome.introducedWords ?? []),
+    ...(outcome.practicedWords ?? []),
+    ...(outcome.reviewedWords ?? []),
+    ...(outcome.learnedWords ?? []),
+  ])
+  for (const word of touched) {
+    const key = word.toLowerCase()
+    const prior = map.get(key)
+    const intervalDays = intervalForWord(word, outcome, prior?.intervalDays)
+    const lastSeenAt = sessionIso
+    const nextReviewAt = new Date(new Date(lastSeenAt).getTime() + intervalDays * 24 * 60 * 60 * 1000).toISOString()
+    map.set(key, { word, intervalDays, lastSeenAt, nextReviewAt })
+  }
+  return Array.from(map.values()).sort((a, b) => new Date(a.nextReviewAt).getTime() - new Date(b.nextReviewAt).getTime())
+}
+
 function normalizeClassStatus(status: unknown): StudentClassStatus {
-  return status === 'prepared' || status === 'completed' || status === 'cancelled' ? status : 'planned'
+  if (status === 'prepared' || status === 'completed' || status === 'cancelled' || status === 'in_progress') {
+    return status
+  }
+  return 'planned'
+}
+
+function optionalIsoString(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined
+  const t = raw.trim()
+  if (!t) return undefined
+  return Number.isFinite(Date.parse(t)) ? t : undefined
+}
+
+function sanitizeClassEndNote(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined
+  const t = raw.trim()
+  if (!t) return undefined
+  return t.length > 8000 ? t.slice(0, 8000) : t
+}
+
+/** Session log (longer than recap); same trim rules, slightly higher cap. */
+function sanitizeSessionNote(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined
+  const t = raw.trim()
+  if (!t) return undefined
+  return t.length > 12000 ? t.slice(0, 12000) : t
+}
+
+function sanitizeBookmarkAtEnd(raw: unknown): ClassSessionBookmarkAtEnd | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const o = raw as Record<string, unknown>
+  const bookId = typeof o.bookId === 'string' ? o.bookId.trim() : ''
+  const n = Number(o.pdfPage)
+  if (!bookId || !Number.isFinite(n)) return undefined
+  const pdfPage = Math.max(1, Math.floor(n))
+  const unitId = typeof o.unitId === 'string' && o.unitId.trim() ? o.unitId.trim() : undefined
+  return { bookId, pdfPage, unitId }
 }
 
 function sanitizeSelectedSection(raw: unknown): StudentBookSectionRef | undefined {
@@ -303,14 +478,27 @@ function sanitizeClassSession(raw: Partial<StudentClassSession> | null | undefin
       raw.vocabularySetStatus === 'draft' || raw.vocabularySetStatus === 'approved' || raw.vocabularySetStatus === 'published'
         ? raw.vocabularySetStatus
         : undefined,
+    unitContextId:
+      typeof raw.unitContextId === 'string' && raw.unitContextId.trim() ? raw.unitContextId.trim() : undefined,
+    lessonContextId:
+      typeof raw.lessonContextId === 'string' && raw.lessonContextId.trim() ? raw.lessonContextId.trim() : undefined,
     selectedSection: sanitizeSelectedSection(raw.selectedSection),
     introducedWords: dedupeTrimmed(Array.isArray(raw.introducedWords) ? raw.introducedWords : []),
     practicedWords: dedupeTrimmed(Array.isArray(raw.practicedWords) ? raw.practicedWords : []),
     reviewedWords: dedupeTrimmed(Array.isArray(raw.reviewedWords) ? raw.reviewedWords : []),
     learnedWords: dedupeTrimmed(Array.isArray(raw.learnedWords) ? raw.learnedWords : []),
+    vocabularyFeedback: sanitizeVocabularyFeedback(raw.vocabularyFeedback),
+    vocabularyReviewPlan: sanitizeVocabularyReviewPlan(raw.vocabularyReviewPlan),
+    practiceItems: sanitizePracticeItems(raw.practiceItems),
     teacherNotes: typeof raw.teacherNotes === 'string' && raw.teacherNotes.trim() ? raw.teacherNotes.trim() : undefined,
     aiPrepSummary:
       typeof raw.aiPrepSummary === 'string' && raw.aiPrepSummary.trim() ? raw.aiPrepSummary.trim() : undefined,
+    classStartedAt: optionalIsoString(raw.classStartedAt),
+    classEndedAt: optionalIsoString(raw.classEndedAt),
+    classEndNote: sanitizeClassEndNote(raw.classEndNote),
+    sessionNote: sanitizeSessionNote(raw.sessionNote),
+    postClassRecapPromptDismissed: raw.postClassRecapPromptDismissed === true ? true : undefined,
+    bookmarkAtEnd: sanitizeBookmarkAtEnd(raw.bookmarkAtEnd),
     createdAt: typeof raw.createdAt === 'string' && raw.createdAt.trim() ? raw.createdAt : now,
     updatedAt: typeof raw.updatedAt === 'string' && raw.updatedAt.trim() ? raw.updatedAt : now,
   }
@@ -388,7 +576,8 @@ function computeNextClass(sessions: StudentClassSession[]): StudentClassSession 
   const now = Date.now()
   const upcoming = sessions
     .filter((session) => {
-      if (session.status === 'completed' || session.status === 'cancelled') return false
+      if (session.status === 'completed' || session.status === 'cancelled' || session.status === 'in_progress')
+        return false
       const ms = new Date(session.scheduledFor).getTime()
       return Number.isFinite(ms) && ms >= now
     })
@@ -556,6 +745,7 @@ export function getStudentProfileView(studentId: string): StudentProfileView | n
     defaultDifficultyTier: registryRecord?.defaultDifficultyTier ?? DEFAULT_PLAY_TIER,
     assignedBookIds: dedupeStrings(registryRecord?.assignedBookIds ?? []),
     assignedUnitRefs: dedupeUnitRefs(registryRecord?.assignedUnitRefs ?? []),
+    curriculumAnchorSectionId: registryRecord?.curriculumAnchorSectionId?.trim() || undefined,
     curriculumHistory: [...(registryRecord?.curriculumHistory ?? [])].sort(
       (a, b) => new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime(),
     ),
@@ -829,10 +1019,188 @@ export function getStudentScheduledClasses(studentId: string): StudentClassSessi
   )
 }
 
-export function getStudentSectionOptions(studentId: string, library: BookLibraryPayload | null): StudentSectionOption[] {
-  if (!library?.books?.length) return []
+export interface TodaysClassSessionRow {
+  studentId: string
+  studentName: string
+  session: StudentClassSession
+}
+
+/** Local calendar day bounds for the given date (default: today in the browser when called client-side). */
+export function getLocalDayBoundsMs(day: Date = new Date()): { startMs: number; endMs: number } {
+  const start = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 0, 0, 0, 0)
+  const end = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1, 0, 0, 0, 0)
+  return { startMs: start.getTime(), endMs: end.getTime() }
+}
+
+/** All students’ class sessions scheduled for today (local), not completed/cancelled. */
+export function getTodaysClassSessionsForTeacher(day: Date = new Date()): TodaysClassSessionRow[] {
+  generateScheduledClassesWindow(30)
+  const { startMs, endMs } = getLocalDayBoundsMs(day)
+  const out: TodaysClassSessionRow[] = []
+  for (const row of getStudents()) {
+    const sessions = sortClassesByDate(
+      (row.scheduledClasses ?? [])
+        .map((session) => sanitizeClassSession(session))
+        .filter((session): session is StudentClassSession => !!session),
+    )
+    for (const session of sessions) {
+      if (session.status === 'completed' || session.status === 'cancelled') continue
+      const t = new Date(session.scheduledFor).getTime()
+      if (!Number.isFinite(t) || t < startMs || t >= endMs) continue
+      out.push({ studentId: row.id, studentName: row.name.trim() || 'Student', session })
+    }
+  }
+  out.sort((a, b) => new Date(a.session.scheduledFor).getTime() - new Date(b.session.scheduledFor).getTime())
+  return out
+}
+
+export function updateStudentClassEndNote(
+  studentId: string,
+  classId: string,
+  note: string,
+): { ok: true } | { ok: false; error: string } {
+  const trimmed = sanitizeClassEndNote(note)
+  if (!trimmed) return { ok: false, error: 'Add a short note or use “Not now” to skip.' }
+  const students = getStudents()
+  const idx = students.findIndex((s) => s.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  const nowIso = new Date().toISOString()
+  let found = false
+  const nextSessions = (student.scheduledClasses ?? []).map((session) => {
+    if (session.id !== classId) return session
+    if (session.status !== 'completed') return session
+    found = true
+    return {
+      ...session,
+      classEndNote: trimmed,
+      postClassRecapPromptDismissed: true,
+      updatedAt: nowIso,
+    }
+  })
+  if (!found) return { ok: false, error: 'Completed class not found.' }
+  const sanitized = sortClassesByDate(
+    nextSessions.map((s) => sanitizeClassSession(s)).filter((s): s is StudentClassSession => !!s),
+  )
+  saveStudent({ ...student, scheduledClasses: sanitized, updatedAt: nowIso })
+  return { ok: true }
+}
+
+/** Save or clear the longer session log on a completed class (`note` empty clears). */
+export function updateStudentClassSessionNote(
+  studentId: string,
+  classId: string,
+  note: string,
+): { ok: true } | { ok: false; error: string } {
+  const trimmed = sanitizeSessionNote(note)
+  const students = getStudents()
+  const idx = students.findIndex((s) => s.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  const nowIso = new Date().toISOString()
+  let found = false
+  const nextSessions = (student.scheduledClasses ?? []).map((session) => {
+    if (session.id !== classId) return session
+    if (session.status !== 'completed') return session
+    found = true
+    return {
+      ...session,
+      sessionNote: trimmed,
+      updatedAt: nowIso,
+    }
+  })
+  if (!found) return { ok: false, error: 'Completed class not found.' }
+  const sanitized = sortClassesByDate(
+    nextSessions.map((s) => sanitizeClassSession(s)).filter((s): s is StudentClassSession => !!s),
+  )
+  saveStudent({ ...student, scheduledClasses: sanitized, updatedAt: nowIso })
+  return { ok: true }
+}
+
+export function dismissPostClassRecapPrompt(
+  studentId: string,
+  classId: string,
+): { ok: true } | { ok: false; error: string } {
+  const students = getStudents()
+  const idx = students.findIndex((s) => s.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  const nowIso = new Date().toISOString()
+  let found = false
+  const nextSessions = (student.scheduledClasses ?? []).map((session) => {
+    if (session.id !== classId) return session
+    if (session.status !== 'completed') return session
+    found = true
+    return {
+      ...session,
+      postClassRecapPromptDismissed: true,
+      updatedAt: nowIso,
+    }
+  })
+  if (!found) return { ok: false, error: 'Completed class not found.' }
+  const sanitized = sortClassesByDate(
+    nextSessions.map((s) => sanitizeClassSession(s)).filter((s): s is StudentClassSession => !!s),
+  )
+  saveStudent({ ...student, scheduledClasses: sanitized, updatedAt: nowIso })
+  return { ok: true }
+}
+
+export function getLessonRangeOverride(
+  studentId: string,
+  key: string,
+): { startPage: number; endPage: number; updatedAt: string } | null {
   const student = getStudents().find((row) => row.id === studentId)
-  if (!student) return []
+  if (!student) return null
+  const overrides = sanitizeLessonRangeOverrides(student.lessonRangeOverrides)
+  return overrides[key] ?? null
+}
+
+export function upsertLessonRangeOverride(
+  studentId: string,
+  key: string,
+  range: { startPage: number; endPage: number },
+): { ok: true } | { ok: false; error: string } {
+  const students = getStudents()
+  const idx = students.findIndex((s) => s.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  const nextStart = Math.max(1, Math.floor(range.startPage))
+  const nextEnd = Math.max(nextStart, Math.floor(range.endPage))
+  const next = sanitizeLessonRangeOverrides(student.lessonRangeOverrides)
+  next[key] = {
+    startPage: nextStart,
+    endPage: nextEnd,
+    updatedAt: new Date().toISOString(),
+  }
+  saveStudent({
+    ...student,
+    lessonRangeOverrides: next,
+    updatedAt: new Date().toISOString(),
+  })
+  return { ok: true }
+}
+
+export function clearLessonRangeOverride(studentId: string, key: string): { ok: true } | { ok: false; error: string } {
+  const students = getStudents()
+  const idx = students.findIndex((s) => s.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  const next = sanitizeLessonRangeOverrides(student.lessonRangeOverrides)
+  delete next[key]
+  saveStudent({
+    ...student,
+    lessonRangeOverrides: next,
+    updatedAt: new Date().toISOString(),
+  })
+  return { ok: true }
+}
+
+/** Section options for a student row as if it were saved (used before persist when validating anchors). */
+function getStudentSectionOptionsForRecord(
+  student: StudentRecord,
+  library: BookLibraryPayload | null,
+): StudentSectionOption[] {
+  if (!library?.books?.length) return []
   const assignedUnitRefs = dedupeUnitRefs(student.assignedUnitRefs ?? [])
   const out: StudentSectionOption[] = []
   const pushUnitSections = (bookId: string, unitId: string) => {
@@ -851,6 +1219,12 @@ export function getStudentSectionOptions(studentId: string, library: BookLibrary
     }
   }
   return out
+}
+
+export function getStudentSectionOptions(studentId: string, library: BookLibraryPayload | null): StudentSectionOption[] {
+  const student = getStudents().find((row) => row.id === studentId)
+  if (!student) return []
+  return getStudentSectionOptionsForRecord(student, library)
 }
 
 export function resolveNextSectionForClass(
@@ -873,10 +1247,233 @@ export function resolveNextSectionForClass(
     )
     .sort((a, b) => new Date(b.scheduledFor).getTime() - new Date(a.scheduledFor).getTime())
   const lastCompletedId = completed[0]?.selectedSection?.id
-  if (!lastCompletedId) return options[0] ?? null
+  if (!lastCompletedId) {
+    const studentRec = getStudents().find((s) => s.id === studentId)
+    const anchorId = studentRec?.curriculumAnchorSectionId?.trim()
+    if (anchorId) {
+      const anchorHit = options.find((o) => o.id === anchorId)
+      if (anchorHit) return anchorHit
+    }
+    return options[0] ?? null
+  }
   const index = options.findIndex((option) => option.id === lastCompletedId)
   if (index < 0) return options[0] ?? null
   return options[index + 1] ?? options[index] ?? options[0] ?? null
+}
+
+function pageInSectionOptionRange(option: StudentSectionOption, pdfPage: number): boolean {
+  const start = option.startPageHint ?? 1
+  const endHint = option.endPageHint ?? option.startPageHint
+  if (endHint == null || !Number.isFinite(endHint)) return pdfPage >= start
+  const end = Math.max(start, Math.floor(endHint))
+  return pdfPage >= start && pdfPage <= end
+}
+
+function displaySectionTitleForHeadline(option: StudentSectionOption): string {
+  const raw = (option.partTitle ?? option.lessonTitle ?? option.title ?? '').trim()
+  return raw || 'this section'
+}
+
+function looksLikeVocabularySection(option: StudentSectionOption): boolean {
+  const blob = [option.partTitle, option.lessonTitle, option.title, option.pathLabel].filter(Boolean).join(' ')
+  return /vocab|vocabulary|word study|words to know/i.test(blob)
+}
+
+/**
+ * Friendly line for the Next/Live class card when the last finished class left a bookmark
+ * still inside a book piece’s page range (optional vocabulary-style title stub).
+ */
+export function getNextClassResumeHeadline(
+  studentId: string,
+  spotlightClassId: string,
+  library: BookLibraryPayload | null,
+): { headline: string } | null {
+  if (!library) return null
+  const sessions = getStudentScheduledClasses(studentId)
+  const spotlight = sessions.find((s) => s.id === spotlightClassId)
+  if (!spotlight) return null
+  const spotlightMs = new Date(spotlight.scheduledFor).getTime()
+  if (!Number.isFinite(spotlightMs)) return null
+
+  const prior = sessions
+    .filter(
+      (s) =>
+        s.status === 'completed' &&
+        s.id !== spotlightClassId &&
+        Number.isFinite(new Date(s.scheduledFor).getTime()) &&
+        new Date(s.scheduledFor).getTime() < spotlightMs,
+    )
+    .sort((a, b) => new Date(b.scheduledFor).getTime() - new Date(a.scheduledFor).getTime())[0]
+
+  const bookmark = prior?.bookmarkAtEnd
+  if (!bookmark?.bookId?.trim()) return null
+  const page = bookmark.pdfPage
+  if (!Number.isFinite(page) || page < 1) return null
+
+  const options = getStudentSectionOptions(studentId, library)
+  if (!options.length) return null
+
+  const bookId = bookmark.bookId.trim()
+  const unitFilter = bookmark.unitId?.trim()
+
+  let chosen: StudentSectionOption | null = null
+  for (let i = options.length - 1; i >= 0; i--) {
+    const o = options[i]
+    if (o.bookId !== bookId) continue
+    if (unitFilter && o.unitId !== unitFilter) continue
+    if (pageInSectionOptionRange(o, page)) {
+      chosen = o
+      break
+    }
+  }
+  if (!chosen) return null
+
+  if (looksLikeVocabularySection(chosen)) {
+    return { headline: 'Next class: Vocabulary check' }
+  }
+  return { headline: `Keep reading: ${displaySectionTitleForHeadline(chosen)}` }
+}
+
+/**
+ * Best PDF page to open for this student on this book+unit: most recent signal wins
+ * (end-of-class bookmark vs reader session history). Returns null to fall back to generic saved page.
+ */
+export function getStudentResumePdfPageForBookUnit(studentId: string, bookId: string, unitId: string): number | null {
+  const student = getStudents().find((row) => row.id === studentId)
+  if (!student || !bookId.trim() || !unitId.trim()) return null
+  const bid = bookId.trim()
+  const uid = unitId.trim()
+  let best: { page: number; t: number } | null = null
+  const consider = (page: number, timeIso: string | undefined) => {
+    if (!Number.isFinite(page) || page < 1) return
+    const t = timeIso?.trim() ? Date.parse(timeIso) : NaN
+    if (!Number.isFinite(t)) return
+    const p = Math.max(1, Math.floor(page))
+    if (!best || t >= best.t) best = { page: p, t }
+  }
+  for (const s of student.scheduledClasses ?? []) {
+    if (s.status !== 'completed') continue
+    const bm = s.bookmarkAtEnd
+    if (!bm?.bookId?.trim() || bm.bookId.trim() !== bid) continue
+    const u = bm.unitId?.trim()
+    if (u && u !== uid) continue
+    consider(bm.pdfPage, s.classEndedAt ?? s.updatedAt ?? s.scheduledFor)
+  }
+  for (const h of student.curriculumHistory ?? []) {
+    if (h.bookId !== bid || h.unitId !== uid) continue
+    consider(h.page, h.closedAt ?? h.openedAt)
+  }
+  return best ? best.page : null
+}
+
+/**
+ * Default book + unit for `/books` deep links when `book` / `unit` are omitted but a student is selected.
+ * Uses first valid assigned unit ref in the library, else the first assigned book’s first unit.
+ */
+export function getStudentDefaultBookUnitForReader(
+  studentId: string,
+  library: BookLibraryPayload | null | undefined,
+): { bookId: string; unitId: string } | null {
+  const student = getStudents().find((row) => row.id === studentId)
+  if (!student || !library?.books?.length) return null
+  const bookMap = new Map(library.books.map((b) => [b.id, b]))
+  for (const ref of dedupeUnitRefs(student.assignedUnitRefs ?? [])) {
+    const book = bookMap.get(ref.bookId)
+    const unit = book?.units.find((u) => u.id === ref.unitId)
+    if (book && unit) return { bookId: ref.bookId, unitId: ref.unitId }
+  }
+  for (const bid of student.assignedBookIds ?? []) {
+    const book = bookMap.get(bid)
+    const first = book?.units?.[0]
+    if (book && first) return { bookId: bid, unitId: first.id }
+  }
+  return null
+}
+
+/**
+ * Short “last time we stopped…” line for the next/live class card (same book+unit as today’s section).
+ */
+export function getLastStoppedCarryLine(
+  studentId: string,
+  spotlightClassId: string,
+  library: BookLibraryPayload | null,
+  bookId: string,
+  unitId: string,
+): string | null {
+  if (!library?.books?.length) return null
+  const sessions = getStudentScheduledClasses(studentId)
+  const spotlight = sessions.find((s) => s.id === spotlightClassId)
+  if (!spotlight) return null
+  const spotlightMs = new Date(spotlight.scheduledFor).getTime()
+  if (!Number.isFinite(spotlightMs)) return null
+
+  const prior = sessions
+    .filter(
+      (s) =>
+        s.status === 'completed' &&
+        s.id !== spotlightClassId &&
+        Number.isFinite(new Date(s.scheduledFor).getTime()) &&
+        new Date(s.scheduledFor).getTime() < spotlightMs,
+    )
+    .sort((a, b) => new Date(b.scheduledFor).getTime() - new Date(a.scheduledFor).getTime())[0]
+
+  const bookmark = prior?.bookmarkAtEnd
+  const bid = bookId.trim()
+  const uid = unitId.trim()
+  const histBook = library.books.find((b) => b.id === bid)
+  const histUnit = histBook?.units.find((u) => u.id === uid)
+
+  if (bookmark?.bookId?.trim() === bid) {
+    const bu = bookmark.unitId?.trim()
+    if (!bu || bu === uid) {
+      const page = bookmark.pdfPage
+      if (Number.isFinite(page) && page >= 1) {
+        const options = getStudentSectionOptions(studentId, library)
+        let piece: StudentSectionOption | null = null
+        const unitFilter = bookmark.unitId?.trim()
+        for (let i = options.length - 1; i >= 0; i--) {
+          const o = options[i]
+          if (o.bookId !== bid) continue
+          if (unitFilter && o.unitId !== unitFilter) continue
+          if (pageInSectionOptionRange(o, page)) {
+            piece = o
+            break
+          }
+        }
+        const pageLabel = mapPdfPageToDisplayLabel(
+          Math.floor(page),
+          histBook,
+          histUnit,
+          histUnit?.pdfPageRange?.end ?? null,
+          'mapped',
+        )
+        const pieceTitle = piece ? displaySectionTitleForHeadline(piece) : null
+        return pieceTitle
+          ? `Last time: Page ${pageLabel} (${pieceTitle})`
+          : `Last time: Page ${pageLabel}`
+      }
+    }
+  }
+
+  const student = getStudents().find((row) => row.id === studentId)
+  if (!student) return null
+  const rows = [...(student.curriculumHistory ?? [])]
+    .filter((h) => h.bookId === bid && h.unitId === uid)
+    .sort((a, b) => {
+      const tb = Date.parse(b.closedAt ?? b.openedAt)
+      const ta = Date.parse(a.closedAt ?? a.openedAt)
+      return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0)
+    })
+  const last = rows[rows.length - 1]
+  if (!last) return null
+  const pageLabel = mapPdfPageToDisplayLabel(
+    last.page,
+    histBook,
+    histUnit,
+    histUnit?.pdfPageRange?.end ?? null,
+    'mapped',
+  )
+  return `Last time: Page ${pageLabel} (last reader session)`
 }
 
 export function generateScheduledClassesWindow(daysAhead: number = 30): { ok: true } {
@@ -919,6 +1516,8 @@ export function generateScheduledClassesWindow(daysAhead: number = 30): { ok: tr
         practicedWords: [],
         reviewedWords: [],
         learnedWords: [],
+        vocabularyReviewPlan: [],
+        practiceItems: [],
         createdAt: nowIso,
         updatedAt: nowIso,
       }
@@ -950,6 +1549,7 @@ export function buildStudentClassPrepContext(
   studentId: string,
   classId: string,
   library?: BookLibraryPayload | null,
+  bookContext?: BookContextRecord | null,
 ): StudentClassPrepContext | { error: string } {
   const student = getStudents().find((row) => row.id === studentId)
   if (!student) return { error: 'Student not found.' }
@@ -1011,6 +1611,22 @@ export function buildStudentClassPrepContext(
               : `Focus on ${resolvedSection.title} in ${resolvedSection.unitTitle}.`,
         }
       : undefined,
+    bookContext: bookContext
+      ? {
+          summary: bookContext.summary,
+          goals: [...bookContext.goals],
+          pacing: [...bookContext.pacing],
+          instructionalPriorities: [...bookContext.instructionalPriorities],
+          focusAreas: [...bookContext.focusAreas],
+          materials: bookContext.materials.map((item) => ({
+            type: item.type,
+            title: item.title,
+            url: item.url,
+            notes: item.notes,
+            confidence: item.confidence,
+          })),
+        }
+      : undefined,
     studentSnapshot: {
       levelLabel: estimateLevel(getKnownStudentSummaries().find((row) => normalizeStudentKey(row.name) === normalizeStudentKey(student.name))?.totalQuizzes ?? 0),
       motivation: recentHistory.length === 0 ? 'medium' : 'high',
@@ -1027,15 +1643,61 @@ export function updateStudentCurriculumAssignments(
     assignedBookIds: string[]
     assignedUnitRefs: Array<{ bookId: string; unitId: string }>
   },
+  library: BookLibraryPayload | null = null,
 ): { ok: true } | { ok: false; error: string } {
   const students = getStudents()
   const idx = students.findIndex((s) => s.id === studentId)
   if (idx < 0) return { ok: false, error: 'Student not found.' }
   const prev = students[idx]
+  const bookIds = dedupeStrings(next.assignedBookIds)
+  const refs = dedupeUnitRefs(next.assignedUnitRefs)
+  let curriculumAnchorSectionId = prev.curriculumAnchorSectionId?.trim() || undefined
+  if (bookIds.length === 0) {
+    curriculumAnchorSectionId = undefined
+  } else if (library) {
+    const merged: StudentRecord = { ...prev, assignedBookIds: bookIds, assignedUnitRefs: refs }
+    const optsWithNext = getStudentSectionOptionsForRecord(merged, library)
+    const anchorOk = curriculumAnchorSectionId && optsWithNext.some((o) => o.id === curriculumAnchorSectionId)
+    if (!anchorOk) curriculumAnchorSectionId = undefined
+  }
   saveStudent({
     ...prev,
-    assignedBookIds: dedupeStrings(next.assignedBookIds),
-    assignedUnitRefs: dedupeUnitRefs(next.assignedUnitRefs),
+    assignedBookIds: bookIds,
+    assignedUnitRefs: refs,
+    curriculumAnchorSectionId,
+    updatedAt: new Date().toISOString(),
+  })
+  return { ok: true }
+}
+
+export function updateStudentCurriculumReadingAnchor(
+  studentId: string,
+  sectionId: string | null,
+  library: BookLibraryPayload | null,
+): { ok: true } | { ok: false; error: string } {
+  const students = getStudents()
+  const idx = students.findIndex((s) => s.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const prev = students[idx]
+  const trimmed = sectionId?.trim() ?? ''
+  if (!trimmed) {
+    saveStudent({
+      ...prev,
+      curriculumAnchorSectionId: undefined,
+      updatedAt: new Date().toISOString(),
+    })
+    return { ok: true }
+  }
+  if (!library?.books?.length) {
+    return { ok: false, error: 'Load the book library before setting a reading anchor.' }
+  }
+  const options = getStudentSectionOptions(studentId, library)
+  if (!options.some((o) => o.id === trimmed)) {
+    return { ok: false, error: 'That lesson piece is not available for this student’s current assignments.' }
+  }
+  saveStudent({
+    ...prev,
+    curriculumAnchorSectionId: trimmed,
     updatedAt: new Date().toISOString(),
   })
   return { ok: true }
@@ -1095,6 +1757,8 @@ export function upsertStudentClassSession(
     practicedWords: [],
     reviewedWords: [],
     learnedWords: [],
+    vocabularyReviewPlan: [],
+    practiceItems: [],
     createdAt: nowIso,
     updatedAt: nowIso,
   }
@@ -1105,6 +1769,128 @@ export function upsertStudentClassSession(
     updatedAt: nowIso,
   })
   return { ok: true, session }
+}
+
+/** Marks a class as live teaching: `in_progress` + `classStartedAt`. Blocks if another class is already in progress. */
+export function startStudentClassSession(
+  studentId: string,
+  classId: string,
+): { ok: true } | { ok: false; error: string } {
+  const students = getStudents()
+  const idx = students.findIndex((s) => s.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  const sessions = student.scheduledClasses ?? []
+  const target = sessions.find((s) => s.id === classId)
+  if (!target) return { ok: false, error: 'Class session not found.' }
+  if (target.status === 'completed' || target.status === 'cancelled') {
+    return { ok: false, error: 'This class cannot be started.' }
+  }
+  if (target.status === 'in_progress') {
+    return { ok: true }
+  }
+  const otherInProgress = sessions.some((s) => s.id !== classId && s.status === 'in_progress')
+  if (otherInProgress) {
+    return { ok: false, error: 'Another class is already in progress. End that class first.' }
+  }
+  const nowIso = new Date().toISOString()
+  const nextSessions = sessions.map((session) =>
+    session.id === classId
+      ? { ...session, status: 'in_progress' as const, classStartedAt: nowIso, updatedAt: nowIso }
+      : session,
+  )
+  const sanitized = nextSessions
+    .map((session) => sanitizeClassSession(session))
+    .filter((session): session is StudentClassSession => !!session)
+  saveStudent({
+    ...student,
+    scheduledClasses: sortClassesByDate(sanitized),
+    updatedAt: nowIso,
+  })
+  return { ok: true }
+}
+
+export type EndStudentClassSessionInput = {
+  classEndNote?: string
+  /** Longer log: what you did this call, pages, plan for next time (optional). */
+  sessionNote?: string
+  bookmarkAtEnd?: { bookId: string; pdfPage: number; unitId?: string }
+}
+
+/** Prefer bookmark unit; else first assigned unit ref for that book (reader needs a unit id). */
+function resolveCurriculumUnitIdForBookmark(
+  student: StudentRecord,
+  bookmark: { bookId: string; unitId?: string },
+): string | null {
+  const fromBookmark = bookmark.unitId?.trim()
+  if (fromBookmark) return fromBookmark
+  const match = student.assignedUnitRefs?.find((r) => r.bookId === bookmark.bookId)
+  return match?.unitId?.trim() ?? null
+}
+
+/** Ends live teaching: `completed` + `classEndedAt`, optional recap note and bookmark. */
+export function endStudentClassSession(
+  studentId: string,
+  classId: string,
+  input?: EndStudentClassSessionInput,
+): { ok: true } | { ok: false; error: string } {
+  const students = getStudents()
+  const idx = students.findIndex((s) => s.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  const sessions = student.scheduledClasses ?? []
+  const target = sessions.find((s) => s.id === classId)
+  if (!target) return { ok: false, error: 'Class session not found.' }
+  if (target.status !== 'in_progress') {
+    return { ok: false, error: 'This class is not in progress.' }
+  }
+  const nowIso = new Date().toISOString()
+  const classEndNote = sanitizeClassEndNote(input?.classEndNote)
+  const sessionNote = sanitizeSessionNote(input?.sessionNote)
+  const bookmarkSanitized =
+    input?.bookmarkAtEnd !== undefined && input.bookmarkAtEnd !== null
+      ? sanitizeBookmarkAtEnd(input.bookmarkAtEnd)
+      : undefined
+
+  const nextSessions = sessions.map((session) => {
+    if (session.id !== classId) return session
+    return {
+      ...session,
+      status: 'completed' as const,
+      classEndedAt: nowIso,
+      classEndNote,
+      sessionNote,
+      ...(bookmarkSanitized ? { bookmarkAtEnd: bookmarkSanitized } : {}),
+      updatedAt: nowIso,
+    }
+  })
+  const sanitized = nextSessions
+    .map((row) => sanitizeClassSession(row))
+    .filter((row): row is StudentClassSession => !!row)
+
+  let nextCurriculumHistory = [...(student.curriculumHistory ?? [])]
+  if (bookmarkSanitized) {
+    const unitId = resolveCurriculumUnitIdForBookmark(student, bookmarkSanitized)
+    if (unitId) {
+      const entry = {
+        id: `sess-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        bookId: bookmarkSanitized.bookId,
+        unitId,
+        page: Math.max(1, Math.floor(bookmarkSanitized.pdfPage)),
+        openedAt: nowIso,
+        closedAt: nowIso,
+      }
+      nextCurriculumHistory = [entry, ...nextCurriculumHistory].slice(0, 500)
+    }
+  }
+
+  saveStudent({
+    ...student,
+    scheduledClasses: sortClassesByDate(sanitized),
+    curriculumHistory: nextCurriculumHistory,
+    updatedAt: nowIso,
+  })
+  return { ok: true }
 }
 
 export function transitionStudentClassStatus(
@@ -1153,6 +1939,11 @@ export function recordStudentClassOutcome(
       practicedWords: dedupeTrimmed(outcome.practicedWords ?? []),
       reviewedWords: dedupeTrimmed(outcome.reviewedWords ?? []),
       learnedWords: dedupeTrimmed(outcome.learnedWords ?? []),
+      vocabularyReviewPlan: buildUpdatedReviewPlan(
+        sanitizeVocabularyReviewPlan(session.vocabularyReviewPlan),
+        outcome,
+        session.scheduledFor,
+      ),
       teacherNotes: outcome.teacherNotes?.trim() || undefined,
       updatedAt: nowIso,
     }
@@ -1244,6 +2035,115 @@ export function updateStudentClassPublishedVocabulary(
       plannedVocabulary: dedupeTrimmed(payload.words),
       vocabularySetId: payload.setId,
       vocabularySetStatus: payload.status,
+      updatedAt: nowIso,
+    }
+  })
+  if (!found) return { ok: false, error: 'Class session not found.' }
+  saveStudent({
+    ...student,
+    scheduledClasses: nextSessions,
+    updatedAt: nowIso,
+  })
+  return { ok: true }
+}
+
+export function updateStudentClassContextRefs(
+  studentId: string,
+  classId: string,
+  refs: { unitContextId?: string; lessonContextId?: string },
+): { ok: true } | { ok: false; error: string } {
+  const students = getStudents()
+  const idx = students.findIndex((s) => s.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  const nowIso = new Date().toISOString()
+  let found = false
+  const nextSessions = (student.scheduledClasses ?? []).map((session) => {
+    if (session.id !== classId) return session
+    found = true
+    return {
+      ...session,
+      unitContextId: refs.unitContextId?.trim() || undefined,
+      lessonContextId: refs.lessonContextId?.trim() || undefined,
+      updatedAt: nowIso,
+    }
+  })
+  if (!found) return { ok: false, error: 'Class session not found.' }
+  saveStudent({
+    ...student,
+    scheduledClasses: nextSessions,
+    updatedAt: nowIso,
+  })
+  return { ok: true }
+}
+
+export function updateStudentClassVocabularyFeedback(
+  studentId: string,
+  classId: string,
+  update: {
+    tooEasy?: number
+    offTheme?: number
+    wrongSkillSupport?: number
+    editedMeaning?: number
+    removedWord?: string
+  },
+): { ok: true } | { ok: false; error: string } {
+  const students = getStudents()
+  const idx = students.findIndex((s) => s.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  const nowIso = new Date().toISOString()
+  let found = false
+  const nextSessions = (student.scheduledClasses ?? []).map((session) => {
+    if (session.id !== classId) return session
+    found = true
+    const current = session.vocabularyFeedback ?? {
+      tooEasy: 0,
+      offTheme: 0,
+      wrongSkillSupport: 0,
+      editedMeaning: 0,
+      removedWords: [],
+    }
+    return {
+      ...session,
+      vocabularyFeedback: {
+        tooEasy: Math.max(0, current.tooEasy + (update.tooEasy ?? 0)),
+        offTheme: Math.max(0, current.offTheme + (update.offTheme ?? 0)),
+        wrongSkillSupport: Math.max(0, current.wrongSkillSupport + (update.wrongSkillSupport ?? 0)),
+        editedMeaning: Math.max(0, current.editedMeaning + (update.editedMeaning ?? 0)),
+        removedWords: dedupeTrimmed(
+          update.removedWord?.trim() ? [...current.removedWords, update.removedWord] : current.removedWords,
+        ).slice(0, 20),
+      },
+      updatedAt: nowIso,
+    }
+  })
+  if (!found) return { ok: false, error: 'Class session not found.' }
+  saveStudent({
+    ...student,
+    scheduledClasses: nextSessions,
+    updatedAt: nowIso,
+  })
+  return { ok: true }
+}
+
+export function updateStudentClassPracticeItems(
+  studentId: string,
+  classId: string,
+  items: NonNullable<StudentClassSession['practiceItems']>,
+): { ok: true } | { ok: false; error: string } {
+  const students = getStudents()
+  const idx = students.findIndex((s) => s.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  const nowIso = new Date().toISOString()
+  let found = false
+  const nextSessions = (student.scheduledClasses ?? []).map((session) => {
+    if (session.id !== classId) return session
+    found = true
+    return {
+      ...session,
+      practiceItems: sanitizePracticeItems(items),
       updatedAt: nowIso,
     }
   })

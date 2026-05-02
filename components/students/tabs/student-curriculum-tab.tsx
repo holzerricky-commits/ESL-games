@@ -4,12 +4,19 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { mapPdfPageToDisplayLabel } from '@/lib/books/page-numbering'
 import type { BookLibraryPayload } from '@/lib/books/types'
-import { getStudentProfileView, updateStudentCurriculumAssignments } from '@/lib/students/selectors'
+import {
+  getStudentDefaultBookUnitForReader,
+  getStudentProfileView,
+  getStudentSectionOptions,
+  updateStudentCurriculumAssignments,
+  updateStudentCurriculumReadingAnchor,
+} from '@/lib/students/selectors'
 import type { StudentProfileView } from '@/lib/students/types'
 import { Button } from '@/components/ui/button'
 
 interface StudentCurriculumTabProps {
   student: StudentProfileView
+  onDataUpdated?: () => void
 }
 
 /** First assigned book in order that exists in the library with at least one unit — primary spell-book target. */
@@ -27,18 +34,25 @@ function primaryAssignedUnitRefs(
   return []
 }
 
-export function StudentCurriculumTab({ student }: StudentCurriculumTabProps) {
+export function StudentCurriculumTab({ student, onDataUpdated }: StudentCurriculumTabProps) {
   const liveStudent = useMemo(() => getStudentProfileView(student.id) ?? student, [student])
   const [library, setLibrary] = useState<BookLibraryPayload | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [assignedBookIds, setAssignedBookIds] = useState<string[]>(liveStudent.assignedBookIds ?? [])
   const [isSaving, setIsSaving] = useState(false)
+  const [isSavingAnchor, setIsSavingAnchor] = useState(false)
+  const [anchorPick, setAnchorPick] = useState<string>(liveStudent.curriculumAnchorSectionId ?? '')
+  const [anchorError, setAnchorError] = useState<string | null>(null)
   const [showBookModal, setShowBookModal] = useState(false)
 
   useEffect(() => {
     setAssignedBookIds(liveStudent.assignedBookIds ?? [])
   }, [liveStudent.assignedBookIds])
+
+  useEffect(() => {
+    setAnchorPick(liveStudent.curriculumAnchorSectionId ?? '')
+  }, [liveStudent.curriculumAnchorSectionId])
 
   useEffect(() => {
     let active = true
@@ -66,6 +80,42 @@ export function StudentCurriculumTab({ student }: StudentCurriculumTabProps) {
     }
   }, [])
 
+  const anchorOptions = useMemo(() => {
+    if (!library) return []
+    const set = new Set(assignedBookIds)
+    return getStudentSectionOptions(liveStudent.id, library).filter((o) => set.has(o.bookId))
+  }, [library, liveStudent.id, assignedBookIds])
+
+  const libraryReaderHref = useMemo(() => {
+    const base = `/books?student=${encodeURIComponent(liveStudent.id)}`
+    const pick = library ? getStudentDefaultBookUnitForReader(liveStudent.id, library) : null
+    if (!pick) return base
+    return `${base}&book=${encodeURIComponent(pick.bookId)}&unit=${encodeURIComponent(pick.unitId)}`
+  }, [liveStudent.id, library])
+
+  const lastClassBookmarkSummary = useMemo(() => {
+    const sessions = liveStudent.scheduledClasses ?? []
+    const withBm = sessions.filter((s) => s.status === 'completed' && s.bookmarkAtEnd?.bookId)
+    if (!withBm.length) return null
+    const latest = [...withBm].sort(
+      (a, b) => new Date(b.scheduledFor).getTime() - new Date(a.scheduledFor).getTime(),
+    )[0]
+    const bm = latest.bookmarkAtEnd!
+    const book = library?.books.find((b) => b.id === bm.bookId)
+    const unit = bm.unitId ? book?.units.find((u) => u.id === bm.unitId) : undefined
+    const pageLabel = mapPdfPageToDisplayLabel(
+      bm.pdfPage,
+      book,
+      unit,
+      unit?.pdfPageRange?.end ?? null,
+      'mapped',
+    )
+    const bits: string[] = [book?.title ?? bm.bookId]
+    if (unit?.title) bits.push(unit.title)
+    bits.push(`PDF p. ${pageLabel}`)
+    return bits.join(' · ')
+  }, [liveStudent.scheduledClasses, library])
+
   function toggleBook(bookId: string) {
     const hasBook = assignedBookIds.includes(bookId)
     setAssignedBookIds((prev) => {
@@ -77,11 +127,16 @@ export function StudentCurriculumTab({ student }: StudentCurriculumTabProps) {
   async function saveAssignments() {
     setIsSaving(true)
     try {
-      updateStudentCurriculumAssignments(liveStudent.id, {
-        assignedBookIds,
-        assignedUnitRefs: primaryAssignedUnitRefs(library, assignedBookIds),
-      })
+      updateStudentCurriculumAssignments(
+        liveStudent.id,
+        {
+          assignedBookIds,
+          assignedUnitRefs: primaryAssignedUnitRefs(library, assignedBookIds),
+        },
+        library,
+      )
       setShowBookModal(false)
+      onDataUpdated?.()
     } finally {
       setIsSaving(false)
     }
@@ -89,10 +144,32 @@ export function StudentCurriculumTab({ student }: StudentCurriculumTabProps) {
 
   function clearAssignments() {
     setAssignedBookIds([])
-    updateStudentCurriculumAssignments(liveStudent.id, {
-      assignedBookIds: [],
-      assignedUnitRefs: [],
-    })
+    updateStudentCurriculumAssignments(
+      liveStudent.id,
+      {
+        assignedBookIds: [],
+        assignedUnitRefs: [],
+      },
+      library,
+    )
+    setAnchorPick('')
+    onDataUpdated?.()
+  }
+
+  async function saveAnchor() {
+    setAnchorError(null)
+    setIsSavingAnchor(true)
+    try {
+      const id = anchorPick.trim() || null
+      const result = updateStudentCurriculumReadingAnchor(liveStudent.id, id, library)
+      if (!result.ok) {
+        setAnchorError(result.error)
+        return
+      }
+      onDataUpdated?.()
+    } finally {
+      setIsSavingAnchor(false)
+    }
   }
 
   const history = liveStudent.curriculumHistory ?? []
@@ -147,13 +224,55 @@ export function StudentCurriculumTab({ student }: StudentCurriculumTabProps) {
             </div>
           )}
         </div>
+
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-5">
+          <h3 className="text-base font-semibold text-foreground">Where reading starts</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Choose the first lesson piece you plan to use for new classes until a completed class sets the chain. This
+            does not change the class list by itself.
+          </p>
+          <p className="mt-3 text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">Last class bookmark: </span>
+            {lastClassBookmarkSummary ?? 'None yet.'}
+          </p>
+          {assignedBookIds.length === 0 ? (
+            <p className="mt-4 text-sm text-muted-foreground">Assign books above to pick a starting lesson piece.</p>
+          ) : loading || error ? (
+            <p className="mt-4 text-sm text-muted-foreground">{loading ? 'Loading options…' : 'Fix library errors to set an anchor.'}</p>
+          ) : anchorOptions.length === 0 ? (
+            <p className="mt-4 text-sm text-muted-foreground">No lesson pieces found for the assigned books in the library.</p>
+          ) : (
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+              <label className="block min-w-0 flex-1">
+                <span className="mb-1 block text-xs font-medium text-muted-foreground">Starting lesson piece</span>
+                <select
+                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-foreground"
+                  value={anchorPick}
+                  onChange={(e) => setAnchorPick(e.target.value)}
+                  disabled={isSavingAnchor}
+                >
+                  <option value="">First in list (default)</option>
+                  {anchorOptions.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.pathLabel}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <Button type="button" onClick={() => void saveAnchor()} disabled={isSavingAnchor}>
+                {isSavingAnchor ? 'Saving…' : 'Save anchor'}
+              </Button>
+            </div>
+          )}
+          {anchorError ? <p className="mt-2 text-sm text-[var(--brand-red)]">{anchorError}</p> : null}
+        </div>
       </section>
 
       <section className="space-y-3 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-base font-semibold text-foreground">Reading history</h3>
           <Button asChild variant="outline" size="sm">
-            <Link href={`/books?student=${liveStudent.id}`}>Open Library Reader</Link>
+            <Link href={libraryReaderHref}>Open Library Reader</Link>
           </Button>
         </div>
         {history.length === 0 ? (
