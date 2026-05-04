@@ -39,6 +39,7 @@ describe('bookLibraryPayloadSchema', () => {
                       endPageHint: 4,
                       anchorConfidence: 'high',
                       anchorSource: 'toc',
+                      structureTag: 'vocabulary_in_context',
                     },
                   ],
                 },

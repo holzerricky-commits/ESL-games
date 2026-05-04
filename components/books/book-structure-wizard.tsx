@@ -21,6 +21,13 @@ import { PdfPageThumbnail } from '@/components/students/pdf-page-thumbnail'
 import { toast } from 'sonner'
 import type { BookLessonPartRecord, BookLessonRecord, BookLibraryPayload, BookRecord } from '@/lib/books/types'
 import { captureTocRangeAsJpegs } from '@/lib/books/capture-toc-images-client'
+import { BOOK_OUTLINE_PAGE_BADGE_CLASS, bookOutlinePartStoryShellClass } from '@/components/books/book-outline-part-row'
+import { getPartPrimaryLabel } from '@/lib/books/part-section-display'
+import {
+  partVisualKindFromStructureTag,
+  storySubtitleForVisualKind,
+} from '@/lib/books/book-part-visual-kind'
+import { normalizeLessonsStructureTags, resolvePartStructureTag } from '@/lib/books/part-structure-tag'
 import { draftsToUnits, type TocUnitDraft } from '@/lib/books/toc-import'
 import { formatLessonTitleWithNumber } from '@/lib/books/lesson-title'
 import { bookHasTocMapping, stripBookTocMapping } from '@/lib/books/strip-book-toc-mapping'
@@ -50,9 +57,9 @@ function clampPreviewPageNumber(page: number, totalPages: number | null): number
 }
 
 function formatPageSpan(start: number | null, end: number | null): string {
-  if (start == null) return 'pages not mapped'
-  if (end == null || end <= start) return `page ${start}`
-  return `pages ${start} to ${end}`
+  if (start == null) return '(—)'
+  if (end == null || end <= start) return `(${start})`
+  return `(${start}-${end})`
 }
 
 function pageInputValue(page: number | undefined): string {
@@ -74,37 +81,6 @@ function firstMappedLessonStart(lessons: BookLessonRecord[]): number | null {
     if (minStart == null || start < minStart) minStart = start
   }
   return minStart
-}
-
-type PartKind =
-  | 'vocabulary'
-  | 'comprehension'
-  | 'longStory'
-  | 'yourTurn'
-  | 'shortStory'
-  | 'makingConnections'
-  | 'grammarWrite'
-  | 'other'
-
-function classifyPartKind(title: string, partIndex: number): PartKind {
-  const normalized = title.toLowerCase().replace(/\s+/g, ' ').trim()
-  if (/\bvocab/.test(normalized)) return 'vocabulary'
-  if (/\bcomprehension\b/.test(normalized)) return 'comprehension'
-  if (/\byour turn\b/.test(normalized)) return 'yourTurn'
-  if (/\bmaking connections?\b/.test(normalized)) return 'makingConnections'
-  if (/\bgrammar\b|\bwrite to narrate\b/.test(normalized)) return 'grammarWrite'
-  if (/\bshort story\b/.test(normalized)) return 'shortStory'
-  if (/\bstory\b/.test(normalized)) return 'longStory'
-  switch (partIndex) {
-    case 0: return 'vocabulary'
-    case 1: return 'comprehension'
-    case 2: return 'longStory'
-    case 3: return 'yourTurn'
-    case 4: return 'shortStory'
-    case 5: return 'makingConnections'
-    case 6: return 'grammarWrite'
-    default: return 'other'
-  }
 }
 
 function parsePageListInput(raw: string): number[] {
@@ -291,6 +267,37 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
   const previewRightEffective = previewRightPage != null
     ? (alignmentRuntime.effectivePageByPdf.get(previewRightPage) ?? null)
     : null
+
+  const effectiveHintFromPdfPreview = useCallback(
+    (pdfPage: number): number => {
+      const vis = nearestVisiblePage(pdfPage, visiblePreviewPages)
+      let p = vis
+      while (p >= 1) {
+        const e = alignmentRuntime.effectivePageByPdf.get(p)
+        if (e != null) return e
+        p -= 1
+      }
+      return 1
+    },
+    [alignmentRuntime, visiblePreviewPages],
+  )
+
+  const effectiveHintForNewAnchors = useMemo(
+    () => previewLeftEffective ?? effectiveHintFromPdfPreview(previewLeftPage),
+    [previewLeftEffective, previewLeftPage, effectiveHintFromPdfPreview],
+  )
+
+  const clampEffectiveDraftHint = useCallback(
+    (value: number): number => {
+      const max =
+        alignmentRuntime.effectiveTotal > 0
+          ? alignmentRuntime.effectiveTotal
+          : previewNumPages ?? 10_000_000
+      return Math.max(1, Math.min(Math.round(value), max))
+    },
+    [alignmentRuntime.effectiveTotal, previewNumPages],
+  )
+
   const selectedUnitPageRange = useMemo(() => {
     if (!drafts?.length) return { start: null as number | null, end: null as number | null }
     return pageRangeForIndex(drafts, structureUnitIdx, 1, lastNumPages)
@@ -348,7 +355,7 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
         ...(unit.anchorConfidence ? { anchorConfidence: unit.anchorConfidence } : {}),
         ...(unit.anchorSource ? { anchorSource: unit.anchorSource } : {}),
       }))
-      const restoredLessons = initialBook.units.map((unit) => structuredClone(unit.lessons ?? []))
+      const restoredLessons = initialBook.units.map((unit) => normalizeLessonsStructureTags(structuredClone(unit.lessons ?? [])))
       setDrafts(restoredDrafts)
       setLessonsByUnitIndex(restoredLessons)
     } else {
@@ -510,7 +517,7 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
       setLastNumPages(numPages)
       const merged = await extractBatchesWithAi(images, numPages)
       setDrafts(merged.drafts)
-      setLessonsByUnitIndex(merged.lessonsByUnit)
+      setLessonsByUnitIndex(merged.lessonsByUnit.map((lessons) => normalizeLessonsStructureTags(lessons)))
       setStructureUnitIdx(0)
       setSelectedUnitIndicesForMerge(new Set())
       setOpenLessonId(null)
@@ -564,7 +571,9 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
       const replacementLessons = merged.lessonsByUnit[bestIndex] ?? []
       if (!replacementDraft) throw new Error('Unit extraction returned no units.')
       setDrafts((prev) => prev.map((draft, i) => (i === unitIndex ? { ...draft, ...replacementDraft, id: draft.id } : draft)))
-      setLessonsByUnitIndex((prev) => prev.map((lessons, i) => (i === unitIndex ? replacementLessons : lessons)))
+      setLessonsByUnitIndex((prev) =>
+        prev.map((lessons, i) => (i === unitIndex ? normalizeLessonsStructureTags(replacementLessons) : lessons)),
+      )
       setStructureUnitIdx(unitIndex)
       setOpenLessonId(null)
       setEditingFieldId(null)
@@ -586,7 +595,7 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
       id: newBookChildId('unit'),
       title: `Unit ${unitIndex + 1}`,
       needsReview: false,
-      startPageHint: previewPage,
+      startPageHint: effectiveHintForNewAnchors,
     }
     setDrafts((prev) => [...prev, nextDraft])
     setLessonsByUnitIndex((prev) => [...prev, []])
@@ -623,7 +632,7 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
     let writeIndex = 0
     for (let readIndex = 0; readIndex < drafts.length; readIndex++) {
       if (readIndex === keepIndex) {
-        nextLessonsByUnit[writeIndex] = mergedLessons
+        nextLessonsByUnit[writeIndex] = normalizeLessonsStructureTags(mergedLessons)
         writeIndex += 1
         continue
       }
@@ -641,10 +650,12 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
   }
 
   function setUnitCoverFromPreview(unitIndex: number, page: number) {
-    const nextCoverPage = page
-    setDrafts((prev) => prev.map((draft, i) => (i === unitIndex ? { ...draft, startPageHint: nextCoverPage } : draft)))
+    const nearest = nearestVisiblePage(page, visiblePreviewPages)
+    const nextCoverHint =
+      alignmentRuntime.effectivePageByPdf.get(nearest) ?? effectiveHintFromPdfPreview(page)
+    setDrafts((prev) => prev.map((draft, i) => (i === unitIndex ? { ...draft, startPageHint: nextCoverHint } : draft)))
     setStructureUnitIdx(unitIndex)
-    toast.success(`Unit ${unitIndex + 1} cover starts at page ${nextCoverPage}.`)
+    toast.success(`Unit ${unitIndex + 1} cover starts at printed page ${nextCoverHint}.`)
   }
 
   function toggleCurrentPageIgnored() {
@@ -677,7 +688,10 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
       const next = [...prev]
       while (next.length <= unitIndex) next.push([])
       const n = (next[unitIndex] ?? []).length + 1
-      next[unitIndex] = [...(next[unitIndex] ?? []), { id: newBookChildId('lesson'), title: formatLessonTitleWithNumber(n, ''), startPageHint: previewPage, parts: [] }]
+      next[unitIndex] = [
+        ...(next[unitIndex] ?? []),
+        { id: newBookChildId('lesson'), title: formatLessonTitleWithNumber(n, ''), startPageHint: effectiveHintForNewAnchors, parts: [] },
+      ]
       return next
     })
   }
@@ -699,10 +713,14 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
           const { startPageHint: _startPageHint, ...rest } = draft
           return rest
         }
-        return { ...draft, startPageHint: clampPreviewPage(page) }
+        return { ...draft, startPageHint: clampEffectiveDraftHint(page) }
       })
     })
-    if (page != null) setPreviewPage(clampPreviewPage(page))
+    if (page != null) {
+      const hint = clampEffectiveDraftHint(page)
+      const targetPdf = resolveEffectiveAnchorToPdfPage(hint, alignmentRuntime)
+      if (targetPdf != null) setPreviewPage(nearestVisiblePage(targetPdf, visiblePreviewPages))
+    }
   }
 
   function updateLessonTitle(unitIndex: number, lessonIndex: number, title: string) {
@@ -728,12 +746,16 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
         const { startPageHint: _startPageHint, ...rest } = lesson
         unitLessons[lessonIndex] = rest
       } else {
-        unitLessons[lessonIndex] = { ...lesson, startPageHint: clampPreviewPage(page) }
+        unitLessons[lessonIndex] = { ...lesson, startPageHint: clampEffectiveDraftHint(page) }
       }
       next[unitIndex] = unitLessons
       return next
     })
-    if (page != null) setPreviewPage(clampPreviewPage(page))
+    if (page != null) {
+      const hint = clampEffectiveDraftHint(page)
+      const targetPdf = resolveEffectiveAnchorToPdfPage(hint, alignmentRuntime)
+      if (targetPdf != null) setPreviewPage(nearestVisiblePage(targetPdf, visiblePreviewPages))
+    }
   }
 
   function addLessonPart(unitIndex: number, lessonIndex: number) {
@@ -743,7 +765,12 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
       const lesson = unitLessons[lessonIndex]
       if (!lesson) return prev
       const partNumber = (lesson.parts ?? []).length + 1
-      const part: BookLessonPartRecord = { id: newBookChildId('part'), title: `Part ${partNumber}`, startPageHint: previewPage }
+      const title = `Part ${partNumber}`
+      const part: BookLessonPartRecord = {
+        id: newBookChildId('part'),
+        title,
+        startPageHint: effectiveHintForNewAnchors,
+      }
       unitLessons[lessonIndex] = { ...lesson, parts: [...(lesson.parts ?? []), part] }
       next[unitIndex] = unitLessons
       return next
@@ -764,13 +791,17 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
         const { startPageHint: _startPageHint, ...rest } = part
         parts[partIndex] = rest
       } else {
-        parts[partIndex] = { ...part, startPageHint: clampPreviewPage(page) }
+        parts[partIndex] = { ...part, startPageHint: clampEffectiveDraftHint(page) }
       }
       unitLessons[lessonIndex] = { ...lesson, parts }
       next[unitIndex] = unitLessons
       return next
     })
-    if (page != null) setPreviewPage(clampPreviewPage(page))
+    if (page != null) {
+      const hint = clampEffectiveDraftHint(page)
+      const targetPdf = resolveEffectiveAnchorToPdfPage(hint, alignmentRuntime)
+      if (targetPdf != null) setPreviewPage(nearestVisiblePage(targetPdf, visiblePreviewPages))
+    }
   }
 
   function updateLessonPartTitle(unitIndex: number, lessonIndex: number, partIndex: number, title: string) {
@@ -1022,7 +1053,10 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
                   </div>
                   {drafts.map((draft, unitIndex) => {
                     const range = pageRangeForIndex(drafts, unitIndex, 1, lastNumPages)
-                    const thumbPage = range.start ?? 1
+                    const thumbEffective = range.start ?? 1
+                    const thumbPdfPage =
+                      resolveEffectiveAnchorToPdfPage(thumbEffective, alignmentRuntime) ??
+                      clampPreviewPageNumber(thumbEffective, previewNumPages)
                     const isActive = structureUnitIdx === unitIndex
                     const titleFieldId = `unit-title-${unitIndex}`
                     const startFieldId = `unit-start-${unitIndex}`
@@ -1052,7 +1086,7 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
                           className="shrink-0 overflow-hidden"
                           onClick={() => {
                             setStructureUnitIdx(unitIndex)
-                            goToMappedAnchorPage(thumbPage)
+                            goToMappedAnchorPage(thumbEffective)
                             setOpenLessonId(null)
                           }}
                           aria-label={`Select unit ${unitIndex + 1}`}
@@ -1063,7 +1097,7 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
                               options={PDF_DOCUMENT_OPTIONS}
                               loading={<span className="block w-[76px] text-xs text-muted-foreground">Loading...</span>}
                             >
-                              <PdfPage pageNumber={thumbPage} width={76} renderTextLayer={false} renderAnnotationLayer={false} />
+                              <PdfPage pageNumber={thumbPdfPage} width={76} renderTextLayer={false} renderAnnotationLayer={false} />
                             </PdfDocument>
                           ) : (
                             <span className="block w-[76px] text-xs text-muted-foreground">No preview</span>
@@ -1075,7 +1109,7 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
                             className="block w-full text-left"
                             onClick={() => {
                               setStructureUnitIdx(unitIndex)
-                              goToMappedAnchorPage(thumbPage)
+                              goToMappedAnchorPage(thumbEffective)
                               setOpenLessonId(null)
                             }}
                           >
@@ -1207,13 +1241,15 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
                             className="flex w-full items-center justify-between gap-2 text-left"
                             onClick={() => toggleLessonExpanded(lesson.id)}
                           >
-                            <span className="text-sm font-medium">
-                              Lesson {lessonIndex + 1}: {lesson.title || 'Untitled lesson'}
+                            <span className="flex min-w-0 items-baseline gap-2">
+                              <span className="truncate text-sm font-medium">
+                                Lesson {lessonIndex + 1}: {lesson.title || 'Untitled lesson'}
+                              </span>
+                              <span className={BOOK_OUTLINE_PAGE_BADGE_CLASS}>
+                                {formatPageSpan(lessonRange.start, lessonRange.end)}
+                              </span>
                             </span>
-                            <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                              {formatPageSpan(lessonRange.start, lessonRange.end)}
-                              <ChevronDown size={14} className={`transition ${isExpanded ? 'rotate-180' : ''}`} />
-                            </span>
+                            <ChevronDown size={14} className={`shrink-0 text-muted-foreground transition ${isExpanded ? 'rotate-180' : ''}`} />
                           </button>
                           {isExpanded ? (
                             <div className="mt-2 space-y-2 pl-2">
@@ -1257,12 +1293,19 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
                                   const partRange = pageRangeForIndex(parts, partIndex, lessonRange.start, lessonRange.end)
                                   const partTitleFieldId = `part-title-${part.id}`
                                   const partStartFieldId = `part-start-${part.id}`
-                                  const partKind = classifyPartKind(part.title, partIndex)
+                                  const partKind = partVisualKindFromStructureTag(part, part.title, partIndex)
                                   const isStory = partKind === 'longStory' || partKind === 'shortStory'
-                                  const storyThumbPage =
-                                    isStory && partRange.start != null
-                                      ? clampPreviewPage(partRange.start + 1)
+                                  const tocAnchored =
+                                    typeof part.startPageHint === 'number' || typeof lesson.startPageHint === 'number'
+                                  const partStartPdf =
+                                    partRange.start != null
+                                      ? tocAnchored
+                                        ? resolveEffectiveAnchorToPdfPage(partRange.start, alignmentRuntime) ??
+                                          partRange.start
+                                        : partRange.start
                                       : null
+                                  const storyThumbPage =
+                                    isStory && partStartPdf != null ? clampPreviewPage(Math.floor(partStartPdf) + 1) : null
                                   const PartIcon = (() => {
                                     switch (partKind) {
                                       case 'vocabulary': return Languages
@@ -1276,20 +1319,32 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
                                     }
                                   })()
                                   return (
-                                    <div key={part.id} className="ml-3 space-y-1 pl-3">
+                                    <div
+                                      key={part.id}
+                                      className={cn('ml-3 space-y-1 pl-3', bookOutlinePartStoryShellClass(isStory))}
+                                    >
                                       <div className="group flex items-center justify-between gap-2 text-sm">
                                         {editingFieldId === partTitleFieldId ? (
-                                          <Input
-                                            autoFocus
-                                            value={part.title}
-                                            onChange={(e) => updateLessonPartTitle(structureUnitIdx, lessonIndex, partIndex, e.target.value)}
-                                            onBlur={() => setEditingFieldId(null)}
-                                          />
+                                          <div className="flex min-w-0 flex-1 items-center gap-2">
+                                            <Input
+                                              autoFocus
+                                              className="min-w-0 flex-1"
+                                              value={part.title}
+                                              onChange={(e) => updateLessonPartTitle(structureUnitIdx, lessonIndex, partIndex, e.target.value)}
+                                              onBlur={() => setEditingFieldId(null)}
+                                            />
+                                            <span
+                                              className={cn(BOOK_OUTLINE_PAGE_BADGE_CLASS, 'pointer-events-none')}
+                                              title="Finish editing the title to edit pages"
+                                            >
+                                              {formatPageSpan(partRange.start, partRange.end)}
+                                            </span>
+                                          </div>
                                         ) : (
                                           <>
                                             <button
                                               type="button"
-                                              className="flex min-w-0 items-center gap-2 text-left"
+                                              className="flex min-w-0 flex-1 items-center gap-2 text-left"
                                               onClick={() => goToMappedAnchorPage(partRange.start)}
                                               disabled={partRange.start == null}
                                               title={partRange.start != null ? `Open page ${partRange.start}` : 'No start page yet'}
@@ -1310,32 +1365,54 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
                                                   </PdfDocument>
                                                 </span>
                                               ) : (
-                                                <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-muted/40 text-muted-foreground">
+                                                <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded bg-muted/40 text-muted-foreground">
                                                   <PartIcon size={13} />
                                                 </span>
                                               )}
-                                              <span className="truncate">Part {partIndex + 1}: {part.title}</span>
+                                              <span className="min-w-0">
+                                                {isStory ? (
+                                                  <span className="flex min-w-0 flex-col">
+                                                    <span className="truncate text-[15px] font-semibold leading-tight text-foreground">
+                                                      {getPartPrimaryLabel(resolvePartStructureTag(part, partIndex), part.title)}
+                                                    </span>
+                                                    <span className="text-[11px] italic text-muted-foreground">
+                                                      {storySubtitleForVisualKind(partKind)}
+                                                    </span>
+                                                  </span>
+                                                ) : (
+                                                  <span className="truncate">
+                                                    {getPartPrimaryLabel(resolvePartStructureTag(part, partIndex), part.title)}
+                                                  </span>
+                                                )}
+                                              </span>
                                             </button>
-                                            <button type="button" className="opacity-0 transition group-hover:opacity-100" onClick={() => setEditingFieldId(partTitleFieldId)} aria-label="Edit part title">
-                                              <Pencil size={14} />
-                                            </button>
-                                          </>
-                                        )}
-                                      </div>
-                                      <div className="group flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                                        {editingFieldId === partStartFieldId ? (
-                                          <Input
-                                            autoFocus
-                                            type="number"
-                                            min={1}
-                                            value={pageInputValue(part.startPageHint)}
-                                            onChange={(e) => updateLessonPartStartPage(structureUnitIdx, lessonIndex, partIndex, e.target.value)}
-                                            onBlur={() => setEditingFieldId(null)}
-                                          />
-                                        ) : (
-                                          <>
-                                            <span>{formatPageSpan(partRange.start, partRange.end)}</span>
-                                            <button type="button" className="opacity-0 transition group-hover:opacity-100" onClick={() => setEditingFieldId(partStartFieldId)} aria-label="Edit part start page">
+                                            {editingFieldId === partStartFieldId ? (
+                                              <Input
+                                                autoFocus
+                                                className="h-8 w-[5.5rem] shrink-0 font-mono text-xs tabular-nums"
+                                                type="number"
+                                                min={1}
+                                                value={pageInputValue(part.startPageHint)}
+                                                onChange={(e) => updateLessonPartStartPage(structureUnitIdx, lessonIndex, partIndex, e.target.value)}
+                                                onBlur={() => setEditingFieldId(null)}
+                                                aria-label="Part start page"
+                                              />
+                                            ) : (
+                                              <button
+                                                type="button"
+                                                className={BOOK_OUTLINE_PAGE_BADGE_CLASS}
+                                                onClick={() => setEditingFieldId(partStartFieldId)}
+                                                aria-label="Edit part start page"
+                                              >
+                                                {formatPageSpan(partRange.start, partRange.end)}
+                                              </button>
+                                            )}
+                                            <button
+                                              type="button"
+                                              className="shrink-0 opacity-0 transition group-hover:opacity-100"
+                                              onClick={() => setEditingFieldId(partTitleFieldId)}
+                                              aria-label="Edit part title"
+                                            >
                                               <Pencil size={14} />
                                             </button>
                                           </>

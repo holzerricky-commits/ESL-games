@@ -7,6 +7,25 @@ export interface BookPdfPageRange {
 export type BookAnchorConfidence = 'high' | 'medium' | 'low'
 export type BookAnchorSource = 'toc' | 'heading' | 'fallback'
 
+/**
+ * Semantic lesson-part slice (stable for features and scheduling).
+ * Auto-filled from the part title when missing; override in the structure editor.
+ */
+export const BOOK_LESSON_PART_TAGS = [
+  'unspecified',
+  'vocabulary_in_context',
+  'vocabulary_background',
+  'comprehension',
+  'main_story',
+  'your_turn',
+  'paired_story',
+  'making_connections',
+  'grammar',
+  'writing_narrate',
+] as const
+
+export type BookLessonPartTag = (typeof BOOK_LESSON_PART_TAGS)[number]
+
 /** Optional subdivision inside a unit (e.g. “Lesson A”, “Lesson B”). */
 export interface BookLessonPartRecord {
   id: string
@@ -18,6 +37,8 @@ export interface BookLessonPartRecord {
   endPageHint?: number
   anchorConfidence?: BookAnchorConfidence
   anchorSource?: BookAnchorSource
+  /** What kind of section this is (vocab block, main story, grammar, etc.). */
+  structureTag?: BookLessonPartTag
 }
 
 export interface BookLessonRecord {

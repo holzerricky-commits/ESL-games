@@ -1,0 +1,24 @@
+{
+  "id": "unit-1777822775614",
+  "kind": "unit",
+  "bookId": "book-1",
+  "unitId": "unit-1",
+  "theme": "community",
+  "bigIdeas": [
+    "people help each other"
+  ],
+  "crossCurricularLinks": [
+    "social studies"
+  ],
+  "targetLanguageDomains": [
+    "vocabulary"
+  ],
+  "sourcePageRange": {
+    "startPage": 1,
+    "endPage": 3
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-05-03T15:39:35.615Z",
+  "updatedAt": "2026-05-03T15:39:35.615Z"
+}

@@ -1,0 +1,81 @@
+{
+  "id": "test-set-risk-1777819295686",
+  "status": "draft",
+  "generationVersion": "test",
+  "createdAt": "2026-05-03T14:41:35.686Z",
+  "updatedAt": "2026-05-03T14:41:35.738Z",
+  "context": {
+    "studentId": "student-1",
+    "classId": "class-1",
+    "classTitle": "test",
+    "bookId": "book-1",
+    "unitId": "unit-1",
+    "pageRange": {
+      "startPage": 1,
+      "endPage": 2
+    }
+  },
+  "entries": [
+    {
+      "id": "test-set-risk-1777819295686-safe",
+      "word": "safe",
+      "lemma": "safe",
+      "definition": "water path",
+      "examples": [
+        "A river is long."
+      ],
+      "synonyms": [],
+      "antonyms": [],
+      "relevanceTags": [
+        "theme_core"
+      ],
+      "confidence": 0.9,
+      "reviewFlags": [],
+      "sourcePage": 1,
+      "approved": true,
+      "updatedAt": "2026-05-03T14:41:35.738Z"
+    },
+    {
+      "id": "test-set-risk-1777819295686-low",
+      "word": "low",
+      "lemma": "low",
+      "definition": "water path",
+      "examples": [
+        "A river is long."
+      ],
+      "synonyms": [],
+      "antonyms": [],
+      "relevanceTags": [
+        "theme_core"
+      ],
+      "confidence": 0.4,
+      "reviewFlags": [
+        "low_confidence"
+      ],
+      "sourcePage": 1,
+      "approved": false,
+      "updatedAt": "2026-05-03T14:41:35.686Z"
+    },
+    {
+      "id": "test-set-risk-1777819295686-offscope",
+      "word": "offscope",
+      "lemma": "offscope",
+      "definition": "water path",
+      "examples": [
+        "A river is long."
+      ],
+      "synonyms": [],
+      "antonyms": [],
+      "relevanceTags": [
+        "theme_core"
+      ],
+      "confidence": 0.95,
+      "reviewFlags": [
+        "off_scope"
+      ],
+      "sourcePage": 1,
+      "approved": false,
+      "updatedAt": "2026-05-03T14:41:35.686Z"
+    }
+  ]
+}

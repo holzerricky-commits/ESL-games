@@ -1,5 +1,8 @@
 import { buildChallengeCatalogForQuizIds } from '@/lib/challenges'
+import { buildPageAlignmentRuntime, resolveEffectiveAnchorToPdfPage } from '@/lib/books/page-alignment-runtime'
 import { mapPdfPageToDisplayLabel, type PageNumberingMode } from '@/lib/books/page-numbering'
+import { getFileAlignment } from '@/lib/books/page-range'
+import { pageRangeForIndex } from '@/lib/books/toc-page-range'
 import { DEFAULT_PLAY_TIER } from '@/lib/quiz-difficulty'
 import {
   getKnownStudentSummaries,
@@ -23,6 +26,8 @@ import {
   type MapPathPoint,
   type MapPathSegments,
 } from '@/lib/students/challenge-map-layout'
+import { buildSectionPathLabel, getPartPrimaryLabel } from '@/lib/books/part-section-display'
+import { isBookLessonPartTag, resolvePartStructureTag } from '@/lib/books/part-structure-tag'
 import type { BookLibraryPayload, BookRecord, BookUnitRecord } from '@/lib/books/types'
 import type { StudentListItemView, StudentProfileTab, StudentProfileView } from '@/lib/students/types'
 import type { BookContextRecord } from '@/lib/context/types'
@@ -381,6 +386,7 @@ function sanitizeSelectedSection(raw: unknown): StudentBookSectionRef | undefine
   const type: BookSectionType =
     source.type === 'part' || source.type === 'lesson' || source.type === 'unit' ? source.type : 'unit'
   if (!id || !title || !bookId || !bookTitle || !unitId || !unitTitle) return undefined
+  const partStructureTag = isBookLessonPartTag(source.partStructureTag) ? source.partStructureTag : undefined
   return {
     id,
     type,
@@ -394,6 +400,7 @@ function sanitizeSelectedSection(raw: unknown): StudentBookSectionRef | undefine
     partId: typeof source.partId === 'string' && source.partId.trim() ? source.partId.trim() : undefined,
     partTitle: typeof source.partTitle === 'string' && source.partTitle.trim() ? source.partTitle.trim() : undefined,
     title,
+    ...(partStructureTag ? { partStructureTag } : {}),
   }
 }
 
@@ -405,7 +412,8 @@ function flattenUnitSections(book: BookRecord, unit: BookUnitRecord): StudentSec
     unitId: unit.id,
     unitTitle: unit.title,
   }
-  if (!unit.lessons?.length) {
+  const lessons = unit.lessons ?? []
+  if (!lessons.length) {
     out.push({
       id: `unit:${book.id}:${unit.id}`,
       type: 'unit',
@@ -417,9 +425,16 @@ function flattenUnitSections(book: BookRecord, unit: BookUnitRecord): StudentSec
     })
     return out
   }
-  for (const lesson of unit.lessons) {
+  for (let li = 0; li < lessons.length; li++) {
+    const lesson = lessons[li]!
+    const lessonRange = pageRangeForIndex(lessons, li)
     if (lesson.parts?.length) {
-      for (const part of lesson.parts) {
+      const parts = lesson.parts
+      for (let pi = 0; pi < parts.length; pi++) {
+        const part = parts[pi]!
+        const tag = resolvePartStructureTag(part, pi)
+        const displayTitle = getPartPrimaryLabel(tag, part.title)
+        const partRange = pageRangeForIndex(parts, pi, lessonRange.start, lessonRange.end)
         out.push({
           id: `part:${book.id}:${unit.id}:${lesson.id}:${part.id}`,
           type: 'part',
@@ -427,11 +442,16 @@ function flattenUnitSections(book: BookRecord, unit: BookUnitRecord): StudentSec
           lessonId: lesson.id,
           lessonTitle: lesson.title,
           partId: part.id,
-          partTitle: part.title,
-          title: part.title,
-          pathLabel: `${book.title} / ${unit.title} / ${lesson.title} / ${part.title}`,
+          partTitle: displayTitle,
+          title: displayTitle,
+          partStructureTag: tag,
+          pathLabel: buildSectionPathLabel(book.title, unit.title, lesson.title, displayTitle),
           startPageHint: part.startPageHint ?? lesson.startPageHint ?? unit.startPageHint,
-          endPageHint: part.endPageHint ?? lesson.endPageHint ?? unit.endPageHint,
+          endPageHint:
+            part.endPageHint ??
+            lesson.endPageHint ??
+            unit.endPageHint ??
+            (partRange.end ?? undefined),
         })
       }
       continue
@@ -445,7 +465,7 @@ function flattenUnitSections(book: BookRecord, unit: BookUnitRecord): StudentSec
       title: lesson.title,
       pathLabel: `${book.title} / ${unit.title} / ${lesson.title}`,
       startPageHint: lesson.startPageHint ?? unit.startPageHint,
-      endPageHint: lesson.endPageHint ?? unit.endPageHint,
+      endPageHint: lesson.endPageHint ?? unit.endPageHint ?? (lessonRange.end ?? undefined),
     })
   }
   return out
@@ -856,13 +876,7 @@ function resolveCurriculumForStudentCard(
     const pageNum = Number.isFinite(h.page) ? Math.max(1, Math.floor(h.page)) : 1
     const histBook = bookMap.get(h.bookId)
     const histUnit = histBook?.units.find((u) => u.id === h.unitId)
-    const displayPage = mapPdfPageToDisplayLabel(
-      pageNum,
-      histBook,
-      histUnit,
-      histUnit?.pdfPageRange?.end ?? null,
-      numberingMode,
-    )
+    const displayPage = mapPdfPageToDisplayLabel(pageNum, histBook, histUnit, null, numberingMode)
     const fp = unitFilePath(h.bookId, h.unitId)
     return {
       book: resolveBook(h.bookId),
@@ -1261,11 +1275,33 @@ export function resolveNextSectionForClass(
   return options[index + 1] ?? options[index] ?? options[0] ?? null
 }
 
-function pageInSectionOptionRange(option: StudentSectionOption, pdfPage: number): boolean {
+function pageInSectionOptionRange(
+  option: StudentSectionOption,
+  pdfPage: number,
+  book: BookRecord | null | undefined,
+  unit: BookUnitRecord | null | undefined,
+  totalPdfPages: number | null,
+): boolean {
   const start = option.startPageHint ?? 1
   const endHint = option.endPageHint ?? option.startPageHint
-  if (endHint == null || !Number.isFinite(endHint)) return pdfPage >= start
-  const end = Math.max(start, Math.floor(endHint))
+  const end = endHint != null && Number.isFinite(endHint) ? Math.max(start, Math.floor(endHint)) : null
+
+  const useAlignment =
+    book &&
+    unit &&
+    (typeof option.startPageHint === 'number' || typeof option.endPageHint === 'number')
+  if (useAlignment) {
+    const { notCountedPdfPages, hiddenPdfPages } = getFileAlignment(book, unit.filePath)
+    const runtime = buildPageAlignmentRuntime(totalPdfPages, hiddenPdfPages, notCountedPdfPages)
+    const toPdf = (n: number) => resolveEffectiveAnchorToPdfPage(Math.round(n), runtime) ?? n
+    const loPdf = toPdf(start)
+    const hiPdf = end != null ? toPdf(end) : loPdf
+    const lo = Math.min(loPdf, hiPdf)
+    const hi = Math.max(loPdf, hiPdf)
+    return pdfPage >= lo && pdfPage <= hi
+  }
+
+  if (end == null || !Number.isFinite(end)) return pdfPage >= start
   return pdfPage >= start && pdfPage <= end
 }
 
@@ -1275,6 +1311,9 @@ function displaySectionTitleForHeadline(option: StudentSectionOption): string {
 }
 
 function looksLikeVocabularySection(option: StudentSectionOption): boolean {
+  if (option.partStructureTag === 'vocabulary_in_context' || option.partStructureTag === 'vocabulary_background') {
+    return true
+  }
   const blob = [option.partTitle, option.lessonTitle, option.title, option.pathLabel].filter(Boolean).join(' ')
   return /vocab|vocabulary|word study|words to know/i.test(blob)
 }
@@ -1321,7 +1360,9 @@ export function getNextClassResumeHeadline(
     const o = options[i]
     if (o.bookId !== bookId) continue
     if (unitFilter && o.unitId !== unitFilter) continue
-    if (pageInSectionOptionRange(o, page)) {
+    const book = library.books.find((b) => b.id === o.bookId)
+    const unit = book?.units.find((u) => u.id === o.unitId)
+    if (pageInSectionOptionRange(o, page, book, unit, null)) {
       chosen = o
       break
     }
@@ -1435,18 +1476,14 @@ export function getLastStoppedCarryLine(
           const o = options[i]
           if (o.bookId !== bid) continue
           if (unitFilter && o.unitId !== unitFilter) continue
-          if (pageInSectionOptionRange(o, page)) {
+          const b = library.books.find((bk) => bk.id === o.bookId)
+          const u = b?.units.find((un) => un.id === o.unitId)
+          if (pageInSectionOptionRange(o, page, b, u, null)) {
             piece = o
             break
           }
         }
-        const pageLabel = mapPdfPageToDisplayLabel(
-          Math.floor(page),
-          histBook,
-          histUnit,
-          histUnit?.pdfPageRange?.end ?? null,
-          'mapped',
-        )
+        const pageLabel = mapPdfPageToDisplayLabel(Math.floor(page), histBook, histUnit, null, 'mapped')
         const pieceTitle = piece ? displaySectionTitleForHeadline(piece) : null
         return pieceTitle
           ? `Last time: Page ${pageLabel} (${pieceTitle})`
@@ -1466,13 +1503,7 @@ export function getLastStoppedCarryLine(
     })
   const last = rows[rows.length - 1]
   if (!last) return null
-  const pageLabel = mapPdfPageToDisplayLabel(
-    last.page,
-    histBook,
-    histUnit,
-    histUnit?.pdfPageRange?.end ?? null,
-    'mapped',
-  )
+  const pageLabel = mapPdfPageToDisplayLabel(last.page, histBook, histUnit, null, 'mapped')
   return `Last time: Page ${pageLabel} (last reader session)`
 }
 

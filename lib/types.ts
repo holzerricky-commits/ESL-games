@@ -1,3 +1,5 @@
+import type { BookLessonPartTag } from '@/lib/books/types'
+
 export interface QuizQuestion {
   id: string
   questionText: string
@@ -83,6 +85,8 @@ export interface StudentBookSectionRef {
   partId?: string
   partTitle?: string
   title: string
+  /** Resolved lesson-part kind when `type` is `part` (for display and light logic). */
+  partStructureTag?: BookLessonPartTag
 }
 
 export interface TeacherWeeklyScheduleConfig {

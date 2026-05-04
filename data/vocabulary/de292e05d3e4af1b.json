@@ -1,0 +1,334 @@
+{
+  "id": "de292e05d3e4af1b",
+  "status": "draft",
+  "context": {
+    "studentId": "stu_whwsvzf9mo5xmo3n",
+    "classId": "class-slot-1776690108169-nsv1ht-2026-05-16",
+    "classTitle": "Ella class",
+    "bookId": "journeys-g4",
+    "unitId": "unit-1-98f07562",
+    "sectionId": "part:journeys-g4:unit-1-98f07562:lesson-0253fa39:part-e22b75ac",
+    "sectionTitle": "Vocabulary",
+    "pageRange": {
+      "startPage": 18,
+      "endPage": 19
+    }
+  },
+  "entries": [
+    {
+      "id": "ff7796d5c55ef4c6",
+      "word": "adventure",
+      "lemma": "adventure",
+      "definition": "An exciting and sometimes dangerous experience.",
+      "examples": [
+        "Going on a safari was a big adventure.",
+        "Reading a good book can be an adventure too."
+      ],
+      "synonyms": [
+        "quest",
+        "journey"
+      ],
+      "antonyms": [
+        "routine",
+        "boredom"
+      ],
+      "relevanceTags": [
+        "theme_core"
+      ],
+      "confidence": 0.95,
+      "reviewFlags": [],
+      "sourcePage": 18,
+      "approved": false,
+      "updatedAt": "2026-05-03T16:41:18.025Z"
+    },
+    {
+      "id": "21f1d09ba421246c",
+      "word": "explore",
+      "lemma": "explore",
+      "definition": "To travel around a place to learn about it.",
+      "examples": [
+        "Let's explore the forest and see what we can find.",
+        "The astronaut will explore the moon."
+      ],
+      "synonyms": [
+        "discover",
+        "investigate"
+      ],
+      "antonyms": [
+        "ignore",
+        "stay"
+      ],
+      "relevanceTags": [
+        "theme_core"
+      ],
+      "confidence": 0.95,
+      "reviewFlags": [],
+      "sourcePage": 18,
+      "approved": false,
+      "updatedAt": "2026-05-03T16:41:18.025Z"
+    },
+    {
+      "id": "1c0f2c89b83b051e",
+      "word": "curious",
+      "lemma": "curious",
+      "definition": "Wanting to know or learn about something.",
+      "examples": [
+        "The curious cat looked inside the box.",
+        "She was curious about how the magic trick worked."
+      ],
+      "synonyms": [
+        "inquisitive",
+        "interested"
+      ],
+      "antonyms": [
+        "uninterested",
+        "bored"
+      ],
+      "relevanceTags": [
+        "skill_support"
+      ],
+      "confidence": 0.9,
+      "reviewFlags": [],
+      "sourcePage": 18,
+      "approved": false,
+      "updatedAt": "2026-05-03T16:41:18.025Z"
+    },
+    {
+      "id": "65efd0343d9ffb2a",
+      "word": "journey",
+      "lemma": "journey",
+      "definition": "An act of traveling from one place to another.",
+      "examples": [
+        "Our journey to the mountains took all day.",
+        "Life is a long journey with many stops."
+      ],
+      "synonyms": [
+        "trip",
+        "voyage"
+      ],
+      "antonyms": [
+        "stay",
+        "halt"
+      ],
+      "relevanceTags": [
+        "theme_core"
+      ],
+      "confidence": 0.95,
+      "reviewFlags": [],
+      "sourcePage": 18,
+      "approved": false,
+      "updatedAt": "2026-05-03T16:41:18.025Z"
+    },
+    {
+      "id": "42296c7925ec2ac9",
+      "word": "discover",
+      "lemma": "discover",
+      "definition": "To find something new or learn about something for the first time.",
+      "examples": [
+        "Scientists hope to discover new planets.",
+        "I discovered a hidden path in the woods."
+      ],
+      "synonyms": [
+        "find",
+        "uncover"
+      ],
+      "antonyms": [
+        "hide",
+        "lose"
+      ],
+      "relevanceTags": [
+        "theme_core"
+      ],
+      "confidence": 0.9,
+      "reviewFlags": [],
+      "sourcePage": 19,
+      "approved": false,
+      "updatedAt": "2026-05-03T16:41:18.025Z"
+    },
+    {
+      "id": "9ca865c7c0efff5c",
+      "word": "brave",
+      "lemma": "brave",
+      "definition": "Showing no fear of dangerous or difficult things.",
+      "examples": [
+        "The brave knight fought the dragon.",
+        "It was brave of her to speak in front of everyone."
+      ],
+      "synonyms": [
+        "courageous",
+        "fearless"
+      ],
+      "antonyms": [
+        "scared",
+        "timid"
+      ],
+      "relevanceTags": [
+        "skill_support"
+      ],
+      "confidence": 0.9,
+      "reviewFlags": [],
+      "sourcePage": 19,
+      "approved": false,
+      "updatedAt": "2026-05-03T16:41:18.025Z"
+    },
+    {
+      "id": "da6fd714e7b67faa",
+      "word": "courage",
+      "lemma": "courage",
+      "definition": "The ability to do something dangerous or difficult without being afraid.",
+      "examples": [
+        "It takes courage to try new things.",
+        "The firefighter showed great courage."
+      ],
+      "synonyms": [
+        "bravery",
+        "fearlessness"
+      ],
+      "antonyms": [
+        "fear",
+        "cowardice"
+      ],
+      "relevanceTags": [
+        "skill_support"
+      ],
+      "confidence": 0.9,
+      "reviewFlags": [],
+      "sourcePage": 19,
+      "approved": false,
+      "updatedAt": "2026-05-03T16:41:18.025Z"
+    },
+    {
+      "id": "679370b18f4fc66c",
+      "word": "mystery",
+      "lemma": "mystery",
+      "definition": "Something that is difficult to understand or explain.",
+      "examples": [
+        "The old house held many mysteries.",
+        "Solving the mystery of the missing cookies was hard."
+      ],
+      "synonyms": [
+        "puzzle",
+        "secret"
+      ],
+      "antonyms": [
+        "certainty",
+        "fact"
+      ],
+      "relevanceTags": [
+        "theme_core"
+      ],
+      "confidence": 0.9,
+      "reviewFlags": [],
+      "sourcePage": 19,
+      "approved": false,
+      "updatedAt": "2026-05-03T16:41:18.025Z"
+    },
+    {
+      "id": "4ea05b7b779b52ca",
+      "word": "solve",
+      "lemma": "solve",
+      "definition": "To find an answer or explanation for something.",
+      "examples": [
+        "Can you solve this math problem?",
+        "They worked together to solve the riddle."
+      ],
+      "synonyms": [
+        "figure out",
+        "resolve"
+      ],
+      "antonyms": [
+        "complicate",
+        "confuse"
+      ],
+      "relevanceTags": [
+        "skill_support"
+      ],
+      "confidence": 0.85,
+      "reviewFlags": [],
+      "sourcePage": 19,
+      "approved": false,
+      "updatedAt": "2026-05-03T16:41:18.026Z"
+    },
+    {
+      "id": "f9430d6c7d12343d",
+      "word": "ancient",
+      "lemma": "ancient",
+      "definition": "Very old; from a long time ago.",
+      "examples": [
+        "We visited ancient ruins in Rome.",
+        "The ancient tree had been there for hundreds of years."
+      ],
+      "synonyms": [
+        "old",
+        "antique"
+      ],
+      "antonyms": [
+        "modern",
+        "new"
+      ],
+      "relevanceTags": [
+        "theme_core"
+      ],
+      "confidence": 0.9,
+      "reviewFlags": [],
+      "sourcePage": 18,
+      "approved": false,
+      "updatedAt": "2026-05-03T16:41:18.026Z"
+    },
+    {
+      "id": "39fe9a2c69537beb",
+      "word": "treasure",
+      "lemma": "treasure",
+      "definition": "A collection of valuable things, like gold, jewels, or money.",
+      "examples": [
+        "Pirates often buried their treasure.",
+        "The old chest contained a hidden treasure."
+      ],
+      "synonyms": [
+        "riches",
+        "valuables"
+      ],
+      "antonyms": [
+        "trash",
+        "junk"
+      ],
+      "relevanceTags": [
+        "theme_core"
+      ],
+      "confidence": 0.9,
+      "reviewFlags": [],
+      "sourcePage": 18,
+      "approved": false,
+      "updatedAt": "2026-05-03T16:41:18.026Z"
+    },
+    {
+      "id": "b2114945578aa250",
+      "word": "challenge",
+      "lemma": "challenge",
+      "definition": "Something difficult that tests your ability or strength.",
+      "examples": [
+        "Climbing the mountain was a big challenge.",
+        "Learning a new language can be a fun challenge."
+      ],
+      "synonyms": [
+        "difficulty",
+        "test"
+      ],
+      "antonyms": [
+        "ease",
+        "simplicity"
+      ],
+      "relevanceTags": [
+        "skill_support"
+      ],
+      "confidence": 0.85,
+      "reviewFlags": [],
+      "sourcePage": 19,
+      "approved": false,
+      "updatedAt": "2026-05-03T16:41:18.026Z"
+    }
+  ],
+  "generationVersion": "v1",
+  "createdAt": "2026-05-03T16:41:18.026Z",
+  "updatedAt": "2026-05-03T16:41:18.026Z"
+}

@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
-import { mapPdfPageToDisplayLabel } from '@/lib/books/page-numbering'
+import { formatEffectivePageSpan, mapPdfPageToDisplayLabel } from '@/lib/books/page-numbering'
 import type { BookLibraryPayload } from '@/lib/books/types'
 import {
   getStudentDefaultBookUnitForReader,
@@ -103,13 +103,7 @@ export function StudentCurriculumTab({ student, onDataUpdated }: StudentCurricul
     const bm = latest.bookmarkAtEnd!
     const book = library?.books.find((b) => b.id === bm.bookId)
     const unit = bm.unitId ? book?.units.find((u) => u.id === bm.unitId) : undefined
-    const pageLabel = mapPdfPageToDisplayLabel(
-      bm.pdfPage,
-      book,
-      unit,
-      unit?.pdfPageRange?.end ?? null,
-      'mapped',
-    )
+    const pageLabel = mapPdfPageToDisplayLabel(bm.pdfPage, book, unit, null, 'mapped')
     const bits: string[] = [book?.title ?? bm.bookId]
     if (unit?.title) bits.push(unit.title)
     bits.push(`PDF p. ${pageLabel}`)
@@ -252,11 +246,21 @@ export function StudentCurriculumTab({ student, onDataUpdated }: StudentCurricul
                   disabled={isSavingAnchor}
                 >
                   <option value="">First in list (default)</option>
-                  {anchorOptions.map((o) => (
-                    <option key={o.id} value={o.id}>
-                      {o.pathLabel}
-                    </option>
-                  ))}
+                  {anchorOptions.map((o) => {
+                    const b = library?.books.find((bk) => bk.id === o.bookId)
+                    const u = b?.units.find((un) => un.id === o.unitId)
+                    const span =
+                      b && u && typeof o.startPageHint === 'number'
+                        ? formatEffectivePageSpan(o.startPageHint, o.endPageHint ?? null, b, u, null, 'mapped')
+                        : ''
+                    const suffix = span && span !== 'pages —' && !span.startsWith('pages —') ? ` · ${span}` : ''
+                    return (
+                      <option key={o.id} value={o.id}>
+                        {o.pathLabel}
+                        {suffix}
+                      </option>
+                    )
+                  })}
                 </select>
               </label>
               <Button type="button" onClick={() => void saveAnchor()} disabled={isSavingAnchor}>
@@ -285,13 +289,7 @@ export function StudentCurriculumTab({ student, onDataUpdated }: StudentCurricul
               (() => {
                 const histBook = library?.books.find((b) => b.id === entry.bookId)
                 const histUnit = histBook?.units.find((u) => u.id === entry.unitId)
-                const pageLabel = mapPdfPageToDisplayLabel(
-                  entry.page,
-                  histBook,
-                  histUnit,
-                  histUnit?.pdfPageRange?.end ?? null,
-                  'mapped',
-                )
+                const pageLabel = mapPdfPageToDisplayLabel(entry.page, histBook, histUnit, null, 'mapped')
                 return (
                   <article key={entry.id} className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm">
                     <p className="font-medium text-foreground">

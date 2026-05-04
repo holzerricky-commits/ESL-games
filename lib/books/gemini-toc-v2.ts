@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import type { BookLessonPartRecord, BookLessonRecord } from '@/lib/books/types'
+import { computeStructureTagFromTitleAndIndex } from '@/lib/books/part-structure-tag'
 import type { TocUnitDraft } from '@/lib/books/toc-import'
 import { formatLessonTitleWithNumber } from '@/lib/books/lesson-title'
 import { normalizeNotCountedPdfPages } from '@/lib/books/page-alignment'
@@ -179,12 +180,14 @@ function lessonFromAi(
   lesson: z.infer<typeof aiLessonSchema>,
 ): BookLessonRecord {
   const parts: BookLessonPartRecord[] = lesson.entries
-    .map((entry) => {
+    .map((entry, partIndex) => {
       const startPrinted = entry.startPrintedPage ?? null
       if (startPrinted == null) return null
+      const title = entry.title.trim()
       return {
         id: `part-${randomUUID().slice(0, 8)}`,
-        title: entry.title.trim(),
+        title,
+        structureTag: computeStructureTagFromTitleAndIndex({ title }, partIndex),
         startPageHint: startPrinted,
         anchorSource: 'toc',
         anchorConfidence: 'high',

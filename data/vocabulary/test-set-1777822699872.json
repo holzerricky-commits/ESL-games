@@ -1,0 +1,19 @@
+{
+  "id": "test-set-1777822699872",
+  "status": "published",
+  "generationVersion": "test",
+  "createdAt": "2026-05-03T15:38:19.872Z",
+  "updatedAt": "2026-05-03T15:38:19.940Z",
+  "context": {
+    "studentId": "student-1",
+    "classId": "class-1",
+    "classTitle": "test",
+    "bookId": "book-1",
+    "unitId": "unit-1",
+    "pageRange": {
+      "startPage": 1,
+      "endPage": 2
+    }
+  },
+  "entries": []
+}

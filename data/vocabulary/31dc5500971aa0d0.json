@@ -1,0 +1,276 @@
+{
+  "id": "31dc5500971aa0d0",
+  "status": "draft",
+  "context": {
+    "studentId": "stu_2pc6oefsmo5xm9cx",
+    "classId": "class-slot-1776690044275-lkiym4-2026-05-07",
+    "classTitle": "Eliana class",
+    "bookId": "journeys-g3-book-1",
+    "unitId": "unit-1-846acbd3",
+    "sectionId": "part:journeys-g3-book-1:unit-1-846acbd3:lesson-a77c6dd5:part-bb28e3c4",
+    "sectionTitle": "Vocabulary",
+    "pageRange": {
+      "startPage": 10,
+      "endPage": 12
+    }
+  },
+  "entries": [
+    {
+      "id": "a1e1fcce5feae916",
+      "word": "principal",
+      "lemma": "principal",
+      "definition": "The person in charge of a school.",
+      "examples": [
+        "The principal announced a new rule about homework.",
+        "Our principal always greets students with a smile."
+      ],
+      "synonyms": [],
+      "antonyms": [],
+      "relevanceTags": [
+        "theme_core",
+        "skill_support"
+      ],
+      "confidence": 0.95,
+      "reviewFlags": [],
+      "sourcePage": 11,
+      "approved": false,
+      "updatedAt": "2026-05-03T17:10:28.435Z"
+    },
+    {
+      "id": "ea2d08685b3bb4bc",
+      "word": "community",
+      "lemma": "community",
+      "definition": "A group of people living in the same place or having something in common.",
+      "examples": [
+        "Our town has a strong sense of community, with many local events.",
+        "The school is an important part of the local community."
+      ],
+      "synonyms": [],
+      "antonyms": [],
+      "relevanceTags": [
+        "theme_core",
+        "skill_support"
+      ],
+      "confidence": 0.98,
+      "reviewFlags": [],
+      "sourcePage": 11,
+      "approved": false,
+      "updatedAt": "2026-05-03T17:10:28.439Z"
+    },
+    {
+      "id": "b49755440bd82086",
+      "word": "lesson",
+      "lemma": "lesson",
+      "definition": "A period of learning or teaching.",
+      "examples": [
+        "We learned about fractions in our math lesson today.",
+        "The teacher prepared an interesting lesson about history."
+      ],
+      "synonyms": [],
+      "antonyms": [],
+      "relevanceTags": [
+        "theme_core",
+        "skill_support"
+      ],
+      "confidence": 0.95,
+      "reviewFlags": [],
+      "sourcePage": 11,
+      "approved": false,
+      "updatedAt": "2026-05-03T17:10:28.439Z"
+    },
+    {
+      "id": "b29d0383c6a248ae",
+      "word": "recess",
+      "lemma": "recess",
+      "definition": "A break between periods of work or study, usually for play.",
+      "examples": [
+        "All the children ran outside to play during recess.",
+        "After a long lesson, everyone was ready for recess."
+      ],
+      "synonyms": [],
+      "antonyms": [],
+      "relevanceTags": [
+        "theme_core",
+        "skill_support"
+      ],
+      "confidence": 0.9,
+      "reviewFlags": [],
+      "sourcePage": 11,
+      "approved": false,
+      "updatedAt": "2026-05-03T17:10:28.439Z"
+    },
+    {
+      "id": "298aa9bc533829df",
+      "word": "library",
+      "lemma": "library",
+      "definition": "A place where books, magazines, and other materials are kept for people to read or borrow.",
+      "examples": [
+        "I borrowed a new adventure book from the school library.",
+        "The town library has many computers for people to use."
+      ],
+      "synonyms": [],
+      "antonyms": [],
+      "relevanceTags": [
+        "theme_core",
+        "skill_support"
+      ],
+      "confidence": 0.9,
+      "reviewFlags": [],
+      "sourcePage": 11,
+      "approved": false,
+      "updatedAt": "2026-05-03T17:10:28.440Z"
+    },
+    {
+      "id": "c23bf2c3cbefe01d",
+      "word": "chore",
+      "lemma": "chore",
+      "definition": "A routine task, especially a household one.",
+      "examples": [
+        "My daily chore is to feed the dog.",
+        "In old one-room schoolhouses, students often helped with chores like fetching water."
+      ],
+      "synonyms": [],
+      "antonyms": [],
+      "relevanceTags": [
+        "theme_core",
+        "skill_support"
+      ],
+      "confidence": 0.92,
+      "reviewFlags": [],
+      "sourcePage": 11,
+      "approved": false,
+      "updatedAt": "2026-05-03T17:10:28.440Z"
+    },
+    {
+      "id": "20845d542b076482",
+      "word": "share",
+      "lemma": "share",
+      "definition": "To have or use something with others.",
+      "examples": [
+        "It's important to share your toys with your friends.",
+        "Students in one-room schoolhouses often had to share books and supplies."
+      ],
+      "synonyms": [],
+      "antonyms": [],
+      "relevanceTags": [
+        "theme_core",
+        "skill_support"
+      ],
+      "confidence": 0.95,
+      "reviewFlags": [],
+      "sourcePage": 11,
+      "approved": false,
+      "updatedAt": "2026-05-03T17:10:28.440Z"
+    },
+    {
+      "id": "0c2933189a0f00d3",
+      "word": "idea",
+      "lemma": "idea",
+      "definition": "A thought or suggestion for a possible action.",
+      "examples": [
+        "She had a brilliant idea for a new game.",
+        "The principal's idea was to have school every day, all year."
+      ],
+      "synonyms": [],
+      "antonyms": [],
+      "relevanceTags": [
+        "skill_support",
+        "strategy_support"
+      ],
+      "confidence": 0.9,
+      "reviewFlags": [],
+      "sourcePage": 11,
+      "approved": false,
+      "updatedAt": "2026-05-03T17:10:28.440Z"
+    },
+    {
+      "id": "9cf8636ddbed76f6",
+      "word": "excited",
+      "lemma": "excited",
+      "definition": "Feeling or showing great enthusiasm and eagerness.",
+      "examples": [
+        "The children were excited about the field trip.",
+        "I felt excited when I heard the good news."
+      ],
+      "synonyms": [],
+      "antonyms": [],
+      "relevanceTags": [
+        "skill_support",
+        "theme_core"
+      ],
+      "confidence": 0.9,
+      "reviewFlags": [],
+      "sourcePage": 11,
+      "approved": false,
+      "updatedAt": "2026-05-03T17:10:28.440Z"
+    },
+    {
+      "id": "0bc611ee81f246aa",
+      "word": "complain",
+      "lemma": "complain",
+      "definition": "To express dissatisfaction or annoyance about something.",
+      "examples": [
+        "The students started to complain about having too much homework.",
+        "Don't complain about the weather; just put on a coat."
+      ],
+      "synonyms": [],
+      "antonyms": [],
+      "relevanceTags": [
+        "skill_support",
+        "theme_core"
+      ],
+      "confidence": 0.92,
+      "reviewFlags": [],
+      "sourcePage": 11,
+      "approved": false,
+      "updatedAt": "2026-05-03T17:10:28.440Z"
+    },
+    {
+      "id": "e3128785df8da523",
+      "word": "rural",
+      "lemma": "rural",
+      "definition": "Relating to the countryside rather than a town or city.",
+      "examples": [
+        "Many one-room schoolhouses were found in rural areas.",
+        "Life in a rural village can be very peaceful."
+      ],
+      "synonyms": [],
+      "antonyms": [
+        "urban"
+      ],
+      "relevanceTags": [
+        "theme_core",
+        "skill_support"
+      ],
+      "confidence": 0.88,
+      "reviewFlags": [],
+      "sourcePage": 11,
+      "approved": false,
+      "updatedAt": "2026-05-03T17:10:28.440Z"
+    },
+    {
+      "id": "981a9a45998aa5c2",
+      "word": "education",
+      "lemma": "education",
+      "definition": "The process of receiving or giving systematic instruction, especially at a school.",
+      "examples": [
+        "A good education is important for everyone's future.",
+        "In the past, education in rural areas often happened in one-room schoolhouses."
+      ],
+      "synonyms": [],
+      "antonyms": [],
+      "relevanceTags": [
+        "theme_core",
+        "skill_support"
+      ],
+      "confidence": 0.9,
+      "reviewFlags": [],
+      "sourcePage": 11,
+      "approved": false,
+      "updatedAt": "2026-05-03T17:10:28.440Z"
+    }
+  ],
+  "generationVersion": "v1",
+  "createdAt": "2026-05-03T17:10:28.440Z",
+  "updatedAt": "2026-05-03T17:10:28.440Z"
+}

@@ -1,0 +1,21 @@
+{
+  "id": "899fc8caa6d850c0",
+  "status": "draft",
+  "context": {
+    "studentId": "stu_2pc6oefsmo5xm9cx",
+    "classId": "class-slot-1776690044275-lkiym4-2026-05-07",
+    "classTitle": "Eliana class",
+    "bookId": "journeys-g3-book-1",
+    "unitId": "unit-1-846acbd3",
+    "sectionId": "part:journeys-g3-book-1:unit-1-846acbd3:lesson-a77c6dd5:part-bb28e3c4",
+    "sectionTitle": "Vocabulary",
+    "pageRange": {
+      "startPage": 10,
+      "endPage": 12
+    }
+  },
+  "entries": [],
+  "generationVersion": "v1",
+  "createdAt": "2026-05-03T17:21:29.544Z",
+  "updatedAt": "2026-05-03T17:21:29.544Z"
+}

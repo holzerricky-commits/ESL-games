@@ -59,6 +59,14 @@ export interface LessonContextRecord {
   updatedAt: string
 }
 
+/** Same fields as `InteractiveVocabWord` in `lib/books/interactive-vocab.ts` (reader word list). */
+export interface PartContextVocabularyWord {
+  id: string
+  word: string
+  definition: string
+  examples: string[]
+}
+
 export interface PartContextRecord {
   id: string
   kind: 'part'
@@ -75,6 +83,8 @@ export interface PartContextRecord {
   contextVersion: string
   createdAt: string
   updatedAt: string
+  /** Teacher-authored words for the in-book interactive vocab reader (shared for all students). */
+  interactiveVocabulary?: PartContextVocabularyWord[]
 }
 
 export interface BookContextSummaryRecord {

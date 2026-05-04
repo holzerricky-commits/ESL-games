@@ -1,8 +1,11 @@
 import path from 'node:path'
 import { z } from 'zod'
+import { BOOK_LESSON_PART_TAGS } from '@/lib/books/types'
 
 const anchorConfidenceSchema = z.enum(['high', 'medium', 'low'])
 const anchorSourceSchema = z.enum(['toc', 'heading', 'fallback'])
+
+const bookLessonPartTagSchema = z.enum(BOOK_LESSON_PART_TAGS as unknown as [string, ...string[]])
 
 const bookLessonPartSchema = z.object({
   id: z.string().min(1),
@@ -11,6 +14,7 @@ const bookLessonPartSchema = z.object({
   endPageHint: z.number().int().min(1).optional(),
   anchorConfidence: anchorConfidenceSchema.optional(),
   anchorSource: anchorSourceSchema.optional(),
+  structureTag: bookLessonPartTagSchema.optional(),
 }).strict()
 
 const bookLessonSchema = z.object({

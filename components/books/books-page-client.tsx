@@ -14,7 +14,13 @@ import type {
 } from '@/lib/books/types'
 import { DEFAULT_BOOK_FOCUS_AREAS } from '@/lib/context/types'
 import type { BookContextDraftRecord, BookContextMaterialRecord, BookContextSummaryRecord } from '@/lib/context/types'
-import { mapPdfPageToDisplayLabel, type PageNumberingMode } from '@/lib/books/page-numbering'
+import {
+  formatEffectivePageSpan,
+  mapPdfPageToDisplayLabel,
+  resolveAlignedAnchorPage,
+  type PageNumberingMode,
+} from '@/lib/books/page-numbering'
+import { pageRangeForIndex } from '@/lib/books/toc-page-range'
 import { clampPdfPage, clampPdfPageToVisible, getFileAlignment, getUnitReaderBounds, getVisiblePdfPages } from '@/lib/books/page-range'
 import { buildPageAlignmentRuntime, resolveEffectiveAnchorToPdfPage } from '@/lib/books/page-alignment-runtime'
 import { getSavedUnitPage, saveUnitPage } from '@/lib/books/progress'
@@ -35,6 +41,7 @@ import {
   type ContextRangeOption,
   type LessonRangeSource,
 } from '@/lib/context/resolver'
+import { BookOutlinePartRow, BOOK_OUTLINE_PAGE_BADGE_CLASS } from '@/components/books/book-outline-part-row'
 import { BookStructureWizard } from '@/components/books/book-structure-wizard'
 import { BookDropUpload } from '@/components/books/book-drop-upload'
 import { PdfPageThumbnail } from '@/components/students/pdf-page-thumbnail'
@@ -48,6 +55,15 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import { bookHasTocMapping } from '@/lib/books/strip-book-toc-mapping'
+import { resolvePartStructureTag } from '@/lib/books/part-structure-tag'
+import type { InteractiveVocabWord } from '@/lib/books/interactive-vocab'
+import {
+  buildInteractiveVocabPack,
+  getInteractiveVocabPackForPartKey,
+  interactiveVocabPartKey,
+  resolveLessonAndPartAtPdfPage,
+} from '@/lib/books/interactive-vocab'
+import { InteractiveVocabReaderShelf } from '@/components/books/interactive-vocab-reader-shelf'
 
 const PdfDocument = dynamic(() => import('react-pdf').then((mod) => mod.Document), {
   ssr: false,
@@ -194,43 +210,36 @@ function estimatePageByIndex(min: number, max: number, idx: number, total: numbe
   return min + Math.round(span * ratio)
 }
 
-function formatPageSpan(
-  start: number | null,
-  end: number | null,
-  book?: BookRecord | null,
-  unit?: BookUnitRecord | null,
-  totalPdfPages?: number | null,
-  mode: PageNumberingMode = 'mapped',
-): string {
-  if (start == null) return 'pages —'
-  const left = mapPdfPageToDisplayLabel(start, book, unit, totalPdfPages ?? null, mode)
-  if (end == null || end <= start) return `p${left}`
-  const right = mapPdfPageToDisplayLabel(end, book, unit, totalPdfPages ?? null, mode)
-  return `p${left}-${right}`
+/** PDF page index for unit cover thumb (`startPageHint` is printed when set). */
+function unitCoverThumbnailPdfPage(unit: BookUnitRecord, book: BookRecord, numPages: number | null): number {
+  const raw = unit.startPageHint ?? unit.pdfPageRange?.start ?? 1
+  const floor = Math.max(1, Math.floor(raw))
+  if (typeof unit.startPageHint === 'number') {
+    const pdf =
+      resolveAlignedAnchorPage(unit.startPageHint, book, unit, numPages, 'mapped') ?? floor
+    return numPages != null ? Math.min(Math.max(1, Math.floor(pdf)), Math.floor(numPages)) : Math.max(1, Math.floor(pdf))
+  }
+  return numPages != null ? Math.min(floor, Math.floor(numPages)) : floor
 }
 
-function pageRangeForIndex<T extends { startPageHint?: number; endPageHint?: number }>(
-  items: T[],
-  index: number,
-  fallbackStart?: number | null,
-  fallbackEnd?: number | null,
-): { start: number | null; end: number | null } {
-  const current = items[index]
-  const start = typeof current?.startPageHint === 'number'
-    ? Math.round(current.startPageHint)
-    : (fallbackStart ?? null)
-  const explicitEnd = typeof current?.endPageHint === 'number'
-    ? Math.round(current.endPageHint)
-    : null
-  if (explicitEnd != null) return { start, end: explicitEnd }
-  const next = items
-    .slice(index + 1)
-    .find((item) => typeof item.startPageHint === 'number' && Number.isFinite(item.startPageHint))
-  const nextStart = typeof next?.startPageHint === 'number' ? Math.round(next.startPageHint) : null
-  return {
-    start,
-    end: nextStart != null ? Math.max(start ?? 1, nextStart - 1) : (fallbackEnd ?? null),
-  }
+/** First interior PDF page for story thumb from printed-range metadata. */
+function partStoryThumbPdfPage(
+  part: BookLessonPartRecord,
+  lesson: BookLessonRecord,
+  partRangeStart: number | null,
+  book: BookRecord,
+  unit: BookUnitRecord,
+  numPages: number | null,
+): number | null {
+  if (partRangeStart == null) return null
+  const tocAnchored =
+    typeof part.startPageHint === 'number' || typeof lesson.startPageHint === 'number'
+  const startPdf = tocAnchored
+    ? resolveAlignedAnchorPage(partRangeStart, book, unit, numPages, 'mapped') ?? partRangeStart
+    : partRangeStart
+  const n = Math.max(1, Math.floor(startPdf)) + 1
+  if (numPages != null && Number.isFinite(numPages)) return Math.min(n, Math.floor(numPages))
+  return n
 }
 
 function resolveStartHintWithAlignment(
@@ -849,6 +858,63 @@ export function BooksPageClient() {
     const partIndex = Math.max(0, parts.findIndex((part) => part.id === selectedPart.id))
     return pageRangeForIndex(parts, partIndex, lessonRange.start, lessonRange.end)
   }, [selectedLesson, selectedPart, selectedUnit])
+
+  const vocabReaderHit = useMemo(() => {
+    if (!selectedBook || !selectedUnit) return null
+    return resolveLessonAndPartAtPdfPage(selectedBook, selectedUnit, readerLessonId, pageNumber, numPages)
+  }, [selectedBook, selectedUnit, readerLessonId, pageNumber, numPages])
+
+  const vocabReaderTag = useMemo(() => {
+    if (!vocabReaderHit) return null
+    const parts = vocabReaderHit.lesson.parts ?? []
+    const partIndex = Math.max(0, parts.findIndex((p) => p.id === vocabReaderHit.part.id))
+    return resolvePartStructureTag(vocabReaderHit.part, partIndex)
+  }, [vocabReaderHit])
+
+  const [savedPartInteractiveVocab, setSavedPartInteractiveVocab] = useState<InteractiveVocabWord[] | null>(null)
+
+  useEffect(() => {
+    if (!selectedBook || !selectedUnit || !vocabReaderHit) {
+      setSavedPartInteractiveVocab(null)
+      return
+    }
+    if (vocabReaderTag !== 'vocabulary_in_context' && vocabReaderTag !== 'vocabulary_background') {
+      setSavedPartInteractiveVocab(null)
+      return
+    }
+    const { lesson, part } = vocabReaderHit
+    setSavedPartInteractiveVocab(null)
+    const qs = new URLSearchParams({
+      bookId: selectedBook.id,
+      unitId: selectedUnit.id,
+      lessonId: lesson.id,
+      partId: part.id,
+    })
+    let cancelled = false
+    void fetch(`/api/context/get?${qs.toString()}`)
+      .then((r) => r.json())
+      .then((data: { ok?: boolean; context?: { interactiveVocabulary?: InteractiveVocabWord[] } | null }) => {
+        if (cancelled) return
+        const list = data.ok ? data.context?.interactiveVocabulary : undefined
+        setSavedPartInteractiveVocab(Array.isArray(list) && list.length ? list : null)
+      })
+      .catch(() => {
+        if (!cancelled) setSavedPartInteractiveVocab(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedBook, selectedUnit, vocabReaderHit, vocabReaderTag])
+
+  /** Interactive reader: saved part vocab overrides demo pack; vocabulary_in_context or vocabulary_background parts. */
+  const interactiveVocabPack = useMemo(() => {
+    if (!selectedBook || !selectedUnit || !vocabReaderHit) return null
+    if (vocabReaderTag !== 'vocabulary_in_context' && vocabReaderTag !== 'vocabulary_background') return null
+    const key = interactiveVocabPartKey(selectedBook.id, selectedUnit.id, vocabReaderHit.lesson.id, vocabReaderHit.part.id)
+    const sectionLabel = vocabReaderHit.part.title ?? 'Vocabulary'
+    const hardcoded = getInteractiveVocabPackForPartKey(key)
+    return buildInteractiveVocabPack(key, sectionLabel, savedPartInteractiveVocab, hardcoded)
+  }, [selectedBook, selectedUnit, vocabReaderHit, vocabReaderTag, savedPartInteractiveVocab])
 
   const frameworkLessonRows = useMemo(() => {
     if (!selectedBook) return []
@@ -2329,6 +2395,7 @@ export function BooksPageClient() {
                   const contentStart = unit.pdfContentStart ?? unitStart
                   const coverPages = Math.max(0, contentStart - unitStart)
                   const unitCoverUrl = makeUnitFileUrl(unit.filePath)
+                  const coverThumbPdfPage = unitCoverThumbnailPdfPage(unit, book, numPages)
                   return (
                     <div
                       key={unit.id}
@@ -2345,7 +2412,7 @@ export function BooksPageClient() {
                             <PdfPageThumbnail
                               fileUrl={unitCoverUrl}
                               unitId={`${unit.id}-cover`}
-                              pageNumber={unitStart}
+                              pageNumber={coverThumbPdfPage}
                               width={36}
                               pdfReady={pdfReady}
                               label="Unit cover"
@@ -2427,7 +2494,7 @@ export function BooksPageClient() {
                                         type="button"
                                         onClick={() => selectLessonForReading(book.id, unit, lesson)}
                                         className={cn(
-                                          'min-w-0 flex-1 rounded px-1.5 py-1 text-left text-xs leading-snug transition-colors',
+                                          'min-w-0 flex-1 rounded px-1.5 py-1 text-left text-sm leading-snug transition-colors',
                                           active &&
                                             readerLessonId === lesson.id &&
                                             readerPartId == null
@@ -2435,10 +2502,19 @@ export function BooksPageClient() {
                                             : 'text-muted-foreground hover:bg-background/60 hover:text-foreground',
                                         )}
                                       >
-                                        <span className="inline-flex min-w-0 items-center gap-1.5">
-                                          <span className="truncate">{lesson.title || 'Lesson'}</span>
-                                          <span className="shrink-0 rounded bg-background/70 px-1 py-0.5 text-[10px] font-medium text-muted-foreground">
-                                            {formatPageSpan(lessonRange.start, lessonRange.end, book, unit, numPages, numberingMode)}
+                                        <span className="flex min-w-0 items-baseline gap-2">
+                                          <span className="truncate font-medium">
+                                            Lesson {lessonIndex + 1}: {lesson.title || 'Lesson'}
+                                          </span>
+                                          <span className={BOOK_OUTLINE_PAGE_BADGE_CLASS}>
+                                            {formatEffectivePageSpan(
+                                              lessonRange.start,
+                                              lessonRange.end,
+                                              book,
+                                              unit,
+                                              numPages,
+                                              numberingMode,
+                                            )}
                                           </span>
                                         </span>
                                       </button>
@@ -2449,23 +2525,31 @@ export function BooksPageClient() {
                                           const partRange = pageRangeForIndex(parts, partIndex, lessonRange.start, lessonRange.end)
                                           return (
                                           <li key={part.id}>
-                                            <button
-                                              type="button"
-                                              onClick={() => selectPartForReading(book.id, unit, lesson, part)}
-                                              className={cn(
-                                                'w-full rounded px-1.5 py-1 text-left text-[11px] leading-snug transition-colors',
-                                                active && readerPartId === part.id
-                                                  ? 'bg-[var(--brand-blue)]/20 font-medium text-foreground'
-                                                  : 'text-muted-foreground hover:bg-background/60 hover:text-foreground',
+                                            <BookOutlinePartRow
+                                              part={part}
+                                              partIndex={partIndex}
+                                              pageRangeLabel={formatEffectivePageSpan(
+                                                partRange.start,
+                                                partRange.end,
+                                                book,
+                                                unit,
+                                                numPages,
+                                                numberingMode,
                                               )}
-                                            >
-                                              <span className="inline-flex min-w-0 items-center gap-1.5">
-                                                <span className="truncate">{part.title || 'Part'}</span>
-                                                <span className="shrink-0 rounded bg-background/70 px-1 py-0.5 text-[10px] font-medium text-muted-foreground">
-                                                  {formatPageSpan(partRange.start, partRange.end, book, unit, numPages, numberingMode)}
-                                                </span>
-                                              </span>
-                                            </button>
+                                              isActive={active && readerPartId === part.id}
+                                              onSelect={() => selectPartForReading(book.id, unit, lesson, part)}
+                                              fileUrl={unitCoverUrl}
+                                              pdfReady={pdfReady}
+                                              storyThumbPdfPage={partStoryThumbPdfPage(
+                                                part,
+                                                lesson,
+                                                partRange.start,
+                                                book,
+                                                unit,
+                                                numPages,
+                                              )}
+                                              totalPdfPages={numPages}
+                                            />
                                           </li>
                                           )
                                         })}
@@ -4093,8 +4177,9 @@ export function BooksPageClient() {
                       PDF page {currentSpreadRightPage != null ? `${currentSpreadLeftPage}-${currentSpreadRightPage}` : `${currentSpreadLeftPage}`}
                       {numPages != null ? ` / ${numPages}` : ''}
                     </span>
+                    {interactiveVocabPack ? <InteractiveVocabReaderShelf pack={interactiveVocabPack} className="ml-auto" /> : null}
                   </div>
-                  <div className="overflow-auto rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-2">
+                  <div className="relative overflow-auto rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-2">
                     {pdfReady ? (
                       <PdfDocument
                         file={makeUnitFileUrl(selectedUnit.filePath)}

@@ -1,0 +1,21 @@
+{
+  "id": "115b63c5ac276c4c",
+  "status": "draft",
+  "context": {
+    "studentId": "stu_whwsvzf9mo5xmo3n",
+    "classId": "class-slot-1776690108169-nsv1ht-2026-05-16",
+    "classTitle": "Ella class",
+    "bookId": "journeys-g4",
+    "unitId": "unit-1-98f07562",
+    "sectionId": "part:journeys-g4:unit-1-98f07562:lesson-0253fa39:part-e22b75ac",
+    "sectionTitle": "Vocabulary",
+    "pageRange": {
+      "startPage": 18,
+      "endPage": 18
+    }
+  },
+  "entries": [],
+  "generationVersion": "v1",
+  "createdAt": "2026-05-03T16:40:30.683Z",
+  "updatedAt": "2026-05-03T16:40:30.683Z"
+}

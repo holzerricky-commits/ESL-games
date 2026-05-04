@@ -1,4 +1,5 @@
 import type { BookLessonPartRecord, BookLessonRecord, BookUnitRecord } from '@/lib/books/types'
+import { computeStructureTagFromTitleAndIndex, isBookLessonPartTag } from '@/lib/books/part-structure-tag'
 
 /** Minimal pdf.js text item shape from getTextContent().items */
 export interface PdfTextItem {
@@ -173,12 +174,17 @@ function trimLesson(l: BookLessonRecord): BookLessonRecord | null {
 
   const parts =
     l.parts
-      ?.map((p) => {
+      ?.map((p, partIndex) => {
         const pt = p.title.trim()
         if (!pt) return null
+        const tag =
+          p.structureTag && isBookLessonPartTag(p.structureTag)
+            ? p.structureTag
+            : computeStructureTagFromTitleAndIndex({ title: pt }, partIndex)
         const rec: BookLessonPartRecord = {
           id: p.id,
           title: pt,
+          structureTag: tag,
           ...(typeof p.startPageHint === 'number' ? { startPageHint: p.startPageHint } : {}),
           ...(typeof p.endPageHint === 'number' ? { endPageHint: p.endPageHint } : {}),
           ...(p.anchorConfidence ? { anchorConfidence: p.anchorConfidence } : {}),

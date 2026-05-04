@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { mapPdfPageToDisplayLabel, mapPdfSpreadToDisplayLabel, resolveAlignedAnchorPage } from '@/lib/books/page-numbering'
+import {
+  formatEffectivePageSpan,
+  mapPdfPageToDisplayLabel,
+  mapPdfSpreadToDisplayLabel,
+  resolveAlignedAnchorPage,
+} from '@/lib/books/page-numbering'
 import type { BookRecord, BookUnitRecord } from '@/lib/books/types'
 
 function fixtureBookWithUnit(unit: BookUnitRecord): BookRecord {
@@ -39,6 +44,11 @@ describe('page-numbering helpers', () => {
   it('resolves aligned anchors with optional original fallback', () => {
     expect(resolveAlignedAnchorPage(3, book, unit, 10)).toBe(4)
     expect(resolveAlignedAnchorPage(3, book, unit, 10, 'original')).toBe(3)
+  })
+
+  it('formats effective spans without treating hints as PDF indices', () => {
+    expect(formatEffectivePageSpan(2, 4, book, unit, 10)).toBe('p2-4')
+    expect(formatEffectivePageSpan(2, 4, book, unit, 10, 'original')).toBe('p2-6')
   })
 })
 

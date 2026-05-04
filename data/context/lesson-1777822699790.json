@@ -1,0 +1,28 @@
+{
+  "id": "lesson-1777822699790",
+  "kind": "lesson",
+  "bookId": "book-1",
+  "unitId": "unit-1",
+  "lessonId": "lesson-1",
+  "textType": "story",
+  "lessonGoals": [
+    "identify characters"
+  ],
+  "comprehensionSkill": "story structure",
+  "strategy": "compare and contrast",
+  "essentialQuestions": [
+    "What are parts of a story?"
+  ],
+  "languageFocus": {
+    "grammarNotes": [],
+    "writingNotes": []
+  },
+  "sourcePageRange": {
+    "startPage": 4,
+    "endPage": 8
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-05-03T15:38:19.791Z",
+  "updatedAt": "2026-05-03T15:38:19.791Z"
+}

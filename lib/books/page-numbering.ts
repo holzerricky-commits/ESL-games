@@ -52,3 +52,36 @@ export function resolveAlignedAnchorPage(
   return resolveEffectiveAnchorToPdfPage(rounded, runtime) ?? rounded
 }
 
+/**
+ * Format a page span from **printed / effective** anchors (`startPageHint` / `endPageHint`).
+ * In `mapped` mode, shows those numbers as-is. In `original` mode, shows underlying PDF indices.
+ */
+export function formatEffectivePageSpan(
+  start: number | null,
+  end: number | null,
+  book: BookRecord | null | undefined,
+  unit: BookUnitRecord | null | undefined,
+  totalPdfPages: number | null,
+  mode: PageNumberingMode = 'mapped',
+): string {
+  if (start == null) return 'pages —'
+  const s = Math.max(1, Math.floor(start))
+  if (mode === 'original' && book && unit) {
+    const leftPdf = resolveAlignedAnchorPage(s, book, unit, totalPdfPages, 'mapped') ?? s
+    if (end == null || end <= s) return `p${leftPdf}`
+    const e = Math.max(1, Math.floor(end))
+    const rightPdf = resolveAlignedAnchorPage(e, book, unit, totalPdfPages, 'mapped') ?? e
+    const lo = Math.min(leftPdf, rightPdf)
+    const hi = Math.max(leftPdf, rightPdf)
+    return `p${lo}-${hi}`
+  }
+  if (mode === 'original') {
+    if (end == null || end <= s) return `p${s}`
+    const e = Math.max(1, Math.floor(end))
+    return `p${s}-${e}`
+  }
+  if (end == null || end <= s) return `p${s}`
+  const e = Math.max(1, Math.floor(end))
+  return `p${s}-${e}`
+}
+
