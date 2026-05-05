@@ -11,17 +11,18 @@ export type LocalDataBackupPayload = {
   kind: typeof LOCAL_DATA_BACKUP_KIND
   version: 1
   exportedAt: string
-  /** Raw string values as returned by `localStorage.getItem` (JSON strings for structured data). */
-  localStorage: Record<string, string | null>
+  /** Raw string values from localStorage (JSON strings for structured data). */
+  localStorage: Record<string, string>
 }
 
-export function collectEslLocalStorageSnapshot(): Record<string, string | null> {
+export function collectEslLocalStorageSnapshot(): Record<string, string> {
   if (typeof window === 'undefined') return {}
-  const out: Record<string, string | null> = {}
+  const out: Record<string, string> = {}
   for (let i = 0; i < window.localStorage.length; i += 1) {
     const key = window.localStorage.key(i)
     if (!key || !ESL_LOCAL_STORAGE_KEY_PATTERN.test(key)) continue
-    out[key] = window.localStorage.getItem(key)
+    const value = window.localStorage.getItem(key)
+    if (value !== null) out[key] = value
   }
   return out
 }
@@ -44,7 +45,7 @@ export function validateBackupPayload(data: unknown): LocalDataBackupPayload | n
   for (const key of Object.keys(entries)) {
     if (!ESL_LOCAL_STORAGE_KEY_PATTERN.test(key)) return null
     const v = entries[key]
-    if (v !== null && typeof v !== 'string') return null
+    if (typeof v !== 'string') return null
   }
   if (o.kind !== LOCAL_DATA_BACKUP_KIND && o.kind !== undefined) return null
   if (o.version !== 1 && o.version !== undefined) return null
@@ -52,9 +53,7 @@ export function validateBackupPayload(data: unknown): LocalDataBackupPayload | n
     kind: LOCAL_DATA_BACKUP_KIND,
     version: 1,
     exportedAt: typeof o.exportedAt === 'string' ? o.exportedAt : 'unknown',
-    localStorage: Object.fromEntries(
-      Object.entries(entries).map(([k, v]) => [k, v === null ? null : String(v)]),
-    ) as Record<string, string | null>,
+    localStorage: Object.fromEntries(Object.entries(entries).map(([k, v]) => [k, String(v)])),
   }
 }
 
@@ -64,11 +63,7 @@ export function applyBackupPayload(payload: LocalDataBackupPayload): { keysWritt
   let keysWritten = 0
   for (const [key, value] of Object.entries(payload.localStorage)) {
     if (!ESL_LOCAL_STORAGE_KEY_PATTERN.test(key)) continue
-    if (value === null) {
-      window.localStorage.removeItem(key)
-    } else {
-      window.localStorage.setItem(key, value)
-    }
+    window.localStorage.setItem(key, value)
     keysWritten += 1
   }
   return { keysWritten }
