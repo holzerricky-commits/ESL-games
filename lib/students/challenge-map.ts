@@ -3,6 +3,14 @@ import type { StudentProfileView } from '@/lib/students/types'
 
 export type ChallengeMapNodeStatus = 'completed' | 'current' | 'locked'
 
+/** Display grouping for the student challenge map “biome” routes UI. */
+export interface ChallengeMapBiomeSection {
+  biomeRouteName: string
+  biomeLabel: string
+  biomeIcon: string
+  biomeTintClassName: string
+}
+
 export interface ChallengeMapNode {
   id: string
   quizId: string

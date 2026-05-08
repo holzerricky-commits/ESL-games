@@ -1,0 +1,111 @@
+{
+  "id": "c6c4dbf5840dcff890da",
+  "kind": "part",
+  "bookId": "journeys-g4",
+  "unitId": "unit-1-98f07562",
+  "lessonId": "lesson-0253fa39",
+  "partId": "part-e22b75ac",
+  "partTitle": "Vocabulary",
+  "partGoals": [],
+  "activityNotes": [],
+  "languageFocus": {
+    "grammarNotes": [],
+    "writingNotes": []
+  },
+  "sourcePageRange": {
+    "startPage": 18,
+    "endPage": 20
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-05-04T15:45:51.369Z",
+  "updatedAt": "2026-05-04T15:45:51.369Z",
+  "interactiveVocabulary": [
+    {
+      "id": "cc-1",
+      "word": "comfort",
+      "definition": "to make someone feel better when they are sad or having a difficult time.",
+      "examples": [
+        "Friends often comfort each other.",
+        "They help each other get through hard times."
+      ]
+    },
+    {
+      "id": "cc-2",
+      "word": "mention",
+      "definition": "to speak about something briefly or refer to it.",
+      "examples": [
+        "Do not mention one friend's faults to another.",
+        "Keep them to yourself instead."
+      ]
+    },
+    {
+      "id": "cc-3",
+      "word": "mood",
+      "definition": "a temporary state of mind or feeling.",
+      "examples": [
+        "Friends remain friends even when one is in a bad mood, or emotional state."
+      ]
+    },
+    {
+      "id": "cc-4",
+      "word": "properly",
+      "definition": "in a correct or suitable way.",
+      "examples": [
+        "Friends often greet each other properly.",
+        "A handshake is the correct way."
+      ]
+    },
+    {
+      "id": "cc-5",
+      "word": "intends",
+      "definition": "plans or means to do something.",
+      "examples": [
+        "This girl intends to keep in touch with a friend.",
+        "She plans to send e-mail every day."
+      ]
+    },
+    {
+      "id": "cc-6",
+      "word": "consisted",
+      "definition": "was made up of or composed of certain things.",
+      "examples": [
+        "This lively day consisted, or was made up of, bike riding and fresh air."
+      ]
+    },
+    {
+      "id": "cc-7",
+      "word": "positive",
+      "definition": "feeling certain or confident about something.",
+      "examples": [
+        "These friends are positive that they're having a good time.",
+        "They are sure of it."
+      ]
+    },
+    {
+      "id": "cc-8",
+      "word": "advanced",
+      "definition": "highly developed or skilled.",
+      "examples": [
+        "With his advanced chess skills, this man can teach his young friend to play."
+      ]
+    },
+    {
+      "id": "cc-9",
+      "word": "peculiar",
+      "definition": "strange or unusual.",
+      "examples": [
+        "Friends may act in peculiar, or unusual, ways when taking photos."
+      ]
+    },
+    {
+      "id": "cc-10",
+      "word": "talent",
+      "definition": "a natural ability to do something well.",
+      "examples": [
+        "These friends share a talent for music.",
+        "This ability gives them hours of fun."
+      ]
+    }
+  ]
+}

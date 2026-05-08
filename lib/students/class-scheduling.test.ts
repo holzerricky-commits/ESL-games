@@ -28,6 +28,12 @@ import {
   updateStudentClassEndNote,
   updateStudentClassSessionNote,
   resolveNextSectionForClass,
+  updateStudentClassSelectedSection,
+  upsertStudentClassLessonNotebookDoc,
+  upsertStudentClassLessonNotebookOverlayImages,
+  ensureStudentClassLessonNotebookPageSpanSection,
+  buildNotebookPageSpanKey,
+  upsertStudentClassLessonNotebookSectionTocAnchor,
 } from '@/lib/students/selectors'
 import type { BookLibraryPayload } from '@/lib/books/types'
 import type { StudentClassSession, StudentRecord } from '@/lib/types'
@@ -411,6 +417,248 @@ describe('weekly schedule slots and rolling generation', () => {
     expect(row?.classStartedAt).toMatch(/^\d{4}-/)
   })
 
+  it('startStudentClassSession auto-creates one lesson notebook session with header entry', () => {
+    saveStudents([seedStudent()])
+    const created = upsertStudentClassSession('student-1', {
+      title: 'Notebook class',
+      scheduledFor: '2026-04-25T09:00',
+      durationMin: 45,
+    })
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+    const selected = updateStudentClassSelectedSection('student-1', created.session.id, {
+      id: 'part:book-a:unit-1:lesson-1:part-1',
+      type: 'part',
+      bookId: 'book-a',
+      bookTitle: 'Test Book',
+      unitId: 'unit-1',
+      unitTitle: 'Unit 1',
+      title: 'Part 1',
+      startPageHint: 33,
+      endPageHint: 34,
+    })
+    expect(selected.ok).toBe(true)
+    expect(startStudentClassSession('student-1', created.session.id).ok).toBe(true)
+    const row = getStudentProfileView('student-1')?.scheduledClasses.find((s) => s.id === created.session.id)
+    const notebook = row?.lessonNotebookSession
+    expect(notebook?.classSessionId).toBe(created.session.id)
+    expect(notebook?.sections).toHaveLength(1)
+    expect(notebook?.sections[0]?.anchorKey).toBe('p33-34')
+    const headerPayload = notebook?.sections[0]?.entries?.[0]?.payload as
+      | { title?: string; pageLabel?: string; lessonPartLabel?: string }
+      | undefined
+    expect(headerPayload?.title).toBe('Part 1')
+    expect(headerPayload?.pageLabel).toBe('33-34')
+    expect(headerPayload?.lessonPartLabel).toBe('Part 1')
+  })
+
+  it('upsertStudentClassLessonNotebookDoc saves rich text html into notebook doc layer', () => {
+    saveStudents([seedStudent()])
+    const created = upsertStudentClassSession('student-1', {
+      title: 'Notebook class',
+      scheduledFor: '2026-04-25T09:00',
+      durationMin: 45,
+    })
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+    expect(startStudentClassSession('student-1', created.session.id).ok).toBe(true)
+    const firstSession = getStudentProfileView('student-1')?.scheduledClasses.find((s) => s.id === created.session.id)
+    const firstSectionId = firstSession?.lessonNotebookSession?.sections?.[0]?.sectionId
+    expect(firstSectionId).toBeTruthy()
+    if (!firstSectionId) return
+    const saved = upsertStudentClassLessonNotebookDoc('student-1', created.session.id, {
+      sectionId: firstSectionId,
+      html: '<h3>Warm-up</h3><ul><li>river</li><li>forest</li></ul>',
+    })
+    expect(saved.ok).toBe(true)
+    const updatedSession = getStudentProfileView('student-1')?.scheduledClasses.find((s) => s.id === created.session.id)
+    const docEntry = updatedSession?.lessonNotebookSession?.sections?.[0]?.entries?.find(
+      (entry) => entry.payload?.kind === 'doc_richtext',
+    )
+    expect(docEntry?.payload?.html).toContain('<h3>Warm-up</h3>')
+  })
+
+  it('upsertStudentClassLessonNotebookDoc stores lightweight doc snapshots on successive saves', () => {
+    saveStudents([seedStudent()])
+    const created = upsertStudentClassSession('student-1', {
+      title: 'Notebook class',
+      scheduledFor: '2026-04-25T09:00',
+      durationMin: 45,
+    })
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+    expect(startStudentClassSession('student-1', created.session.id).ok).toBe(true)
+    const sectionId = getStudentProfileView('student-1')?.scheduledClasses.find((s) => s.id === created.session.id)
+      ?.lessonNotebookSession?.sections?.[0]?.sectionId
+    expect(sectionId).toBeTruthy()
+    if (!sectionId) return
+
+    const first = upsertStudentClassLessonNotebookDoc('student-1', created.session.id, {
+      sectionId,
+      html: '<p>Version 1</p>',
+    })
+    expect(first.ok).toBe(true)
+    const second = upsertStudentClassLessonNotebookDoc('student-1', created.session.id, {
+      sectionId,
+      html: '<p>Version 2</p>',
+      clientDocUpdatedAt: first.ok ? first.docUpdatedAt : undefined,
+    })
+    expect(second.ok).toBe(true)
+
+    const session = getStudentProfileView('student-1')?.scheduledClasses.find((s) => s.id === created.session.id)
+    const history = session?.lessonNotebookSession?.sections?.[0]?.entries?.find(
+      (entry) => entry.payload?.kind === 'doc_history',
+    )
+    const snapshots = (history?.payload?.snapshots as Array<{ html?: string }> | undefined) ?? []
+    expect(snapshots.length).toBeGreaterThan(0)
+    expect(snapshots[0]?.html).toContain('Version 1')
+  })
+
+  it('upsertStudentClassLessonNotebookDoc returns conflict when client revision is stale', () => {
+    saveStudents([seedStudent()])
+    const created = upsertStudentClassSession('student-1', {
+      title: 'Notebook class',
+      scheduledFor: '2026-04-25T09:00',
+      durationMin: 45,
+    })
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+    expect(startStudentClassSession('student-1', created.session.id).ok).toBe(true)
+    const sectionId = getStudentProfileView('student-1')?.scheduledClasses.find((s) => s.id === created.session.id)
+      ?.lessonNotebookSession?.sections?.[0]?.sectionId
+    expect(sectionId).toBeTruthy()
+    if (!sectionId) return
+
+    const first = upsertStudentClassLessonNotebookDoc('student-1', created.session.id, {
+      sectionId,
+      html: '<p>Teacher version</p>',
+    })
+    expect(first.ok).toBe(true)
+    if (!first.ok) return
+    const second = upsertStudentClassLessonNotebookDoc('student-1', created.session.id, {
+      sectionId,
+      html: '<p>Teacher version 2</p>',
+      clientDocUpdatedAt: first.docUpdatedAt,
+    })
+    expect(second.ok).toBe(true)
+    if (!second.ok) return
+
+    const conflict = upsertStudentClassLessonNotebookDoc('student-1', created.session.id, {
+      sectionId,
+      html: '<p>Stale client attempt</p>',
+      clientDocUpdatedAt: '1999-01-01T00:00:00.000Z',
+    })
+    expect(conflict.ok).toBe(false)
+    if (conflict.ok) return
+    expect(conflict.conflict).toBe(true)
+    expect(conflict.latestHtml).toContain('Teacher version 2')
+  })
+
+  it('upsertStudentClassLessonNotebookOverlayImages saves overlay images with normalized positions', () => {
+    saveStudents([seedStudent()])
+    const created = upsertStudentClassSession('student-1', {
+      title: 'Notebook class',
+      scheduledFor: '2026-04-25T09:00',
+      durationMin: 45,
+    })
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+    expect(startStudentClassSession('student-1', created.session.id).ok).toBe(true)
+    const sectionId = getStudentProfileView('student-1')?.scheduledClasses.find((s) => s.id === created.session.id)
+      ?.lessonNotebookSession?.sections?.[0]?.sectionId
+    expect(sectionId).toBeTruthy()
+    if (!sectionId) return
+    const saved = upsertStudentClassLessonNotebookOverlayImages('student-1', created.session.id, {
+      sectionId,
+      images: [
+        {
+          id: 'img-1',
+          src: 'data:image/png;base64,abc',
+          xNorm: 0.12,
+          yNorm: 0.2,
+          widthNorm: 0.4,
+        },
+      ],
+    })
+    expect(saved.ok).toBe(true)
+    const session = getStudentProfileView('student-1')?.scheduledClasses.find((s) => s.id === created.session.id)
+    const overlayEntry = session?.lessonNotebookSession?.sections?.[0]?.entries?.find(
+      (entry) => entry.layer === 'overlay' && entry.payload?.kind === 'overlay_images',
+    )
+    const firstImage = (overlayEntry?.payload?.images as Array<{ id: string }> | undefined)?.[0]
+    expect(firstImage?.id).toBe('img-1')
+  })
+
+  it('buildNotebookPageSpanKey creates stable page span keys', () => {
+    expect(buildNotebookPageSpanKey(33, 34)).toBe('p33-34')
+    expect(buildNotebookPageSpanKey(35, null)).toBe('p35')
+  })
+
+  it('ensureStudentClassLessonNotebookPageSpanSection creates missing page span section once', () => {
+    saveStudents([seedStudent()])
+    const created = upsertStudentClassSession('student-1', {
+      title: 'Notebook class',
+      scheduledFor: '2026-04-25T09:00',
+      durationMin: 45,
+    })
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+    expect(startStudentClassSession('student-1', created.session.id).ok).toBe(true)
+    const first = ensureStudentClassLessonNotebookPageSpanSection('student-1', created.session.id, {
+      pageSpanKey: 'p35-36',
+      title: 'Reading Part',
+    })
+    expect(first.ok).toBe(true)
+    if (!first.ok) return
+    const second = ensureStudentClassLessonNotebookPageSpanSection('student-1', created.session.id, {
+      pageSpanKey: 'p35-36',
+      title: 'Reading Part',
+    })
+    expect(second.ok).toBe(true)
+    if (!second.ok) return
+    expect(second.sectionId).toBe(first.sectionId)
+    const session = getStudentProfileView('student-1')?.scheduledClasses.find((s) => s.id === created.session.id)
+    const keys =
+      session?.lessonNotebookSession?.sections
+        ?.filter((section) => section.anchorType === 'page_span')
+        .map((section) => section.anchorKey) ?? []
+    expect(keys.filter((key) => key === 'p35-36')).toHaveLength(1)
+  })
+
+  it('upsertStudentClassLessonNotebookSectionTocAnchor re-anchors section to selected TOC part', () => {
+    saveStudents([seedStudent()])
+    const created = upsertStudentClassSession('student-1', {
+      title: 'Notebook class',
+      scheduledFor: '2026-04-25T09:00',
+      durationMin: 45,
+    })
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+    expect(startStudentClassSession('student-1', created.session.id).ok).toBe(true)
+    const ensured = ensureStudentClassLessonNotebookPageSpanSection('student-1', created.session.id, {
+      pageSpanKey: 'p33-34',
+      title: 'Reading',
+    })
+    expect(ensured.ok).toBe(true)
+    if (!ensured.ok) return
+    const updated = upsertStudentClassLessonNotebookSectionTocAnchor(
+      'student-1',
+      created.session.id,
+      ensured.sectionId,
+      {
+        tocPartKey: 'lesson-1::part-2',
+        breadcrumb: 'Unit 1 > Reading > p33-34',
+        title: 'Reading',
+      },
+    )
+    expect(updated.ok).toBe(true)
+    const session = getStudentProfileView('student-1')?.scheduledClasses.find((s) => s.id === created.session.id)
+    const section = session?.lessonNotebookSession?.sections.find((s) => s.sectionId === ensured.sectionId)
+    const header = section?.entries.find((entry) => entry.payload?.kind === 'header_block')
+    expect(header?.payload?.tocPartKey).toBe('lesson-1::part-2')
+    expect(header?.payload?.breadcrumb).toBe('Unit 1 > Reading > p33-34')
+  })
+
   it('startStudentClassSession is idempotent when already in_progress', () => {
     saveStudents([seedStudent()])
     const created = upsertStudentClassSession('student-1', {
@@ -429,6 +677,14 @@ describe('weekly schedule slots and rolling generation', () => {
       (s) => s.id === created.session.id,
     )?.classStartedAt
     expect(secondStartedAt).toBe(firstStartedAt)
+    const firstNotebookId = getStudentProfileView('student-1')?.scheduledClasses.find(
+      (s) => s.id === created.session.id,
+    )?.lessonNotebookSession?.sessionId
+    expect(startStudentClassSession('student-1', created.session.id).ok).toBe(true)
+    const secondNotebookId = getStudentProfileView('student-1')?.scheduledClasses.find(
+      (s) => s.id === created.session.id,
+    )?.lessonNotebookSession?.sessionId
+    expect(secondNotebookId).toBe(firstNotebookId)
   })
 
   it('startStudentClassSession refuses when another class is already in progress', () => {

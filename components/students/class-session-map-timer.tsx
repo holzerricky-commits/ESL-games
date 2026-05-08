@@ -22,7 +22,7 @@ import type { StudentClassSessionView } from '@/lib/students/types'
  * TEST ONLY — class timer “time warp” on the map.
  * Set to `false` (or delete the guarded UI + effects below) before release.
  */
-const ENABLE_TIME_WARP_FOR_TESTING = true
+const ENABLE_TIME_WARP_FOR_TESTING = false
 
 /** Half the draggable track in px; pull up (negative) = faster class time. */
 const MAX_HANDLE_OFFSET_PX = 40
@@ -150,6 +150,16 @@ export function ClassSessionMapTimer({ studentId, session, assignedBookIds }: Cl
     () => computeClassTimerState(classStartedAt, durationMin, nowMs),
     [classStartedAt, durationMin, nowMs],
   )
+  const notebookHeaderPreview = useMemo(() => {
+    const firstSection = session.lessonNotebookSession?.sections?.[0]
+    if (!firstSection) return null
+    const firstDocEntry = firstSection.entries.find((entry) => entry.layer === 'doc' && entry.payload?.kind === 'header_block')
+    const title = typeof firstDocEntry?.payload?.title === 'string' ? firstDocEntry.payload.title : 'Lesson Notes'
+    return {
+      sectionTitle: firstSection.title,
+      title,
+    }
+  }, [session.lessonNotebookSession])
 
   const shell =
     variant === 'over'
@@ -192,30 +202,26 @@ export function ClassSessionMapTimer({ studentId, session, assignedBookIds }: Cl
       return
     }
     setEndOpen(false)
-    router.replace(`/students/${studentId}/map`)
+    router.replace('/students')
     router.refresh()
   }
 
   return (
     <>
       <div
-        className={`pointer-events-auto absolute left-3 top-3 z-40 max-w-[min(92vw,22rem)] rounded-lg border px-3 py-2 text-xs shadow-sm ${shell}`}
+        className={`pointer-events-auto absolute left-1/2 top-3 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full border px-3 py-1.5 text-xs shadow-sm backdrop-blur-sm ${shell}`}
       >
-        <div className="flex items-start justify-between gap-2">
-          <p className="font-semibold tracking-tight">Class in progress</p>
-          <button
-            type="button"
-            className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 underline-offset-2 hover:underline dark:text-amber-100"
-            onClick={() => handleEndOpenChange(true)}
-          >
-            End
-          </button>
+        <div className="flex items-baseline gap-1.5">
+          <span className="font-mono text-sm font-bold tabular-nums tracking-tight">{label}</span>
+          <span className="text-[10px] font-semibold uppercase tracking-wide opacity-80">{suffix}</span>
         </div>
-        <p className="mt-0.5 truncate text-[11px] opacity-90">{title}</p>
-        <div className="mt-2 flex flex-wrap items-baseline gap-x-1.5 gap-y-0 border-t border-black/5 pt-2 dark:border-white/10">
-          <span className="font-mono text-base font-bold tabular-nums tracking-tight">{label}</span>
-          <span className="text-[10px] font-medium uppercase tracking-wide opacity-80">{suffix}</span>
-        </div>
+        <button
+          type="button"
+          className="rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide opacity-85 ring-1 ring-black/10 transition-colors hover:opacity-100 dark:ring-white/15"
+          onClick={() => handleEndOpenChange(true)}
+        >
+          End
+        </button>
       </div>
 
       <Dialog open={endOpen} onOpenChange={handleEndOpenChange}>

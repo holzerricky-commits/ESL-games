@@ -60,7 +60,7 @@ export const bookLibraryPayloadSchema = z.object({
  */
 export function isBookLibraryFilePath(filePath: string, cwd: string, libraryRoot: string): boolean {
   const normalizedRelative = filePath.replaceAll('\\', '/').replace(/^\/+/, '')
-  const absTarget = path.resolve(cwd, normalizedRelative)
+  const absTarget = path.resolve(/* turbopackIgnore: true */ cwd, normalizedRelative)
   const root = path.resolve(libraryRoot)
   const prefix = root.endsWith(path.sep) ? root : `${root}${path.sep}`
   return absTarget === root || absTarget.startsWith(prefix)

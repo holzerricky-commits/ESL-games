@@ -179,21 +179,20 @@ async function callGemini(
 function lessonFromAi(
   lesson: z.infer<typeof aiLessonSchema>,
 ): BookLessonRecord {
-  const parts: BookLessonPartRecord[] = lesson.entries
-    .map((entry, partIndex) => {
-      const startPrinted = entry.startPrintedPage ?? null
-      if (startPrinted == null) return null
-      const title = entry.title.trim()
-      return {
-        id: `part-${randomUUID().slice(0, 8)}`,
-        title,
-        structureTag: computeStructureTagFromTitleAndIndex({ title }, partIndex),
-        startPageHint: startPrinted,
-        anchorSource: 'toc',
-        anchorConfidence: 'high',
-      } satisfies BookLessonPartRecord
+  const parts: BookLessonPartRecord[] = lesson.entries.reduce<BookLessonPartRecord[]>((acc, entry, partIndex) => {
+    const startPrinted = entry.startPrintedPage ?? null
+    if (startPrinted == null) return acc
+    const title = entry.title.trim()
+    acc.push({
+      id: `part-${randomUUID().slice(0, 8)}`,
+      title,
+      structureTag: computeStructureTagFromTitleAndIndex({ title }, partIndex),
+      startPageHint: startPrinted,
+      anchorSource: 'toc',
+      anchorConfidence: 'high',
     })
-    .filter((x): x is BookLessonPartRecord => x != null)
+    return acc
+  }, [])
 
   for (let i = 0; i < parts.length; i++) {
     const current = parts[i]
@@ -203,10 +202,8 @@ function lessonFromAi(
   }
 
   const titleBase = lesson.title.trim()
-  const finalTitle = formatLessonTitleWithNumber(
-    lesson.lessonNumber ?? null,
-    titleBase,
-  )
+  const lessonNumOneBased = Math.max(1, Math.floor(lesson.lessonNumber ?? 1))
+  const finalTitle = formatLessonTitleWithNumber(lessonNumOneBased, titleBase)
   const startPageHint = parts[0]?.startPageHint
   return {
     id: `lesson-${randomUUID().slice(0, 8)}`,

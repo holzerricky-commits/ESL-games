@@ -1,9 +1,10 @@
+import { readFile } from 'node:fs/promises'
+import { PDFDocument } from 'pdf-lib'
 import { NextResponse } from 'next/server'
-import {
-  resolveUnitPdfAbsolutePath,
-  slicePdfToTwoPageBytes,
-} from '@/lib/context/extract-context-cards-vocab'
-import { pdfTwoPageWindowForVocabPart } from '@/lib/books/vocab-context-two-pages'
+import { resolveUnitPdfAbsolutePath } from '@/lib/context/resolve-unit-pdf-path'
+import { slicePdfToTwoPageBytes } from '@/lib/context/slice-pdf-two-pages'
+import { resolveVocabPartPdfWindow } from '@/lib/books/vocab-context-two-pages'
+import { loadBookLibrary } from '@/lib/books/server'
 
 export const runtime = 'nodejs'
 
@@ -34,7 +35,22 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: false, error: 'Book unit PDF could not be resolved.' }, { status: 404 })
     }
 
-    const { start, end } = pdfTwoPageWindowForVocabPart(startPageHint ?? null, endPageHint ?? null)
+    const bytes = await readFile(abs)
+    const srcMeta = await PDFDocument.load(bytes)
+    const totalPdfPages = srcMeta.getPageCount()
+
+    const lib = await loadBookLibrary()
+    const book = lib.books.find((b) => b.id === bookId) ?? null
+    const unit = book?.units.find((u) => u.id === unitId) ?? null
+
+    const { start, end } = resolveVocabPartPdfWindow(
+      startPageHint ?? null,
+      endPageHint ?? null,
+      book,
+      unit,
+      totalPdfPages,
+      'mapped',
+    )
     const pdfBytes = await slicePdfToTwoPageBytes(abs, start, end)
     if (!pdfBytes?.length) {
       return NextResponse.json({ ok: false, error: 'PDF has no pages in that range.' }, { status: 404 })

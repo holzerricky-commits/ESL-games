@@ -87,6 +87,9 @@ export interface StudentBookSectionRef {
   title: string
   /** Resolved lesson-part kind when `type` is `part` (for display and light logic). */
   partStructureTag?: BookLessonPartTag
+  /** Optional section page hints (display numbering) for notebook anchoring. */
+  startPageHint?: number
+  endPageHint?: number
 }
 
 export interface TeacherWeeklyScheduleConfig {
@@ -166,6 +169,41 @@ export interface StudentClassSession {
   postClassRecapPromptDismissed?: boolean
   /** Last-viewed PDF page at end class, per your bookmark rule. */
   bookmarkAtEnd?: ClassSessionBookmarkAtEnd
+  /** Session-scoped lesson notebook (Prompt 1 foundation). */
+  lessonNotebookSession?: LessonNotebookSession
+  createdAt: string
+  updatedAt: string
+}
+
+export type LessonNotebookAnchorType = 'page_span' | 'toc_part'
+export type LessonNotebookEntryLayer = 'doc' | 'overlay'
+
+export interface LessonNotebookSession {
+  sessionId: string
+  studentId: string
+  classSessionId: string
+  bookId: string
+  unitId?: string
+  startedAt: string
+  endedAt?: string
+  sections: LessonNotebookSection[]
+}
+
+export interface LessonNotebookSection {
+  sectionId: string
+  sessionId: string
+  anchorType: LessonNotebookAnchorType
+  anchorKey: string
+  title: string
+  order: number
+  entries: LessonNotebookEntry[]
+}
+
+export interface LessonNotebookEntry {
+  entryId: string
+  sectionId: string
+  layer: LessonNotebookEntryLayer
+  payload: Record<string, unknown>
   createdAt: string
   updatedAt: string
 }

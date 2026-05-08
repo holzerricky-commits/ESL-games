@@ -142,6 +142,7 @@ export interface BookAnnotationToolbarProps {
   setEraserPixelThicknessStep: (s: AnnotationStrokeThicknessStep) => void
   eraserLineThicknessStep: AnnotationStrokeThicknessStep
   setEraserLineThicknessStep: (s: AnnotationStrokeThicknessStep) => void
+  layout?: 'horizontal' | 'vertical'
 }
 
 const popoverContentClass =
@@ -165,6 +166,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
     setEraserPixelThicknessStep,
     eraserLineThicknessStep,
     setEraserLineThicknessStep,
+    layout = 'horizontal',
   } = props
 
   const [penOpen, setPenOpen] = useState(false)
@@ -213,7 +215,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
   }
 
   return (
-    <div className="flex shrink-0 flex-nowrap items-center justify-center gap-1">
+    <div className={cn('flex shrink-0 items-center justify-center gap-1', layout === 'vertical' ? 'flex-col' : 'flex-nowrap')}>
       <Popover
         open={penOpen}
         onOpenChange={(o) => {
@@ -232,6 +234,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
             aria-expanded={penOpen}
             aria-haspopup="dialog"
             aria-label="Pen settings"
+            title="Pen"
             className={cn(
               'h-9 w-9 shrink-0 rounded-full border border-white/14 bg-black/50 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/65',
               (penOpen || penActive) && 'ring-2 ring-amber-400/55',
@@ -240,7 +243,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
             <Pencil className="h-4 w-4" strokeWidth={2} />
           </Button>
         </PopoverTrigger>
-        <PopoverContent side="top" align="center" className={popoverContentClass}>
+        <PopoverContent side={layout === 'vertical' ? 'left' : 'top'} align="center" className={popoverContentClass}>
           <div className="space-y-4">
             <ColorSwatchRow colors={ANNOTATION_PEN_SWATCHES} current={penColor} onPick={setPenColor} idPrefix="pen" />
             <ThicknessRow
@@ -271,6 +274,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
             aria-expanded={markerOpen}
             aria-haspopup="dialog"
             aria-label="Highlighter settings"
+            title="Highlighter"
             className={cn(
               'h-9 w-9 shrink-0 rounded-full border border-white/14 bg-black/50 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/65',
               (markerOpen || markerActive) && 'ring-2 ring-amber-400/55',
@@ -279,7 +283,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
             <Highlighter className="h-4 w-4" strokeWidth={2} />
           </Button>
         </PopoverTrigger>
-        <PopoverContent side="top" align="center" className={popoverContentClass}>
+        <PopoverContent side={layout === 'vertical' ? 'left' : 'top'} align="center" className={popoverContentClass}>
           <div className="space-y-4">
             <ColorSwatchRow
               colors={ANNOTATION_MARKER_SWATCHES}
@@ -316,6 +320,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
             aria-expanded={eraserOpen}
             aria-haspopup="dialog"
             aria-label="Eraser settings"
+            title="Eraser"
             className={cn(
               'h-9 w-9 shrink-0 rounded-full border border-white/14 bg-black/50 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/65',
               (eraserOpen || eraserActive) && 'ring-2 ring-amber-400/55',
@@ -324,7 +329,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
             <Eraser className="h-4 w-4" strokeWidth={2} />
           </Button>
         </PopoverTrigger>
-        <PopoverContent side="top" align="center" className={popoverContentClass}>
+        <PopoverContent side={layout === 'vertical' ? 'left' : 'top'} align="center" className={popoverContentClass}>
           <div className="space-y-4">
             <div className="space-y-2">
               <p className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-[#c4b5a8]/85">Mode</p>
@@ -388,6 +393,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
             aria-expanded={shapesOpen}
             aria-haspopup="dialog"
             aria-label="Shapes"
+            title="Shapes"
             className={cn(
               'h-9 w-9 shrink-0 rounded-full border border-white/14 bg-black/50 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/65',
               (shapesOpen || shapesActive) && 'ring-2 ring-amber-400/55',
@@ -396,7 +402,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
             <Shapes className="h-4 w-4" strokeWidth={2} />
           </Button>
         </PopoverTrigger>
-        <PopoverContent side="top" align="center" className={cn(popoverContentClass, 'w-auto min-w-[10rem]')}>
+        <PopoverContent side={layout === 'vertical' ? 'left' : 'top'} align="center" className={cn(popoverContentClass, 'w-auto min-w-[10rem]')}>
           <p className="mb-2 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-[#c4b5a8]/85">Shapes</p>
           <div className="flex flex-col gap-1">
             <Button type="button" variant="ghost" size="sm" className="justify-start gap-2 text-[#faf6ef]" onClick={() => pickShape('line')}>
@@ -437,6 +443,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
             aria-expanded={stampsOpen}
             aria-haspopup="dialog"
             aria-label="Stamps"
+            title="Stamps"
             className={cn(
               'h-9 w-9 shrink-0 rounded-full border border-white/14 bg-black/50 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/65',
               (stampsOpen || stampsActive) && 'ring-2 ring-amber-400/55',
@@ -445,7 +452,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
             <Stamp className="h-4 w-4" strokeWidth={2} />
           </Button>
         </PopoverTrigger>
-        <PopoverContent side="top" align="center" className={cn(popoverContentClass, 'w-auto min-w-[11rem]')}>
+        <PopoverContent side={layout === 'vertical' ? 'left' : 'top'} align="center" className={cn(popoverContentClass, 'w-auto min-w-[11rem]')}>
           <p className="mb-2 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-[#c4b5a8]/85">Stamp</p>
           <div className="flex flex-col gap-1">
             {STAMP_CHOICES.map(({ variant, label }) => (
@@ -486,6 +493,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
             aria-expanded={textOpen}
             aria-haspopup="dialog"
             aria-label="Text annotation"
+            title="Text"
             className={cn(
               'h-9 w-9 shrink-0 rounded-full border border-white/14 bg-black/50 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/65',
               (textOpen || textActive) && 'ring-2 ring-amber-400/55',
@@ -494,7 +502,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
             <Type className="h-4 w-4" strokeWidth={2} />
           </Button>
         </PopoverTrigger>
-        <PopoverContent side="top" align="center" className={popoverContentClass}>
+        <PopoverContent side={layout === 'vertical' ? 'left' : 'top'} align="center" className={popoverContentClass}>
           <div className="space-y-4">
             <p className="text-[0.7rem] leading-snug text-[#a89888]">Tap the page to place a text box. Pen color and size apply.</p>
             <ColorSwatchRow colors={ANNOTATION_PEN_SWATCHES} current={penColor} onPick={setPenColor} idPrefix="text" />
@@ -526,6 +534,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
             aria-expanded={stickyOpen}
             aria-haspopup="dialog"
             aria-label="Sticky note"
+            title="Sticky note"
             className={cn(
               'h-9 w-9 shrink-0 rounded-full border border-white/14 bg-black/50 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/65',
               (stickyOpen || stickyActive) && 'ring-2 ring-amber-400/55',
@@ -534,7 +543,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
             <MessageSquare className="h-4 w-4" strokeWidth={2} />
           </Button>
         </PopoverTrigger>
-        <PopoverContent side="top" align="center" className={popoverContentClass}>
+        <PopoverContent side={layout === 'vertical' ? 'left' : 'top'} align="center" className={popoverContentClass}>
           <div className="space-y-4">
             <p className="text-[0.7rem] leading-snug text-[#a89888]">Tap the page to place a note. Highlighter settings set note text size.</p>
             <ThicknessRow
@@ -552,6 +561,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
         size="icon"
         aria-pressed={calloutActive}
         aria-label="Numbered callout"
+        title="Numbered callout"
         onClick={() => {
           closeAllPopovers()
           setAnnotationMode('callout')
@@ -570,6 +580,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
         size="icon"
         aria-pressed={laserActive}
         aria-label="Laser pointer"
+        title="Laser pointer"
         onClick={() => {
           closeAllPopovers()
           setAnnotationMode('laser')

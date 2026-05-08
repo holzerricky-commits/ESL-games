@@ -1,13 +1,12 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Plus, Sparkles, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import type { PartContextVocabularyWord } from '@/lib/context/types'
-import { pdfTwoPageWindowForVocabPart } from '@/lib/books/vocab-context-two-pages'
 
 type WordRow = PartContextVocabularyWord
 
@@ -47,7 +46,16 @@ export function ClassPrepVocabEditor({
   const [saving, setSaving] = useState(false)
   const [extracting, setExtracting] = useState(false)
 
-  const pdfWindow = pdfTwoPageWindowForVocabPart(startPageHint ?? null, endPageHint ?? null)
+  const previewPdfUrl = useMemo(() => {
+    const params = new URLSearchParams({ bookId, unitId })
+    if (typeof startPageHint === 'number' && Number.isFinite(startPageHint)) {
+      params.set('startPageHint', String(Math.floor(startPageHint)))
+    }
+    if (typeof endPageHint === 'number' && Number.isFinite(endPageHint)) {
+      params.set('endPageHint', String(Math.floor(endPageHint)))
+    }
+    return `/api/context/preview-vocab-pdf?${params.toString()}`
+  }, [bookId, unitId, startPageHint, endPageHint])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -236,68 +244,98 @@ export function ClassPrepVocabEditor({
         </div>
       </div>
       <p className="text-[11px] text-muted-foreground">
-        Gemini reads a <span className="font-medium text-foreground">two-page PDF window</span> (pages {pdfWindow.start}–{pdfWindow.end}
-        ) built from this section’s page hints, then you edit and save. One example per line in the form.
+        <span className="font-medium text-foreground">Suggest from book</span> sends the same two-page PDF window as
+        the preview below (aligned to your section hints and book page mapping). If the spread looks wrong, adjust page
+        hints in the book structure editor, then reopen prep. One example per line in the form.
       </p>
-      <div className="max-h-[min(40vh,320px)] space-y-3 overflow-y-auto pr-1">
-        {rows.map((row) => (
-          <div key={row.id} className="rounded border border-[var(--border)]/80 p-2">
-            <div className="flex flex-wrap items-end gap-2">
-              <label className="grid flex-1 gap-1 text-[11px] text-muted-foreground">
-                Word
-                <Input
-                  className="h-8 text-sm"
-                  value={row.word}
-                  onChange={(e) =>
-                    setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, word: e.target.value } : r)))
-                  }
-                />
-              </label>
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                className="h-8 w-8 shrink-0 text-muted-foreground"
-                onClick={() => removeRow(row.id)}
-                disabled={rows.length <= 1}
-                aria-label="Remove word"
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-            <label className="mt-2 grid gap-1 text-[11px] text-muted-foreground">
-              Meaning
-              <Textarea
-                className="min-h-[48px] text-sm"
-                value={row.definition}
-                onChange={(e) =>
-                  setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, definition: e.target.value } : r)))
-                }
-              />
-            </label>
-            <label className="mt-2 grid gap-1 text-[11px] text-muted-foreground">
-              Examples (one per line)
-              <Textarea
-                className="min-h-[56px] text-sm"
-                value={examplesTextById[row.id] ?? row.examples.join('\n')}
-                onChange={(e) =>
-                  setExamplesTextById((prev) => ({
-                    ...prev,
-                    [row.id]: e.target.value,
-                  }))
-                }
-              />
-            </label>
+      <div className="grid gap-4 lg:grid-cols-[minmax(260px,400px)_minmax(0,1fr)]">
+        <div className="space-y-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Preview — pages the AI reads
+          </p>
+          <div className="overflow-hidden rounded-md border border-[var(--border)] bg-muted/30 shadow-sm">
+            <iframe
+              title="Vocabulary extract — two-page PDF preview"
+              src={previewPdfUrl}
+              className="h-[min(52vh,480px)] w-full bg-background"
+              loading="lazy"
+            />
           </div>
-        ))}
-      </div>
-      <div className="flex flex-wrap gap-2">
-        <Button type="button" size="sm" disabled={saving} onClick={() => void save()}>
-          {saving ? 'Saving…' : 'Save word list to book'}
-        </Button>
-        <Button type="button" size="sm" variant="outline" disabled={saving} onClick={() => void load()}>
-          Reload
-        </Button>
+          <p className="text-[10px] leading-snug text-muted-foreground">
+            If the preview is blank, your browser may block embedded PDFs —{' '}
+            <a
+              href={previewPdfUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-foreground underline underline-offset-2 hover:no-underline"
+            >
+              Open this slice in a new tab
+            </a>{' '}
+            or confirm in Books that these PDF page numbers match the spread you want.
+          </p>
+        </div>
+        <div className="min-w-0 space-y-3">
+          <div className="max-h-[min(52vh,480px)] space-y-3 overflow-y-auto pr-1">
+            {rows.map((row) => (
+              <div key={row.id} className="rounded border border-[var(--border)]/80 p-2">
+                <div className="flex flex-wrap items-end gap-2">
+                  <label className="grid flex-1 gap-1 text-[11px] text-muted-foreground">
+                    Word
+                    <Input
+                      className="h-8 text-sm"
+                      value={row.word}
+                      onChange={(e) =>
+                        setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, word: e.target.value } : r)))
+                      }
+                    />
+                  </label>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 shrink-0 text-muted-foreground"
+                    onClick={() => removeRow(row.id)}
+                    disabled={rows.length <= 1}
+                    aria-label="Remove word"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+                <label className="mt-2 grid gap-1 text-[11px] text-muted-foreground">
+                  Meaning
+                  <Textarea
+                    className="min-h-[48px] text-sm"
+                    value={row.definition}
+                    onChange={(e) =>
+                      setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, definition: e.target.value } : r)))
+                    }
+                  />
+                </label>
+                <label className="mt-2 grid gap-1 text-[11px] text-muted-foreground">
+                  Examples (one per line)
+                  <Textarea
+                    className="min-h-[56px] text-sm"
+                    value={examplesTextById[row.id] ?? row.examples.join('\n')}
+                    onChange={(e) =>
+                      setExamplesTextById((prev) => ({
+                        ...prev,
+                        [row.id]: e.target.value,
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" size="sm" disabled={saving} onClick={() => void save()}>
+              {saving ? 'Saving…' : 'Save word list to book'}
+            </Button>
+            <Button type="button" size="sm" variant="outline" disabled={saving} onClick={() => void load()}>
+              Reload
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   )

@@ -94,7 +94,7 @@ export function PdfPageThumbnail({
       ) : null}
       {dataUrl && phase === 'ready' ? (
         // eslint-disable-next-line @next/next/no-img-element -- data URL from pdf.js canvas
-        <img src={dataUrl} alt="" className="h-full w-full object-contain" draggable={false} />
+        <img src={dataUrl} alt="" className={`h-full w-full ${fitHeight ? 'object-cover' : 'object-contain'}`} draggable={false} />
       ) : null}
       {showErrorFallback ? (
         <div className="flex h-full w-full flex-col items-center justify-center gap-0.5 p-1 text-center">

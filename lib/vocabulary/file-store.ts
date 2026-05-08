@@ -5,7 +5,7 @@ import type { VocabularyStore } from '@/lib/vocabulary/store'
 import { createContextKey } from '@/lib/vocabulary/utils'
 import { getVocabularyRiskScore } from '@/lib/vocabulary/risk'
 
-const DATA_DIR = join(process.cwd(), 'data')
+const DATA_DIR = join(/* turbopackIgnore: true */ process.cwd(), 'data')
 const VOCAB_DIR = join(DATA_DIR, 'vocabulary')
 
 async function readJson(path: string): Promise<VocabularySet | null> {

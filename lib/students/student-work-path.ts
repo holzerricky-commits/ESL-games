@@ -4,7 +4,7 @@ const STUDENT_WORK_DIR = 'student-work'
 
 /** Stable root for all teacher-local student files (PDFs, exports, homework). */
 export function getStudentWorkRoot(): string {
-  return path.resolve(process.cwd(), STUDENT_WORK_DIR)
+  return path.resolve(/* turbopackIgnore: true */ process.cwd(), STUDENT_WORK_DIR)
 }
 
 /** Match ids from `generateStudentId()` in identity.ts. */

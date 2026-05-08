@@ -282,7 +282,14 @@ function extensionOf(filePath: string): string {
 async function extractPdfText(absFilePath: string, pageLimit = MAX_PDF_PAGES): Promise<MaterialChunk[]> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
   if (!pdfWorkerConfigured) {
-    const workerAbsPath = path.resolve(process.cwd(), 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.worker.mjs')
+    const workerAbsPath = path.resolve(
+      /* turbopackIgnore: true */ process.cwd(),
+      'node_modules',
+      'pdfjs-dist',
+      'legacy',
+      'build',
+      'pdf.worker.mjs',
+    )
     pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(workerAbsPath).toString()
     pdfWorkerConfigured = true
   }
@@ -348,7 +355,7 @@ function splitIntoChunks(text: string, page: number | null): MaterialChunk[] {
 }
 
 async function extractMaterialText(material: StoredBookMaterial): Promise<MaterialExtractedText> {
-  const absPath = path.resolve(process.cwd(), material.filePath)
+  const absPath = path.resolve(/* turbopackIgnore: true */ process.cwd(), material.filePath)
   const ext = extensionOf(absPath)
   try {
     await readFile(absPath)
@@ -814,6 +821,7 @@ export function suggestMappings(bookId: string, book: BookRecord, materials: Sto
       pathLabel: best.target.pathLabel,
       score: Math.round(best.score * 100) / 100,
       mappedAt: new Date().toISOString(),
+      detectedSignals: [],
     })
   }
   return suggestions

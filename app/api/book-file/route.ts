@@ -51,9 +51,10 @@ function toWebReadableWithAbort(
 
   return new ReadableStream<Uint8Array>({
     start(controller) {
-      nodeStream.on('data', (chunk) => {
+      nodeStream.on('data', (chunk: string | Buffer) => {
         try {
-          controller.enqueue(new Uint8Array(chunk))
+          const buf = typeof chunk === 'string' ? Buffer.from(chunk) : chunk
+          controller.enqueue(new Uint8Array(buf))
         } catch {
           // Controller may be closed if the client cancels during heavy range activity.
           nodeStream.destroy()
@@ -97,7 +98,7 @@ export async function GET(req: NextRequest) {
 
   const libraryRoot = getBookLibraryRoot()
   const normalizedRelative = rawPath.replaceAll('\\', '/').replace(/^\/+/, '')
-  const absTarget = path.resolve(process.cwd(), normalizedRelative)
+  const absTarget = path.resolve(/* turbopackIgnore: true */ process.cwd(), normalizedRelative)
   if (!absTarget.startsWith(libraryRoot)) {
     return NextResponse.json({ error: 'Path must be inside book-library.' }, { status: 400 })
   }

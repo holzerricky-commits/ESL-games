@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Dashboard } from '@/components/dashboard'
 import { CreateQuizModal } from '@/components/create-quiz-modal'
@@ -54,7 +54,7 @@ function pickRandomQuestions(quiz: Quiz, tier: DifficultyTier): Quiz {
   return { ...quiz, questions: pickedIndices.map((idx) => pool[idx]) }
 }
 
-export default function TimedChallengePage() {
+function TimedChallengePageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [view, setView] = useState<AppView>('dashboard')
@@ -295,5 +295,13 @@ export default function TimedChallengePage() {
         />
       )}
     </>
+  )
+}
+
+export default function TimedChallengePage() {
+  return (
+    <Suspense fallback={null}>
+      <TimedChallengePageContent />
+    </Suspense>
   )
 }

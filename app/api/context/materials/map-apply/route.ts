@@ -10,37 +10,45 @@ export const runtime = 'nodejs'
 
 function sanitizeMappings(bookId: string, raw: unknown): MaterialLinkMapping[] {
   if (!Array.isArray(raw)) return []
-  return raw
-    .map((item) => {
-      if (!item || typeof item !== 'object') return null
-      const src = item as Partial<MaterialLinkMapping>
-      const materialId = String(src.materialId ?? '').trim()
-      if (!materialId) return null
-      const confidenceRaw = String(src.confidence ?? '').trim()
-      const confidence: 'high' | 'medium' | 'low' =
-        confidenceRaw === 'high' || confidenceRaw === 'medium' ? confidenceRaw : 'low'
-      return {
-        materialId,
-        bookId,
-        unitId: typeof src.unitId === 'string' ? src.unitId.trim() || undefined : undefined,
-        lessonId: typeof src.lessonId === 'string' ? src.lessonId.trim() || undefined : undefined,
-        partId: typeof src.partId === 'string' ? src.partId.trim() || undefined : undefined,
-        confidence,
-        reason: typeof src.reason === 'string' ? src.reason.trim() || 'Manual mapping apply' : 'Manual mapping apply',
-        sourceFilePath: typeof src.sourceFilePath === 'string' ? src.sourceFilePath.trim() || undefined : undefined,
-        evidenceSnippet: typeof src.evidenceSnippet === 'string' ? src.evidenceSnippet.trim() || undefined : undefined,
-        evidencePage:
-          typeof src.evidencePage === 'number' && Number.isFinite(src.evidencePage) && src.evidencePage > 0
-            ? Math.floor(src.evidencePage)
-            : null,
-        lessonProfileSnapshot:
-          src.lessonProfileSnapshot && typeof src.lessonProfileSnapshot === 'object'
-            ? (src.lessonProfileSnapshot as MaterialLinkMapping['lessonProfileSnapshot'])
-            : undefined,
-        mappedAt: new Date().toISOString(),
-      } satisfies MaterialLinkMapping
-    })
-    .filter((item): item is MaterialLinkMapping => !!item)
+  return raw.flatMap((item): MaterialLinkMapping[] => {
+    if (!item || typeof item !== 'object') return []
+    const src = item as Partial<MaterialLinkMapping>
+    const materialId = String(src.materialId ?? '').trim()
+    if (!materialId) return []
+    const confidenceRaw = String(src.confidence ?? '').trim()
+    const confidence: 'high' | 'medium' | 'low' =
+      confidenceRaw === 'high' || confidenceRaw === 'medium' ? confidenceRaw : 'low'
+    const unitId = typeof src.unitId === 'string' ? src.unitId.trim() || undefined : undefined
+    const lessonId = typeof src.lessonId === 'string' ? src.lessonId.trim() || undefined : undefined
+    const partId = typeof src.partId === 'string' ? src.partId.trim() || undefined : undefined
+    const sourceFilePath =
+      typeof src.sourceFilePath === 'string' ? src.sourceFilePath.trim() || undefined : undefined
+    const evidenceSnippet =
+      typeof src.evidenceSnippet === 'string' ? src.evidenceSnippet.trim() || undefined : undefined
+    const evidencePage =
+      typeof src.evidencePage === 'number' && Number.isFinite(src.evidencePage) && src.evidencePage > 0
+        ? Math.floor(src.evidencePage)
+        : null
+    const lessonProfileSnapshot =
+      src.lessonProfileSnapshot && typeof src.lessonProfileSnapshot === 'object'
+        ? (src.lessonProfileSnapshot as MaterialLinkMapping['lessonProfileSnapshot'])
+        : undefined
+    const mapping: MaterialLinkMapping = {
+      materialId,
+      bookId,
+      confidence,
+      reason: typeof src.reason === 'string' ? src.reason.trim() || 'Manual mapping apply' : 'Manual mapping apply',
+      mappedAt: new Date().toISOString(),
+      evidencePage,
+      ...(unitId ? { unitId } : {}),
+      ...(lessonId ? { lessonId } : {}),
+      ...(partId ? { partId } : {}),
+      ...(sourceFilePath ? { sourceFilePath } : {}),
+      ...(evidenceSnippet ? { evidenceSnippet } : {}),
+      ...(lessonProfileSnapshot ? { lessonProfileSnapshot } : {}),
+    }
+    return [mapping]
+  })
 }
 
 export async function POST(req: Request) {

@@ -36,6 +36,9 @@ import type {
   BookSectionType,
   ClassSessionBookmarkAtEnd,
   DifficultyTier,
+  LessonNotebookEntry,
+  LessonNotebookSection,
+  LessonNotebookSession,
   StudentBookSectionRef,
   StudentClassSession,
   StudentClassStatus,
@@ -400,7 +403,162 @@ function sanitizeSelectedSection(raw: unknown): StudentBookSectionRef | undefine
     partId: typeof source.partId === 'string' && source.partId.trim() ? source.partId.trim() : undefined,
     partTitle: typeof source.partTitle === 'string' && source.partTitle.trim() ? source.partTitle.trim() : undefined,
     title,
+    startPageHint:
+      typeof source.startPageHint === 'number' && Number.isFinite(source.startPageHint) && source.startPageHint >= 1
+        ? Math.floor(source.startPageHint)
+        : undefined,
+    endPageHint:
+      typeof source.endPageHint === 'number' && Number.isFinite(source.endPageHint) && source.endPageHint >= 1
+        ? Math.floor(source.endPageHint)
+        : undefined,
     ...(partStructureTag ? { partStructureTag } : {}),
+  }
+}
+
+function makeNotebookId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function sanitizeNotebookEntry(raw: unknown): LessonNotebookEntry | null {
+  if (!raw || typeof raw !== 'object') return null
+  const src = raw as Partial<LessonNotebookEntry>
+  const entryId = typeof src.entryId === 'string' ? src.entryId.trim() : ''
+  const sectionId = typeof src.sectionId === 'string' ? src.sectionId.trim() : ''
+  if (!entryId || !sectionId) return null
+  const nowIso = new Date().toISOString()
+  return {
+    entryId,
+    sectionId,
+    layer: src.layer === 'overlay' ? 'overlay' : 'doc',
+    payload: src.payload && typeof src.payload === 'object' ? src.payload : {},
+    createdAt: typeof src.createdAt === 'string' && src.createdAt.trim() ? src.createdAt : nowIso,
+    updatedAt: typeof src.updatedAt === 'string' && src.updatedAt.trim() ? src.updatedAt : nowIso,
+  }
+}
+
+function sanitizeNotebookSection(raw: unknown, fallbackSessionId: string): LessonNotebookSection | null {
+  if (!raw || typeof raw !== 'object') return null
+  const src = raw as Partial<LessonNotebookSection>
+  const sectionId = typeof src.sectionId === 'string' ? src.sectionId.trim() : ''
+  const anchorKey = typeof src.anchorKey === 'string' ? src.anchorKey.trim() : ''
+  const title = typeof src.title === 'string' ? src.title.trim() : ''
+  if (!sectionId || !anchorKey || !title) return null
+  const entriesRaw = Array.isArray(src.entries) ? src.entries : []
+  const entries = entriesRaw
+    .map((item) => sanitizeNotebookEntry(item))
+    .filter((item): item is LessonNotebookEntry => !!item)
+  return {
+    sectionId,
+    sessionId:
+      typeof src.sessionId === 'string' && src.sessionId.trim()
+        ? src.sessionId.trim()
+        : fallbackSessionId,
+    anchorType: src.anchorType === 'toc_part' ? 'toc_part' : 'page_span',
+    anchorKey,
+    title,
+    order: Number.isFinite(Number(src.order)) ? Math.max(0, Math.floor(Number(src.order))) : 0,
+    entries,
+  }
+}
+
+function sanitizeLessonNotebookSession(
+  raw: unknown,
+  classSessionId: string,
+  studentId: string,
+): LessonNotebookSession | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const src = raw as Partial<LessonNotebookSession>
+  const notebookSessionId = typeof src.sessionId === 'string' ? src.sessionId.trim() : ''
+  const bookId = typeof src.bookId === 'string' ? src.bookId.trim() : ''
+  if (!notebookSessionId || !bookId) return undefined
+  const sectionsRaw = Array.isArray(src.sections) ? src.sections : []
+  const sections = sectionsRaw
+    .map((item) => sanitizeNotebookSection(item, notebookSessionId))
+    .filter((item): item is LessonNotebookSection => !!item)
+    .sort((a, b) => a.order - b.order)
+  const startedAt = optionalIsoString(src.startedAt) ?? new Date().toISOString()
+  return {
+    sessionId: notebookSessionId,
+    studentId:
+      typeof src.studentId === 'string' && src.studentId.trim() ? src.studentId.trim() : studentId,
+    classSessionId:
+      typeof src.classSessionId === 'string' && src.classSessionId.trim()
+        ? src.classSessionId.trim()
+        : classSessionId,
+    bookId,
+    unitId: typeof src.unitId === 'string' && src.unitId.trim() ? src.unitId.trim() : undefined,
+    startedAt,
+    endedAt: optionalIsoString(src.endedAt),
+    sections,
+  }
+}
+
+function formatNotebookPageSpan(startPageHint?: number, endPageHint?: number): string {
+  const start =
+    typeof startPageHint === 'number' && Number.isFinite(startPageHint) && startPageHint >= 1
+      ? Math.floor(startPageHint)
+      : 1
+  const end =
+    typeof endPageHint === 'number' && Number.isFinite(endPageHint) && endPageHint >= start
+      ? Math.floor(endPageHint)
+      : start
+  return end > start ? `p${start}-${end}` : `p${start}`
+}
+
+export function buildNotebookPageSpanKey(startPage: number, endPage?: number | null): string {
+  const start = Number.isFinite(Number(startPage)) ? Math.max(1, Math.floor(Number(startPage))) : 1
+  const rawEnd = Number.isFinite(Number(endPage)) ? Math.max(start, Math.floor(Number(endPage))) : start
+  return rawEnd > start ? `p${start}-${rawEnd}` : `p${start}`
+}
+
+function createInitialLessonNotebookSession(student: StudentRecord, session: StudentClassSession): LessonNotebookSession {
+  const nowIso = new Date().toISOString()
+  const section = session.selectedSection
+  const pageSpan = formatNotebookPageSpan(section?.startPageHint, section?.endPageHint)
+  const bookId = section?.bookId?.trim() || student.assignedBookIds?.[0]?.trim() || 'unknown-book'
+  const unitId = section?.unitId?.trim() || student.assignedUnitRefs?.find((row) => row.bookId === bookId)?.unitId?.trim()
+  const notebookSessionId = makeNotebookId('lesson-notebook')
+  const notebookSectionId = makeNotebookId('lesson-notebook-section')
+  const dateLabel = new Date(session.scheduledFor).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+  const lessonPartLabel = (section?.partTitle ?? section?.lessonTitle ?? section?.title ?? '').trim()
+  const pageLabel = pageSpan.startsWith('p') ? pageSpan.slice(1) : pageSpan
+  const headerEntry: LessonNotebookEntry = {
+    entryId: makeNotebookId('lesson-notebook-entry'),
+    sectionId: notebookSectionId,
+    layer: 'doc',
+    payload: {
+      kind: 'header_block',
+      title: lessonPartLabel || section?.title?.trim() || session.title,
+      dateLabel,
+      lessonPartLabel,
+      pageLabel,
+      pageSpan,
+    },
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  }
+  return {
+    sessionId: notebookSessionId,
+    studentId: student.id,
+    classSessionId: session.id,
+    bookId,
+    unitId,
+    startedAt: session.classStartedAt ?? nowIso,
+    sections: [
+      {
+        sectionId: notebookSectionId,
+        sessionId: notebookSessionId,
+        anchorType: 'page_span',
+        anchorKey: pageSpan,
+        title: pageSpan,
+        order: 0,
+        entries: [headerEntry],
+      },
+    ],
   }
 }
 
@@ -519,6 +677,7 @@ function sanitizeClassSession(raw: Partial<StudentClassSession> | null | undefin
     sessionNote: sanitizeSessionNote(raw.sessionNote),
     postClassRecapPromptDismissed: raw.postClassRecapPromptDismissed === true ? true : undefined,
     bookmarkAtEnd: sanitizeBookmarkAtEnd(raw.bookmarkAtEnd),
+    lessonNotebookSession: sanitizeLessonNotebookSession(raw.lessonNotebookSession, id, ''),
     createdAt: typeof raw.createdAt === 'string' && raw.createdAt.trim() ? raw.createdAt : now,
     updatedAt: typeof raw.updatedAt === 'string' && raw.updatedAt.trim() ? raw.updatedAt : now,
   }
@@ -1384,13 +1543,17 @@ export function getStudentResumePdfPageForBookUnit(studentId: string, bookId: st
   if (!student || !bookId.trim() || !unitId.trim()) return null
   const bid = bookId.trim()
   const uid = unitId.trim()
-  let best: { page: number; t: number } | null = null
+  let bestPage: number | null = null
+  let bestTime = Number.NEGATIVE_INFINITY
   const consider = (page: number, timeIso: string | undefined) => {
     if (!Number.isFinite(page) || page < 1) return
     const t = timeIso?.trim() ? Date.parse(timeIso) : NaN
     if (!Number.isFinite(t)) return
     const p = Math.max(1, Math.floor(page))
-    if (!best || t >= best.t) best = { page: p, t }
+    if (bestPage === null || t >= bestTime) {
+      bestPage = p
+      bestTime = t
+    }
   }
   for (const s of student.scheduledClasses ?? []) {
     if (s.status !== 'completed') continue
@@ -1404,7 +1567,7 @@ export function getStudentResumePdfPageForBookUnit(studentId: string, bookId: st
     if (h.bookId !== bid || h.unitId !== uid) continue
     consider(h.page, h.closedAt ?? h.openedAt)
   }
-  return best ? best.page : null
+  return bestPage
 }
 
 /**
@@ -1827,7 +1990,13 @@ export function startStudentClassSession(
   const nowIso = new Date().toISOString()
   const nextSessions = sessions.map((session) =>
     session.id === classId
-      ? { ...session, status: 'in_progress' as const, classStartedAt: nowIso, updatedAt: nowIso }
+      ? {
+          ...session,
+          status: 'in_progress' as const,
+          classStartedAt: nowIso,
+          lessonNotebookSession: session.lessonNotebookSession ?? createInitialLessonNotebookSession(student, session),
+          updatedAt: nowIso,
+        }
       : session,
   )
   const sanitized = nextSessions
@@ -1891,6 +2060,9 @@ export function endStudentClassSession(
       classEndedAt: nowIso,
       classEndNote,
       sessionNote,
+      lessonNotebookSession: session.lessonNotebookSession
+        ? { ...session.lessonNotebookSession, endedAt: nowIso }
+        : session.lessonNotebookSession,
       ...(bookmarkSanitized ? { bookmarkAtEnd: bookmarkSanitized } : {}),
       updatedAt: nowIso,
     }
@@ -2039,6 +2211,416 @@ export function updateStudentClassPrepSummary(
     }
   })
   if (!found) return { ok: false, error: 'Class session not found.' }
+  saveStudent({
+    ...student,
+    scheduledClasses: nextSessions,
+    updatedAt: nowIso,
+  })
+  return { ok: true }
+}
+
+export function getStudentClassSessionById(studentId: string, classId: string): StudentClassSession | null {
+  const student = getStudents().find((row) => row.id === studentId)
+  if (!student) return null
+  const raw = (student.scheduledClasses ?? []).find((session) => session.id === classId)
+  if (!raw) return null
+  return sanitizeClassSession(raw)
+}
+
+export function upsertStudentClassLessonNotebookDoc(
+  studentId: string,
+  classId: string,
+  input: {
+    sectionId?: string
+    html: string
+    clientDocUpdatedAt?: string
+  },
+):
+  | { ok: true; docUpdatedAt: string }
+  | { ok: false; error: string; conflict?: true; latestHtml?: string; latestUpdatedAt?: string } {
+  const students = getStudents()
+  const idx = students.findIndex((s) => s.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  const nowIso = new Date().toISOString()
+  let found = false
+  let updated = false
+  const conflictSnapshots: { latestHtml: string; latestUpdatedAt: string }[] = []
+  const nextSessions = (student.scheduledClasses ?? []).map((session) => {
+    if (session.id !== classId) return session
+    found = true
+    const notebook = session.lessonNotebookSession
+    if (!notebook || !Array.isArray(notebook.sections) || notebook.sections.length === 0) return session
+    const targetSectionId = input.sectionId?.trim() || notebook.sections[0]?.sectionId
+    if (!targetSectionId) return session
+    const sections = notebook.sections.map((section) => {
+      if (section.sectionId !== targetSectionId) return section
+      const nextHtml = input.html.trim()
+      const existingDocIndex = section.entries.findIndex(
+        (entry) => entry.layer === 'doc' && entry.payload?.kind === 'doc_richtext',
+      )
+      if (existingDocIndex >= 0) {
+        const existing = section.entries[existingDocIndex]
+        const existingHtml = typeof existing.payload?.html === 'string' ? existing.payload.html : ''
+        const existingUpdatedAt = existing.updatedAt
+        const hasConflict =
+          typeof input.clientDocUpdatedAt === 'string' &&
+          input.clientDocUpdatedAt.trim() &&
+          input.clientDocUpdatedAt !== existingUpdatedAt &&
+          nextHtml !== existingHtml
+        if (hasConflict) {
+          const mergeNoteEntry: LessonNotebookEntry = {
+            entryId: makeNotebookId('lesson-notebook-entry'),
+            sectionId: section.sectionId,
+            layer: 'doc',
+            payload: {
+              kind: 'merge_note',
+              message: 'Save conflict: newer content exists. Review and merge manually.',
+              latestHtml: existingHtml,
+              incomingHtml: nextHtml,
+            },
+            createdAt: nowIso,
+            updatedAt: nowIso,
+          }
+          conflictSnapshots.push({ latestHtml: existingHtml, latestUpdatedAt: existingUpdatedAt })
+          updated = true
+          return { ...section, entries: [...section.entries, mergeNoteEntry] }
+        }
+        const nextEntries = [...section.entries]
+        if (nextHtml !== existingHtml && existingHtml.trim()) {
+          const historyIndex = nextEntries.findIndex(
+            (entry) => entry.layer === 'doc' && entry.payload?.kind === 'doc_history',
+          )
+          const snapshot = {
+            id: makeNotebookId('lesson-notebook-snapshot'),
+            html: existingHtml,
+            savedAt: existingUpdatedAt,
+          }
+          if (historyIndex >= 0) {
+            const historyEntry = nextEntries[historyIndex]
+            const existingSnapshots = Array.isArray(historyEntry.payload?.snapshots)
+              ? historyEntry.payload.snapshots
+              : []
+            nextEntries[historyIndex] = {
+              ...historyEntry,
+              payload: {
+                ...historyEntry.payload,
+                kind: 'doc_history',
+                snapshots: [snapshot, ...existingSnapshots].slice(0, 20),
+              },
+              updatedAt: nowIso,
+            }
+          } else {
+            nextEntries.push({
+              entryId: makeNotebookId('lesson-notebook-entry'),
+              sectionId: section.sectionId,
+              layer: 'doc',
+              payload: {
+                kind: 'doc_history',
+                snapshots: [snapshot],
+              },
+              createdAt: nowIso,
+              updatedAt: nowIso,
+            })
+          }
+        }
+        nextEntries[existingDocIndex] = {
+          ...existing,
+          payload: {
+            ...existing.payload,
+            kind: 'doc_richtext',
+            html: nextHtml,
+          },
+          updatedAt: nowIso,
+        }
+        updated = true
+        return { ...section, entries: nextEntries }
+      }
+      const nextEntry: LessonNotebookEntry = {
+        entryId: makeNotebookId('lesson-notebook-entry'),
+        sectionId: section.sectionId,
+        layer: 'doc',
+        payload: {
+          kind: 'doc_richtext',
+          html: nextHtml,
+        },
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      }
+      updated = true
+      return { ...section, entries: [...section.entries, nextEntry] }
+    })
+    return {
+      ...session,
+      lessonNotebookSession: {
+        ...notebook,
+        sections,
+      },
+      updatedAt: nowIso,
+    }
+  })
+  if (!found) return { ok: false, error: 'Class session not found.' }
+  if (!updated) return { ok: false, error: 'Lesson notebook is not ready yet for this class.' }
+  saveStudent({
+    ...student,
+    scheduledClasses: nextSessions,
+    updatedAt: nowIso,
+  })
+  const conflictResult = conflictSnapshots.at(-1)
+  if (conflictResult) {
+    return {
+      ok: false,
+      error: 'Save conflict detected. Latest version kept with merge note.',
+      conflict: true,
+      latestHtml: conflictResult.latestHtml,
+      latestUpdatedAt: conflictResult.latestUpdatedAt,
+    }
+  }
+  return { ok: true, docUpdatedAt: nowIso }
+}
+
+export function upsertStudentClassLessonNotebookOverlayImages(
+  studentId: string,
+  classId: string,
+  input: {
+    sectionId?: string
+    images: Array<{
+      id: string
+      src: string
+      xNorm: number
+      yNorm: number
+      widthNorm: number
+    }>
+  },
+): { ok: true } | { ok: false; error: string } {
+  const students = getStudents()
+  const idx = students.findIndex((s) => s.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  const nowIso = new Date().toISOString()
+  let found = false
+  let updated = false
+  const sanitizeNorm = (n: number, min = 0, max = 1) => Math.max(min, Math.min(max, n))
+  const sanitizedImages = input.images
+    .filter((row) => typeof row.id === 'string' && row.id.trim() && typeof row.src === 'string' && row.src.trim())
+    .slice(0, 40)
+    .map((row) => ({
+      id: row.id.trim(),
+      src: row.src.trim(),
+      xNorm: sanitizeNorm(Number(row.xNorm), 0, 0.95),
+      yNorm: sanitizeNorm(Number(row.yNorm), 0, 0.98),
+      widthNorm: sanitizeNorm(Number(row.widthNorm), 0.08, 0.9),
+    }))
+  const nextSessions = (student.scheduledClasses ?? []).map((session) => {
+    if (session.id !== classId) return session
+    found = true
+    const notebook = session.lessonNotebookSession
+    if (!notebook || !Array.isArray(notebook.sections) || notebook.sections.length === 0) return session
+    const targetSectionId = input.sectionId?.trim() || notebook.sections[0]?.sectionId
+    if (!targetSectionId) return session
+    const sections = notebook.sections.map((section) => {
+      if (section.sectionId !== targetSectionId) return section
+      const existingOverlayIndex = section.entries.findIndex(
+        (entry) => entry.layer === 'overlay' && entry.payload?.kind === 'overlay_images',
+      )
+      if (existingOverlayIndex >= 0) {
+        const existing = section.entries[existingOverlayIndex]
+        const nextEntries = [...section.entries]
+        nextEntries[existingOverlayIndex] = {
+          ...existing,
+          payload: {
+            ...existing.payload,
+            kind: 'overlay_images',
+            images: sanitizedImages,
+          },
+          updatedAt: nowIso,
+        }
+        updated = true
+        return { ...section, entries: nextEntries }
+      }
+      const nextOverlayEntry: LessonNotebookEntry = {
+        entryId: makeNotebookId('lesson-notebook-entry'),
+        sectionId: section.sectionId,
+        layer: 'overlay',
+        payload: {
+          kind: 'overlay_images',
+          images: sanitizedImages,
+        },
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      }
+      updated = true
+      return { ...section, entries: [...section.entries, nextOverlayEntry] }
+    })
+    return {
+      ...session,
+      lessonNotebookSession: {
+        ...notebook,
+        sections,
+      },
+      updatedAt: nowIso,
+    }
+  })
+  if (!found) return { ok: false, error: 'Class session not found.' }
+  if (!updated) return { ok: false, error: 'Lesson notebook is not ready yet for this class.' }
+  saveStudent({
+    ...student,
+    scheduledClasses: nextSessions,
+    updatedAt: nowIso,
+  })
+  return { ok: true }
+}
+
+export function ensureStudentClassLessonNotebookPageSpanSection(
+  studentId: string,
+  classId: string,
+  input: {
+    pageSpanKey: string
+    title?: string
+    tocPartKey?: string
+    breadcrumb?: string
+    lessonPartLabel?: string
+  },
+): { ok: true; sectionId: string } | { ok: false; error: string } {
+  const students = getStudents()
+  const idx = students.findIndex((s) => s.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  const nowIso = new Date().toISOString()
+  const pageSpanKey = input.pageSpanKey.trim()
+  if (!/^p\d+(?:-\d+)?$/i.test(pageSpanKey)) {
+    return { ok: false, error: 'Invalid page span key.' }
+  }
+  let foundClass = false
+  let resolvedSectionId: string | null = null
+  const nextSessions = (student.scheduledClasses ?? []).map((session) => {
+    if (session.id !== classId) return session
+    foundClass = true
+    const notebook = session.lessonNotebookSession
+    if (!notebook) return session
+    const existing = notebook.sections.find(
+      (section) => section.anchorType === 'page_span' && section.anchorKey === pageSpanKey,
+    )
+    if (existing) {
+      resolvedSectionId = existing.sectionId
+      return session
+    }
+    const sectionId = makeNotebookId('lesson-notebook-section')
+    resolvedSectionId = sectionId
+    const title = input.title?.trim() || pageSpanKey
+    const pageLabel = pageSpanKey.replace(/^p/i, '')
+    const headerEntry: LessonNotebookEntry = {
+      entryId: makeNotebookId('lesson-notebook-entry'),
+      sectionId,
+      layer: 'doc',
+      payload: {
+        kind: 'header_block',
+        title,
+        dateLabel: new Date(session.scheduledFor).toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        }),
+        lessonPartLabel: input.lessonPartLabel?.trim() || title,
+        pageLabel,
+        pageSpan: pageSpanKey,
+        tocPartKey: input.tocPartKey?.trim() || undefined,
+        breadcrumb: input.breadcrumb?.trim() || undefined,
+      },
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    }
+    const nextOrder = notebook.sections.length
+    return {
+      ...session,
+      lessonNotebookSession: {
+        ...notebook,
+        sections: [
+          ...notebook.sections,
+          {
+            sectionId,
+            sessionId: notebook.sessionId,
+            anchorType: 'page_span' as const,
+            anchorKey: pageSpanKey,
+            title,
+            order: nextOrder,
+            entries: [headerEntry],
+          },
+        ],
+      },
+      updatedAt: nowIso,
+    }
+  })
+  if (!foundClass) return { ok: false, error: 'Class session not found.' }
+  if (!resolvedSectionId) return { ok: false, error: 'Lesson notebook is not ready yet for this class.' }
+  saveStudent({
+    ...student,
+    scheduledClasses: nextSessions,
+    updatedAt: nowIso,
+  })
+  return { ok: true, sectionId: resolvedSectionId }
+}
+
+export function upsertStudentClassLessonNotebookSectionTocAnchor(
+  studentId: string,
+  classId: string,
+  sectionId: string,
+  input: {
+    tocPartKey?: string
+    breadcrumb?: string
+    lessonPartLabel?: string
+    title?: string
+  },
+): { ok: true } | { ok: false; error: string } {
+  const students = getStudents()
+  const idx = students.findIndex((s) => s.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  const nowIso = new Date().toISOString()
+  let foundClass = false
+  let foundSection = false
+  const nextSessions = (student.scheduledClasses ?? []).map((session) => {
+    if (session.id !== classId) return session
+    foundClass = true
+    const notebook = session.lessonNotebookSession
+    if (!notebook) return session
+    const sections = notebook.sections.map((section) => {
+      if (section.sectionId !== sectionId) return section
+      foundSection = true
+      const headerIndex = section.entries.findIndex(
+        (entry) => entry.layer === 'doc' && entry.payload?.kind === 'header_block',
+      )
+      if (headerIndex < 0) return section
+      const header = section.entries[headerIndex]
+      const nextEntries = [...section.entries]
+      nextEntries[headerIndex] = {
+        ...header,
+        payload: {
+          ...header.payload,
+          ...(input.tocPartKey !== undefined ? { tocPartKey: input.tocPartKey.trim() || undefined } : {}),
+          ...(input.breadcrumb !== undefined ? { breadcrumb: input.breadcrumb.trim() || undefined } : {}),
+          ...(input.lessonPartLabel !== undefined ? { lessonPartLabel: input.lessonPartLabel.trim() || undefined } : {}),
+          ...(input.title !== undefined ? { title: input.title.trim() || undefined } : {}),
+        },
+        updatedAt: nowIso,
+      }
+      return {
+        ...section,
+        title: input.title?.trim() || section.title,
+        entries: nextEntries,
+      }
+    })
+    return {
+      ...session,
+      lessonNotebookSession: {
+        ...notebook,
+        sections,
+      },
+      updatedAt: nowIso,
+    }
+  })
+  if (!foundClass) return { ok: false, error: 'Class session not found.' }
+  if (!foundSection) return { ok: false, error: 'Notebook section not found.' }
   saveStudent({
     ...student,
     scheduledClasses: nextSessions,

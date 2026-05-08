@@ -4,7 +4,7 @@ import type { ContextStore } from '@/lib/context/store'
 import type { BookContextRecord, ContextRecord, LessonContextRecord, PartContextRecord, UnitContextRecord } from '@/lib/context/types'
 import { contextIndexKey } from '@/lib/context/utils'
 
-const CONTEXT_DIR = join(process.cwd(), 'data', 'context')
+const CONTEXT_DIR = join(/* turbopackIgnore: true */ process.cwd(), 'data', 'context')
 const INDEX_PATH = join(CONTEXT_DIR, 'index.json')
 
 async function readJson<T>(path: string): Promise<T | null> {

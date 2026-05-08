@@ -96,7 +96,7 @@ async function resolveGoogleSearchCredentials(): Promise<SearchCredentials | nul
     return resolvedSearchCredentials
   }
   try {
-    const localEnvRaw = await readFile(join(process.cwd(), '.env.local'), 'utf8')
+    const localEnvRaw = await readFile(join(/* turbopackIgnore: true */ process.cwd(), '.env.local'), 'utf8')
     const lines = localEnvRaw.split(/\r?\n/)
     const map = new Map<string, string>()
     for (const line of lines) {

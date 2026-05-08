@@ -1,9 +1,9 @@
-import path from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { PDFDocument } from 'pdf-lib'
-import { isBookLibraryFilePath } from '@/lib/books/manifest-validation'
-import { loadBookLibrary, getBookLibraryRoot } from '@/lib/books/server'
-import { pdfTwoPageWindowForVocabPart } from '@/lib/books/vocab-context-two-pages'
+import { loadBookLibrary } from '@/lib/books/server'
+import { resolveVocabPartPdfWindow } from '@/lib/books/vocab-context-two-pages'
+import { resolveUnitPdfAbsolutePath } from '@/lib/context/resolve-unit-pdf-path'
+import { slicePdfToTwoPageBytes } from '@/lib/context/slice-pdf-two-pages'
 import { resolveGeminiApiKey } from '@/lib/gemini'
 import type { PartContextVocabularyWord } from '@/lib/context/types'
 import {
@@ -12,40 +12,6 @@ import {
 } from '@/lib/prompts/context-cards-vocab-extraction'
 
 const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest'] as const
-
-export async function resolveUnitPdfAbsolutePath(bookId: string, unitId: string): Promise<string | null> {
-  const lib = await loadBookLibrary()
-  const book = lib.books.find((b) => b.id === bookId)
-  const unit = book?.units.find((u) => u.id === unitId)
-  if (!unit?.filePath?.trim()) return null
-  const cwd = process.cwd()
-  const rel = unit.filePath.replaceAll('\\', '/').replace(/^\/+/, '')
-  if (!isBookLibraryFilePath(rel, cwd, getBookLibraryRoot())) return null
-  return path.resolve(cwd, rel)
-}
-
-/** 1-based inclusive PDF page indices; copies those pages into a new PDF. */
-export async function slicePdfToTwoPageBytes(
-  absPdfPath: string,
-  pdfPageStart: number,
-  pdfPageEnd: number,
-): Promise<Uint8Array | null> {
-  const bytes = await readFile(absPdfPath)
-  const src = await PDFDocument.load(bytes)
-  const n = src.getPageCount()
-  const s = Math.max(1, Math.floor(pdfPageStart))
-  const e = Math.max(s, Math.floor(pdfPageEnd))
-  const indices: number[] = []
-  for (let p = s; p <= e; p++) {
-    const idx = p - 1
-    if (idx >= 0 && idx < n) indices.push(idx)
-  }
-  if (!indices.length) return null
-  const out = await PDFDocument.create()
-  const copied = await out.copyPages(src, indices)
-  for (const page of copied) out.addPage(page)
-  return out.save()
-}
 
 function parseJsonFromModelText(text: string): unknown {
   const trimmed = text.trim()
@@ -166,7 +132,22 @@ export async function extractContextCardsVocabularyFromPdf(params: {
   const abs = await resolveUnitPdfAbsolutePath(params.bookId, params.unitId)
   if (!abs) return { ok: false, error: 'Book unit PDF could not be resolved.' }
 
-  const { start, end } = pdfTwoPageWindowForVocabPart(params.startPageHint, params.endPageHint)
+  const bytes = await readFile(abs)
+  const srcMeta = await PDFDocument.load(bytes)
+  const totalPdfPages = srcMeta.getPageCount()
+
+  const lib = await loadBookLibrary()
+  const book = lib.books.find((b) => b.id === params.bookId) ?? null
+  const unit = book?.units.find((u) => u.id === params.unitId) ?? null
+
+  const { start, end } = resolveVocabPartPdfWindow(
+    params.startPageHint,
+    params.endPageHint,
+    book,
+    unit,
+    totalPdfPages,
+    'mapped',
+  )
   const pdfBytes = await slicePdfToTwoPageBytes(abs, start, end)
   if (!pdfBytes?.length) return { ok: false, error: 'PDF has no pages in that range.' }
 

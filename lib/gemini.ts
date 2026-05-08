@@ -23,7 +23,7 @@ const suggestionCache = new Map<string, { expires: number; data: VocabularySugge
 const MODELS_CACHE_TTL_MS = 10 * 60_000
 let cachedModelCandidates: { expires: number; models: string[] } | null = null
 
-const DATA_DIR = join(process.cwd(), 'data')
+const DATA_DIR = join(/* turbopackIgnore: true */ process.cwd(), 'data')
 const DISK_CACHE_PATH = join(DATA_DIR, 'vocab-suggestions.json')
 const DISK_CACHE_MAX_KEYS = 200
 
@@ -195,7 +195,7 @@ export async function resolveGeminiApiKey(): Promise<string | null> {
   }
 
   try {
-    const localEnvRaw = await readFile(join(process.cwd(), '.env.local'), 'utf8')
+    const localEnvRaw = await readFile(join(/* turbopackIgnore: true */ process.cwd(), '.env.local'), 'utf8')
     const trimmed = localEnvRaw.trim()
     if (!trimmed) {
       resolvedApiKey = null
@@ -1375,10 +1375,10 @@ function parseClassPrepSuggestion(text: string): ClassPrepSuggestionResult | nul
             minutes: number
             objective: string
             activityType: string
-            teacherMoves?: string[]
-            studentOutput?: string
-            checkForUnderstanding?: string
-          } => !!entry,
+            teacherMoves: string[]
+            studentOutput: string | undefined
+            checkForUnderstanding: string | undefined
+          } => entry !== null,
         )
         .slice(0, 8)
     : []

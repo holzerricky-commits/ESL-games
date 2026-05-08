@@ -2,7 +2,8 @@ import path from 'node:path'
 import { promises as fs } from 'node:fs'
 import type { BookLibraryPayload, BookRecord } from '@/lib/books/types'
 
-const PROJECT_ROOT = process.cwd()
+/** Runtime cwd; marked so Turbopack does not treat tracing as “whole repo”. */
+const PROJECT_ROOT = /* turbopackIgnore: true */ process.cwd()
 const BOOK_LIBRARY_ROOT = path.resolve(PROJECT_ROOT, 'book-library')
 const MANIFEST_FILE_NAME = 'books.json'
 

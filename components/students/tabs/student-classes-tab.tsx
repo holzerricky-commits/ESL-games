@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { CalendarDays, ChevronDown, Clock3, Play, Sparkles, Zap } from 'lucide-react'
 import { ClassPrepVocabEditor } from '@/components/students/class-prep-vocab-editor'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { StudentCardLessonPreview } from '@/components/students/student-card-lesson-preview'
 import {
@@ -263,6 +263,30 @@ export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps
         if (cancelled) return
         setPreviewNumPagesBySession((prev) =>
           prev[spotlightSession.id] === numPages ? prev : { ...prev, [spotlightSession.id]: numPages },
+        )
+        const sessionId = spotlightSession.id
+        const previewPages = selectedBook
+          ? getVisiblePdfPages(selectedUnit, numPages, selectedBook)
+          : getVisiblePdfPages(selectedUnit, numPages, undefined)
+        const anchor =
+          selected && selectedBook
+            ? Math.max(
+                1,
+                resolveAlignedAnchorPage(
+                  selected.startPageHint,
+                  selectedBook,
+                  selectedUnit,
+                  numPages,
+                  numberingMode,
+                ) ?? selected.startPageHint ?? 1,
+              )
+            : 1
+        const target =
+          previewPages.length > 0
+            ? (previewPages.find((p) => p >= anchor) ?? previewPages[0] ?? anchor)
+            : anchor
+        setPreviewStartBySession((prev) =>
+          prev[sessionId] === target ? prev : { ...prev, [sessionId]: target },
         )
       })
       .catch(() => {
@@ -522,7 +546,7 @@ export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps
     const unitContext = unitContextBySession[session.id]
     const lessonContext = lessonContextBySession[session.id]
     return (
-      <div className="max-h-[min(70vh,720px)] space-y-4 overflow-y-auto pr-1">
+      <div className="space-y-4 pr-1">
         {isVocabularyPartSection(selected) &&
         selected?.bookId &&
         selected?.unitId &&
@@ -656,11 +680,22 @@ export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps
               numPages,
               numberingMode,
             )
-            const fallbackStart = Math.max(1, previewStartBySession[spotlightSession.id] ?? mappedStartHint ?? selected?.startPageHint ?? 1)
+            const anchorBase = Math.max(
+              1,
+              mappedStartHint ?? selected?.startPageHint ?? 1,
+            )
+            const rawSessionStart = previewStartBySession[spotlightSession.id]
+            const sessionStartInVisible =
+              rawSessionStart != null && previewPages.includes(rawSessionStart)
+            const spreadStart = sessionStartInVisible
+              ? rawSessionStart
+              : previewPages.length > 0
+                ? (previewPages.find((p) => p >= anchorBase) ?? previewPages[0] ?? anchorBase)
+                : anchorBase
             const leftIndex = previewPages.length
-              ? Math.max(0, previewPages.indexOf(fallbackStart))
+              ? Math.max(0, previewPages.indexOf(spreadStart))
               : 0
-            const leftPage = previewPages[leftIndex] ?? fallbackStart
+            const leftPage = previewPages[leftIndex] ?? spreadStart
             const rightPage = previewPages[leftIndex + 1] ?? leftPage + 1
             const canGoBack = previewPages.length ? leftIndex > 0 : leftPage > 1
             const sectionRangeLabel =
@@ -701,7 +736,7 @@ export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps
                             filePath={previewFilePath}
                             unitId={selected.unitId}
                             page={leftPage}
-                            label={`Page ${leftPage}`}
+                            label={`Page ${leftLabel}`}
                             fitHeight
                             className="h-full w-full rounded-r-none border-0 border-r-0 object-cover"
                           />
@@ -709,7 +744,7 @@ export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps
                             filePath={previewFilePath}
                             unitId={selected.unitId}
                             page={rightPage}
-                            label={`Page ${rightPage}`}
+                            label={`Page ${rightLabel}`}
                             fitHeight
                             className="h-full w-full rounded-l-none border-0 object-cover"
                           />
@@ -738,7 +773,7 @@ export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps
                           [spotlightSession.id]:
                             previewPages.length > 0
                               ? (previewPages[Math.max(0, leftIndex - 2)] ?? leftPage)
-                              : Math.max(1, (prev[spotlightSession.id] ?? leftPage) - 2),
+                              : Math.max(1, (prev[spotlightSession.id] ?? spreadStart) - 2),
                         }))
                       }
                       disabled={!canGoBack}
@@ -1466,11 +1501,17 @@ export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps
         )}
       </section>
       <Dialog open={Boolean(openPrepFor)} onOpenChange={(open) => { if (!open) setOpenPrepFor(null) }}>
-        <DialogContent className="max-h-[90vh] w-full max-w-2xl overflow-y-auto sm:max-w-2xl">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[min(92vh,900px)] w-[min(96vw,1180px)] max-w-[min(96vw,1180px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(96vw,1180px)]">
+          <DialogHeader className="shrink-0 border-b border-[var(--border)] px-6 py-4 pr-14 text-left">
             <DialogTitle>{prepSession ? `Class prep · ${prepSession.title}` : 'Class prep'}</DialogTitle>
+            <DialogDescription className="text-left text-xs text-muted-foreground">
+              Notes, book section, and vocabulary for the next class. Vocabulary sections include a PDF preview of the
+              exact pages sent to the assistant.
+            </DialogDescription>
           </DialogHeader>
-          {prepSession ? renderClassPrepDialogBody(prepSession) : null}
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+            {prepSession ? renderClassPrepDialogBody(prepSession) : null}
+          </div>
         </DialogContent>
       </Dialog>
     </div>

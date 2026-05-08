@@ -15,7 +15,7 @@ export const runtime = 'nodejs'
  * Intended for the same local-teacher trust model as GET /api/books and /api/book-file (no auth).
  */
 export async function POST(req: Request) {
-  const cwd = process.cwd()
+  const cwd = /* turbopackIgnore: true */ process.cwd()
   const libraryRoot = getBookLibraryRoot()
   let body: unknown
   try {
