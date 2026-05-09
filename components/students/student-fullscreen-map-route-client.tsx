@@ -98,6 +98,7 @@ export function StudentFullscreenMapRouteClient({
       />
       <FullscreenBookOverlay
         studentId={student.id}
+        activeClassSessionId={activeClassSessionId}
         assignedBookIds={student.assignedBookIds}
         assignedUnitRefs={student.assignedUnitRefs}
         curriculumHistory={student.curriculumHistory}
