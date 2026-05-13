@@ -3,6 +3,10 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import { z } from 'zod'
 import type { BookRecord } from '@/lib/books/types'
+import {
+  resolveBookFolderFromLibraryFilePath,
+  resolveBookLibraryFilePath,
+} from '@/lib/books/manifest-validation'
 import { getBookLibraryRoot, loadBookLibrary } from '@/lib/books/server'
 import { resolveGeminiApiKey } from '@/lib/gemini'
 
@@ -120,9 +124,11 @@ function tokenOverlapScore(a: string, b: string): number {
 }
 
 function resolveBookFolderFromUnitPath(filePath: string): string | null {
-  const normalized = filePath.replaceAll('\\', '/')
-  const match = normalized.match(/^book-library\/([^/]+)\//)
-  return match?.[1] ?? null
+  return resolveBookFolderFromLibraryFilePath(
+    filePath,
+    /* turbopackIgnore: true */ process.cwd(),
+    getBookLibraryRoot(),
+  )
 }
 
 function indexPathFor(bookFolder: string): string {
@@ -355,7 +361,19 @@ function splitIntoChunks(text: string, page: number | null): MaterialChunk[] {
 }
 
 async function extractMaterialText(material: StoredBookMaterial): Promise<MaterialExtractedText> {
-  const absPath = path.resolve(/* turbopackIgnore: true */ process.cwd(), material.filePath)
+  const absPath = resolveBookLibraryFilePath(
+    material.filePath,
+    /* turbopackIgnore: true */ process.cwd(),
+    getBookLibraryRoot(),
+  )
+  if (!absPath) {
+    return {
+      chunks: [],
+      extractionMode: 'metadata',
+      errorCode: 'file-not-found',
+      errorMessage: 'File path is outside the book library.',
+    }
+  }
   const ext = extensionOf(absPath)
   try {
     await readFile(absPath)

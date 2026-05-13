@@ -98,6 +98,7 @@ export function StudentFullscreenMapRouteClient({
       />
       <FullscreenBookOverlay
         studentId={student.id}
+        activeClassSessionId={activeSession?.status === 'in_progress' ? activeSession.id : null}
         assignedBookIds={student.assignedBookIds}
         assignedUnitRefs={student.assignedUnitRefs}
         curriculumHistory={student.curriculumHistory}

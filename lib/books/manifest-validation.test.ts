@@ -1,5 +1,10 @@
+import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { bookLibraryPayloadSchema } from '@/lib/books/manifest-validation'
+import {
+  bookLibraryPayloadSchema,
+  isBookLibraryFilePath,
+  resolveBookFolderFromLibraryFilePath,
+} from '@/lib/books/manifest-validation'
 
 describe('bookLibraryPayloadSchema', () => {
   it('accepts anchored unit, lesson, and part page hints', () => {
@@ -63,5 +68,28 @@ describe('bookLibraryPayloadSchema', () => {
       ],
     }
     expect(bookLibraryPayloadSchema.safeParse(payload).success).toBe(true)
+  })
+})
+
+describe('book library path helpers', () => {
+  const cwd = path.resolve('/tmp/esl-app')
+  const libraryRoot = path.resolve(cwd, 'book-library')
+
+  it('rejects sibling folders that only share the book-library prefix', () => {
+    expect(isBookLibraryFilePath('book-library/book-a/unit.pdf', cwd, libraryRoot)).toBe(true)
+    expect(isBookLibraryFilePath('book-library2/leak.pdf', cwd, libraryRoot)).toBe(false)
+  })
+
+  it('derives the real book folder after path normalization', () => {
+    expect(
+      resolveBookFolderFromLibraryFilePath(
+        'book-library/../book-library/book-a/unit.pdf',
+        cwd,
+        libraryRoot,
+      ),
+    ).toBe('book-a')
+    expect(
+      resolveBookFolderFromLibraryFilePath('book-library/../supporting/leak.pdf', cwd, libraryRoot),
+    ).toBeNull()
   })
 })

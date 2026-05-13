@@ -1,6 +1,7 @@
 import path from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { NextResponse } from 'next/server'
+import { resolveBookFolderFromLibraryFilePath } from '@/lib/books/manifest-validation'
 import { getBookLibraryRoot, loadBookLibrary } from '@/lib/books/server'
 
 export const runtime = 'nodejs'
@@ -18,9 +19,11 @@ interface StoredBookMaterial {
 }
 
 function resolveBookFolderFromUnitPath(filePath: string): string | null {
-  const normalized = filePath.replaceAll('\\', '/')
-  const match = normalized.match(/^book-library\/([^/]+)\//)
-  return match?.[1] ?? null
+  return resolveBookFolderFromLibraryFilePath(
+    filePath,
+    /* turbopackIgnore: true */ process.cwd(),
+    getBookLibraryRoot(),
+  )
 }
 
 function materialsIndexPath(bookFolder: string): string {

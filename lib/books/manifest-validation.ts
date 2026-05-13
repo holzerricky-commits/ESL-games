@@ -58,10 +58,28 @@ export const bookLibraryPayloadSchema = z.object({
 /**
  * True if resolved file path is inside book-library (same rules as /api/book-file).
  */
-export function isBookLibraryFilePath(filePath: string, cwd: string, libraryRoot: string): boolean {
+export function resolveBookLibraryFilePath(filePath: string, cwd: string, libraryRoot: string): string | null {
   const normalizedRelative = filePath.replaceAll('\\', '/').replace(/^\/+/, '')
   const absTarget = path.resolve(/* turbopackIgnore: true */ cwd, normalizedRelative)
   const root = path.resolve(libraryRoot)
   const prefix = root.endsWith(path.sep) ? root : `${root}${path.sep}`
-  return absTarget === root || absTarget.startsWith(prefix)
+  return absTarget === root || absTarget.startsWith(prefix) ? absTarget : null
+}
+
+export function isBookLibraryFilePath(filePath: string, cwd: string, libraryRoot: string): boolean {
+  return resolveBookLibraryFilePath(filePath, cwd, libraryRoot) !== null
+}
+
+export function resolveBookFolderFromLibraryFilePath(
+  filePath: string,
+  cwd: string,
+  libraryRoot: string,
+): string | null {
+  const absTarget = resolveBookLibraryFilePath(filePath, cwd, libraryRoot)
+  if (!absTarget) return null
+  const relativeToRoot = path.relative(path.resolve(libraryRoot), absTarget)
+  if (!relativeToRoot || relativeToRoot.startsWith('..') || path.isAbsolute(relativeToRoot)) return null
+  const [bookFolder] = relativeToRoot.split(path.sep).filter(Boolean)
+  if (!bookFolder || bookFolder === '.' || bookFolder === '..') return null
+  return bookFolder
 }
