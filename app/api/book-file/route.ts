@@ -1,8 +1,8 @@
-import path from 'node:path'
 import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { NextRequest, NextResponse } from 'next/server'
 import { getBookLibraryRoot } from '@/lib/books/server'
+import { resolveBookLibraryFilePath } from '@/lib/books/manifest-validation'
 
 export const runtime = 'nodejs'
 
@@ -97,9 +97,8 @@ export async function GET(req: NextRequest) {
   }
 
   const libraryRoot = getBookLibraryRoot()
-  const normalizedRelative = rawPath.replaceAll('\\', '/').replace(/^\/+/, '')
-  const absTarget = path.resolve(/* turbopackIgnore: true */ process.cwd(), normalizedRelative)
-  if (!absTarget.startsWith(libraryRoot)) {
+  const absTarget = resolveBookLibraryFilePath(rawPath, /* turbopackIgnore: true */ process.cwd(), libraryRoot)
+  if (!absTarget) {
     return NextResponse.json({ error: 'Path must be inside book-library.' }, { status: 400 })
   }
 

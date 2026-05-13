@@ -99,8 +99,8 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
   const [lessonPaperDrawTool, setLessonPaperDrawTool] = useState<'pen' | 'highlighter'>('pen')
   const [lessonPaperViewMode, setLessonPaperViewMode] = useState<'left' | 'right' | 'split'>('left')
   const [lessonPaperCanvasPageIndex, setLessonPaperCanvasPageIndex] = useState(0)
-  // Keep notebook editing independent from page turning in full-screen notebook mode.
-  const lessonPaperAutoFollowReadingEnabled = false
+  // Notebook editing is independent from page turning, but pending edits must still save to the live class.
+  const lessonPaperAutoFollowReadingEnabled = true
   const [lessonPaperPanPx, setLessonPaperPanPx] = useState(0)
   const lessonPaperPanRef = useRef(0)
   const lessonPaperEditorRef = useRef<HTMLDivElement | null>(null)
@@ -232,9 +232,29 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     setLessonPaperHtml,
     setLessonPaperSaveState,
   })
+  const flushLessonPaperSaveNowRef = useRef(flushLessonPaperSaveNow)
+  const wasOpenRef = useRef(open)
+
+  useEffect(() => {
+    flushLessonPaperSaveNowRef.current = flushLessonPaperSaveNow
+  }, [flushLessonPaperSaveNow])
+
+  useEffect(() => {
+    if (wasOpenRef.current && !open && lessonPaperHasPendingChangesRef.current) {
+      if (lessonPaperSaveTimerRef.current) {
+        clearTimeout(lessonPaperSaveTimerRef.current)
+        lessonPaperSaveTimerRef.current = null
+      }
+      flushLessonPaperSaveNowRef.current()
+    }
+    wasOpenRef.current = open
+  }, [open])
 
   useEffect(
     () => () => {
+      if (lessonPaperHasPendingChangesRef.current) {
+        flushLessonPaperSaveNowRef.current()
+      }
       if (lessonPaperSaveTimerRef.current) clearTimeout(lessonPaperSaveTimerRef.current)
       if (lessonPaperEditSyncTimerRef.current) clearTimeout(lessonPaperEditSyncTimerRef.current)
       for (const timerId of lessonPaperScrollTimerRef.current) clearTimeout(timerId)

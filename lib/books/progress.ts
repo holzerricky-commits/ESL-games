@@ -18,10 +18,18 @@ export function saveReaderProgressMap(map: ReaderProgressMap): void {
 }
 
 export function getSavedUnitPage(bookId: string, unitId: string): number {
-  const map = getReaderProgressMap()
-  const page = map[bookId]?.[unitId]?.page ?? 1
+  const page = getSavedUnitProgress(bookId, unitId)?.page ?? 1
   if (!Number.isFinite(page)) return 1
   return Math.max(1, Math.floor(page))
+}
+
+export function getSavedUnitProgress(bookId: string, unitId: string): { page: number; updatedAt: string } | null {
+  const entry = getReaderProgressMap()[bookId]?.[unitId]
+  if (!entry || !Number.isFinite(entry.page) || typeof entry.updatedAt !== 'string') return null
+  return {
+    page: Math.max(1, Math.floor(entry.page)),
+    updatedAt: entry.updatedAt,
+  }
 }
 
 export function saveUnitPage(bookId: string, unitId: string, page: number): void {
