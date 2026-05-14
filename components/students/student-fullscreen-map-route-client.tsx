@@ -77,6 +77,7 @@ export function StudentFullscreenMapRouteClient({
           studentId={student.id}
           session={activeSession}
           assignedBookIds={student.assignedBookIds ?? []}
+          assignedUnitRefs={student.assignedUnitRefs ?? []}
         />
       ) : null}
       {/*
@@ -102,6 +103,7 @@ export function StudentFullscreenMapRouteClient({
         assignedUnitRefs={student.assignedUnitRefs}
         curriculumHistory={student.curriculumHistory}
         studentName={student.name}
+        activeClassSessionId={activeClassSessionId}
         open={isBookOverlayOpen}
         onClose={() => setIsBookOverlayOpen(false)}
       />

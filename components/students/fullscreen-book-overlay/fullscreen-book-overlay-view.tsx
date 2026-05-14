@@ -155,6 +155,7 @@ export function FullscreenBookOverlayView({
     setStampVariant,
     setWatermarkEnabled,
     setWhiteboardPage,
+    flushLessonPaperSaveNow,
     shapeColor,
     shapeStrokeWidthScale,
     showSpreadRightPage,
@@ -244,7 +245,10 @@ export function FullscreenBookOverlayView({
           type="button"
           variant="outline"
           size="icon"
-          onClick={onClose}
+          onClick={() => {
+            if (isLessonPaperOpen) flushLessonPaperSaveNow()
+            onClose()
+          }}
           aria-label="Close book overlay"
           className="absolute right-2 top-2 z-30 h-9 w-9 rounded-full bg-[var(--card)]/95"
         >

@@ -14,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { buildAutoBookmarkAtEnd } from '@/lib/students/class-session-bookmark'
 import { computeClassTimerState } from '@/lib/students/class-session-timer'
 import { endStudentClassSession } from '@/lib/students/selectors'
 import type { StudentClassSessionView } from '@/lib/students/types'
@@ -31,24 +32,11 @@ const TIME_WARP_MAX_MULTIPLIER = 80
 /** At full pull down, class clock runs this many × real time (still > 0). */
 const TIME_WARP_MIN_MULTIPLIER = 0.08
 
-function buildAutoBookmarkAtEnd(
-  session: StudentClassSessionView,
-  assignedBookIds: string[],
-): { bookId: string; pdfPage: number; unitId?: string } | null {
-  const bookId = (session.selectedSection?.bookId ?? assignedBookIds[0] ?? '').trim()
-  if (!bookId) return null
-  const s = session.selectedSection
-  const hint = s?.endPageHint ?? s?.startPageHint
-  const pdfPage =
-    typeof hint === 'number' && Number.isFinite(hint) && hint >= 1 ? Math.floor(hint) : 1
-  const unitId = s?.unitId?.trim() || undefined
-  return unitId ? { bookId, pdfPage, unitId } : { bookId, pdfPage }
-}
-
 export interface ClassSessionMapTimerProps {
   studentId: string
   session: StudentClassSessionView
   assignedBookIds: string[]
+  assignedUnitRefs?: Array<{ bookId: string; unitId: string }>
 }
 
 function multiplierFromHandleOffsetPx(offsetPx: number): number {
@@ -59,7 +47,12 @@ function multiplierFromHandleOffsetPx(offsetPx: number): number {
   return 1 - n * (1 - TIME_WARP_MIN_MULTIPLIER)
 }
 
-export function ClassSessionMapTimer({ studentId, session, assignedBookIds }: ClassSessionMapTimerProps) {
+export function ClassSessionMapTimer({
+  studentId,
+  session,
+  assignedBookIds,
+  assignedUnitRefs = [],
+}: ClassSessionMapTimerProps) {
   const router = useRouter()
   const { title, classStartedAt, durationMin } = session
 
@@ -183,7 +176,7 @@ export function ClassSessionMapTimer({ studentId, session, assignedBookIds }: Cl
 
   function confirmEndClass() {
     setEndError(null)
-    const bookmark = buildAutoBookmarkAtEnd(session, assignedBookIds)
+    const bookmark = buildAutoBookmarkAtEnd(session, assignedBookIds, assignedUnitRefs)
     if (!bookmark) {
       setEndError('Assign a book or choose a section in Prep so we can save the lesson bookmark.')
       return

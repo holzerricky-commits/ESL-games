@@ -24,6 +24,16 @@ export function getSavedUnitPage(bookId: string, unitId: string): number {
   return Math.max(1, Math.floor(page))
 }
 
+export function getSavedUnitProgress(bookId: string, unitId: string): { page: number; updatedAt: string } | null {
+  const map = getReaderProgressMap()
+  const row = map[bookId]?.[unitId]
+  if (!row) return null
+  const page = Number(row.page)
+  const updatedAt = typeof row.updatedAt === 'string' ? row.updatedAt : ''
+  if (!Number.isFinite(page) || !updatedAt.trim()) return null
+  return { page: Math.max(1, Math.floor(page)), updatedAt }
+}
+
 export function saveUnitPage(bookId: string, unitId: string, page: number): void {
   const normalized = Number.isFinite(page) ? Math.max(1, Math.floor(page)) : 1
   const map = getReaderProgressMap()
