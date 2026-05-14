@@ -99,8 +99,6 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
   const [lessonPaperDrawTool, setLessonPaperDrawTool] = useState<'pen' | 'highlighter'>('pen')
   const [lessonPaperViewMode, setLessonPaperViewMode] = useState<'left' | 'right' | 'split'>('left')
   const [lessonPaperCanvasPageIndex, setLessonPaperCanvasPageIndex] = useState(0)
-  // Keep notebook editing independent from page turning in full-screen notebook mode.
-  const lessonPaperAutoFollowReadingEnabled = false
   const [lessonPaperPanPx, setLessonPaperPanPx] = useState(0)
   const lessonPaperPanRef = useRef(0)
   const lessonPaperEditorRef = useRef<HTMLDivElement | null>(null)
@@ -217,7 +215,6 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     lessonPaperPrimarySectionId,
     lessonPaperDraftStorageKey,
     lessonPaperDocUpdatedAt,
-    lessonPaperAutoFollowReadingEnabled,
     lessonPaperEditorRef,
     lessonPaperHtmlRef,
     lessonPaperHasPendingChangesRef,
@@ -232,6 +229,17 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     setLessonPaperHtml,
     setLessonPaperSaveState,
   })
+
+  const setIsLessonPaperOpenWithSave = useCallback(
+    (next: boolean | ((prev: boolean) => boolean)) => {
+      const resolved = typeof next === 'function' ? next(isLessonPaperOpen) : next
+      if (isLessonPaperOpen && !resolved) {
+        flushLessonPaperSaveNow()
+      }
+      setIsLessonPaperOpen(resolved)
+    },
+    [flushLessonPaperSaveNow, isLessonPaperOpen],
+  )
 
   useEffect(
     () => () => {
@@ -798,7 +806,7 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     setEraserPixelThicknessStep,
     setHideChromeForCapture,
     setIsAnnotationRailVisible,
-    setIsLessonPaperOpen,
+    setIsLessonPaperOpen: setIsLessonPaperOpenWithSave,
     setIsNotesOpen,
     setIsPageListOpen,
     setIsWhiteboardOpen,
@@ -821,6 +829,7 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     setStampVariant,
     setWatermarkEnabled,
     setWhiteboardPage,
+    flushLessonPaperSaveNow,
     shapeColor,
     shapeStrokeWidthScale,
     showSpreadRightPage,

@@ -19,7 +19,6 @@ interface UseLessonPaperPersistenceArgs {
   lessonPaperPrimarySectionId: string | null
   lessonPaperDraftStorageKey: string | null
   lessonPaperDocUpdatedAt: string | null
-  lessonPaperAutoFollowReadingEnabled: boolean
   lessonPaperEditorRef: React.MutableRefObject<HTMLDivElement | null>
   lessonPaperHtmlRef: React.MutableRefObject<string>
   lessonPaperHasPendingChangesRef: React.MutableRefObject<boolean>
@@ -200,7 +199,6 @@ export function useLessonPaperPersistence(args: UseLessonPaperPersistenceArgs) {
 
   useEffect(() => {
     if (!args.isLessonPaperOpen) return
-    if (!args.lessonPaperAutoFollowReadingEnabled) return
     if (!args.activeClassSessionId || !args.lessonPaperPrimarySectionId) return
     if (!args.lessonPaperHasPendingChangesRef.current) return
     const htmlForSave = args.lessonPaperEditorRef.current?.innerHTML ?? args.lessonPaperHtmlRef.current
