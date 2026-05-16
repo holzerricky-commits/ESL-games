@@ -183,32 +183,43 @@ function sanitizeList(words: unknown, count: number): string[] {
 }
 
 let resolvedApiKey: string | null | undefined
+let resolvedApiKeySource: 'env' | 'file' | 'none' | undefined
 
 /** Shared for Gemini-backed API routes (vocabulary and prep helpers). */
 export async function resolveGeminiApiKey(): Promise<string | null> {
-  if (resolvedApiKey !== undefined) return resolvedApiKey
-
   const fromEnv = process.env.GEMINI_API_KEY?.trim()
   if (fromEnv) {
     resolvedApiKey = fromEnv
+    resolvedApiKeySource = 'env'
     return resolvedApiKey
   }
+
+  if (resolvedApiKeySource === 'env') {
+    resolvedApiKey = undefined
+    resolvedApiKeySource = undefined
+  }
+
+  if (resolvedApiKey !== undefined) return resolvedApiKey
 
   try {
     const localEnvRaw = await readFile(join(/* turbopackIgnore: true */ process.cwd(), '.env.local'), 'utf8')
     const trimmed = localEnvRaw.trim()
     if (!trimmed) {
       resolvedApiKey = null
+      resolvedApiKeySource = 'none'
       return null
     }
     if (trimmed.startsWith('GEMINI_API_KEY=')) {
       resolvedApiKey = trimmed.replace(/^GEMINI_API_KEY=/, '').trim()
+      resolvedApiKeySource = 'file'
       return resolvedApiKey
     }
     resolvedApiKey = trimmed
+    resolvedApiKeySource = 'file'
     return resolvedApiKey
   } catch {
     resolvedApiKey = null
+    resolvedApiKeySource = 'none'
     return null
   }
 }
