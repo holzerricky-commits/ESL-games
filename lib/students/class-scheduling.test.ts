@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
+import { saveReaderProgressMap } from '@/lib/books/progress'
 import { getStudents, saveStudent, saveStudents } from '@/lib/storage'
 import {
   generateScheduledClassesWindow,
@@ -761,9 +762,89 @@ describe('weekly schedule slots and rolling generation', () => {
       }).ok,
     ).toBe(true)
     const profile = getStudentProfileView('student-1')
+    const row = profile?.scheduledClasses.find((s) => s.id === created.session.id)
+    expect(row?.bookmarkAtEnd).toEqual({ bookId: 'book-a', pdfPage: 5, unitId: 'unit-resolved' })
     expect(profile?.curriculumHistory?.[0]).toMatchObject({
       bookId: 'book-a',
       unitId: 'unit-resolved',
+      page: 5,
+    })
+  })
+
+  it('endStudentClassSession saves the live reader page when it changed during class', () => {
+    const live = sessionBase({
+      id: 'class-live',
+      title: 'Live',
+      scheduledFor: '2026-04-25T09:00:00.000Z',
+      status: 'in_progress',
+      classStartedAt: '2026-04-25T09:00:00.000Z',
+    })
+    saveStudents([
+      seedStudent({
+        assignedBookIds: ['book-a'],
+        assignedUnitRefs: [{ bookId: 'book-a', unitId: 'unit-1' }],
+        scheduledClasses: [live],
+      }),
+    ])
+    saveReaderProgressMap({
+      'book-a': {
+        'unit-1': {
+          page: 22,
+          updatedAt: '2026-04-25T09:30:00.000Z',
+        },
+      },
+    })
+
+    const ended = endStudentClassSession('student-1', 'class-live', {
+      bookmarkAtEnd: { bookId: 'book-a', pdfPage: 1, unitId: 'unit-1' },
+    })
+
+    expect(ended.ok).toBe(true)
+    const profile = getStudentProfileView('student-1')
+    const row = profile?.scheduledClasses.find((s) => s.id === 'class-live')
+    expect(row?.bookmarkAtEnd).toEqual({ bookId: 'book-a', pdfPage: 22, unitId: 'unit-1' })
+    expect(profile?.curriculumHistory?.[0]).toMatchObject({
+      bookId: 'book-a',
+      unitId: 'unit-1',
+      page: 22,
+    })
+  })
+
+  it('endStudentClassSession does not use reader progress saved before class started', () => {
+    const live = sessionBase({
+      id: 'class-live',
+      title: 'Live',
+      scheduledFor: '2026-04-25T09:00:00.000Z',
+      status: 'in_progress',
+      classStartedAt: '2026-04-25T09:00:00.000Z',
+    })
+    saveStudents([
+      seedStudent({
+        assignedBookIds: ['book-a'],
+        assignedUnitRefs: [{ bookId: 'book-a', unitId: 'unit-1' }],
+        scheduledClasses: [live],
+      }),
+    ])
+    saveReaderProgressMap({
+      'book-a': {
+        'unit-1': {
+          page: 22,
+          updatedAt: '2026-04-24T09:30:00.000Z',
+        },
+      },
+    })
+
+    const ended = endStudentClassSession('student-1', 'class-live', {
+      bookmarkAtEnd: { bookId: 'book-a', pdfPage: 5, unitId: 'unit-1' },
+    })
+
+    expect(ended.ok).toBe(true)
+    const profile = getStudentProfileView('student-1')
+    const row = profile?.scheduledClasses.find((s) => s.id === 'class-live')
+    expect(row?.bookmarkAtEnd).toEqual({ bookId: 'book-a', pdfPage: 5, unitId: 'unit-1' })
+    expect(profile?.curriculumHistory?.[0]).toMatchObject({
+      bookId: 'book-a',
+      unitId: 'unit-1',
       page: 5,
     })
   })
@@ -1005,6 +1086,28 @@ describe('weekly schedule slots and rolling generation', () => {
       }),
     ])
     expect(getStudentResumePdfPageForBookUnit('student-1', 'book-a', 'unit-1')).toBe(55)
+  })
+
+  it('getStudentResumePdfPageForBookUnit ignores book-only bookmarks for unit-specific resume', () => {
+    const bookOnlyClass = sessionBase({
+      id: 'class-book-only',
+      title: 'Past',
+      scheduledFor: '2026-05-10T10:00:00.000Z',
+      status: 'completed',
+      classEndedAt: '2026-05-10T11:00:00.000Z',
+      bookmarkAtEnd: { bookId: 'book-a', pdfPage: 55 },
+    })
+    saveStudents([
+      seedStudent({
+        assignedBookIds: ['book-a'],
+        assignedUnitRefs: [
+          { bookId: 'book-a', unitId: 'unit-1' },
+          { bookId: 'book-a', unitId: 'unit-2' },
+        ],
+        scheduledClasses: [bookOnlyClass],
+      }),
+    ])
+    expect(getStudentResumePdfPageForBookUnit('student-1', 'book-a', 'unit-2')).toBeNull()
   })
 
   it('getStudentDefaultBookUnitForReader returns first assigned unit ref present in library', () => {
