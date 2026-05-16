@@ -2,6 +2,7 @@ import { buildChallengeCatalogForQuizIds } from '@/lib/challenges'
 import { buildPageAlignmentRuntime, resolveEffectiveAnchorToPdfPage } from '@/lib/books/page-alignment-runtime'
 import { mapPdfPageToDisplayLabel, type PageNumberingMode } from '@/lib/books/page-numbering'
 import { getFileAlignment } from '@/lib/books/page-range'
+import { getReaderProgressMap } from '@/lib/books/progress'
 import { pageRangeForIndex } from '@/lib/books/toc-page-range'
 import { DEFAULT_PLAY_TIER } from '@/lib/quiz-difficulty'
 import {
@@ -1560,7 +1561,7 @@ export function getStudentResumePdfPageForBookUnit(studentId: string, bookId: st
     const bm = s.bookmarkAtEnd
     if (!bm?.bookId?.trim() || bm.bookId.trim() !== bid) continue
     const u = bm.unitId?.trim()
-    if (u && u !== uid) continue
+    if (!u || u !== uid) continue
     consider(bm.pdfPage, s.classEndedAt ?? s.updatedAt ?? s.scheduledFor)
   }
   for (const h of student.curriculumHistory ?? []) {
@@ -2028,6 +2029,32 @@ function resolveCurriculumUnitIdForBookmark(
   return match?.unitId?.trim() ?? null
 }
 
+function resolveBookmarkAtEndForSave(
+  student: StudentRecord,
+  session: StudentClassSession,
+  bookmark: ClassSessionBookmarkAtEnd,
+): ClassSessionBookmarkAtEnd {
+  const unitId = resolveCurriculumUnitIdForBookmark(student, bookmark)
+  if (!unitId) return bookmark
+
+  const progress = getReaderProgressMap()[bookmark.bookId]?.[unitId]
+  const progressPage = Number(progress?.page)
+  const progressMs = progress?.updatedAt ? Date.parse(progress.updatedAt) : NaN
+  const classStartedMs = session.classStartedAt ? Date.parse(session.classStartedAt) : NaN
+  const useReaderProgress =
+    Number.isFinite(progressPage) &&
+    progressPage >= 1 &&
+    Number.isFinite(progressMs) &&
+    Number.isFinite(classStartedMs) &&
+    progressMs >= classStartedMs
+
+  return {
+    bookId: bookmark.bookId,
+    unitId,
+    pdfPage: useReaderProgress ? Math.max(1, Math.floor(progressPage)) : bookmark.pdfPage,
+  }
+}
+
 /** Ends live teaching: `completed` + `classEndedAt`, optional recap note and bookmark. */
 export function endStudentClassSession(
   studentId: string,
@@ -2051,6 +2078,9 @@ export function endStudentClassSession(
     input?.bookmarkAtEnd !== undefined && input.bookmarkAtEnd !== null
       ? sanitizeBookmarkAtEnd(input.bookmarkAtEnd)
       : undefined
+  const bookmarkForSave = bookmarkSanitized
+    ? resolveBookmarkAtEndForSave(student, target, bookmarkSanitized)
+    : undefined
 
   const nextSessions = sessions.map((session) => {
     if (session.id !== classId) return session
@@ -2063,7 +2093,7 @@ export function endStudentClassSession(
       lessonNotebookSession: session.lessonNotebookSession
         ? { ...session.lessonNotebookSession, endedAt: nowIso }
         : session.lessonNotebookSession,
-      ...(bookmarkSanitized ? { bookmarkAtEnd: bookmarkSanitized } : {}),
+      ...(bookmarkForSave ? { bookmarkAtEnd: bookmarkForSave } : {}),
       updatedAt: nowIso,
     }
   })
@@ -2072,14 +2102,14 @@ export function endStudentClassSession(
     .filter((row): row is StudentClassSession => !!row)
 
   let nextCurriculumHistory = [...(student.curriculumHistory ?? [])]
-  if (bookmarkSanitized) {
-    const unitId = resolveCurriculumUnitIdForBookmark(student, bookmarkSanitized)
+  if (bookmarkForSave) {
+    const unitId = resolveCurriculumUnitIdForBookmark(student, bookmarkForSave)
     if (unitId) {
       const entry = {
         id: `sess-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        bookId: bookmarkSanitized.bookId,
+        bookId: bookmarkForSave.bookId,
         unitId,
-        page: Math.max(1, Math.floor(bookmarkSanitized.pdfPage)),
+        page: Math.max(1, Math.floor(bookmarkForSave.pdfPage)),
         openedAt: nowIso,
         closedAt: nowIso,
       }
