@@ -99,8 +99,6 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
   const [lessonPaperDrawTool, setLessonPaperDrawTool] = useState<'pen' | 'highlighter'>('pen')
   const [lessonPaperViewMode, setLessonPaperViewMode] = useState<'left' | 'right' | 'split'>('left')
   const [lessonPaperCanvasPageIndex, setLessonPaperCanvasPageIndex] = useState(0)
-  // Keep notebook editing independent from page turning in full-screen notebook mode.
-  const lessonPaperAutoFollowReadingEnabled = false
   const [lessonPaperPanPx, setLessonPaperPanPx] = useState(0)
   const lessonPaperPanRef = useRef(0)
   const lessonPaperEditorRef = useRef<HTMLDivElement | null>(null)
@@ -217,7 +215,6 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     lessonPaperPrimarySectionId,
     lessonPaperDraftStorageKey,
     lessonPaperDocUpdatedAt,
-    lessonPaperAutoFollowReadingEnabled,
     lessonPaperEditorRef,
     lessonPaperHtmlRef,
     lessonPaperHasPendingChangesRef,
@@ -232,6 +229,16 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     setLessonPaperHtml,
     setLessonPaperSaveState,
   })
+
+  useEffect(() => {
+    if (open) return
+    flushLessonPaperSaveNow()
+  }, [flushLessonPaperSaveNow, open])
+
+  useEffect(() => {
+    if (isLessonPaperOpen) return
+    flushLessonPaperSaveNow()
+  }, [flushLessonPaperSaveNow, isLessonPaperOpen])
 
   useEffect(
     () => () => {

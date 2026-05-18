@@ -2,6 +2,7 @@ import path from 'node:path'
 import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { NextRequest, NextResponse } from 'next/server'
+import { isBookLibraryFilePath } from '@/lib/books/manifest-validation'
 import { getBookLibraryRoot } from '@/lib/books/server'
 
 export const runtime = 'nodejs'
@@ -30,6 +31,16 @@ function parseRangeHeader(rangeHeader: string, totalSize: number): { start: numb
 function getContentType(absPath: string): string {
   if (absPath.toLowerCase().endsWith('.pdf')) return 'application/pdf'
   return 'application/octet-stream'
+}
+
+export function resolveBookFileRequestPath(
+  rawPath: string,
+  cwd = process.cwd(),
+  libraryRoot = getBookLibraryRoot(),
+): string | null {
+  const normalizedRelative = rawPath.replaceAll('\\', '/').replace(/^\/+/, '')
+  if (!isBookLibraryFilePath(normalizedRelative, cwd, libraryRoot)) return null
+  return path.resolve(/* turbopackIgnore: true */ cwd, normalizedRelative)
 }
 
 function toWebReadableWithAbort(
@@ -96,10 +107,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Missing path query param.' }, { status: 400 })
   }
 
-  const libraryRoot = getBookLibraryRoot()
-  const normalizedRelative = rawPath.replaceAll('\\', '/').replace(/^\/+/, '')
-  const absTarget = path.resolve(/* turbopackIgnore: true */ process.cwd(), normalizedRelative)
-  if (!absTarget.startsWith(libraryRoot)) {
+  const absTarget = resolveBookFileRequestPath(rawPath)
+  if (!absTarget) {
     return NextResponse.json({ error: 'Path must be inside book-library.' }, { status: 400 })
   }
 
