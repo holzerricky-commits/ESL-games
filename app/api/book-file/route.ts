@@ -40,7 +40,7 @@ export function resolveBookFileRequestPath(
   const baseCwd = cwd ?? /* turbopackIgnore: true */ process.cwd()
   const normalizedRelative = rawPath.replaceAll('\\', '/').replace(/^\/+/, '')
   const absTarget = path.resolve(/* turbopackIgnore: true */ baseCwd, normalizedRelative)
-  const root = path.resolve(libraryRoot)
+  const root = path.resolve(/* turbopackIgnore: true */ libraryRoot)
   const prefix = root.endsWith(path.sep) ? root : `${root}${path.sep}`
   if (absTarget !== root && !absTarget.startsWith(prefix)) return null
   return absTarget
