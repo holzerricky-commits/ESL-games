@@ -2,22 +2,12 @@
 
 import { useEffect, useState } from 'react'
 import { PdfPageThumbnail } from '@/components/students/pdf-page-thumbnail'
+import { ensureReactPdfWorker } from '@/lib/books/ensure-react-pdf-worker'
 import { PDF_HERO_THUMB_WIDTH, PDF_THUMB_WIDTH } from '@/lib/books/pdf-thumbnail-cache'
 import { cn } from '@/lib/utils'
 
 function makeUnitFileUrl(filePath: string): string {
   return `/api/book-file?path=${encodeURIComponent(filePath)}`
-}
-
-let pdfWorkerReadyPromise: Promise<void> | null = null
-
-function ensurePdfWorkerReady(): Promise<void> {
-  if (!pdfWorkerReadyPromise) {
-    pdfWorkerReadyPromise = import('react-pdf').then(({ pdfjs }) => {
-      pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString()
-    })
-  }
-  return pdfWorkerReadyPromise
 }
 
 interface StudentCardLessonPreviewProps {
@@ -42,7 +32,7 @@ export function StudentCardLessonPreview({
 
   useEffect(() => {
     let cancelled = false
-    void ensurePdfWorkerReady().then(() => {
+    void ensureReactPdfWorker().then(() => {
       if (!cancelled) setPdfReady(true)
     })
     return () => {

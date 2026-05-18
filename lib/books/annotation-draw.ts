@@ -1,4 +1,5 @@
-import type { AnnotationCommand, StrokeAnnotationCommand } from '@/lib/books/annotation-command-types'
+import type { AnnotationCommand, AnnotationLineDashStyle, StrokeAnnotationCommand } from '@/lib/books/annotation-command-types'
+import { applyPenStrokeStyle, resolvePenInkPatternOrigin, type PenInkPatternOrigin } from '@/lib/books/pen-ink'
 
 const PEN_LINE_WIDTH = 2.5
 const DEFAULT_PEN_COLOR = '#2a1d12'
@@ -14,11 +15,40 @@ function strokeWidthPx(cmdScale: number | undefined, base: number): number {
   return base * scale
 }
 
+/** Apply dash pattern for outline; call `ctx.setLineDash([])` after stroke to reset. */
+export function applyAnnotationLineDash(
+  ctx: CanvasRenderingContext2D,
+  style: AnnotationLineDashStyle | undefined,
+  lineWidthPx: number,
+): void {
+  const lw = Math.max(1, lineWidthPx)
+  if (!style || style === 'solid') {
+    ctx.setLineDash([])
+    return
+  }
+  if (style === 'dashed') {
+    ctx.setLineDash([lw * 3.5, lw * 2.2])
+    return
+  }
+  ctx.setLineDash([lw * 0.15, lw * 2.1])
+}
+
 export function drawStrokePath(
   ctx: CanvasRenderingContext2D,
-  cmd: Pick<StrokeAnnotationCommand, 'tool' | 'points' | 'widthScale' | 'color'>,
+  cmd: Pick<
+    StrokeAnnotationCommand,
+    | 'tool'
+    | 'points'
+    | 'widthScale'
+    | 'color'
+    | 'penInkStyle'
+    | 'lineDashStyle'
+    | 'penInkPatternPhaseX'
+    | 'penInkPatternPhaseY'
+  >,
   widthPx: number,
   heightPx: number,
+  pagePatternOrigin?: PenInkPatternOrigin,
 ): void {
   const { tool, points } = cmd
   if (tool === 'eraser-line' || points.length < 2) return
@@ -44,46 +74,48 @@ export function drawStrokePath(
   } else {
     ctx.globalCompositeOperation = 'source-over'
     ctx.globalAlpha = 1
-    ctx.strokeStyle = cmd.color ?? DEFAULT_PEN_COLOR
+    applyPenStrokeStyle(
+      ctx,
+      cmd.penInkStyle,
+      cmd.color ?? DEFAULT_PEN_COLOR,
+      resolvePenInkPatternOrigin(pagePatternOrigin, cmd),
+    )
     ctx.lineWidth = PEN_LINE_WIDTH * scale
   }
 
+  const outlinePx =
+    tool === 'marker' ? MARKER_LINE_WIDTH * scale : tool === 'pen' ? PEN_LINE_WIDTH * scale : ERASER_LINE_WIDTH * scale
+  if (tool === 'pen' || tool === 'marker') {
+    applyAnnotationLineDash(ctx, cmd.lineDashStyle, outlinePx)
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+  }
+
   ctx.beginPath()
-  ctx.moveTo(sx(points[0][0]), sy(points[0][1]))
-  for (let i = 1; i < points.length; i++) {
-    ctx.lineTo(sx(points[i][0]), sy(points[i][1]))
+  if (tool === 'pen' && points.length >= 3) {
+    ctx.moveTo(sx(points[0][0]), sy(points[0][1]))
+    for (let i = 1; i < points.length - 1; i++) {
+      const x = sx(points[i][0])
+      const y = sy(points[i][1])
+      const mx = (x + sx(points[i + 1][0])) / 2
+      const my = (y + sy(points[i + 1][1])) / 2
+      ctx.quadraticCurveTo(x, y, mx, my)
+    }
+    const last = points[points.length - 1]
+    ctx.lineTo(sx(last[0]), sy(last[1]))
+  } else {
+    ctx.moveTo(sx(points[0][0]), sy(points[0][1]))
+    for (let i = 1; i < points.length; i++) {
+      ctx.lineTo(sx(points[i][0]), sy(points[i][1]))
+    }
   }
   ctx.stroke()
+  if (tool === 'pen' || tool === 'marker') {
+    ctx.setLineDash([])
+  }
 
   ctx.globalCompositeOperation = 'source-over'
   ctx.globalAlpha = 1
-}
-
-export function drawEraserLinePreview(
-  ctx: CanvasRenderingContext2D,
-  points: [number, number][],
-  widthPx: number,
-  heightPx: number,
-): void {
-  if (points.length < 2) return
-  const sx = (nx: number) => nx * widthPx
-  const sy = (ny: number) => ny * heightPx
-  ctx.save()
-  ctx.globalCompositeOperation = 'source-over'
-  ctx.globalAlpha = 0.75
-  ctx.strokeStyle = 'rgba(244, 114, 182, 0.95)'
-  ctx.lineWidth = 3
-  ctx.setLineDash([6, 4])
-  ctx.lineCap = 'round'
-  ctx.lineJoin = 'round'
-  ctx.beginPath()
-  ctx.moveTo(sx(points[0][0]), sy(points[0][1]))
-  for (let i = 1; i < points.length; i++) {
-    ctx.lineTo(sx(points[i][0]), sy(points[i][1]))
-  }
-  ctx.stroke()
-  ctx.setLineDash([])
-  ctx.restore()
 }
 
 function normLineToPx(
@@ -106,12 +138,13 @@ function drawStampSymbol(
   cx: number,
   cy: number,
   r: number,
+  color: string,
 ): void {
   ctx.save()
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
-  ctx.strokeStyle = 'rgba(30,20,10,0.88)'
-  ctx.fillStyle = 'rgba(30,20,10,0.88)'
+  ctx.strokeStyle = color
+  ctx.fillStyle = color
   ctx.lineWidth = Math.max(1.5, r * 0.14)
 
   if (variant === 'check') {
@@ -129,10 +162,18 @@ function drawStampSymbol(
     ctx.lineTo(cx - d, cy + d)
     ctx.stroke()
   } else if (variant === 'question') {
-    ctx.font = `bold ${r * 1.05}px system-ui, sans-serif`
+    ctx.font = `bold ${r * 1.15}px system-ui, sans-serif`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText('?', cx, cy + r * 0.06)
+    ctx.fillText('?', cx, cy + r * 0.05)
+  } else if (variant === 'heart') {
+    const s = r * 0.42
+    ctx.beginPath()
+    ctx.moveTo(cx, cy + s * 0.95)
+    ctx.bezierCurveTo(cx - s * 1.1, cy + s * 0.15, cx - s * 0.55, cy - s * 0.55, cx, cy - s * 0.15)
+    ctx.bezierCurveTo(cx + s * 0.55, cy - s * 0.55, cx + s * 1.1, cy + s * 0.15, cx, cy + s * 0.95)
+    ctx.closePath()
+    ctx.fill()
   } else {
     const spikes = 5
     const outer = r * 0.48
@@ -160,26 +201,30 @@ export function drawAnnotationCommand(
   cmd: AnnotationCommand,
   widthPx: number,
   heightPx: number,
+  pagePatternOrigin?: PenInkPatternOrigin,
 ): void {
   switch (cmd.kind) {
     case 'stroke': {
       if (cmd.tool !== 'eraser-line') {
-        drawStrokePath(ctx, cmd, widthPx, heightPx)
+        drawStrokePath(ctx, cmd, widthPx, heightPx, pagePatternOrigin)
       }
       break
     }
     case 'line': {
       const { ax, ay, bx, by } = normLineToPx(cmd.a, cmd.b, widthPx, heightPx)
+      const lw = strokeWidthPx(cmd.widthScale, DEFAULT_SHAPE_STROKE_PX)
       ctx.save()
       ctx.globalCompositeOperation = 'source-over'
       ctx.globalAlpha = 1
       ctx.strokeStyle = cmd.color
-      ctx.lineWidth = strokeWidthPx(cmd.widthScale, DEFAULT_SHAPE_STROKE_PX)
+      ctx.lineWidth = lw
       ctx.lineCap = 'round'
+      applyAnnotationLineDash(ctx, cmd.lineDashStyle, lw)
       ctx.beginPath()
       ctx.moveTo(ax, ay)
       ctx.lineTo(bx, by)
       ctx.stroke()
+      ctx.setLineDash([])
       ctx.restore()
       break
     }
@@ -188,8 +233,12 @@ export function drawAnnotationCommand(
       const y = cmd.y * heightPx
       const w = cmd.w * widthPx
       const h = cmd.h * heightPx
+      const lw = strokeWidthPx(cmd.strokeWidthScale, DEFAULT_SHAPE_STROKE_PX)
+      const legacyFill = cmd.fillColor != null && cmd.fillAlpha != null && cmd.fillAlpha > 0
+      const showFill = cmd.fillVisible === false ? false : legacyFill
+      const showStroke = cmd.strokeVisible !== false
       ctx.save()
-      if (cmd.fillColor != null && cmd.fillAlpha != null && cmd.fillAlpha > 0) {
+      if (showFill && cmd.fillColor != null && cmd.fillAlpha != null && cmd.fillAlpha > 0) {
         const a = cmd.fillAlpha
         const hex = cmd.fillColor
         const rr = parseInt(hex.slice(1, 3), 16)
@@ -198,9 +247,14 @@ export function drawAnnotationCommand(
         ctx.fillStyle = `rgba(${rr},${gg},${bb},${a})`
         ctx.fillRect(x, y, w, h)
       }
-      ctx.strokeStyle = cmd.strokeColor
-      ctx.lineWidth = strokeWidthPx(cmd.strokeWidthScale, DEFAULT_SHAPE_STROKE_PX)
-      ctx.strokeRect(x, y, w, h)
+      if (showStroke) {
+        ctx.strokeStyle = cmd.strokeColor
+        ctx.lineWidth = lw
+        ctx.lineCap = 'butt'
+        applyAnnotationLineDash(ctx, cmd.lineDashStyle, lw)
+        ctx.strokeRect(x, y, w, h)
+        ctx.setLineDash([])
+      }
       ctx.restore()
       break
     }
@@ -213,10 +267,14 @@ export function drawAnnotationCommand(
       const cy = y + h / 2
       const rx = w / 2
       const ry = h / 2
+      const lw = strokeWidthPx(cmd.strokeWidthScale, DEFAULT_SHAPE_STROKE_PX)
+      const legacyFill = cmd.fillColor != null && cmd.fillAlpha != null && cmd.fillAlpha > 0
+      const showFill = cmd.fillVisible === false ? false : legacyFill
+      const showStroke = cmd.strokeVisible !== false
       ctx.save()
       ctx.beginPath()
       ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2)
-      if (cmd.fillColor != null && cmd.fillAlpha != null && cmd.fillAlpha > 0) {
+      if (showFill && cmd.fillColor != null && cmd.fillAlpha != null && cmd.fillAlpha > 0) {
         const a = cmd.fillAlpha
         const hex = cmd.fillColor
         const rr = parseInt(hex.slice(1, 3), 16)
@@ -225,9 +283,63 @@ export function drawAnnotationCommand(
         ctx.fillStyle = `rgba(${rr},${gg},${bb},${a})`
         ctx.fill()
       }
-      ctx.strokeStyle = cmd.strokeColor
-      ctx.lineWidth = strokeWidthPx(cmd.strokeWidthScale, DEFAULT_SHAPE_STROKE_PX)
-      ctx.stroke()
+      if (showStroke) {
+        ctx.beginPath()
+        ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2)
+        ctx.strokeStyle = cmd.strokeColor
+        ctx.lineWidth = lw
+        ctx.lineCap = 'round'
+        applyAnnotationLineDash(ctx, cmd.lineDashStyle, lw)
+        ctx.stroke()
+        ctx.setLineDash([])
+      }
+      ctx.restore()
+      break
+    }
+    case 'triangle': {
+      const x = cmd.x * widthPx
+      const y = cmd.y * heightPx
+      const w = cmd.w * widthPx
+      const h = cmd.h * heightPx
+      const lw = strokeWidthPx(cmd.strokeWidthScale, DEFAULT_SHAPE_STROKE_PX)
+      const legacyFill = cmd.fillColor != null && cmd.fillAlpha != null && cmd.fillAlpha > 0
+      const showFill = cmd.fillVisible === false ? false : legacyFill
+      const showStroke = cmd.strokeVisible !== false
+      const topX = x + w / 2
+      const topY = y
+      const blX = x
+      const blY = y + h
+      const brX = x + w
+      const brY = y + h
+      ctx.save()
+      ctx.beginPath()
+      ctx.moveTo(topX, topY)
+      ctx.lineTo(blX, blY)
+      ctx.lineTo(brX, brY)
+      ctx.closePath()
+      if (showFill && cmd.fillColor != null && cmd.fillAlpha != null && cmd.fillAlpha > 0) {
+        const a = cmd.fillAlpha
+        const hex = cmd.fillColor
+        const rr = parseInt(hex.slice(1, 3), 16)
+        const gg = parseInt(hex.slice(3, 5), 16)
+        const bb = parseInt(hex.slice(5, 7), 16)
+        ctx.fillStyle = `rgba(${rr},${gg},${bb},${a})`
+        ctx.fill()
+      }
+      if (showStroke) {
+        ctx.beginPath()
+        ctx.moveTo(topX, topY)
+        ctx.lineTo(blX, blY)
+        ctx.lineTo(brX, brY)
+        ctx.closePath()
+        ctx.strokeStyle = cmd.strokeColor
+        ctx.lineWidth = lw
+        ctx.lineCap = 'round'
+        ctx.lineJoin = 'round'
+        applyAnnotationLineDash(ctx, cmd.lineDashStyle, lw)
+        ctx.stroke()
+        ctx.setLineDash([])
+      }
       ctx.restore()
       break
     }
@@ -244,17 +356,20 @@ export function drawAnnotationCommand(
       const byShaft = by - uy * headLen
       const px = -uy
       const py = ux
+      const lw = strokeWidthPx(cmd.widthScale, DEFAULT_SHAPE_STROKE_PX)
 
       ctx.save()
       ctx.strokeStyle = cmd.color
       ctx.fillStyle = cmd.color
-      ctx.lineWidth = strokeWidthPx(cmd.widthScale, DEFAULT_SHAPE_STROKE_PX)
+      ctx.lineWidth = lw
       ctx.lineCap = 'round'
       ctx.lineJoin = 'round'
+      applyAnnotationLineDash(ctx, cmd.lineDashStyle, lw)
       ctx.beginPath()
       ctx.moveTo(ax, ay)
       ctx.lineTo(bxShaft, byShaft)
       ctx.stroke()
+      ctx.setLineDash([])
       ctx.beginPath()
       ctx.moveTo(bx, by)
       ctx.lineTo(bxShaft + px * hw, byShaft + py * hw)
@@ -269,7 +384,7 @@ export function drawAnnotationCommand(
       const cy = cmd.center[1] * heightPx
       const base = Math.min(widthPx, heightPx)
       const r = (cmd.scale ?? 1) * base * 0.06
-      drawStampSymbol(ctx, cmd.variant, cx, cy, r)
+      drawStampSymbol(ctx, cmd.variant, cx, cy, r, cmd.color)
       break
     }
     case 'callout': {

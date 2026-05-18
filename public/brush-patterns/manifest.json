@@ -1,0 +1,54 @@
+{
+  "version": 4,
+  "tileSizePx": 512,
+  "patterns": [
+    {
+      "id": "rainbow",
+      "label": "Rainbow",
+      "file": "rainbow.png",
+      "fallbackColor": "#dc2626"
+    },
+    {
+      "id": "galaxy",
+      "label": "Galaxy",
+      "file": "galaxy.png",
+      "fallbackColor": "#6366f1"
+    },
+    {
+      "id": "lava",
+      "label": "Lava",
+      "file": "lava.png",
+      "fallbackColor": "#ea580c"
+    },
+    {
+      "id": "ocean",
+      "label": "Ocean",
+      "file": "ocean.png",
+      "fallbackColor": "#0d9488"
+    },
+    {
+      "id": "rose-gold",
+      "label": "Rose gold",
+      "file": "rose-gold.png",
+      "fallbackColor": "#e8b4a0"
+    },
+    {
+      "id": "gold",
+      "label": "Gold",
+      "file": "gold.png",
+      "fallbackColor": "#fbbf24"
+    },
+    {
+      "id": "silver",
+      "label": "Silver",
+      "file": "silver.png",
+      "fallbackColor": "#cbd5e1"
+    },
+    {
+      "id": "bronze",
+      "label": "Bronze",
+      "file": "bronze.png",
+      "fallbackColor": "#d97706"
+    }
+  ]
+}

@@ -26,9 +26,9 @@ const ENABLE_TIME_WARP_FOR_TESTING = false
 
 /** Half the draggable track in px; pull up (negative) = faster class time. */
 const MAX_HANDLE_OFFSET_PX = 40
-/** At full pull up, class clock runs this many × real time. */
+/** At full pull up, class clock runs this many – real time. */
 const TIME_WARP_MAX_MULTIPLIER = 80
-/** At full pull down, class clock runs this many × real time (still > 0). */
+/** At full pull down, class clock runs this many – real time (still > 0). */
 const TIME_WARP_MIN_MULTIPLIER = 0.08
 
 function buildAutoBookmarkAtEnd(
@@ -306,7 +306,7 @@ export function ClassSessionMapTimer({ studentId, session, assignedBookIds }: Cl
             </div>
             <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
           </div>
-          <span className="font-mono text-[10px] tabular-nums opacity-90">{warpMult.toFixed(1)}×</span>
+          <span className="font-mono text-[10px] tabular-nums opacity-90">{warpMult.toFixed(1)}–</span>
           <button
             type="button"
             className="rounded border border-amber-700/40 px-1.5 py-0.5 text-[9px] font-medium uppercase text-amber-900 hover:bg-amber-200/40 dark:border-amber-300/40 dark:text-amber-100 dark:hover:bg-amber-800/40"

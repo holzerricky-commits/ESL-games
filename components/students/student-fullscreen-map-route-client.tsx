@@ -1,10 +1,15 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import { ClassSessionMapTimer } from '@/components/students/class-session-map-timer'
 import { FantasyHUD } from '@/components/students/fantasy-hud'
 import { FullscreenBookOverlay } from '@/components/students/fullscreen-book-overlay'
 import { StudentMapTab } from '@/components/students/tabs/student-map-tab'
+import { preloadBookOpenedFrameImage, removeBookOpenedFramePreload } from '@/components/students/fullscreen-book-overlay/constants'
+import { ensureReactPdfWorker } from '@/lib/books/ensure-react-pdf-worker'
+import { fetchBooksLibraryCached } from '@/lib/books/fetch-books-library-cached'
+import { warmMapInitialBookSpreadPrefetch } from '@/lib/books/map-initial-book-spread-warmup'
 import { getStudentProfileView } from '@/lib/students/selectors'
 
 interface StudentFullscreenMapRouteClientProps {
@@ -20,7 +25,44 @@ export function StudentFullscreenMapRouteClient({
   activeClassSessionId = null,
 }: StudentFullscreenMapRouteClientProps) {
   const [isHydrated, setIsHydrated] = useState(false)
-  const [isBookOverlayOpen, setIsBookOverlayOpen] = useState(false)
+  /** Arms PDF + reader work off-screen; map shows loading until first spread is painted. */
+  const [bookOpenArmed, setBookOpenArmed] = useState(false)
+  /** When true with `bookOpenArmed`, the book shell is visible (locked with first paint). */
+  const [bookOpenPresented, setBookOpenPresented] = useState(false)
+
+  const mapBookChromeOpen = bookOpenArmed && bookOpenPresented
+
+  const handleOpenBook = useCallback(() => {
+    setBookOpenArmed(true)
+    setBookOpenPresented(false)
+  }, [])
+
+  const handleBookReadyToPresent = useCallback(() => {
+    setBookOpenPresented(true)
+  }, [])
+
+  const handleBookOpenPaintTimeout = useCallback(() => {
+    toast.error('The book is taking too long to open. Please try again.')
+    setBookOpenArmed(false)
+    setBookOpenPresented(false)
+  }, [])
+
+  const handleBookClose = useCallback(() => {
+    setBookOpenArmed(false)
+    setBookOpenPresented(false)
+  }, [])
+
+  useEffect(() => {
+    if (!bookOpenArmed || bookOpenPresented) return
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return
+      e.preventDefault()
+      setBookOpenArmed(false)
+      setBookOpenPresented(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [bookOpenArmed, bookOpenPresented])
 
   useEffect(() => {
     setIsHydrated(true)
@@ -45,6 +87,28 @@ export function StudentFullscreenMapRouteClient({
       body.style.overscrollBehavior = prevBodyOverscroll
     }
   }, [])
+
+  /** Warm global `/api/books`, pdf.js worker, book frame asset, and likely first-spread bitmaps (A2/A3/B4 + Phase E1c). */
+  useEffect(() => {
+    if (!isHydrated) return
+    const student = getStudentProfileView(studentId)
+    if (!student) return
+    void fetchBooksLibraryCached()
+      .then((lib) =>
+        warmMapInitialBookSpreadPrefetch({
+          library: lib,
+          assignedBookIds: student.assignedBookIds ?? [],
+          assignedUnitRefs: student.assignedUnitRefs ?? [],
+          curriculumHistory: student.curriculumHistory ?? [],
+        }),
+      )
+      .catch(() => {})
+    void ensureReactPdfWorker().catch(() => {})
+    preloadBookOpenedFrameImage()
+    return () => {
+      removeBookOpenedFramePreload()
+    }
+  }, [isHydrated, studentId])
 
   if (!isHydrated) {
     return (
@@ -85,25 +149,30 @@ export function StudentFullscreenMapRouteClient({
       */}
       <div
         className={`h-full min-h-0 w-full transition-[filter,opacity] duration-300 ${
-          isBookOverlayOpen ? 'pointer-events-none blur-[3px] brightness-75' : ''
+          mapBookChromeOpen ? 'pointer-events-none blur-[3px] brightness-75' : ''
         }`}
       >
         <StudentMapTab key={student.id} student={student} fullscreen introMode={introMode} />
       </div>
-      {isBookOverlayOpen ? <div className="pointer-events-none absolute inset-0 z-30 bg-black/50" /> : null}
+      {mapBookChromeOpen ? <div className="pointer-events-none absolute inset-0 z-30 bg-black/50" /> : null}
       <FantasyHUD
         exitHref={`/students/${student.id}`}
-        onOpenBook={() => setIsBookOverlayOpen(true)}
-        isBookOverlayOpen={isBookOverlayOpen}
+        onOpenBook={handleOpenBook}
+        isBookOverlayOpen={mapBookChromeOpen}
+        isBookOpeningPending={bookOpenArmed && !bookOpenPresented}
       />
       <FullscreenBookOverlay
+        key={student.id}
         studentId={student.id}
         assignedBookIds={student.assignedBookIds}
         assignedUnitRefs={student.assignedUnitRefs}
         curriculumHistory={student.curriculumHistory}
         studentName={student.name}
-        open={isBookOverlayOpen}
-        onClose={() => setIsBookOverlayOpen(false)}
+        open={bookOpenArmed}
+        presented={bookOpenPresented}
+        onBookReadyToPresent={handleBookReadyToPresent}
+        onBookOpenPaintTimeout={handleBookOpenPaintTimeout}
+        onClose={handleBookClose}
       />
     </div>
   )

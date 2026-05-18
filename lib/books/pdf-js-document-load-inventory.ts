@@ -5,11 +5,11 @@
  *
  * **Blocking — before we treat the overlay reader as “ready” to show (no empty frame):**
  * - Books library payload for the active student (same shape as `/api/books` today).
- * - PDF.js worker configured for the **browser** `react-pdf` stack (`wasmUrl` + workerSrc).
+ * - PDF.js worker configured for the **browser** `react-pdf` stack (`wasmUrl` + workerSrc) — warm via `ensureReactPdfWorker()` from the map route and `usePdfJsWorker`.
  * - First **visible** spread for the resolved unit is either painted or we explicitly time out / degrade.
  *
  * **Idle / optional — never block map HUD or first tap:**
- * - Neighbour PDF pages at spread resolution (page-turn prefetch window).
+ * - Neighbour PDF pages at spread resolution — window policy in `lib/books/reader-prefetch-window.ts`.
  * - HTTP cache priming for the unit PDF URL.
  * - Decorative frame image decode.
  *
@@ -60,9 +60,18 @@ export const PDF_JS_DOCUMENT_LOAD_PATHS = [
   },
   {
     id: 'fullscreen_book_overlay',
-    modulePath: 'components/students/fullscreen-book-overlay/hooks/useFullscreenBookOverlayController.ts → BookCanvasStage.tsx',
-    kind: 'react_pdf_document',
-    transportNote: 'dynamic react-pdf Document + Page; file from makeUnitFileUrl(unit.filePath)',
+    modulePath: 'fullscreen-book-overlay/sections/BookCanvasStage.tsx',
+    kind: 'pdfjs_getDocument',
+    transportNote:
+      '`loadCachedPdfDocument(makeUnitFileUrl(path))` (shared with thumbnails) + `react-pdf` Page with `pdf` prop — no second getDocument for the same URL',
+    surface: 'student_reader',
+  },
+  {
+    id: 'reader_page_prefetch_queue',
+    modulePath: 'lib/books/reader-page-prefetch-queue.ts',
+    kind: 'pdfjs_getDocument',
+    transportNote:
+      'Idle neighbour prefetch: `loadCachedPdfDocument` + `page.render` → `createImageBitmap` (same URL cache as overlay)',
     surface: 'student_reader',
   },
   {

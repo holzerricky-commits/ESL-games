@@ -31,6 +31,10 @@ book-library/**
 !book-library/README.md
 !book-library/books.example.json
 
+# Brush-pattern build artifacts (keep rainbow.png / galaxy.png)
+public/brush-patterns/_*
+public/brush-patterns/*.zip
+
 # Local-only student exports and homework (teacher machine)
 student-work/**
 !student-work/.gitkeep

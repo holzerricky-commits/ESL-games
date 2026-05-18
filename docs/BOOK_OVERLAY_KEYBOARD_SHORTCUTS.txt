@@ -1,0 +1,68 @@
+BOOK OVERLAY — KEYBOARD SHORTCUTS
+===================================
+
+Active while the fullscreen book reader is open. Shortcuts are ignored when you
+are typing in a text field, editing a sticky note, or using the lesson notebook
+in typing mode. On Mac, use Command where Windows shows Ctrl.
+
+
+TOOLS (annotation toolbox)
+--------------------------
+  P              Pen
+  I              Eyedropper (press again quickly: sample / smart)
+  H              Highlighter
+  M              Shapes (press again quickly to cycle line → rect → ellipse
+                 → triangle → arrow)
+  R              Rectangle
+  O              Ellipse (oval)
+  A              Arrow
+  S              Stamp (press again quickly to cycle stamp type)
+  Alt+1          Stamp: check
+  Alt+2          Stamp: cross
+  Alt+3          Stamp: question mark
+  Alt+4          Stamp: star
+  Alt+5          Stamp: heart
+  T              Text
+  N              Sticky note
+  K              Numbered callout
+  E              Eraser (press again quickly: stroke eraser, then rub eraser)
+  L              Laser pointer
+
+  Line and triangle: press M again quickly (within about half a second).
+
+  Drawing follows the selected toolbar tool. Use P, H, and E for pen,
+  highlighter, and eraser.
+
+
+THICKNESS (current tool)
+------------------------
+  [              Thinner
+  ]              Thicker
+
+  Applies to pen, highlighter, text size, sticky text size, or rub eraser
+  depending on which tool is active.
+
+
+EDITING
+-------
+  Ctrl+Z         Undo
+  Ctrl+Shift+Z   Redo  (Ctrl+Y also works)
+  Ctrl+Shift+Backspace   Clear page ink (confirmation dialog)
+
+
+NAVIGATION & PANELS
+-------------------
+  Left / Right arrow     Previous / next page
+  G                      Toggle page list
+  W                      Toggle whiteboard
+  `  (backtick)           Show / hide annotation tool rail
+
+  Esc                    Close whiteboard, then page list, then close the book
+                         (dialogs such as clear-page confirm use Esc on their own)
+
+
+NOTES
+-----
+  • B is not used here (it toggles the app sidebar elsewhere).
+  • Arrow keys always turn pages; they are not assigned to tools.
+  • Hover any toolbar button to see its shortcut in the tooltip.

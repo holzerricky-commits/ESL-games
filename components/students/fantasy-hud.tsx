@@ -2,14 +2,22 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
+import { Loader2 } from 'lucide-react'
 
 interface FantasyHUDProps {
   exitHref: string
   onOpenBook?: () => void
   isBookOverlayOpen?: boolean
+  /** Book session armed but not yet shown — show inline loading on the spell book control. */
+  isBookOpeningPending?: boolean
 }
 
-export function FantasyHUD({ exitHref, onOpenBook, isBookOverlayOpen = false }: FantasyHUDProps) {
+export function FantasyHUD({
+  exitHref,
+  onOpenBook,
+  isBookOverlayOpen = false,
+  isBookOpeningPending = false,
+}: FantasyHUDProps) {
   return (
     <div className="pointer-events-none absolute inset-0 z-20">
       <div className="animate-map-hud-enter-top absolute inset-x-0 top-1 z-20 flex justify-center px-2 sm:top-2 sm:px-4">
@@ -78,17 +86,29 @@ export function FantasyHUD({ exitHref, onOpenBook, isBookOverlayOpen = false }: 
 
             <button
               type="button"
-              aria-label="Open spell book"
+              aria-label={isBookOpeningPending ? 'Opening spell book' : 'Open spell book'}
+              aria-busy={isBookOpeningPending}
+              disabled={isBookOpeningPending}
               onClick={onOpenBook}
-              className="group pointer-events-auto absolute bottom-[6%] left-1/2 flex h-[70px] -translate-x-1/2 items-end justify-center transition-transform duration-300 ease-out hover:scale-[1.04] active:scale-[0.97] sm:h-[82px] md:h-[96px]"
+              className="group pointer-events-auto absolute bottom-[6%] left-1/2 flex h-[70px] -translate-x-1/2 items-end justify-center transition-transform duration-300 ease-out hover:scale-[1.04] active:scale-[0.97] disabled:pointer-events-none disabled:hover:scale-100 disabled:active:scale-100 disabled:opacity-90 sm:h-[82px] md:h-[96px]"
             >
-              <Image
-                src="/HUD/Book.png"
-                alt="Open spell book"
-                width={220}
-                height={170}
-                className="h-full w-auto -translate-y-[6px] select-none object-contain transition-[filter] duration-300 ease-out drop-shadow-[0_0_8px_rgba(245,158,11,0.3)] group-hover:drop-shadow-[0_0_16px_rgba(251,191,36,0.55)] group-active:drop-shadow-[0_0_20px_rgba(251,191,36,0.72)]"
-              />
+              <span className="relative inline-flex h-full w-auto -translate-y-[6px] items-end">
+                <Image
+                  src="/HUD/Book.png"
+                  alt=""
+                  width={220}
+                  height={170}
+                  className="h-full w-auto select-none object-contain transition-[filter] duration-300 ease-out drop-shadow-[0_0_8px_rgba(245,158,11,0.3)] group-hover:drop-shadow-[0_0_16px_rgba(251,191,36,0.55)] group-active:drop-shadow-[0_0_20px_rgba(251,191,36,0.72)]"
+                />
+                {isBookOpeningPending ? (
+                  <span className="pointer-events-none absolute inset-0 flex items-center justify-center pb-[18%]">
+                    <Loader2
+                      className="h-8 w-8 animate-spin text-amber-100 drop-shadow-md sm:h-9 sm:w-9"
+                      aria-hidden
+                    />
+                  </span>
+                ) : null}
+              </span>
             </button>
 
             <button

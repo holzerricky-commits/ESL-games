@@ -1,0 +1,56 @@
+---
+description: Spread-mode effect pen — path and pattern must match live preview vs commit
+globs:
+  - components/students/book-spread-stroke-overlay.tsx
+  - components/students/fullscreen-book-overlay/sections/BookCanvasStage.tsx
+  - lib/books/spread-stroke-split.ts
+  - lib/books/spread-canvas-coords.ts
+  - lib/books/pen-ink.ts
+  - lib/books/annotation-draw.ts
+alwaysApply: false
+---
+
+# Spread pen ink (do not regress)
+
+Two-page spread pen strokes: live preview on `BookSpreadStrokeOverlay`, persistence on each `BookPageAnnotationLayer`.
+
+## Invariants
+
+### 1. Spread cluster width (position offset bug)
+
+Cluster width = **`spreadPageWidth * 2 - spreadSidePullPx`** (one overlap), NOT `* 2 - spreadSidePullPx * 2`.
+
+Must match:
+
+- `BookCanvasStage` spread grid `width`
+- `spreadOverlayWidthPx`
+- `useSpreadGutterOverlayStyle` `clusterW` (`layoutSpreadPageWidth * 2 - overlapPx`)
+
+Extra `spreadSidePullPx` in the grid made overlay norm coords wrong → stroke drew offset from the cursor while drawing.
+
+### 2. Live preview coordinates (single pipeline)
+
+- Accumulate **`draft.points`** in spread-normalized space (`clientToSpreadNorm` on the spread capture canvas).
+- **Live pen/marker/eraser preview**: `splitSpreadNormPolylineToPageNormalizedChains(draft.points)` → `setLiveStrokeDraft` on each `BookPageAnnotationLayer` (same split as commit). **Do not** draw pen/marker on the spread overlay canvas.
+- Spread overlay canvas is **laser only** (+ pointer capture for all spread stroke tools).
+- **Never** draw live pen/marker on the spread overlay or remap through page rects for preview (except `eraser-line`, which uses client-space split).
+
+### 3. Commit coordinates
+
+- Split **`draft.points`** via `splitSpreadNormPolylineToPageNormalizedChains` (same polyline as live preview).
+- **Do not** commit from `clientPts` + `splitClientPolylineToPageNormalizedChains` for pen/marker (pattern jump on release).
+
+### 4. Pattern space
+
+- Live spread canvas: pattern phase only (spread-global `draft.points`).
+- Committed page strokes: `penInkPatternOriginXPx + phase` per page; points from spread→page mapping in `spread-stroke-split.ts`.
+
+### 5. Eraser-line
+
+- May use client-space split + page live drafts; separate path.
+
+## Quick check
+
+- Rainbow/galaxy/solid on spread: stroke under cursor while drawing; no jump on release; pattern unchanged on release.
+
+See `docs/BRUSH_PATTERNS_PHASES.md`.

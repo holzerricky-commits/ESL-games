@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { isBookOverlayKeyboardTypingTarget } from '@/lib/books/book-overlay-keyboard-guards'
 import { clampPdfPageToVisible, getUnitReaderBounds, getVisiblePdfPages } from '@/lib/books/page-range'
 import { saveUnitPage } from '@/lib/books/progress'
 import type { BookLibraryPayload } from '@/lib/books/types'
@@ -33,14 +34,7 @@ export function useArrowKeyPageTurn({
       if (e.defaultPrevented) return
       if (e.altKey || e.ctrlKey || e.metaKey) return
 
-      const activeEl = document.activeElement as HTMLElement | null
-      const isTypingTarget =
-        !!activeEl &&
-        (activeEl.tagName === 'INPUT' ||
-          activeEl.tagName === 'TEXTAREA' ||
-          activeEl.tagName === 'SELECT' ||
-          activeEl.isContentEditable)
-      if (isTypingTarget) return
+      if (isBookOverlayKeyboardTypingTarget()) return
 
       const turn = (direction: -1 | 1) => {
         if (!selectedBookId || !selectedUnitId || !library) return

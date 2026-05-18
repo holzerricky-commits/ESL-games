@@ -23,8 +23,6 @@ interface BookViewportProps {
   commitPageJump: () => void
   printedJumpBounds: { usePrinted: boolean; min: number; max: number }
   unitPageBounds: { min: number; max: number }
-  isLessonPaperOpen: boolean
-  setIsLessonPaperOpen: (v: boolean) => void
   isLessonPaperOverlayMode: boolean
   lessonPaperViewMode: 'left' | 'right' | 'split'
   setLessonPaperViewMode: (v: 'left' | 'right' | 'split') => void
@@ -48,8 +46,6 @@ export function BookViewport({
   commitPageJump,
   printedJumpBounds,
   unitPageBounds,
-  isLessonPaperOpen,
-  setIsLessonPaperOpen,
   isLessonPaperOverlayMode,
   lessonPaperViewMode,
   setLessonPaperViewMode,
@@ -96,19 +92,6 @@ export function BookViewport({
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
-      ) : null}
-      {!isLessonPaperOpen && hasResolvedUnit ? (
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          className="absolute right-0 top-[34%] z-[55] flex h-24 w-9 flex-col items-center justify-center gap-1 rounded-l-lg border border-r-0 border-[#c4b8a4]/50 bg-[#fbf9f5]/95 py-2 pr-0.5 pl-1 text-[10px] font-semibold uppercase tracking-wide text-[#3d2918] shadow-md hover:bg-[#f5efe4]"
-          onClick={() => setIsLessonPaperOpen(true)}
-          aria-label="Open notebook mode"
-        >
-          <PanelRightOpen className="h-4 w-4 shrink-0" aria-hidden />
-          <span className="max-w-[1em] leading-tight">Notes</span>
-        </Button>
       ) : null}
       {isLessonPaperOverlayMode ? (
         <div

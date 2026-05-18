@@ -1,7 +1,28 @@
+import type { PenInkStyle } from '@/lib/books/pen-ink'
+
 /** Legacy stroke tools (polyline on canvas). */
 export type StrokeTool = 'pen' | 'marker' | 'eraser' | 'eraser-line'
 
-export type StampVariant = 'check' | 'cross' | 'question' | 'star'
+/** Pen, marker, and vector shape outlines. */
+export type AnnotationLineDashStyle = 'solid' | 'dashed' | 'dotted'
+
+/** Rectangle / ellipse / triangle fill while drawing. */
+export type ShapeFillMode = 'none' | 'transparent' | 'solid'
+
+export const SHAPE_FILL_ALPHA_TRANSPARENT = 0.42
+export const SHAPE_FILL_ALPHA_SOLID = 1
+
+export function shapeFillModeHasFill(mode: ShapeFillMode): boolean {
+  return mode !== 'none'
+}
+
+export function shapeFillAlphaForMode(mode: ShapeFillMode): number | undefined {
+  if (mode === 'none') return undefined
+  if (mode === 'solid') return SHAPE_FILL_ALPHA_SOLID
+  return SHAPE_FILL_ALPHA_TRANSPARENT
+}
+
+export type StampVariant = 'check' | 'cross' | 'question' | 'star' | 'heart'
 
 export interface StrokeAnnotationCommand {
   kind: 'stroke'
@@ -10,6 +31,13 @@ export interface StrokeAnnotationCommand {
   points: [number, number][]
   widthScale?: number
   color?: string
+  /** Pen effect ink (rainbow, galaxy, metallics, etc.); omit for solid/marker. */
+  penInkStyle?: PenInkStyle
+  /** Per-stroke pattern shift (px); retracing the same path gets different colors. */
+  penInkPatternPhaseX?: number
+  penInkPatternPhaseY?: number
+  /** Pen/marker only; default solid. */
+  lineDashStyle?: AnnotationLineDashStyle
 }
 
 export interface LineAnnotationCommand {
@@ -19,6 +47,7 @@ export interface LineAnnotationCommand {
   b: [number, number]
   color: string
   widthScale?: number
+  lineDashStyle?: AnnotationLineDashStyle
 }
 
 export interface RectAnnotationCommand {
@@ -32,6 +61,12 @@ export interface RectAnnotationCommand {
   strokeWidthScale?: number
   fillColor?: string
   fillAlpha?: number
+  /** Outline dash style. */
+  lineDashStyle?: AnnotationLineDashStyle
+  /** Default true. If false, outline is not drawn (fill must be shown). */
+  strokeVisible?: boolean
+  /** Default: legacy = fill when fillColor+fillAlpha present. If false, skip fill even if colors set. */
+  fillVisible?: boolean
 }
 
 export interface EllipseAnnotationCommand {
@@ -45,6 +80,25 @@ export interface EllipseAnnotationCommand {
   strokeWidthScale?: number
   fillColor?: string
   fillAlpha?: number
+  lineDashStyle?: AnnotationLineDashStyle
+  strokeVisible?: boolean
+  fillVisible?: boolean
+}
+
+export interface TriangleAnnotationCommand {
+  kind: 'triangle'
+  id: string
+  x: number
+  y: number
+  w: number
+  h: number
+  strokeColor: string
+  strokeWidthScale?: number
+  fillColor?: string
+  fillAlpha?: number
+  lineDashStyle?: AnnotationLineDashStyle
+  strokeVisible?: boolean
+  fillVisible?: boolean
 }
 
 export interface ArrowAnnotationCommand {
@@ -55,6 +109,8 @@ export interface ArrowAnnotationCommand {
   color: string
   widthScale?: number
   headLengthNorm?: number
+  /** Dashed/dotted applies to the shaft; arrowhead stays solid. */
+  lineDashStyle?: AnnotationLineDashStyle
 }
 
 export interface StampAnnotationCommand {
@@ -62,6 +118,8 @@ export interface StampAnnotationCommand {
   id: string
   variant: StampVariant
   center: [number, number]
+  /** Symbol color (#RRGGBB). Question stamps use the picked color; others use fixed palette colors. */
+  color: string
   scale?: number
 }
 
@@ -74,6 +132,9 @@ export interface CalloutAnnotationCommand {
   scale?: number
 }
 
+/** `plain` = text only (no box). `filled` = solid background, no border or shadow. */
+export type TextAnnotationVisualStyle = 'plain' | 'filled'
+
 export interface TextAnnotationCommand {
   kind: 'text'
   id: string
@@ -83,6 +144,9 @@ export interface TextAnnotationCommand {
   fontSizeNorm: number
   color: string
   maxWidthNorm?: number
+  visualStyle?: TextAnnotationVisualStyle
+  /** Background when `visualStyle` is `filled` (#RRGGBB). */
+  fillColor?: string
 }
 
 export interface StickyAnnotationCommand {
@@ -94,6 +158,8 @@ export interface StickyAnnotationCommand {
   h: number
   text: string
   fontSizeNorm: number
+  /** Note background (#RRGGBB). */
+  fillColor?: string
 }
 
 export type AnnotationCommand =
@@ -101,6 +167,7 @@ export type AnnotationCommand =
   | LineAnnotationCommand
   | RectAnnotationCommand
   | EllipseAnnotationCommand
+  | TriangleAnnotationCommand
   | ArrowAnnotationCommand
   | StampAnnotationCommand
   | CalloutAnnotationCommand

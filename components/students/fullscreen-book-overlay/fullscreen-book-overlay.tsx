@@ -9,6 +9,7 @@ export type { FullscreenBookOverlayViewModel } from './hooks/useFullscreenBookOv
 
 export function FullscreenBookOverlay(props: FullscreenBookOverlayProps) {
   const vm = useFullscreenBookOverlayController(props)
-  if (!vm.isMounted) return null
+  // Before first open: render nothing. After first open: keep the view mounted while closed (B1) so state stays warm.
+  if (!vm.isMounted && !props.open) return null
   return <FullscreenBookOverlayView vm={vm} onClose={props.onClose} />
 }

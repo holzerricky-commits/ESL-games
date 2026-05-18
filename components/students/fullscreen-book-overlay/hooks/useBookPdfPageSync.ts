@@ -1,6 +1,7 @@
 import { useCallback, useEffect } from 'react'
 import { clampPdfPageToVisible, getUnitReaderBounds, getVisiblePdfPages } from '@/lib/books/page-range'
 import { saveUnitPage } from '@/lib/books/progress'
+import type { BookReaderDocumentReadyMeta } from '@/components/students/fullscreen-book-overlay/types'
 import type { BookLibraryPayload } from '@/lib/books/types'
 
 interface UseBookPdfPageSyncArgs {
@@ -14,6 +15,8 @@ interface UseBookPdfPageSyncArgs {
   pageNumber: number
   setNumPages: (v: number | null) => void
   setPageNumber: (v: number) => void
+  /** Apply width÷height from `getViewport({ scale: 1 })` before first react-pdf paint. */
+  primeReaderPageAspectRatio?: (ratio: number) => void
 }
 
 function clampSpreadAnchorPage(bounded: number, visiblePages: number[], isSinglePageMode: boolean): number {
@@ -33,10 +36,14 @@ export function useBookPdfPageSync({
   pageNumber,
   setNumPages,
   setPageNumber,
+  primeReaderPageAspectRatio,
 }: UseBookPdfPageSyncArgs) {
   const onDocumentLoadSuccess = useCallback(
-    (meta: { numPages: number }) => {
+    (meta: BookReaderDocumentReadyMeta) => {
       setNumPages(meta.numPages)
+      if (meta.pageAspectRatio != null && Number.isFinite(meta.pageAspectRatio) && meta.pageAspectRatio > 0) {
+        primeReaderPageAspectRatio?.(meta.pageAspectRatio)
+      }
       if (!selectedBookId || !selectedUnitId || !selectedUnit) return
       const bounds = getUnitReaderBounds(selectedUnit, meta.numPages, selectedBook ?? undefined)
       const nextVisible = getVisiblePdfPages(selectedUnit, meta.numPages, selectedBook ?? undefined)
@@ -56,6 +63,7 @@ export function useBookPdfPageSync({
       selectedUnitId,
       setNumPages,
       setPageNumber,
+      primeReaderPageAspectRatio,
     ],
   )
 

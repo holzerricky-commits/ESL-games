@@ -5,11 +5,15 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { StampVariant } from '@/lib/books/annotation-command-types'
 import type { BookAnnotationInteractionMode } from '@/lib/books/annotation-storage'
+import { LessonPaperDockTab } from './LessonPaperDockTab'
+
+const LESSON_PAPER_PANEL_ID = 'lesson-paper-panel'
 
 interface LessonPaperPanelProps {
   hasResolvedUnit: boolean
   isLessonPaperOpen: boolean
   setIsLessonPaperOpen: (v: boolean) => void
+  ANIMATION_MS: number
   lessonPaperMode: 'type' | 'draw' | 'select'
   setLessonPaperMode: (v: 'type' | 'draw' | 'select') => void
   scheduleLessonPaperEditorFocus: (placeCaretAtEnd?: boolean) => void
@@ -48,6 +52,7 @@ export function LessonPaperPanel({
   hasResolvedUnit,
   isLessonPaperOpen,
   setIsLessonPaperOpen,
+  ANIMATION_MS,
   lessonPaperMode,
   setLessonPaperMode,
   scheduleLessonPaperEditorFocus,
@@ -78,13 +83,27 @@ export function LessonPaperPanel({
   if (!hasResolvedUnit) return null
 
   return (
-    <aside
-      className={cn(
-        'absolute right-0 top-0 z-[70] flex h-full min-h-0 w-[25vw] min-w-[25vw] max-w-[25vw] flex-col border-l border-[#d9d9d9] bg-white shadow-[-8px_0_28px_rgba(0,0,0,0.14)] transition-[transform,opacity] duration-[650ms] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none',
-        isLessonPaperOpen ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0 pointer-events-none',
-      )}
-      aria-label="Notebook mode"
+    <div
+      className="pointer-events-auto absolute right-0 top-0 z-[70] flex h-full min-h-0 flex-row items-stretch will-change-transform motion-reduce:transition-none"
+      style={{
+        transform: isLessonPaperOpen ? 'translateX(0)' : 'translateX(25vw)',
+        transition: `transform ${ANIMATION_MS}ms cubic-bezier(0.4,0,0.2,1)`,
+      }}
     >
+      <LessonPaperDockTab
+        isOpen={isLessonPaperOpen}
+        onToggle={() => setIsLessonPaperOpen(!isLessonPaperOpen)}
+        panelId={LESSON_PAPER_PANEL_ID}
+      />
+      <aside
+        id={LESSON_PAPER_PANEL_ID}
+        inert={!isLessonPaperOpen ? true : undefined}
+        className={cn(
+          'flex h-full min-h-0 w-[25vw] min-w-[25vw] max-w-[25vw] flex-col border-l border-[#d9d9d9] bg-white shadow-[-8px_0_28px_rgba(0,0,0,0.14)]',
+          !isLessonPaperOpen && 'pointer-events-none',
+        )}
+        aria-label="Lesson notebook"
+      >
       <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[#e6e6e6] bg-white px-3 py-2">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
           <div className="inline-flex flex-wrap items-center rounded-md border border-[#dadada] bg-white p-0.5">
@@ -269,10 +288,14 @@ export function LessonPaperPanel({
                   mode={lessonPaperOverlayMode}
                   stampVariant={stampVariant}
                   strokeWidthScale={lessonPaperDrawTool === 'highlighter' ? 1.35 : 1}
+                  eraserLineStrokeWidthScale={1}
+                  penStrokeWidthScale={1}
                   shapeStrokeWidthScale={1}
                   stampScale={1}
                   strokeColor={lessonPaperDrawTool === 'highlighter' ? '#f6d84a' : '#2f6fed'}
                   shapeColor={lessonPaperDrawTool === 'highlighter' ? '#f6d84a' : '#2f6fed'}
+                  textColor={lessonPaperDrawTool === 'highlighter' ? '#f6d84a' : '#2f6fed'}
+                  stickyFillColor="#fef3c7"
                   textFontSizeNorm={0.024}
                   stickyFontSizeNorm={0.024}
                   defaultStickyWNorm={0.22}
@@ -314,5 +337,6 @@ export function LessonPaperPanel({
         </div>
       </div>
     </aside>
+    </div>
   )
 }

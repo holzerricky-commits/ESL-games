@@ -1,5 +1,7 @@
+import { DEFAULT_STAMP_QUESTION_COLOR, stampColorForVariant } from '@/lib/books/annotation-palettes'
 import type {
   AnnotationCommand,
+  AnnotationLineDashStyle,
   ArrowAnnotationCommand,
   CalloutAnnotationCommand,
   EllipseAnnotationCommand,
@@ -8,10 +10,12 @@ import type {
   StampAnnotationCommand,
   StampVariant,
   StickyAnnotationCommand,
+  TriangleAnnotationCommand,
   StrokeAnnotationCommand,
   StrokeTool,
   TextAnnotationCommand,
 } from '@/lib/books/annotation-command-types'
+import { isPenInkStyle, PEN_INK_TILE_PX, type PenInkStyle } from '@/lib/books/pen-ink'
 
 export type BookAnnotationTool = 'pen' | 'marker' | 'eraser' | 'eraser-line'
 
@@ -21,12 +25,14 @@ export type BookAnnotationInteractionMode =
   | 'line'
   | 'rect'
   | 'ellipse'
+  | 'triangle'
   | 'arrow'
   | 'stamp'
   | 'text'
   | 'sticky'
   | 'callout'
   | 'laser'
+  | 'eyedropper'
 
 /** Seven thickness steps (multiplier on base marker / eraser widths). */
 export const ANNOTATION_STROKE_WIDTH_STEPS = [0.5, 0.66, 0.8, 1, 1.2, 1.42, 1.68] as const
@@ -125,7 +131,7 @@ function sanitizePoints(raw: unknown): [number, number][] | null {
 }
 
 function parseStampVariant(v: unknown): StampVariant | null {
-  if (v === 'check' || v === 'cross' || v === 'question' || v === 'star') return v
+  if (v === 'check' || v === 'cross' || v === 'question' || v === 'star' || v === 'heart') return v
   return null
 }
 
@@ -164,6 +170,26 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
         typeof rawColor === 'string' && isHexColor(rawColor) && (tool === 'pen' || tool === 'marker')
           ? rawColor
           : undefined
+      let lineDashStyle: AnnotationLineDashStyle | undefined
+      if (rec.lineDashStyle === 'solid' || rec.lineDashStyle === 'dashed' || rec.lineDashStyle === 'dotted') {
+        lineDashStyle = rec.lineDashStyle
+      }
+      let penInkStyle: PenInkStyle | undefined
+      if (tool === 'pen' && isPenInkStyle(rec.penInkStyle) && rec.penInkStyle !== 'solid') {
+        penInkStyle = rec.penInkStyle
+      }
+      let penInkPatternPhaseX: number | undefined
+      let penInkPatternPhaseY: number | undefined
+      if (penInkStyle) {
+        if (typeof rec.penInkPatternPhaseX === 'number' && Number.isFinite(rec.penInkPatternPhaseX)) {
+          penInkPatternPhaseX =
+            ((rec.penInkPatternPhaseX % PEN_INK_TILE_PX) + PEN_INK_TILE_PX) % PEN_INK_TILE_PX
+        }
+        if (typeof rec.penInkPatternPhaseY === 'number' && Number.isFinite(rec.penInkPatternPhaseY)) {
+          penInkPatternPhaseY =
+            ((rec.penInkPatternPhaseY % PEN_INK_TILE_PX) + PEN_INK_TILE_PX) % PEN_INK_TILE_PX
+        }
+      }
       const cmd: StrokeAnnotationCommand = {
         kind: 'stroke',
         id,
@@ -171,6 +197,10 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
         points,
         ...(widthScale != null ? { widthScale } : {}),
         ...(color ? { color } : {}),
+        ...(penInkStyle ? { penInkStyle } : {}),
+        ...(penInkPatternPhaseX != null ? { penInkPatternPhaseX } : {}),
+        ...(penInkPatternPhaseY != null ? { penInkPatternPhaseY } : {}),
+        ...(lineDashStyle ? { lineDashStyle } : {}),
       }
       out.push(cmd)
       continue
@@ -184,6 +214,10 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
       if (typeof rec.widthScale === 'number' && Number.isFinite(rec.widthScale)) {
         widthScale = Math.max(0.2, Math.min(10, rec.widthScale))
       }
+      let lineDash: AnnotationLineDashStyle | undefined
+      if (rec.lineDashStyle === 'solid' || rec.lineDashStyle === 'dashed' || rec.lineDashStyle === 'dotted') {
+        lineDash = rec.lineDashStyle
+      }
       out.push({
         kind: 'line',
         id,
@@ -191,11 +225,12 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
         b: [clamp01(rec.b[0]), clamp01(rec.b[1])],
         color: c,
         ...(widthScale != null ? { widthScale } : {}),
+        ...(lineDash ? { lineDashStyle: lineDash } : {}),
       } satisfies LineAnnotationCommand)
       continue
     }
 
-    if (kind === 'rect' || kind === 'ellipse') {
+    if (kind === 'rect' || kind === 'ellipse' || kind === 'triangle') {
       const nums = ['x', 'y', 'w', 'h'] as const
       const box: Record<string, number> = {}
       let ok = true
@@ -220,6 +255,14 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
       }
       const fc = rec.fillColor
       const fillColor = typeof fc === 'string' && isHexColor(fc) ? fc : undefined
+      const legacyFill = !!(fillColor && fillAlpha != null && fillAlpha > 0)
+      const strokeVisible = rec.strokeVisible !== false
+      const canFill = rec.fillVisible === false ? false : legacyFill
+      if (!strokeVisible && !canFill) continue
+      let lineDash: AnnotationLineDashStyle | undefined
+      if (rec.lineDashStyle === 'solid' || rec.lineDashStyle === 'dashed' || rec.lineDashStyle === 'dotted') {
+        lineDash = rec.lineDashStyle
+      }
       const base = {
         id,
         x: box.x,
@@ -227,14 +270,19 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
         w: Math.max(0, box.w),
         h: Math.max(0, box.h),
         strokeColor: sc,
+        ...(strokeVisible === false ? { strokeVisible: false as const } : {}),
+        ...(rec.fillVisible === false ? { fillVisible: false as const } : {}),
         ...(strokeWidthScale != null ? { strokeWidthScale } : {}),
         ...(fillColor ? { fillColor } : {}),
         ...(fillAlpha != null ? { fillAlpha } : {}),
+        ...(lineDash ? { lineDashStyle: lineDash } : {}),
       }
       if (kind === 'rect') {
         out.push({ kind: 'rect', ...base } satisfies RectAnnotationCommand)
-      } else {
+      } else if (kind === 'ellipse') {
         out.push({ kind: 'ellipse', ...base } satisfies EllipseAnnotationCommand)
+      } else {
+        out.push({ kind: 'triangle', ...base } satisfies TriangleAnnotationCommand)
       }
       continue
     }
@@ -251,6 +299,10 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
       if (typeof rec.headLengthNorm === 'number' && Number.isFinite(rec.headLengthNorm)) {
         headLengthNorm = Math.max(0.005, Math.min(0.2, rec.headLengthNorm))
       }
+      let lineDash: AnnotationLineDashStyle | undefined
+      if (rec.lineDashStyle === 'solid' || rec.lineDashStyle === 'dashed' || rec.lineDashStyle === 'dotted') {
+        lineDash = rec.lineDashStyle
+      }
       out.push({
         kind: 'arrow',
         id,
@@ -259,6 +311,7 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
         color: c,
         ...(widthScale != null ? { widthScale } : {}),
         ...(headLengthNorm != null ? { headLengthNorm } : {}),
+        ...(lineDash ? { lineDashStyle: lineDash } : {}),
       } satisfies ArrowAnnotationCommand)
       continue
     }
@@ -266,6 +319,10 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
     if (kind === 'stamp') {
       const variant = parseStampVariant(rec.variant)
       if (!variant || !isFinitePair(rec.center)) continue
+      const rawColor = rec.color
+      const questionFallback =
+        typeof rawColor === 'string' && isHexColor(rawColor) ? rawColor : DEFAULT_STAMP_QUESTION_COLOR
+      const color = stampColorForVariant(variant, questionFallback)
       let scale: number | undefined
       if (typeof rec.scale === 'number' && Number.isFinite(rec.scale)) {
         scale = Math.max(0.2, Math.min(8, rec.scale))
@@ -275,6 +332,7 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
         id,
         variant,
         center: [clamp01(rec.center[0]), clamp01(rec.center[1])],
+        color,
         ...(scale != null ? { scale } : {}),
       } satisfies StampAnnotationCommand)
       continue
@@ -317,6 +375,14 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
       if (typeof rec.maxWidthNorm === 'number' && Number.isFinite(rec.maxWidthNorm)) {
         maxWidthNorm = Math.max(0.05, Math.min(1, rec.maxWidthNorm))
       }
+      let visualStyle: 'plain' | 'filled' | undefined
+      if (rec.visualStyle === 'filled' || rec.visualStyle === 'plain') {
+        visualStyle = rec.visualStyle
+      }
+      let fillColor: string | undefined
+      if (typeof rec.fillColor === 'string' && isHexColor(rec.fillColor)) {
+        fillColor = rec.fillColor
+      }
       out.push({
         kind: 'text',
         id,
@@ -326,6 +392,8 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
         fontSizeNorm,
         color: col,
         ...(maxWidthNorm != null ? { maxWidthNorm } : {}),
+        ...(visualStyle != null ? { visualStyle } : {}),
+        ...(fillColor != null ? { fillColor } : {}),
       } satisfies TextAnnotationCommand)
       continue
     }
@@ -350,6 +418,10 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
       if (typeof rec.fontSizeNorm === 'number' && Number.isFinite(rec.fontSizeNorm)) {
         fontSizeNorm = Math.max(0.008, Math.min(0.1, rec.fontSizeNorm))
       }
+      let fillColor: string | undefined
+      if (typeof rec.fillColor === 'string' && isHexColor(rec.fillColor)) {
+        fillColor = rec.fillColor
+      }
       out.push({
         kind: 'sticky',
         id,
@@ -359,6 +431,7 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
         h: Math.max(0.02, box.h),
         text,
         fontSizeNorm,
+        ...(fillColor != null ? { fillColor } : {}),
       } satisfies StickyAnnotationCommand)
       continue
     }

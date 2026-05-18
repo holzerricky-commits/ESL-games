@@ -1,4 +1,5 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist'
+import { ensureReactPdfWorker } from '@/lib/books/ensure-react-pdf-worker'
 
 /** Compact sidebar preview width */
 export const PDF_THUMB_WIDTH = 76
@@ -61,14 +62,23 @@ export function clearPdfLoadCacheForFileUrl(fileUrl: string): void {
   pdfLoadCache.delete(fileUrl)
 }
 
-async function loadPdf(fileUrl: string): Promise<PDFDocumentProxy> {
+/**
+ * Single `pdfjs.getDocument` promise per `fileUrl` for the session (thumbnails + fullscreen reader).
+ * `react-pdf` `<Document file={url}>` would call `getDocument` again — use `PdfPage pdf={await loadCachedPdfDocument(url)}` instead.
+ */
+export async function loadCachedPdfDocument(fileUrl: string): Promise<PDFDocumentProxy> {
   let p = pdfLoadCache.get(fileUrl)
   if (!p) {
+    await ensureReactPdfWorker()
     const { pdfjs } = await import('react-pdf')
     p = pdfjs.getDocument({ url: fileUrl, wasmUrl: PDFJS_WASM_URL }).promise as Promise<PDFDocumentProxy>
     pdfLoadCache.set(fileUrl, p)
   }
-  return p
+  return await p
+}
+
+async function loadPdf(fileUrl: string): Promise<PDFDocumentProxy> {
+  return loadCachedPdfDocument(fileUrl)
 }
 
 export async function getPdfTotalPages(fileUrl: string): Promise<number> {

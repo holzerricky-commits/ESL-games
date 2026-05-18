@@ -1,128 +1,190 @@
-'use client'
+﻿'use client'
 
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
+  Check,
   Circle,
   Eraser,
+  Heart,
   Highlighter,
-  MessageSquare,
+  Minus,
   MousePointer2,
   MoveUpRight,
+  Pipette,
   Pencil,
-  Shapes,
+  Sparkles,
   Square,
-  Stamp,
+  Star,
+  StickyNote,
+  Triangle,
   Type,
+  X,
 } from 'lucide-react'
+import { ToolbarIcon, TOOLBAR_ICON_CLASS } from '@/components/students/annotation-toolbar-icon'
 import {
-  ANNOTATION_PEN_SWATCHES,
   ANNOTATION_MARKER_SWATCHES,
+  ANNOTATION_STAMP_QUESTION_SWATCHES,
+  ANNOTATION_STICKY_FILL_SWATCHES,
+  ANNOTATION_TEXT_FILL_SWATCHES,
+  ANNOTATION_TEXT_STROKE_SWATCHES,
+  STAMP_COLOR_CHECK,
+  STAMP_COLOR_CROSS,
+  STAMP_COLOR_HEART,
+  STAMP_COLOR_STAR,
+  getPenSwatch,
 } from '@/lib/books/annotation-palettes'
 import {
-  ANNOTATION_PEN_THICKNESS_PREVIEW_DOTS,
-  type AnnotationStrokeThicknessStep,
-  type BookAnnotationInteractionMode,
-} from '@/lib/books/annotation-storage'
-import type { StampVariant } from '@/lib/books/annotation-command-types'
+  LineDashStyleIconRow,
+  PopoverHint,
+  PopoverIconGridRow,
+  PopoverIconSegmentRow,
+  ShapeFillIconRow,
+  ShapeLineStyleIconRow,
+  popoverStackClass,
+} from '@/components/students/annotation-popover-controls'
+import {
+  ANNOTATION_DEFAULT_THICKNESS_PREVIEW_DOTS,
+  ThicknessSliderRow,
+} from '@/components/students/annotation-thickness-slider-row'
+import { SpectrumColorPicker } from '@/components/students/annotation-spectrum-picker'
+import { ColorSwatchRow, PenSwatchRow } from '@/components/students/annotation-swatch-picker'
+import type { AnnotationColorSource } from '@/lib/books/annotation-custom-color'
+import { ANNOTATION_PEN_THICKNESS_PREVIEW_DOTS } from '@/lib/books/annotation-storage'
+import type { AnnotationStrokeThicknessStep, BookAnnotationInteractionMode } from '@/lib/books/annotation-storage'
+import type {
+  AnnotationLineDashStyle,
+  ShapeFillMode,
+  StampVariant,
+  TextAnnotationVisualStyle,
+} from '@/lib/books/annotation-command-types'
+import { shapeFillModeHasFill } from '@/lib/books/annotation-command-types'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { cn } from '@/lib/utils'
+import { BOOK_OVERLAY_SHORTCUT_LABELS as SC } from '@/lib/books/book-overlay-keyboard-shortcuts'
+import {
+  EYEDROPPER_VARIANT_LABEL,
+  type EyedropperVariant,
+} from '@/lib/books/eyedropper-variant'
 
-const THICKNESS_LABELS = ['1', '2', '3', '4', '5', '6', '7'] as const
+const SHAPE_TOOLBAR_MODES = ['line', 'rect', 'ellipse', 'triangle', 'arrow'] as const
+type ShapeToolbarMode = (typeof SHAPE_TOOLBAR_MODES)[number]
 
-function ThicknessRow({
-  value,
-  onChange,
-  idPrefix,
-  dotScale = 'default',
-}: {
-  value: AnnotationStrokeThicknessStep
-  onChange: (s: AnnotationStrokeThicknessStep) => void
-  idPrefix: string
-  /** `pen` uses wider preview dots to match the real pen width curve. */
-  dotScale?: 'default' | 'pen'
-}) {
+const SHAPE_LABEL: Record<ShapeToolbarMode, string> = {
+  line: 'Line',
+  rect: 'Rectangle',
+  ellipse: 'Ellipse',
+  triangle: 'Triangle',
+  arrow: 'Arrow',
+}
+
+const STAMP_LABEL: Record<StampVariant, string> = {
+  check: 'Check',
+  cross: 'Cross',
+  question: 'Question',
+  star: 'Star',
+  heart: 'Heart',
+}
+
+function StampQuestionMarkIcon({ color = 'currentColor' }: { color?: string }) {
   return (
-    <div className="space-y-2">
-      <p className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-[#c4b5a8]/85">Thickness</p>
-      <div className="flex flex-wrap items-end justify-center gap-1.5">
-        {THICKNESS_LABELS.map((label, i) => {
-          const step = i as AnnotationStrokeThicknessStep
-          const active = value === step
-          const dot =
-            dotScale === 'pen' ? ANNOTATION_PEN_THICKNESS_PREVIEW_DOTS[i] : 4 + i * 1.75
-          return (
-            <button
-              key={label}
-              type="button"
-              id={`${idPrefix}-thick-${i}`}
-              aria-label={`Stroke size ${label}`}
-              aria-pressed={active}
-              onClick={() => onChange(step)}
-              className={cn(
-                'flex h-11 w-9 flex-col items-center justify-end gap-1 rounded-lg border pb-1.5 transition-colors',
-                active
-                  ? 'border-amber-400/70 bg-amber-500/15 ring-1 ring-amber-400/35'
-                  : 'border-[#3d2a1a]/35 bg-[#0f0c0a]/60 hover:border-[#5c4030]/45 hover:bg-[#16110e]/85',
-              )}
-            >
-              <span
-                className={cn('rounded-full', active ? 'bg-amber-200' : 'bg-[#9c8b7a]')}
-                style={{ width: dot, height: dot }}
-              />
-              <span className="text-[0.6rem] font-medium tabular-nums text-[#d6cbb8]/90">{label}</span>
-            </button>
-          )
-        })}
-      </div>
-    </div>
+    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+      <text
+        x="9"
+        y="12.5"
+        textAnchor="middle"
+        fontSize="13"
+        fontWeight="700"
+        fill={color}
+        fontFamily="system-ui, sans-serif"
+      >
+        ?
+      </text>
+    </svg>
   )
 }
 
-function ColorSwatchRow({
-  colors,
-  current,
-  onPick,
-  idPrefix,
-}: {
-  colors: readonly string[]
-  current: string
-  onPick: (hex: string) => void
-  idPrefix: string
-}) {
+function shapeIconForMode(mode: ShapeToolbarMode): typeof Minus {
+  if (mode === 'line') return Minus
+  if (mode === 'rect') return Square
+  if (mode === 'ellipse') return Circle
+  if (mode === 'triangle') return Triangle
+  return MoveUpRight
+}
+
+/** Pixel/rub eraser – pen stylus with round nib. */
+function SmartEyedropperIcon() {
   return (
-    <div className="space-y-2">
-      <p className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-[#c4b5a8]/85">Color</p>
-      <div className="flex flex-wrap gap-2">
-        {colors.map((hex, i) => {
-          const active = current.toLowerCase() === hex.toLowerCase()
-          return (
-            <button
-              key={hex}
-              type="button"
-              id={`${idPrefix}-swatch-${i}`}
-              aria-label={`Color ${hex}`}
-              aria-pressed={active}
-              onClick={() => onPick(hex)}
-              className={cn(
-                'h-8 w-8 shrink-0 rounded-full border-2 transition-transform',
-                active ? 'scale-110 border-white ring-2 ring-amber-400/60' : 'border-black/25 hover:scale-105',
-              )}
-              style={{ backgroundColor: hex }}
-            />
-          )
-        })}
-      </div>
-    </div>
+    <span className="relative inline-flex h-[18px] w-[18px] items-center justify-center">
+      <Pipette className={iconCls} strokeWidth={1.75} aria-hidden />
+      <Sparkles className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 text-amber-400" aria-hidden />
+    </span>
   )
 }
 
-const STAMP_CHOICES: { variant: StampVariant; label: string }[] = [
-  { variant: 'check', label: 'Check' },
-  { variant: 'cross', label: 'Cross' },
-  { variant: 'question', label: 'Question' },
-  { variant: 'star', label: 'Star' },
+function PenEraserIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden className="text-[#e8dcc4]">
+      <path
+        d="M5.5 14.5 L12.5 7.5 L14 9 L7 16 Z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+        fill="none"
+      />
+      <circle cx="5" cy="14.5" r="2.25" stroke="currentColor" strokeWidth="1.5" fill="none" />
+    </svg>
+  )
+}
+
+function TextWithBackgroundIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden className="text-[#e8dcc4]">
+      <rect x="2" y="5" width="14" height="9" rx="1" fill="currentColor" opacity="0.4" />
+      <text x="9" y="12.5" textAnchor="middle" fontSize="9" fontWeight="700" fill="currentColor">
+        T
+      </text>
+    </svg>
+  )
+}
+
+const iconCls = TOOLBAR_ICON_CLASS
+
+const SHAPE_ICON_OPTIONS = SHAPE_TOOLBAR_MODES.map((mode) => ({
+  value: mode,
+  ariaLabel: SHAPE_LABEL[mode],
+  icon: (() => {
+    const Icon = shapeIconForMode(mode)
+    return <Icon className={iconCls} strokeWidth={1.75} aria-hidden />
+  })(),
+}))
+
+function stampIconForVariant(variant: StampVariant, questionColor: string): ReactNode {
+  if (variant === 'check') {
+    return <Check className={iconCls} strokeWidth={2} style={{ color: STAMP_COLOR_CHECK }} aria-hidden />
+  }
+  if (variant === 'cross') {
+    return <X className={iconCls} strokeWidth={2} style={{ color: STAMP_COLOR_CROSS }} aria-hidden />
+  }
+  if (variant === 'question') {
+    return <StampQuestionMarkIcon color={questionColor} />
+  }
+  if (variant === 'star') {
+    return <Star className={iconCls} strokeWidth={1.75} style={{ color: STAMP_COLOR_STAR }} aria-hidden />
+  }
+  return <Heart className={iconCls} strokeWidth={1.75} style={{ color: STAMP_COLOR_HEART }} aria-hidden />
+}
+
+const STAMP_ICON_OPTIONS: { value: StampVariant; ariaLabel: string; icon: ReactNode }[] = [
+  { value: 'check', ariaLabel: 'Check', icon: stampIconForVariant('check', '') },
+  { value: 'cross', ariaLabel: 'Cross', icon: stampIconForVariant('cross', '') },
+  {
+    value: 'question',
+    ariaLabel: 'Question',
+    icon: stampIconForVariant('question', '#c4b5a8'),
+  },
+  { value: 'star', ariaLabel: 'Star', icon: stampIconForVariant('star', '') },
+  { value: 'heart', ariaLabel: 'Heart', icon: stampIconForVariant('heart', '') },
 ]
 
 export interface BookAnnotationToolbarProps {
@@ -130,10 +192,24 @@ export interface BookAnnotationToolbarProps {
   setAnnotationMode: (m: BookAnnotationInteractionMode) => void
   stampVariant: StampVariant
   setStampVariant: (v: StampVariant) => void
-  penColor: string
-  setPenColor: (c: string) => void
+  stampQuestionColor: string
+  setStampQuestionColor: (c: string) => void
+  penSwatchId: string
+  pickPenSwatch: (id: string) => void
+  penColorSource: AnnotationColorSource
+  penCustomHex: string
+  pickPenCustomColor: (hex: string) => void
+  textColor: string
+  setTextColor: (c: string) => void
+  shapeStrokeSwatchId: string
+  setShapeStrokeSwatchId: (id: string) => void
+  stickyFillColor: string
+  setStickyFillColor: (c: string) => void
   markerColor: string
-  setMarkerColor: (c: string) => void
+  markerColorSource: AnnotationColorSource
+  markerCustomHex: string
+  pickMarkerSwatchColor: (hex: string) => void
+  pickMarkerCustomColor: (hex: string) => void
   penThicknessStep: AnnotationStrokeThicknessStep
   setPenThicknessStep: (s: AnnotationStrokeThicknessStep) => void
   markerThicknessStep: AnnotationStrokeThicknessStep
@@ -142,11 +218,42 @@ export interface BookAnnotationToolbarProps {
   setEraserPixelThicknessStep: (s: AnnotationStrokeThicknessStep) => void
   eraserLineThicknessStep: AnnotationStrokeThicknessStep
   setEraserLineThicknessStep: (s: AnnotationStrokeThicknessStep) => void
+  textVisualStyle: TextAnnotationVisualStyle
+  setTextVisualStyle: (v: TextAnnotationVisualStyle) => void
+  textFillColor: string
+  setTextFillColor: (c: string) => void
+  penLineDashStyle: AnnotationLineDashStyle
+  setPenLineDashStyle: (v: AnnotationLineDashStyle) => void
+  markerLineDashStyle: AnnotationLineDashStyle
+  setMarkerLineDashStyle: (v: AnnotationLineDashStyle) => void
+  shapeLineDashStyle: AnnotationLineDashStyle
+  setShapeLineDashStyle: (v: AnnotationLineDashStyle) => void
+  shapeStrokeEnabled: boolean
+  setShapeStrokeEnabled: (v: boolean) => void
+  shapeFillMode: ShapeFillMode
+  setShapeFillMode: (v: ShapeFillMode) => void
+  shapeFillColor: string
+  setShapeFillColor: (c: string) => void
+  eyedropperVariant: EyedropperVariant
+  setEyedropperVariant: (v: EyedropperVariant) => void
   layout?: 'horizontal' | 'vertical'
 }
 
 const popoverContentClass =
-  'w-[min(22rem,calc(100vw-2rem))] border-[#3d2a1a]/45 bg-[#1a1512] p-3.5 text-[#faf6ef] shadow-xl z-[80]'
+  'w-[min(24rem,calc(100vw-2rem))] border-[#3d2a1a]/45 bg-[#1a1512] p-3.5 text-[#faf6ef] shadow-xl z-[80]'
+
+const eraserPopoverCompactClass =
+  'w-auto border-[#3d2a1a]/45 bg-[#1a1512] p-2 text-[#faf6ef] shadow-xl z-[80]'
+
+const eyedropperPopoverClass =
+  'w-auto border-[#3d2a1a]/45 bg-[#1a1512] p-2 text-[#faf6ef] shadow-xl z-[80]'
+
+const EYEDROPPER_LONG_PRESS_MS = 450
+
+const toolBtnClass =
+  'flex h-9 w-9 shrink-0 items-center justify-center overflow-visible rounded-full border border-white/14 bg-black/50 shadow-sm backdrop-blur-sm transition-colors hover:bg-black/65'
+
+const toolBtnActiveClass = 'ring-2 ring-amber-400/55'
 
 export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
   const {
@@ -154,10 +261,21 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
     setAnnotationMode,
     stampVariant,
     setStampVariant,
-    penColor,
-    setPenColor,
+    stampQuestionColor,
+    setStampQuestionColor,
+    penSwatchId,
+    pickPenSwatch,
+    penColorSource,
+    penCustomHex,
+    pickPenCustomColor,
+    textColor,
+    setTextColor,
+    shapeStrokeSwatchId,
+    setShapeStrokeSwatchId,
+    stickyFillColor,
+    setStickyFillColor,
     markerColor,
-    setMarkerColor,
+    pickMarkerSwatchColor,
     penThicknessStep,
     setPenThicknessStep,
     markerThicknessStep,
@@ -166,52 +284,130 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
     setEraserPixelThicknessStep,
     eraserLineThicknessStep,
     setEraserLineThicknessStep,
+    textVisualStyle,
+    setTextVisualStyle,
+    textFillColor,
+    setTextFillColor,
+    penLineDashStyle,
+    setPenLineDashStyle,
+    markerLineDashStyle,
+    setMarkerLineDashStyle,
+    shapeLineDashStyle,
+    setShapeLineDashStyle,
+    shapeStrokeEnabled,
+    setShapeStrokeEnabled,
+    shapeFillMode,
+    setShapeFillMode,
+    shapeFillColor,
+    setShapeFillColor,
+    eyedropperVariant,
+    setEyedropperVariant,
     layout = 'horizontal',
   } = props
 
+  const [shapeToolbarIcon, setShapeToolbarIcon] = useState<ShapeToolbarMode>('rect')
+  useEffect(() => {
+    if (SHAPE_TOOLBAR_MODES.includes(annotationMode as ShapeToolbarMode)) {
+      setShapeToolbarIcon(annotationMode as ShapeToolbarMode)
+    }
+  }, [annotationMode])
+
   const [penOpen, setPenOpen] = useState(false)
+  const [penSpectrumOpen, setPenSpectrumOpen] = useState(false)
   const [markerOpen, setMarkerOpen] = useState(false)
   const [eraserOpen, setEraserOpen] = useState(false)
   const [shapesOpen, setShapesOpen] = useState(false)
   const [stampsOpen, setStampsOpen] = useState(false)
   const [textOpen, setTextOpen] = useState(false)
   const [stickyOpen, setStickyOpen] = useState(false)
+  const [eraserSubMode, setEraserSubMode] = useState<'rubber' | 'line'>('line')
+  const [eyedropperOpen, setEyedropperOpen] = useState(false)
+  const eyedropperLongPressRef = useRef<{ timer: ReturnType<typeof setTimeout> | null; fired: boolean }>({
+    timer: null,
+    fired: false,
+  })
+
+  useEffect(() => {
+    if (annotationMode === 'eraser') setEraserSubMode('rubber')
+    if (annotationMode === 'eraser-line') setEraserSubMode('line')
+  }, [annotationMode])
+
+  function clearEyedropperLongPress() {
+    const ref = eyedropperLongPressRef.current
+    if (ref.timer) {
+      clearTimeout(ref.timer)
+      ref.timer = null
+    }
+  }
 
   function closeAllExcept(
-    which: 'pen' | 'marker' | 'eraser' | 'shapes' | 'stamps' | 'text' | 'sticky',
+    which: 'pen' | 'marker' | 'eraser' | 'shapes' | 'stamps' | 'text' | 'sticky' | 'eyedropper',
   ) {
-    if (which !== 'pen') setPenOpen(false)
+    if (which !== 'pen') {
+      setPenOpen(false)
+      setPenSpectrumOpen(false)
+    }
     if (which !== 'marker') setMarkerOpen(false)
     if (which !== 'eraser') setEraserOpen(false)
     if (which !== 'shapes') setShapesOpen(false)
     if (which !== 'stamps') setStampsOpen(false)
     if (which !== 'text') setTextOpen(false)
     if (which !== 'sticky') setStickyOpen(false)
+    if (which !== 'eyedropper') setEyedropperOpen(false)
   }
 
   function closeAllPopovers() {
     setPenOpen(false)
+    setPenSpectrumOpen(false)
     setMarkerOpen(false)
     setEraserOpen(false)
     setShapesOpen(false)
     setStampsOpen(false)
     setTextOpen(false)
     setStickyOpen(false)
+    setEyedropperOpen(false)
   }
 
+  useEffect(() => () => clearEyedropperLongPress(), [])
+
   const penActive = annotationMode === 'pen'
+  const eyedropperActive = annotationMode === 'eyedropper'
+  const eyedropperTitle =
+    eyedropperVariant === 'smart'
+      ? `Smart ink — readable stroke from page (${SC.eyedropper}, press ${SC.eyedropperCycle}). Hold for types.`
+      : `Eyedropper — sample color (${SC.eyedropper}, press ${SC.eyedropperCycle}). Hold for types.`
   const markerActive = annotationMode === 'marker'
   const eraserActive = annotationMode === 'eraser' || annotationMode === 'eraser-line'
-  const shapesActive = ['line', 'rect', 'ellipse', 'arrow'].includes(annotationMode)
+  const shapesActive = SHAPE_TOOLBAR_MODES.includes(annotationMode as ShapeToolbarMode)
   const stampsActive = annotationMode === 'stamp'
   const textActive = annotationMode === 'text'
   const stickyActive = annotationMode === 'sticky'
   const calloutActive = annotationMode === 'callout'
   const laserActive = annotationMode === 'laser'
+  const penSwatch = useMemo(() => getPenSwatch(penSwatchId), [penSwatchId])
+  const shapeStrokeSwatch = useMemo(() => getPenSwatch(shapeStrokeSwatchId), [shapeStrokeSwatchId])
+  const eraserModeLabel = eraserSubMode === 'rubber' ? 'Rub eraser' : 'Stroke eraser'
 
-  function pickShape(m: 'line' | 'rect' | 'ellipse' | 'arrow') {
+  function pickShape(m: ShapeToolbarMode) {
+    setShapeToolbarIcon(m)
     setAnnotationMode(m)
     setShapesOpen(false)
+  }
+
+  function activateShapeTool() {
+    if (!SHAPE_TOOLBAR_MODES.includes(annotationMode as ShapeToolbarMode)) {
+      setAnnotationMode(shapeToolbarIcon)
+    }
+  }
+
+  function pickPenPresetSwatch(id: string) {
+    pickPenSwatch(id)
+    setPenSpectrumOpen(false)
+  }
+
+  function openPenSpectrumPicker() {
+    pickPenCustomColor(penCustomHex)
+    setPenSpectrumOpen(true)
   }
 
   return (
@@ -223,6 +419,8 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
           if (o) {
             closeAllExcept('pen')
             setAnnotationMode('pen')
+          } else {
+            setPenSpectrumOpen(false)
           }
         }}
       >
@@ -234,24 +432,119 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
             aria-expanded={penOpen}
             aria-haspopup="dialog"
             aria-label="Pen settings"
-            title="Pen"
-            className={cn(
-              'h-9 w-9 shrink-0 rounded-full border border-white/14 bg-black/50 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/65',
-              (penOpen || penActive) && 'ring-2 ring-amber-400/55',
-            )}
+            title={`Pen (${SC.pen})`}
+            className={cn(toolBtnClass, (penOpen || penActive) && toolBtnActiveClass)}
           >
-            <Pencil className="h-4 w-4" strokeWidth={2} />
+            <ToolbarIcon
+              icon={Pencil}
+              colorDot={penColorSource === 'custom' ? penCustomHex : penSwatch.color}
+            />
           </Button>
         </PopoverTrigger>
         <PopoverContent side={layout === 'vertical' ? 'left' : 'top'} align="center" className={popoverContentClass}>
-          <div className="space-y-4">
-            <ColorSwatchRow colors={ANNOTATION_PEN_SWATCHES} current={penColor} onPick={setPenColor} idPrefix="pen" />
-            <ThicknessRow
+          <div className={popoverStackClass}>
+            <PenSwatchRow
+              swatchId={penSwatchId}
+              colorSource={penColorSource}
+              customHex={penCustomHex}
+              onPick={pickPenPresetSwatch}
+              idPrefix="pen"
+              customPickerOpen={penSpectrumOpen}
+              onOpenCustomPicker={openPenSpectrumPicker}
+            />
+            {penSpectrumOpen ? (
+              <SpectrumColorPicker
+                customHex={penCustomHex}
+                onPickCustom={pickPenCustomColor}
+                label="Spectrum"
+              />
+            ) : null}
+            <ThicknessSliderRow
               value={penThicknessStep}
               onChange={setPenThicknessStep}
               idPrefix="pen"
-              dotScale="pen"
+              ariaLabel="Pen thickness"
             />
+            <LineDashStyleIconRow value={penLineDashStyle} onChange={setPenLineDashStyle} idPrefix="pen" />
+          </div>
+        </PopoverContent>
+      </Popover>
+
+      <Popover
+        open={eyedropperOpen}
+        onOpenChange={(o) => {
+          setEyedropperOpen(o)
+          if (o) closeAllExcept('eyedropper')
+        }}
+      >
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            aria-expanded={eyedropperOpen}
+            aria-haspopup="dialog"
+            aria-pressed={eyedropperActive}
+            aria-label={EYEDROPPER_VARIANT_LABEL[eyedropperVariant]}
+            title={eyedropperTitle}
+            className={cn('relative', toolBtnClass, (eyedropperOpen || eyedropperActive) && toolBtnActiveClass)}
+            onPointerDown={(e) => {
+              if (e.button !== 0) return
+              const ref = eyedropperLongPressRef.current
+              ref.fired = false
+              clearEyedropperLongPress()
+              ref.timer = setTimeout(() => {
+                ref.fired = true
+                closeAllExcept('eyedropper')
+                setEyedropperOpen(true)
+              }, EYEDROPPER_LONG_PRESS_MS)
+            }}
+            onPointerUp={() => clearEyedropperLongPress()}
+            onPointerCancel={() => clearEyedropperLongPress()}
+            onPointerLeave={() => clearEyedropperLongPress()}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              closeAllExcept('eyedropper')
+              setEyedropperOpen(true)
+            }}
+            onClick={() => {
+              if (eyedropperLongPressRef.current.fired) {
+                eyedropperLongPressRef.current.fired = false
+                return
+              }
+              closeAllPopovers()
+              setAnnotationMode('eyedropper')
+            }}
+          >
+            {eyedropperVariant === 'smart' ? <SmartEyedropperIcon /> : <ToolbarIcon icon={Pipette} />}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent side={layout === 'vertical' ? 'left' : 'top'} align="center" className={eyedropperPopoverClass}>
+          <div className="space-y-2">
+            <PopoverIconSegmentRow
+              label="Eyedropper"
+              labelHidden
+              value={eyedropperVariant}
+              onChange={(v) => {
+                setEyedropperVariant(v as EyedropperVariant)
+                setEyedropperOpen(false)
+                setAnnotationMode('eyedropper')
+              }}
+              idPrefix="eyedropper-variant"
+              options={[
+                {
+                  value: 'sample',
+                  ariaLabel: EYEDROPPER_VARIANT_LABEL.sample,
+                  icon: <Pipette className={iconCls} strokeWidth={1.75} aria-hidden />,
+                },
+                {
+                  value: 'smart',
+                  ariaLabel: EYEDROPPER_VARIANT_LABEL.smart,
+                  icon: <SmartEyedropperIcon />,
+                },
+              ]}
+            />
+            <PopoverHint>Click to use · hold or right‑click for types</PopoverHint>
           </div>
         </PopoverContent>
       </Popover>
@@ -274,106 +567,28 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
             aria-expanded={markerOpen}
             aria-haspopup="dialog"
             aria-label="Highlighter settings"
-            title="Highlighter"
-            className={cn(
-              'h-9 w-9 shrink-0 rounded-full border border-white/14 bg-black/50 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/65',
-              (markerOpen || markerActive) && 'ring-2 ring-amber-400/55',
-            )}
+            title={`Highlighter (${SC.highlighter})`}
+            className={cn(toolBtnClass, (markerOpen || markerActive) && toolBtnActiveClass)}
           >
-            <Highlighter className="h-4 w-4" strokeWidth={2} />
+            <ToolbarIcon icon={Highlighter} colorDot={markerColor} />
           </Button>
         </PopoverTrigger>
         <PopoverContent side={layout === 'vertical' ? 'left' : 'top'} align="center" className={popoverContentClass}>
-          <div className="space-y-4">
+          <div className={popoverStackClass}>
             <ColorSwatchRow
               colors={ANNOTATION_MARKER_SWATCHES}
               current={markerColor}
-              onPick={setMarkerColor}
+              onPick={pickMarkerSwatchColor}
               idPrefix="marker"
             />
-            <ThicknessRow
+            <ThicknessSliderRow
               value={markerThicknessStep}
               onChange={setMarkerThicknessStep}
               idPrefix="marker"
+              previewDots={ANNOTATION_DEFAULT_THICKNESS_PREVIEW_DOTS}
+              ariaLabel="Highlighter thickness"
             />
-          </div>
-        </PopoverContent>
-      </Popover>
-
-      <Popover
-        open={eraserOpen}
-        onOpenChange={(o) => {
-          setEraserOpen(o)
-          if (o) {
-            closeAllExcept('eraser')
-            if (annotationMode !== 'eraser' && annotationMode !== 'eraser-line') {
-              setAnnotationMode('eraser')
-            }
-          }
-        }}
-      >
-        <PopoverTrigger asChild>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            aria-expanded={eraserOpen}
-            aria-haspopup="dialog"
-            aria-label="Eraser settings"
-            title="Eraser"
-            className={cn(
-              'h-9 w-9 shrink-0 rounded-full border border-white/14 bg-black/50 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/65',
-              (eraserOpen || eraserActive) && 'ring-2 ring-amber-400/55',
-            )}
-          >
-            <Eraser className="h-4 w-4" strokeWidth={2} />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent side={layout === 'vertical' ? 'left' : 'top'} align="center" className={popoverContentClass}>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <p className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-[#c4b5a8]/85">Mode</p>
-              <ToggleGroup
-                type="single"
-                value={annotationMode === 'eraser-line' ? 'line' : 'rubber'}
-                onValueChange={(v) => {
-                  if (v === 'line') setAnnotationMode('eraser-line')
-                  if (v === 'rubber') setAnnotationMode('eraser')
-                }}
-                variant="outline"
-                size="sm"
-                className="w-full justify-stretch rounded-lg border border-[#3d2a1a]/40 bg-[#0f0c0a]/70 p-0.5"
-              >
-                <ToggleGroupItem
-                  value="rubber"
-                  className="flex-1 rounded-md border-0 text-xs font-medium text-[#e8dcc4] data-[state=on]:bg-amber-600/35 data-[state=on]:text-white"
-                >
-                  Rub
-                </ToggleGroupItem>
-                <ToggleGroupItem
-                  value="line"
-                  className="flex-1 rounded-md border-0 text-xs font-medium text-[#e8dcc4] data-[state=on]:bg-amber-600/35 data-[state=on]:text-white"
-                >
-                  Stroke
-                </ToggleGroupItem>
-              </ToggleGroup>
-              <p className="text-[0.7rem] leading-snug text-[#a89888]">
-                Rub smudges ink away. Stroke removes whole pen or highlighter lines you cross.
-              </p>
-            </div>
-            {annotationMode === 'eraser-line' ? (
-              <ThicknessRow
-                value={eraserLineThicknessStep}
-                onChange={setEraserLineThicknessStep}
-                idPrefix="eraser-line"
-              />
-            ) : (
-              <ThicknessRow
-                value={eraserPixelThicknessStep}
-                onChange={setEraserPixelThicknessStep}
-                idPrefix="eraser-pixel"
-              />
-            )}
+            <LineDashStyleIconRow value={markerLineDashStyle} onChange={setMarkerLineDashStyle} idPrefix="marker" />
           </div>
         </PopoverContent>
       </Popover>
@@ -382,7 +597,10 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
         open={shapesOpen}
         onOpenChange={(o) => {
           setShapesOpen(o)
-          if (o) closeAllExcept('shapes')
+          if (o) {
+            closeAllExcept('shapes')
+            activateShapeTool()
+          }
         }}
       >
         <PopoverTrigger asChild>
@@ -392,35 +610,66 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
             size="icon"
             aria-expanded={shapesOpen}
             aria-haspopup="dialog"
-            aria-label="Shapes"
-            title="Shapes"
-            className={cn(
-              'h-9 w-9 shrink-0 rounded-full border border-white/14 bg-black/50 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/65',
-              (shapesOpen || shapesActive) && 'ring-2 ring-amber-400/55',
-            )}
+            aria-label={`Shapes: ${SHAPE_LABEL[shapeToolbarIcon]}`}
+            title={`Shapes – ${SHAPE_LABEL[shapeToolbarIcon]} (${SC.shapes}, press ${SC.shapeCycle})`}
+            className={cn(toolBtnClass, (shapesOpen || shapesActive) && toolBtnActiveClass)}
           >
-            <Shapes className="h-4 w-4" strokeWidth={2} />
+            <ToolbarIcon icon={shapeIconForMode(shapeToolbarIcon)} colorDot={shapeStrokeSwatch.color} />
           </Button>
         </PopoverTrigger>
-        <PopoverContent side={layout === 'vertical' ? 'left' : 'top'} align="center" className={cn(popoverContentClass, 'w-auto min-w-[10rem]')}>
-          <p className="mb-2 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-[#c4b5a8]/85">Shapes</p>
-          <div className="flex flex-col gap-1">
-            <Button type="button" variant="ghost" size="sm" className="justify-start gap-2 text-[#faf6ef]" onClick={() => pickShape('line')}>
-              <span className="inline-block h-px w-5 bg-current" aria-hidden />
-              Line
-            </Button>
-            <Button type="button" variant="ghost" size="sm" className="justify-start gap-2 text-[#faf6ef]" onClick={() => pickShape('rect')}>
-              <Square className="h-4 w-4" />
-              Rectangle
-            </Button>
-            <Button type="button" variant="ghost" size="sm" className="justify-start gap-2 text-[#faf6ef]" onClick={() => pickShape('ellipse')}>
-              <Circle className="h-4 w-4" />
-              Ellipse
-            </Button>
-            <Button type="button" variant="ghost" size="sm" className="justify-start gap-2 text-[#faf6ef]" onClick={() => pickShape('arrow')}>
-              <MoveUpRight className="h-4 w-4" />
-              Arrow
-            </Button>
+        <PopoverContent
+          side={layout === 'vertical' ? 'left' : 'top'}
+          align="center"
+          className={cn(popoverContentClass, 'w-[min(22rem,calc(100vw-2rem))]')}
+        >
+          <div className={popoverStackClass}>
+            <PopoverIconGridRow
+              label="Shape"
+              labelHidden
+              value={SHAPE_TOOLBAR_MODES.includes(annotationMode as ShapeToolbarMode) ? annotationMode : shapeToolbarIcon}
+              onChange={(m) => pickShape(m as ShapeToolbarMode)}
+              idPrefix="shape-kind"
+              options={SHAPE_ICON_OPTIONS}
+            />
+            <PenSwatchRow
+              swatchId={shapeStrokeSwatchId}
+              onPick={setShapeStrokeSwatchId}
+              idPrefix="shape-stroke"
+              label="Stroke color"
+            />
+            {(annotationMode === 'rect' || annotationMode === 'ellipse' || annotationMode === 'triangle') ? (
+              <ShapeLineStyleIconRow
+                strokeEnabled={shapeStrokeEnabled}
+                lineDashStyle={shapeLineDashStyle}
+                onStrokeEnabledChange={setShapeStrokeEnabled}
+                onLineDashStyleChange={setShapeLineDashStyle}
+                fillMode={shapeFillMode}
+                onFillModeChange={setShapeFillMode}
+                idPrefix="shape"
+              />
+            ) : (
+              <LineDashStyleIconRow value={shapeLineDashStyle} onChange={setShapeLineDashStyle} idPrefix="shape" />
+            )}
+            {(annotationMode === 'rect' || annotationMode === 'ellipse' || annotationMode === 'triangle') ? (
+              <>
+                <ShapeFillIconRow
+                  fillMode={shapeFillMode}
+                  onFillModeChange={setShapeFillMode}
+                  strokeEnabled={shapeStrokeEnabled}
+                  onStrokeEnabledChange={setShapeStrokeEnabled}
+                  idPrefix="shape"
+                />
+                {shapeFillModeHasFill(shapeFillMode) ? (
+                  <ColorSwatchRow
+                    colors={ANNOTATION_MARKER_SWATCHES}
+                    current={shapeFillColor}
+                    onPick={setShapeFillColor}
+                    idPrefix="shape-fill"
+                    label="Fill color"
+                  />
+                ) : null}
+              </>
+            ) : null}
           </div>
         </PopoverContent>
       </Popover>
@@ -442,35 +691,36 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
             size="icon"
             aria-expanded={stampsOpen}
             aria-haspopup="dialog"
-            aria-label="Stamps"
-            title="Stamps"
-            className={cn(
-              'h-9 w-9 shrink-0 rounded-full border border-white/14 bg-black/50 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/65',
-              (stampsOpen || stampsActive) && 'ring-2 ring-amber-400/55',
-            )}
+            aria-label={`Stamp: ${STAMP_LABEL[stampVariant]}`}
+            title={`Stamp – ${STAMP_LABEL[stampVariant]} (${SC.stamp}, ${SC.stampVariants})`}
+            className={cn(toolBtnClass, (stampsOpen || stampsActive) && toolBtnActiveClass)}
           >
-            <Stamp className="h-4 w-4" strokeWidth={2} />
+            {stampIconForVariant(stampVariant, stampQuestionColor)}
           </Button>
         </PopoverTrigger>
-        <PopoverContent side={layout === 'vertical' ? 'left' : 'top'} align="center" className={cn(popoverContentClass, 'w-auto min-w-[11rem]')}>
-          <p className="mb-2 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-[#c4b5a8]/85">Stamp</p>
-          <div className="flex flex-col gap-1">
-            {STAMP_CHOICES.map(({ variant, label }) => (
-              <Button
-                key={variant}
-                type="button"
-                variant={stampVariant === variant ? 'secondary' : 'ghost'}
-                size="sm"
-                className="justify-start text-[#faf6ef]"
-                onClick={() => {
-                  setStampVariant(variant)
-                  setAnnotationMode('stamp')
-                  setStampsOpen(false)
-                }}
-              >
-                {label}
-              </Button>
-            ))}
+        <PopoverContent side={layout === 'vertical' ? 'left' : 'top'} align="center" className={popoverContentClass}>
+          <div className={popoverStackClass}>
+            <PopoverIconGridRow
+              label="Stamp"
+              labelHidden
+              value={stampVariant}
+              onChange={(v) => {
+                setStampVariant(v as StampVariant)
+                setAnnotationMode('stamp')
+                setStampsOpen(false)
+              }}
+              idPrefix="stamp-variant"
+              options={STAMP_ICON_OPTIONS}
+            />
+            {stampVariant === 'question' ? (
+              <ColorSwatchRow
+                colors={ANNOTATION_STAMP_QUESTION_SWATCHES}
+                current={stampQuestionColor}
+                onPick={setStampQuestionColor}
+                idPrefix="stamp-question"
+                label="Question color"
+              />
+            ) : null}
           </div>
         </PopoverContent>
       </Popover>
@@ -492,25 +742,73 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
             size="icon"
             aria-expanded={textOpen}
             aria-haspopup="dialog"
-            aria-label="Text annotation"
-            title="Text"
-            className={cn(
-              'h-9 w-9 shrink-0 rounded-full border border-white/14 bg-black/50 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/65',
-              (textOpen || textActive) && 'ring-2 ring-amber-400/55',
-            )}
+            aria-label={textVisualStyle === 'filled' ? 'Text with background' : 'Plain text'}
+            title={`Text – ${textVisualStyle === 'filled' ? 'with background' : 'plain'} (${SC.text})`}
+            className={cn(toolBtnClass, (textOpen || textActive) && toolBtnActiveClass)}
           >
-            <Type className="h-4 w-4" strokeWidth={2} />
+            {textVisualStyle === 'filled' ? (
+              <span className="relative inline-flex h-[18px] w-[18px] items-center justify-center">
+                <TextWithBackgroundIcon />
+                <span
+                  className="pointer-events-none absolute -bottom-px -right-px h-2 w-2 rounded-full shadow-sm"
+                  style={{ backgroundColor: textColor }}
+                  aria-hidden
+                />
+              </span>
+            ) : (
+              <ToolbarIcon icon={Type} colorDot={textColor} />
+            )}
           </Button>
         </PopoverTrigger>
         <PopoverContent side={layout === 'vertical' ? 'left' : 'top'} align="center" className={popoverContentClass}>
-          <div className="space-y-4">
-            <p className="text-[0.7rem] leading-snug text-[#a89888]">Tap the page to place a text box. Pen color and size apply.</p>
-            <ColorSwatchRow colors={ANNOTATION_PEN_SWATCHES} current={penColor} onPick={setPenColor} idPrefix="text" />
-            <ThicknessRow
+          <div className={popoverStackClass}>
+            <PopoverIconSegmentRow
+              label="Style"
+              labelHidden
+              value={textVisualStyle}
+              onChange={(v) => {
+                if (v === 'plain' || v === 'filled') setTextVisualStyle(v)
+              }}
+              idPrefix="text-style"
+              options={[
+                {
+                  value: 'plain',
+                  ariaLabel: 'Plain text',
+                  icon: <Type className={iconCls} strokeWidth={1.75} aria-hidden />,
+                },
+                {
+                  value: 'filled',
+                  ariaLabel: 'Text with background',
+                  icon: <TextWithBackgroundIcon />,
+                },
+              ]}
+            />
+            <PopoverHint>
+              Tap the page to place one text box. Plain is text only; Background adds a fill per line. Enter for a new
+              line, Ctrl+A to select all, Escape or click away when done.
+            </PopoverHint>
+            <ColorSwatchRow
+              colors={ANNOTATION_TEXT_STROKE_SWATCHES}
+              current={textColor}
+              onPick={setTextColor}
+              idPrefix="text"
+              label="Text color"
+            />
+            {textVisualStyle === 'filled' ? (
+              <ColorSwatchRow
+                colors={ANNOTATION_TEXT_FILL_SWATCHES}
+                current={textFillColor}
+                onPick={setTextFillColor}
+                idPrefix="text-fill"
+                label="Background"
+              />
+            ) : null}
+            <ThicknessSliderRow
               value={penThicknessStep}
               onChange={setPenThicknessStep}
               idPrefix="text"
-              dotScale="pen"
+              previewDots={ANNOTATION_PEN_THICKNESS_PREVIEW_DOTS}
+              ariaLabel="Text size"
             />
           </div>
         </PopoverContent>
@@ -534,22 +832,28 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
             aria-expanded={stickyOpen}
             aria-haspopup="dialog"
             aria-label="Sticky note"
-            title="Sticky note"
-            className={cn(
-              'h-9 w-9 shrink-0 rounded-full border border-white/14 bg-black/50 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/65',
-              (stickyOpen || stickyActive) && 'ring-2 ring-amber-400/55',
-            )}
+            title={`Sticky note (${SC.sticky})`}
+            className={cn(toolBtnClass, (stickyOpen || stickyActive) && toolBtnActiveClass)}
           >
-            <MessageSquare className="h-4 w-4" strokeWidth={2} />
+            <ToolbarIcon icon={StickyNote} colorDot={stickyFillColor} />
           </Button>
         </PopoverTrigger>
         <PopoverContent side={layout === 'vertical' ? 'left' : 'top'} align="center" className={popoverContentClass}>
-          <div className="space-y-4">
-            <p className="text-[0.7rem] leading-snug text-[#a89888]">Tap the page to place a note. Highlighter settings set note text size.</p>
-            <ThicknessRow
+          <div className={popoverStackClass}>
+            <PopoverHint>Tap the page to place a note. Highlighter settings set note text size.</PopoverHint>
+            <ColorSwatchRow
+              colors={ANNOTATION_STICKY_FILL_SWATCHES}
+              current={stickyFillColor}
+              onPick={setStickyFillColor}
+              idPrefix="sticky"
+              label="Note color"
+            />
+            <ThicknessSliderRow
               value={markerThicknessStep}
               onChange={setMarkerThicknessStep}
               idPrefix="sticky"
+              previewDots={ANNOTATION_DEFAULT_THICKNESS_PREVIEW_DOTS}
+              ariaLabel="Note text size"
             />
           </div>
         </PopoverContent>
@@ -561,18 +865,87 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
         size="icon"
         aria-pressed={calloutActive}
         aria-label="Numbered callout"
-        title="Numbered callout"
+        title={`Numbered callout (${SC.callout})`}
         onClick={() => {
           closeAllPopovers()
           setAnnotationMode('callout')
         }}
-        className={cn(
-          'h-9 w-9 shrink-0 rounded-full border border-white/14 bg-black/50 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/65',
-          calloutActive && 'ring-2 ring-amber-400/55',
-        )}
+        className={cn(toolBtnClass, calloutActive && toolBtnActiveClass)}
       >
-        <Circle className="h-4 w-4" strokeWidth={2} />
+        <ToolbarIcon icon={Circle} colorDot={shapeStrokeSwatch.color} />
       </Button>
+
+      <Popover
+        open={eraserOpen}
+        onOpenChange={(o) => {
+          setEraserOpen(o)
+          if (o) {
+            closeAllExcept('eraser')
+            if (annotationMode !== 'eraser' && annotationMode !== 'eraser-line') {
+              setAnnotationMode('eraser-line')
+            }
+          }
+        }}
+      >
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            aria-expanded={eraserOpen}
+            aria-haspopup="dialog"
+            aria-label={`Eraser: ${eraserModeLabel}`}
+            title={`${eraserModeLabel} (${SC.eraserStroke}, press ${SC.eraserRub} for rub)`}
+            className={cn(toolBtnClass, (eraserOpen || eraserActive) && toolBtnActiveClass)}
+          >
+            {eraserSubMode === 'rubber' ? <PenEraserIcon /> : <ToolbarIcon icon={Eraser} />}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent
+          side={layout === 'vertical' ? 'left' : 'top'}
+          align="center"
+          className={eraserSubMode === 'line' ? eraserPopoverCompactClass : popoverContentClass}
+        >
+          <div className={eraserSubMode === 'line' ? 'space-y-0' : popoverStackClass}>
+            <PopoverIconSegmentRow
+              label="Mode"
+              labelHidden
+              value={eraserSubMode === 'line' ? 'line' : 'rubber'}
+              onChange={(v) => {
+                if (v === 'line') {
+                  setEraserSubMode('line')
+                  setAnnotationMode('eraser-line')
+                } else {
+                  setEraserSubMode('rubber')
+                  setAnnotationMode('eraser')
+                }
+              }}
+              idPrefix="eraser-mode"
+              options={[
+                {
+                  value: 'rubber',
+                  ariaLabel: 'Rub eraser',
+                  icon: <PenEraserIcon />,
+                },
+                {
+                  value: 'line',
+                  ariaLabel: 'Stroke eraser',
+                  icon: <Eraser className={iconCls} strokeWidth={1.75} aria-hidden />,
+                },
+              ]}
+            />
+            {eraserSubMode === 'rubber' ? (
+              <ThicknessSliderRow
+                value={eraserPixelThicknessStep}
+                onChange={setEraserPixelThicknessStep}
+                idPrefix="eraser-pixel"
+                previewDots={ANNOTATION_DEFAULT_THICKNESS_PREVIEW_DOTS}
+                ariaLabel="Eraser thickness"
+              />
+            ) : null}
+          </div>
+        </PopoverContent>
+      </Popover>
 
       <Button
         type="button"
@@ -580,17 +953,14 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
         size="icon"
         aria-pressed={laserActive}
         aria-label="Laser pointer"
-        title="Laser pointer"
+        title={`Laser pointer (${SC.laser})`}
         onClick={() => {
           closeAllPopovers()
           setAnnotationMode('laser')
         }}
-        className={cn(
-          'h-9 w-9 shrink-0 rounded-full border border-white/14 bg-black/50 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/65',
-          laserActive && 'ring-2 ring-rose-400/55',
-        )}
+        className={cn(toolBtnClass, laserActive && 'ring-2 ring-rose-400/55')}
       >
-        <MousePointer2 className="h-4 w-4" strokeWidth={2} />
+        <ToolbarIcon icon={MousePointer2} />
       </Button>
     </div>
   )

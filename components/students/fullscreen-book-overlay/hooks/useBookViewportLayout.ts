@@ -42,12 +42,15 @@ export function useBookViewportLayout({
       const useSinglePageMode = false
       setIsSinglePageMode(useSinglePageMode)
 
-      const safeHeight = bounds.height * 0.985
+      const safeHeight = bounds.height * 0.996
       const minWidth = useSinglePageMode ? 420 : 1
-      const baseKey = `${selectedBookId ?? ''}|${selectedUnitId ?? ''}|${useSinglePageMode ? '1' : '0'}|${pageAspectRatio.toFixed(4)}`
+      // Do not key on `pageAspectRatio`: primed from PDF before first paint (B3); target width still
+      // updates on every sync when aspect refines, while `spreadPageWidth` resets on book/unit/mode
+      // and when lesson notebook opens or closes (viewport width step changes).
+      const baseKey = `${selectedBookId ?? ''}|${selectedUnitId ?? ''}|${useSinglePageMode ? '1' : '0'}|lp:${isLessonPaperOpen ? 1 : 0}`
 
       if (useSinglePageMode) {
-        const widthFitSingle = bounds.width * 0.985
+        const widthFitSingle = bounds.width * 0.996
         const heightFitSingle = safeHeight * pageAspectRatio
         const finalSingleWidth = Math.min(widthFitSingle, heightFitSingle)
         const nextWidth = Math.floor(Math.max(minWidth, finalSingleWidth))
@@ -60,7 +63,7 @@ export function useBookViewportLayout({
       }
 
       const perPageWidthForSpread = bounds.width / 2
-      const widthFitSpread = perPageWidthForSpread * 0.995
+      const widthFitSpread = perPageWidthForSpread
       const heightFitSpread = safeHeight * pageAspectRatio
       const finalSpreadWidth = Math.min(widthFitSpread, heightFitSpread)
       const nextWidth = Math.floor(Math.max(minWidth, finalSpreadWidth))

@@ -7,7 +7,7 @@ import type {
   StudentRecord,
 } from './types'
 import { removeAnnotationsForStudent } from './books/annotation-storage'
-import { removeAllPageNotesForStudent } from './books/page-notes-storage'
+import { removeStudentAnnotationToolPrefs } from './books/student-annotation-tool-prefs'
 import { normalizeStudentKey } from './students/identity'
 import { clearMapViewportSession } from './students/map-viewport-session'
 import { normalizeQuizQuestions } from './quiz-difficulty'
@@ -18,6 +18,25 @@ const ANIMATION_SETTINGS_KEY = 'esl_animation_settings'
 const STUDENT_PROGRESS_KEY = 'esl_student_progress'
 const STUDENTS_KEY = 'esl_students'
 const DEFAULT_CHALLENGE_QUESTION_COUNT = 6
+
+/** Removed feature: `esl_book_page_notes_v1` — strip one student when deleting accounts. */
+function removeLegacyBookPageNotesForStudent(studentId: string): void {
+  if (typeof window === 'undefined') return
+  const key = 'esl_book_page_notes_v1'
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== 'object') return
+    const root = parsed as Record<string, unknown>
+    if (!(studentId in root)) return
+    const next = { ...root }
+    delete next[studentId]
+    localStorage.setItem(key, JSON.stringify(next))
+  } catch {
+    /* ignore */
+  }
+}
 
 function normalizeChallengeQuestionCount(rawCount: unknown, questionCount: number): number {
   const fallback = Math.max(1, Math.min(DEFAULT_CHALLENGE_QUESTION_COUNT, questionCount || DEFAULT_CHALLENGE_QUESTION_COUNT))
@@ -199,7 +218,7 @@ export function saveAnimationSettings(settings: AnimationSettings): void {
 
 /**
  * Remove the student record and related browser data (progress, quiz results keyed by name,
- * book annotations, page notes, map viewport session). Does not touch the `student-work` disk folder.
+ * book annotations, legacy page-notes bucket, map viewport session). Does not touch the `student-work` disk folder.
  */
 export function removeStudentFromBrowserStorage(studentId: string): { ok: true; name: string } | { ok: false } {
   if (typeof window === 'undefined') return { ok: false }
@@ -224,7 +243,8 @@ export function removeStudentFromBrowserStorage(studentId: string): { ok: true; 
   }
 
   removeAnnotationsForStudent(studentId)
-  removeAllPageNotesForStudent(studentId)
+  removeStudentAnnotationToolPrefs(studentId)
+  removeLegacyBookPageNotesForStudent(studentId)
   clearMapViewportSession(studentId)
 
   return { ok: true, name: record.name }

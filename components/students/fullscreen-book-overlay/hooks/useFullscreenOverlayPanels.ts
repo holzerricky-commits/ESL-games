@@ -3,17 +3,18 @@ import type { BookLibraryPayload } from '@/lib/books/types'
 import { getUnitReaderBounds } from '@/lib/books/page-range'
 
 interface UseFullscreenOverlayPanelsArgs {
-  animationMs: number
   open: boolean
+  /** When false while `open`, keep exit opacity until reader shell can show real content (B2). */
+  presentationReady: boolean
+  /** When false while `open`, do not fade the overlay in yet (map defers visible open until first paint). */
+  userPresented: boolean
   setIsMounted: (v: boolean) => void
   setIsVisible: (v: boolean) => void
   setIsPageListOpen: (v: boolean) => void
-  setIsNotesOpen: (v: boolean) => void
   setIsWhiteboardOpen: (v: boolean) => void
   isLessonPaperOpen: boolean
   setLessonPaperViewMode: (v: 'left' | 'right' | 'split') => void
   lessonPaperPanRef: MutableRefObject<number>
-  isNotesOpen: boolean
   isWhiteboardOpen: boolean
   isPageListOpen: boolean
   pageNumber: number
@@ -22,22 +23,20 @@ interface UseFullscreenOverlayPanelsArgs {
   library: BookLibraryPayload | null
   selectedBookId: string | null
   selectedUnitId: string | null
-  setNotesPage: Dispatch<SetStateAction<number>>
   setWhiteboardPage: Dispatch<SetStateAction<number>>
 }
 
 export function useFullscreenOverlayPanels({
-  animationMs,
   open,
+  presentationReady,
+  userPresented,
   setIsMounted,
   setIsVisible,
   setIsPageListOpen,
-  setIsNotesOpen,
   setIsWhiteboardOpen,
   isLessonPaperOpen,
   setLessonPaperViewMode,
   lessonPaperPanRef,
-  isNotesOpen,
   isWhiteboardOpen,
   isPageListOpen,
   pageNumber,
@@ -46,7 +45,6 @@ export function useFullscreenOverlayPanels({
   library,
   selectedBookId,
   selectedUnitId,
-  setNotesPage,
   setWhiteboardPage,
 }: UseFullscreenOverlayPanelsArgs) {
   useEffect(() => {
@@ -54,24 +52,27 @@ export function useFullscreenOverlayPanels({
 
     if (open) {
       setIsMounted(true)
-      timeoutId = setTimeout(() => setIsVisible(true), 16)
+      if (presentationReady && userPresented) {
+        timeoutId = setTimeout(() => setIsVisible(true), 16)
+      } else {
+        setIsVisible(false)
+      }
     } else {
       setIsVisible(false)
-      timeoutId = setTimeout(() => setIsMounted(false), animationMs)
+      // B1: keep `isMounted` true after the first open so reader DOM + cached PDF stay warm (no delayed unmount).
     }
 
     return () => {
       if (timeoutId) clearTimeout(timeoutId)
     }
-  }, [animationMs, open, setIsMounted, setIsVisible])
+  }, [open, presentationReady, userPresented, setIsMounted, setIsVisible])
 
   useEffect(() => {
     if (!open) {
       setIsPageListOpen(false)
-      setIsNotesOpen(false)
       setIsWhiteboardOpen(false)
     }
-  }, [open, setIsNotesOpen, setIsPageListOpen, setIsWhiteboardOpen])
+  }, [open, setIsPageListOpen, setIsWhiteboardOpen])
 
   useEffect(() => {
     if (!isLessonPaperOpen) {
@@ -79,33 +80,6 @@ export function useFullscreenOverlayPanels({
       lessonPaperPanRef.current = 0
     }
   }, [isLessonPaperOpen, setLessonPaperViewMode])
-
-  useEffect(() => {
-    if (!isNotesOpen) return
-    if (isSinglePageMode) {
-      setNotesPage(pageNumber)
-      return
-    }
-    if (numPages == null || !library || !selectedBookId || !selectedUnitId) return
-    const book = library.books.find((b) => b.id === selectedBookId)
-    const unit = book?.units.find((u) => u.id === selectedUnitId)
-    if (!unit) return
-    const cap = Math.min(numPages, getUnitReaderBounds(unit, numPages, book ?? undefined).max)
-    setNotesPage((p) => {
-      const right = pageNumber + 1
-      if (p === pageNumber || (right <= cap && p === right)) return p
-      return pageNumber
-    })
-  }, [
-    isNotesOpen,
-    isSinglePageMode,
-    library,
-    numPages,
-    pageNumber,
-    selectedBookId,
-    selectedUnitId,
-    setNotesPage,
-  ])
 
   useEffect(() => {
     if (!isWhiteboardOpen) return
@@ -134,33 +108,4 @@ export function useFullscreenOverlayPanels({
     setWhiteboardPage,
   ])
 
-  useEffect(() => {
-    if (isNotesOpen) setIsWhiteboardOpen(false)
-  }, [isNotesOpen, setIsWhiteboardOpen])
-
-  useEffect(() => {
-    if (isWhiteboardOpen) setIsNotesOpen(false)
-  }, [isWhiteboardOpen, setIsNotesOpen])
-
-  useEffect(() => {
-    if (!open) return
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key !== 'Escape') return
-      if (isNotesOpen) {
-        e.preventDefault()
-        setIsNotesOpen(false)
-        return
-      }
-      if (isWhiteboardOpen) {
-        e.preventDefault()
-        setIsWhiteboardOpen(false)
-        return
-      }
-      if (!isPageListOpen) return
-      e.preventDefault()
-      setIsPageListOpen(false)
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [open, isNotesOpen, isWhiteboardOpen, isPageListOpen, setIsNotesOpen, setIsPageListOpen, setIsWhiteboardOpen])
 }
