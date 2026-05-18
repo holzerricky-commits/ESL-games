@@ -32,6 +32,20 @@ function getContentType(absPath: string): string {
   return 'application/octet-stream'
 }
 
+export function resolveBookFileRequestPath(
+  rawPath: string,
+  cwd?: string,
+  libraryRoot = getBookLibraryRoot(),
+): string | null {
+  const baseCwd = cwd ?? /* turbopackIgnore: true */ process.cwd()
+  const normalizedRelative = rawPath.replaceAll('\\', '/').replace(/^\/+/, '')
+  const absTarget = path.resolve(/* turbopackIgnore: true */ baseCwd, normalizedRelative)
+  const root = path.resolve(/* turbopackIgnore: true */ libraryRoot)
+  const prefix = root.endsWith(path.sep) ? root : `${root}${path.sep}`
+  if (absTarget !== root && !absTarget.startsWith(prefix)) return null
+  return absTarget
+}
+
 function toWebReadableWithAbort(
   req: NextRequest,
   absTarget: string,
@@ -96,10 +110,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Missing path query param.' }, { status: 400 })
   }
 
-  const libraryRoot = getBookLibraryRoot()
-  const normalizedRelative = rawPath.replaceAll('\\', '/').replace(/^\/+/, '')
-  const absTarget = path.resolve(/* turbopackIgnore: true */ process.cwd(), normalizedRelative)
-  if (!absTarget.startsWith(libraryRoot)) {
+  const absTarget = resolveBookFileRequestPath(rawPath)
+  if (!absTarget) {
     return NextResponse.json({ error: 'Path must be inside book-library.' }, { status: 400 })
   }
 

@@ -61,6 +61,9 @@ export async function POST(req: Request) {
     if (!bookId || !unitId || !lessonId || !partId) {
       return NextResponse.json({ ok: false, error: 'bookId, unitId, lessonId, and partId are required.' }, { status: 400 })
     }
+    if (!Array.isArray(body.words)) {
+      return NextResponse.json({ ok: false, error: 'words must be an array.' }, { status: 400 })
+    }
     const words = sanitizeWords(body.words)
     const partTitleRaw = String(body.partTitle ?? '').trim().slice(0, 500)
     const incomingRange = parsePageRange(body.sourcePageRange)
