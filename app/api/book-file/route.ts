@@ -2,7 +2,6 @@ import path from 'node:path'
 import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { NextRequest, NextResponse } from 'next/server'
-import { isBookLibraryFilePath } from '@/lib/books/manifest-validation'
 import { getBookLibraryRoot } from '@/lib/books/server'
 
 export const runtime = 'nodejs'
@@ -35,12 +34,16 @@ function getContentType(absPath: string): string {
 
 export function resolveBookFileRequestPath(
   rawPath: string,
-  cwd = process.cwd(),
+  cwd?: string,
   libraryRoot = getBookLibraryRoot(),
 ): string | null {
+  const baseCwd = cwd ?? /* turbopackIgnore: true */ process.cwd()
   const normalizedRelative = rawPath.replaceAll('\\', '/').replace(/^\/+/, '')
-  if (!isBookLibraryFilePath(normalizedRelative, cwd, libraryRoot)) return null
-  return path.resolve(/* turbopackIgnore: true */ cwd, normalizedRelative)
+  const absTarget = path.resolve(/* turbopackIgnore: true */ baseCwd, normalizedRelative)
+  const root = path.resolve(libraryRoot)
+  const prefix = root.endsWith(path.sep) ? root : `${root}${path.sep}`
+  if (absTarget !== root && !absTarget.startsWith(prefix)) return null
+  return absTarget
 }
 
 function toWebReadableWithAbort(
