@@ -237,6 +237,7 @@ export function AnnotationRail({
             >
             <BookAnnotationToolbar
               layout="vertical"
+              useContextStrip
               annotationMode={annotationMode}
               setAnnotationMode={setAnnotationMode}
               stampVariant={stampVariant}

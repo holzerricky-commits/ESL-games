@@ -237,6 +237,8 @@ export interface BookAnnotationToolbarProps {
   eyedropperVariant: EyedropperVariant
   setEyedropperVariant: (v: EyedropperVariant) => void
   layout?: 'horizontal' | 'vertical'
+  /** When true, color/thickness live in AnnotationContextStrip beside the rail. */
+  useContextStrip?: boolean
 }
 
 const popoverContentClass =
@@ -303,6 +305,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
     eyedropperVariant,
     setEyedropperVariant,
     layout = 'horizontal',
+    useContextStrip = false,
   } = props
 
   const [shapeToolbarIcon, setShapeToolbarIcon] = useState<ShapeToolbarMode>('rect')
@@ -443,29 +446,49 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
         </PopoverTrigger>
         <PopoverContent side={layout === 'vertical' ? 'left' : 'top'} align="center" className={popoverContentClass}>
           <div className={popoverStackClass}>
-            <PenSwatchRow
-              swatchId={penSwatchId}
-              colorSource={penColorSource}
-              customHex={penCustomHex}
-              onPick={pickPenPresetSwatch}
-              idPrefix="pen"
-              customPickerOpen={penSpectrumOpen}
-              onOpenCustomPicker={openPenSpectrumPicker}
-            />
-            {penSpectrumOpen ? (
+            {!useContextStrip ? (
+              <>
+                <PenSwatchRow
+                  swatchId={penSwatchId}
+                  colorSource={penColorSource}
+                  customHex={penCustomHex}
+                  onPick={pickPenPresetSwatch}
+                  idPrefix="pen"
+                  customPickerOpen={penSpectrumOpen}
+                  onOpenCustomPicker={openPenSpectrumPicker}
+                />
+                {penSpectrumOpen ? (
+                  <SpectrumColorPicker
+                    customHex={penCustomHex}
+                    onPickCustom={pickPenCustomColor}
+                    label="Spectrum"
+                  />
+                ) : null}
+                <ThicknessSliderRow
+                  value={penThicknessStep}
+                  onChange={setPenThicknessStep}
+                  idPrefix="pen"
+                  ariaLabel="Pen thickness"
+                />
+              </>
+            ) : null}
+            <LineDashStyleIconRow value={penLineDashStyle} onChange={setPenLineDashStyle} idPrefix="pen" />
+            {useContextStrip && penSpectrumOpen ? (
               <SpectrumColorPicker
                 customHex={penCustomHex}
                 onPickCustom={pickPenCustomColor}
                 label="Spectrum"
               />
             ) : null}
-            <ThicknessSliderRow
-              value={penThicknessStep}
-              onChange={setPenThicknessStep}
-              idPrefix="pen"
-              ariaLabel="Pen thickness"
-            />
-            <LineDashStyleIconRow value={penLineDashStyle} onChange={setPenLineDashStyle} idPrefix="pen" />
+            {useContextStrip && !penSpectrumOpen ? (
+              <button
+                type="button"
+                className="w-full rounded-md border border-white/14 bg-black/35 px-2 py-1.5 text-[0.7rem] font-medium text-[#f0ebe3] hover:bg-black/50"
+                onClick={openPenSpectrumPicker}
+              >
+                Custom color…
+              </button>
+            ) : null}
           </div>
         </PopoverContent>
       </Popover>
@@ -575,19 +598,23 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
         </PopoverTrigger>
         <PopoverContent side={layout === 'vertical' ? 'left' : 'top'} align="center" className={popoverContentClass}>
           <div className={popoverStackClass}>
-            <ColorSwatchRow
-              colors={ANNOTATION_MARKER_SWATCHES}
-              current={markerColor}
-              onPick={pickMarkerSwatchColor}
-              idPrefix="marker"
-            />
-            <ThicknessSliderRow
-              value={markerThicknessStep}
-              onChange={setMarkerThicknessStep}
-              idPrefix="marker"
-              previewDots={ANNOTATION_DEFAULT_THICKNESS_PREVIEW_DOTS}
-              ariaLabel="Highlighter thickness"
-            />
+            {!useContextStrip ? (
+              <>
+                <ColorSwatchRow
+                  colors={ANNOTATION_MARKER_SWATCHES}
+                  current={markerColor}
+                  onPick={pickMarkerSwatchColor}
+                  idPrefix="marker"
+                />
+                <ThicknessSliderRow
+                  value={markerThicknessStep}
+                  onChange={setMarkerThicknessStep}
+                  idPrefix="marker"
+                  previewDots={ANNOTATION_DEFAULT_THICKNESS_PREVIEW_DOTS}
+                  ariaLabel="Highlighter thickness"
+                />
+              </>
+            ) : null}
             <LineDashStyleIconRow value={markerLineDashStyle} onChange={setMarkerLineDashStyle} idPrefix="marker" />
           </div>
         </PopoverContent>
@@ -631,12 +658,14 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
               idPrefix="shape-kind"
               options={SHAPE_ICON_OPTIONS}
             />
-            <PenSwatchRow
-              swatchId={shapeStrokeSwatchId}
-              onPick={setShapeStrokeSwatchId}
-              idPrefix="shape-stroke"
-              label="Stroke color"
-            />
+            {!useContextStrip ? (
+              <PenSwatchRow
+                swatchId={shapeStrokeSwatchId}
+                onPick={setShapeStrokeSwatchId}
+                idPrefix="shape-stroke"
+                label="Stroke color"
+              />
+            ) : null}
             {(annotationMode === 'rect' || annotationMode === 'ellipse' || annotationMode === 'triangle') ? (
               <ShapeLineStyleIconRow
                 strokeEnabled={shapeStrokeEnabled}
@@ -934,7 +963,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                 },
               ]}
             />
-            {eraserSubMode === 'rubber' ? (
+            {eraserSubMode === 'rubber' && !useContextStrip ? (
               <ThicknessSliderRow
                 value={eraserPixelThicknessStep}
                 onChange={setEraserPixelThicknessStep}

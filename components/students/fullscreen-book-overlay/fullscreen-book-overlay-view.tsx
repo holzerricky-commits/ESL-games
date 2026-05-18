@@ -10,6 +10,7 @@ import { PageListRail } from './sections/PageListRail'
 import { AnnotationRail } from './sections/AnnotationRail'
 import { LessonPaperPanel } from './sections/LessonPaperPanel'
 import { BookViewport } from './sections/BookViewport'
+import { AnnotationTopOptionsBar } from '@/components/students/annotation-top-options-bar'
 import { TopOverlayControls } from './sections/TopOverlayControls'
 import { WhiteboardHeader } from './sections/WhiteboardHeader'
 import { BookCanvasStage } from './sections/BookCanvasStage'
@@ -424,6 +425,28 @@ export function FullscreenBookOverlayView({
           annotationTargetPage={annotationTargetPage}
           setWhiteboardPage={setWhiteboardPage}
           interactiveVocabNode={interactiveVocabPack ? <InteractiveVocabReaderShelf pack={interactiveVocabPack} /> : null}
+        />
+
+        <AnnotationTopOptionsBar
+          hasResolvedUnit={hasResolvedUnit}
+          suppressChrome={suppressChrome}
+          chromePanelsOpen={isPageListOpen || isWhiteboardOpen}
+          annotationMode={annotationMode}
+          penSwatchId={penSwatchId}
+          pickPenSwatch={pickPenSwatch}
+          penColorSource={penColorSource}
+          penThicknessStep={penThicknessStep}
+          setPenThicknessStep={setPenThicknessStep}
+          markerColor={markerColor}
+          pickMarkerSwatchColor={pickMarkerSwatchColor}
+          shapeStrokeSwatchId={shapeStrokeSwatchId}
+          setShapeStrokeSwatchId={setShapeStrokeSwatchId}
+          markerThicknessStep={markerThicknessStep}
+          setMarkerThicknessStep={setMarkerThicknessStep}
+          eraserPixelThicknessStep={eraserPixelThicknessStep}
+          setEraserPixelThicknessStep={setEraserPixelThicknessStep}
+          eraserLineThicknessStep={eraserLineThicknessStep}
+          setEraserLineThicknessStep={setEraserLineThicknessStep}
         />
 
         {/* eslint-disable-next-line @next/next/no-img-element -- decorative frame asset from local public folder */}

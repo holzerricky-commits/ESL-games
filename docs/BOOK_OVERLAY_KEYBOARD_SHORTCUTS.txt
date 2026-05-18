@@ -33,6 +33,9 @@ TOOLS (annotation toolbox)
   Drawing follows the selected toolbar tool. Use P, H, and E for pen,
   highlighter, and eraser.
 
+  Pen / highlighter / shape / eraser color and thickness appear in the top
+  options bar under the page controls (experiment).
+
 
 THICKNESS (current tool)
 ------------------------
