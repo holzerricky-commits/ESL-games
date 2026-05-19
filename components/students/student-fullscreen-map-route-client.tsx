@@ -141,6 +141,7 @@ export function StudentFullscreenMapRouteClient({
           studentId={student.id}
           session={activeSession}
           assignedBookIds={student.assignedBookIds ?? []}
+          assignedUnitRefs={student.assignedUnitRefs ?? []}
         />
       ) : null}
       {/*

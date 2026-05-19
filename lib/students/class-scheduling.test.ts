@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
+import { saveUnitPage } from '@/lib/books/progress'
 import { getStudents, saveStudent, saveStudents } from '@/lib/storage'
 import {
   generateScheduledClassesWindow,
@@ -35,6 +36,7 @@ import {
   buildNotebookPageSpanKey,
   upsertStudentClassLessonNotebookSectionTocAnchor,
 } from '@/lib/students/selectors'
+import { buildClassSessionEndBookmark } from '@/lib/students/class-session-bookmark'
 import type { BookLibraryPayload } from '@/lib/books/types'
 import type { StudentClassSession, StudentRecord } from '@/lib/types'
 class LocalStorageMock {
@@ -768,6 +770,39 @@ describe('weekly schedule slots and rolling generation', () => {
     })
   })
 
+  it('buildClassSessionEndBookmark uses the current reader page before the planned page hint', () => {
+    saveUnitPage('book-a', 'unit-1', 40)
+    const session = sessionBase({
+      id: 'class-live',
+      title: 'Live',
+      scheduledFor: '2026-04-25T09:00:00.000Z',
+      status: 'in_progress',
+      selectedSection: {
+        id: 'part:book-a:unit-1:lesson-1:part-story',
+        type: 'part',
+        bookId: 'book-a',
+        bookTitle: 'Test Book',
+        unitId: 'unit-1',
+        unitTitle: 'Unit 1',
+        lessonId: 'lesson-1',
+        lessonTitle: 'Lesson 1',
+        partId: 'part-story',
+        partTitle: 'The River Story',
+        title: 'The River Story',
+        startPageHint: 10,
+        endPageHint: 12,
+      },
+    })
+
+    expect(
+      buildClassSessionEndBookmark({
+        session,
+        assignedBookIds: ['book-a'],
+        assignedUnitRefs: [{ bookId: 'book-a', unitId: 'unit-1' }],
+      }),
+    ).toEqual({ bookId: 'book-a', unitId: 'unit-1', pdfPage: 40 })
+  })
+
   it('endStudentClassSession refuses when not in progress', () => {
     saveStudents([seedStudent()])
     const created = upsertStudentClassSession('student-1', {
@@ -1005,6 +1040,29 @@ describe('weekly schedule slots and rolling generation', () => {
       }),
     ])
     expect(getStudentResumePdfPageForBookUnit('student-1', 'book-a', 'unit-1')).toBe(55)
+  })
+
+  it('getStudentResumePdfPageForBookUnit ignores bookmarks that cannot be tied to the requested unit', () => {
+    const classWithLooseBookmark = sessionBase({
+      id: 'class-loose',
+      title: 'Loose bookmark',
+      scheduledFor: '2026-05-10T10:00:00.000Z',
+      status: 'completed',
+      classEndedAt: '2026-05-10T11:00:00.000Z',
+      bookmarkAtEnd: { bookId: 'book-a', pdfPage: 80 },
+    })
+    saveStudents([
+      seedStudent({
+        assignedBookIds: ['book-a'],
+        assignedUnitRefs: [
+          { bookId: 'book-a', unitId: 'unit-1' },
+          { bookId: 'book-a', unitId: 'unit-2' },
+        ],
+        scheduledClasses: [classWithLooseBookmark],
+      }),
+    ])
+
+    expect(getStudentResumePdfPageForBookUnit('student-1', 'book-a', 'unit-2')).toBeNull()
   })
 
   it('getStudentDefaultBookUnitForReader returns first assigned unit ref present in library', () => {
