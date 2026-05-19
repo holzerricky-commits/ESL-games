@@ -1560,7 +1560,7 @@ export function getStudentResumePdfPageForBookUnit(studentId: string, bookId: st
     const bm = s.bookmarkAtEnd
     if (!bm?.bookId?.trim() || bm.bookId.trim() !== bid) continue
     const u = bm.unitId?.trim()
-    if (u && u !== uid) continue
+    if (!u || u !== uid) continue
     consider(bm.pdfPage, s.classEndedAt ?? s.updatedAt ?? s.scheduledFor)
   }
   for (const h of student.curriculumHistory ?? []) {

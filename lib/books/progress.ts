@@ -24,6 +24,13 @@ export function getSavedUnitPage(bookId: string, unitId: string): number {
   return Math.max(1, Math.floor(page))
 }
 
+export function getSavedUnitPageIfPresent(bookId: string, unitId: string): number | null {
+  const map = getReaderProgressMap()
+  const page = map[bookId]?.[unitId]?.page
+  if (!Number.isFinite(page)) return null
+  return Math.max(1, Math.floor(page))
+}
+
 export function saveUnitPage(bookId: string, unitId: string, page: number): void {
   const normalized = Number.isFinite(page) ? Math.max(1, Math.floor(page)) : 1
   const map = getReaderProgressMap()
