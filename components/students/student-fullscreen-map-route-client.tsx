@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { LocalStudentDataHydrator } from '@/components/local-student-data-hydrator'
 import { ClassSessionMapTimer } from '@/components/students/class-session-map-timer'
 import { FantasyHUD } from '@/components/students/fantasy-hud'
 import { FullscreenBookOverlay } from '@/components/students/fullscreen-book-overlay'
@@ -10,6 +9,10 @@ import { StudentMapTab } from '@/components/students/tabs/student-map-tab'
 import { ensureReactPdfWorker } from '@/lib/books/ensure-react-pdf-worker'
 import { fetchBooksLibraryCached } from '@/lib/books/fetch-books-library-cached'
 import { warmMapInitialBookSpreadPrefetch } from '@/lib/books/map-initial-book-spread-warmup'
+import {
+  ensureStudentRecordsHydrated,
+  STUDENT_RECORDS_HYDRATED_EVENT,
+} from '@/lib/local-data/student-records-client'
 import { getStudentProfileView } from '@/lib/students/selectors'
 
 interface StudentFullscreenMapRouteClientProps {
@@ -25,6 +28,7 @@ export function StudentFullscreenMapRouteClient({
   activeClassSessionId = null,
 }: StudentFullscreenMapRouteClientProps) {
   const [isHydrated, setIsHydrated] = useState(false)
+  const [recordsReady, setRecordsReady] = useState(false)
   /** Arms PDF + reader work off-screen; map shows loading until first spread is painted. */
   const [bookOpenArmed, setBookOpenArmed] = useState(false)
   /** When true with `bookOpenArmed`, the book shell is visible (locked with first paint). */
@@ -68,6 +72,20 @@ export function StudentFullscreenMapRouteClient({
     setIsHydrated(true)
   }, [])
 
+  /** Fullscreen map is outside AppShell — load student records from disk before lookup (same as Students list). */
+  useEffect(() => {
+    let cancelled = false
+    void ensureStudentRecordsHydrated().then(() => {
+      if (!cancelled) setRecordsReady(true)
+    })
+    const onHydrated = () => setRecordsReady(true)
+    window.addEventListener(STUDENT_RECORDS_HYDRATED_EVENT, onHydrated)
+    return () => {
+      cancelled = true
+      window.removeEventListener(STUDENT_RECORDS_HYDRATED_EVENT, onHydrated)
+    }
+  }, [])
+
   /** Keep the route from scrolling the document; wheel/trackpad and mobile overscroll were revealing the page behind the map. */
   useEffect(() => {
     const html = document.documentElement
@@ -90,7 +108,7 @@ export function StudentFullscreenMapRouteClient({
 
   /** Warm global `/api/books`, pdf.js worker, book frame asset, and likely first-spread bitmaps (A2/A3/B4 + Phase E1c). */
   useEffect(() => {
-    if (!isHydrated) return
+    if (!isHydrated || !recordsReady) return
     const student = getStudentProfileView(studentId)
     if (!student) return
     void fetchBooksLibraryCached()
@@ -104,9 +122,9 @@ export function StudentFullscreenMapRouteClient({
       )
       .catch(() => {})
     void ensureReactPdfWorker().catch(() => {})
-  }, [isHydrated, studentId])
+  }, [isHydrated, recordsReady, studentId])
 
-  if (!isHydrated) {
+  if (!isHydrated || !recordsReady) {
     return (
       <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--surface-2)] p-6">
         <p className="text-sm text-muted-foreground">Loading challenge map...</p>
@@ -137,7 +155,6 @@ export function StudentFullscreenMapRouteClient({
 
   return (
     <div className="fixed inset-0 z-0 overflow-hidden overscroll-none bg-background">
-      <LocalStudentDataHydrator />
       {activeSession?.status === 'in_progress' ? (
         <ClassSessionMapTimer
           studentId={student.id}
