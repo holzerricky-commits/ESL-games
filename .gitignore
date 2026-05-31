@@ -14,6 +14,10 @@ next.user-config.*
 data/vocab-suggestions.json
 data/vocab-suggestions.json.tmp
 
+# Local student/class records (npm run dev on teacher PC)
+data/students/**
+!data/students/README.md
+
 # Common ignores
 node_modules
 .next/

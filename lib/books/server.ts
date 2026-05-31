@@ -1,5 +1,6 @@
 import path from 'node:path'
 import { promises as fs } from 'node:fs'
+import { clampSpreadGutterPullRatio } from '@/lib/books/spread-gutter'
 import type { BookLibraryPayload, BookRecord } from '@/lib/books/types'
 
 /** Runtime cwd; marked so Turbopack does not treat tracing as “whole repo”. */
@@ -76,6 +77,22 @@ function normalizePageAlignmentByFile(
   return Object.keys(out).length ? out : null
 }
 
+function normalizeSpreadGutterByFile(value: unknown): Record<string, number> | null {
+  if (value == null || typeof value !== 'object') return null
+  const out: Record<string, number> = {}
+  for (const [filePath, rawRatio] of Object.entries(value as Record<string, unknown>)) {
+    if (!filePath || typeof filePath !== 'string') continue
+    if (typeof rawRatio !== 'number' || !Number.isFinite(rawRatio)) continue
+    out[filePath] = clampSpreadGutterPullRatio(rawRatio)
+  }
+  return Object.keys(out).length ? out : null
+}
+
+function normalizeSpreadGutterPullRatio(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null
+  return clampSpreadGutterPullRatio(value)
+}
+
 async function fileExists(absPath: string): Promise<boolean> {
   try {
     await fs.access(absPath)
@@ -93,11 +110,15 @@ async function loadManifestIfPresent(): Promise<BookLibraryPayload | null> {
   const books = Array.isArray(parsed.books) ? parsed.books : []
   const migrated: BookRecord[] = books.map((book, bi) => {
     const pageAlignmentByFile = normalizePageAlignmentByFile(book?.pageAlignmentByFile)
+    const spreadGutterPullRatio = normalizeSpreadGutterPullRatio(book?.spreadGutterPullRatio)
+    const spreadGutterByFile = normalizeSpreadGutterByFile(book?.spreadGutterByFile)
     return {
     id: typeof book?.id === 'string' && book.id ? book.id : `book-${bi + 1}`,
     title: typeof book?.title === 'string' && book.title ? book.title : `Book ${bi + 1}`,
     ...(typeof book?.description === 'string' ? { description: book.description } : {}),
     ...(pageAlignmentByFile ? { pageAlignmentByFile } : {}),
+    ...(spreadGutterPullRatio != null ? { spreadGutterPullRatio } : {}),
+    ...(spreadGutterByFile ? { spreadGutterByFile } : {}),
     units: Array.isArray(book?.units)
       ? book.units.map((unit, ui) => ({
           id: typeof unit?.id === 'string' && unit.id ? unit.id : `unit-${ui + 1}`,

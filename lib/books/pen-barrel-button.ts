@@ -135,7 +135,7 @@ export function resetPenBarrelButtonTrackerForTests(): void {
 }
 
 export function modesSupportingPenBarrelEraser(mode: BookAnnotationInteractionMode): boolean {
-  return mode === 'pen' || mode === 'marker' || mode === 'laser'
+  return mode === 'pen' || mode === 'marker'
 }
 
 /** Pen tip is touching the surface (incl. Samsung `buttons === 32` encoding). */
@@ -165,11 +165,14 @@ export function isAnnotationPointerDownAccepted(e: PenPointerSample): boolean {
     if (e.button === PEN_POINTER_ERASER_BUTTON) return true
     return isPenTipContactActive(e) && e.button === 0
   }
+  if (e.pointerType === 'touch') {
+    return e.button === 0
+  }
   return e.button === 0
 }
 
 /**
- * Stroke tool for this pointer sample. When the pen barrel is held over pen/marker/laser,
+ * Stroke tool for this pointer sample. When the pen barrel is held over pen/marker,
  * temporarily use stroke eraser (`eraser-line`) without changing toolbar mode.
  */
 export function effectiveStrokeToolForPointer(

@@ -1,6 +1,5 @@
-import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from 'react'
+import { useEffect, type MutableRefObject } from 'react'
 import type { BookLibraryPayload } from '@/lib/books/types'
-import { getUnitReaderBounds } from '@/lib/books/page-range'
 
 interface UseFullscreenOverlayPanelsArgs {
   open: boolean
@@ -23,7 +22,6 @@ interface UseFullscreenOverlayPanelsArgs {
   library: BookLibraryPayload | null
   selectedBookId: string | null
   selectedUnitId: string | null
-  setWhiteboardPage: Dispatch<SetStateAction<number>>
 }
 
 export function useFullscreenOverlayPanels({
@@ -45,7 +43,6 @@ export function useFullscreenOverlayPanels({
   library,
   selectedBookId,
   selectedUnitId,
-  setWhiteboardPage,
 }: UseFullscreenOverlayPanelsArgs) {
   useEffect(() => {
     let timeoutId: ReturnType<typeof setTimeout> | null = null
@@ -80,32 +77,5 @@ export function useFullscreenOverlayPanels({
       lessonPaperPanRef.current = 0
     }
   }, [isLessonPaperOpen, setLessonPaperViewMode])
-
-  useEffect(() => {
-    if (!isWhiteboardOpen) return
-    if (isSinglePageMode) {
-      setWhiteboardPage(pageNumber)
-      return
-    }
-    if (numPages == null || !library || !selectedBookId || !selectedUnitId) return
-    const book = library.books.find((b) => b.id === selectedBookId)
-    const unit = book?.units.find((u) => u.id === selectedUnitId)
-    if (!unit) return
-    const cap = Math.min(numPages, getUnitReaderBounds(unit, numPages, book ?? undefined).max)
-    setWhiteboardPage((p) => {
-      const right = pageNumber + 1
-      if (p === pageNumber || (right <= cap && p === right)) return p
-      return pageNumber
-    })
-  }, [
-    isSinglePageMode,
-    isWhiteboardOpen,
-    library,
-    numPages,
-    pageNumber,
-    selectedBookId,
-    selectedUnitId,
-    setWhiteboardPage,
-  ])
 
 }

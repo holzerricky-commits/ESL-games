@@ -1,6 +1,9 @@
+import 'server-only'
+
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { resolveGeminiApiKeyFromEnv } from '@/lib/gemini-api-key'
 import { getVocabSuggestions } from '@/lib/helpers'
 import {
   getSuggestionFetchCount,
@@ -188,7 +191,7 @@ let resolvedApiKey: string | null | undefined
 export async function resolveGeminiApiKey(): Promise<string | null> {
   if (resolvedApiKey !== undefined) return resolvedApiKey
 
-  const fromEnv = process.env.GEMINI_API_KEY?.trim()
+  const fromEnv = await resolveGeminiApiKeyFromEnv()
   if (fromEnv) {
     resolvedApiKey = fromEnv
     return resolvedApiKey
@@ -1601,4 +1604,137 @@ notes: ${entry.notes || '(none)'}`,
     wordsToRevisit: [],
     summary: 'Run a review-heavy class and keep students producing target vocabulary in context.',
   }
+}
+
+const TRANSLATE_EN_ZH_SYSTEM = `You translate English into Simplified Chinese for Chinese children learning ESL (ages 8-14).
+
+Rules:
+- Use clear, classroom-friendly Simplified Chinese (简体中文), not Traditional.
+- Provide Hanyu Pinyin with tone marks for the Chinese text.
+- Prefer the most common classroom meaning of the English word or phrase.
+- If the input is empty, gibberish, or not translatable, return {"chinese":"","pinyin":"","exampleEn":"","exampleZh":"","alternatives":[]}.
+- For single words or short phrases that may have multiple common meanings, include 1-3 short alternatives in "alternatives".
+- Keep alternatives concise and classroom-safe. Do not include long explanations.
+- Provide one very short primary example pair as "exampleEn" and "exampleZh".
+- Each alternative should include one very short English example and its Chinese translation.
+- Add a short part-of-speech label for each alternative (e.g. "noun", "verb", "adj", "adv", "phrase").
+- Never repeat the primary translation in alternatives.
+- If optional context is provided, use it to choose and rank meanings so the primary meaning best matches that context.
+
+Return ONLY valid JSON in this exact shape (no extra keys):
+{"chinese":"...","pinyin":"...","exampleEn":"...","exampleZh":"...","alternatives":[{"chinese":"...","pinyin":"...","partOfSpeech":"...","exampleEn":"...","exampleZh":"..."}]}`
+
+export type EnglishToChineseTranslation = {
+  chinese: string
+  pinyin: string
+  exampleEn: string
+  exampleZh: string
+  alternatives: Array<{
+    chinese: string
+    pinyin: string
+    partOfSpeech: string
+    exampleEn: string
+    exampleZh: string
+  }>
+}
+
+function parseEnZhTranslation(text: string): EnglishToChineseTranslation | null {
+  const clean = text.trim()
+  let jsonText = clean
+  if (clean.startsWith('```')) {
+    jsonText = clean.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')
+  }
+  try {
+    const parsed = JSON.parse(jsonText) as {
+      chinese?: unknown
+      pinyin?: unknown
+      exampleEn?: unknown
+      exampleZh?: unknown
+      alternatives?: unknown
+    }
+    const chinese = typeof parsed.chinese === 'string' ? parsed.chinese.trim() : ''
+    const pinyin = typeof parsed.pinyin === 'string' ? parsed.pinyin.trim() : ''
+    const exampleEn = typeof parsed.exampleEn === 'string' ? parsed.exampleEn.trim() : ''
+    const exampleZh = typeof parsed.exampleZh === 'string' ? parsed.exampleZh.trim() : ''
+    const rawAlternatives = Array.isArray(parsed.alternatives) ? parsed.alternatives : []
+    const alternatives = rawAlternatives
+      .map((item) => {
+        if (!item || typeof item !== 'object') return null
+        const value = item as {
+          chinese?: unknown
+          pinyin?: unknown
+          partOfSpeech?: unknown
+          exampleEn?: unknown
+          exampleZh?: unknown
+        }
+        const altChinese = typeof value.chinese === 'string' ? value.chinese.trim() : ''
+        const altPinyin = typeof value.pinyin === 'string' ? value.pinyin.trim() : ''
+        const partOfSpeech = typeof value.partOfSpeech === 'string' ? value.partOfSpeech.trim() : ''
+        const exampleEn = typeof value.exampleEn === 'string' ? value.exampleEn.trim() : ''
+        const exampleZh = typeof value.exampleZh === 'string' ? value.exampleZh.trim() : ''
+        if (!altChinese) return null
+        return {
+          chinese: altChinese,
+          pinyin: altPinyin,
+          partOfSpeech: partOfSpeech.toLowerCase().slice(0, 16),
+          exampleEn,
+          exampleZh,
+        }
+      })
+      .filter(
+        (item): item is {
+          chinese: string
+          pinyin: string
+          partOfSpeech: string
+          exampleEn: string
+          exampleZh: string
+        } => item != null,
+      )
+    if (!chinese) return null
+    const uniqueAlternatives: Array<{
+      chinese: string
+      pinyin: string
+      partOfSpeech: string
+      exampleEn: string
+      exampleZh: string
+    }> = []
+    const seen = new Set<string>([`${chinese}::${pinyin}`])
+    for (const alt of alternatives) {
+      const key = `${alt.chinese}::${alt.pinyin}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      uniqueAlternatives.push(alt)
+      if (uniqueAlternatives.length >= 3) break
+    }
+    return { chinese, pinyin, exampleEn, exampleZh, alternatives: uniqueAlternatives }
+  } catch {
+    return null
+  }
+}
+
+/** English → Simplified Chinese + pinyin for the in-lesson translate dock. */
+export async function translateEnglishToChinese(
+  english: string,
+  context?: string | null,
+): Promise<EnglishToChineseTranslation | null> {
+  const trimmed = english.trim().slice(0, 240)
+  if (trimmed.length < 1) return null
+  const trimmedContext = typeof context === 'string' ? context.trim().slice(0, 360) : ''
+
+  const key = await resolveGeminiApiKey()
+  if (!key) return null
+
+  const userText = trimmedContext
+    ? `Translate to Simplified Chinese with pinyin.
+
+Target text:
+${trimmed}
+
+Context (use for sense disambiguation/ranking):
+${trimmedContext}`
+    : `Translate to Simplified Chinese with pinyin:\n${trimmed}`
+  const modelCandidates = await resolveModelCandidates(key)
+  const result = await callGeminiWithFallback(key, userText, modelCandidates, TRANSLATE_EN_ZH_SYSTEM)
+  if (!result.ok) return null
+  return parseEnZhTranslation(result.text)
 }

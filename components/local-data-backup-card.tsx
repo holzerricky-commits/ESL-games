@@ -16,9 +16,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import {
-  applyBackupPayload,
-  buildBackupPayload,
-  downloadBackupJson,
+  applyBackupPayloadAsync,
+  downloadBackupJsonAsync,
   validateBackupPayload,
 } from '@/lib/local-data-backup'
 
@@ -55,7 +54,7 @@ export function LocalDataBackupCard() {
     reader.readAsText(file, 'utf-8')
   }
 
-  const handleConfirmRestore = () => {
+  const handleConfirmRestore = async () => {
     if (!pendingJson) {
       setConfirmOpen(false)
       return
@@ -69,7 +68,7 @@ export function LocalDataBackupCard() {
         setPendingJson(null)
         return
       }
-      const { keysWritten } = applyBackupPayload(payload)
+      const { keysWritten } = await applyBackupPayloadAsync(payload)
       toast.success(`Restored ${keysWritten} storage keys. Reloading…`)
       setConfirmOpen(false)
       setPendingJson(null)
@@ -89,9 +88,10 @@ export function LocalDataBackupCard() {
         <CardHeader>
           <CardTitle>Data backup (Phase 0)</CardTitle>
           <CardDescription>
-            Quizzes, students, results, book notes, and other data live in this browser&apos;s{' '}
-            <code className="text-xs">localStorage</code> under keys starting with{' '}
-            <code className="text-xs">esl_</code>. Export before clearing site data or switching browsers.
+            When you run <code className="text-xs">npm run dev</code> locally, students and class schedules are saved
+            under <code className="text-xs">data/students/</code> on your PC. Other app data still uses browser{' '}
+            <code className="text-xs">localStorage</code> (<code className="text-xs">esl_*</code> keys). Export before
+            clearing site data or switching machines.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-center gap-3">
@@ -100,9 +100,10 @@ export function LocalDataBackupCard() {
             variant="default"
             className="bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-bright)] text-white"
             onClick={() => {
-              const n = Object.keys(buildBackupPayload().localStorage).length
-              downloadBackupJson()
-              toast.success(`Downloaded backup (${n} keys).`)
+              void downloadBackupJsonAsync().then((payload) => {
+                const n = Object.keys(payload.localStorage).length
+                toast.success(`Downloaded backup (${n} keys).`)
+              })
             }}
           >
             <Download className="mr-2 h-4 w-4" />

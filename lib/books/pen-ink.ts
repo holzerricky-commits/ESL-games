@@ -326,9 +326,20 @@ const PROCEDURAL_SWATCH_CSS: Record<ProceduralBrushPatternId, () => CSSPropertie
 }
 
 /** Swatch tile background (matches repeating ink tiles). */
+function isLightSolidInkHex(hex: string): boolean {
+  const h = hex.replace('#', '')
+  if (h.length !== 6) return false
+  const r = parseInt(h.slice(0, 2), 16)
+  const g = parseInt(h.slice(2, 4), 16)
+  const b = parseInt(h.slice(4, 6), 16)
+  return r >= 0xf0 && g >= 0xf0 && b >= 0xf0
+}
+
 export function penSwatchPreviewStyle(inkStyle: PenInkStyle, color: string): CSSProperties {
   if (inkStyle === 'solid') {
-    return { backgroundColor: color }
+    return isLightSolidInkHex(color)
+      ? { backgroundColor: color, boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.22)' }
+      : { backgroundColor: color }
   }
 
   const assetUrl = getBrushPatternUrl(inkStyle)

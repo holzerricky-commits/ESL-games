@@ -35,6 +35,33 @@ export function buildBackupPayload(): LocalDataBackupPayload {
   }
 }
 
+/** Merges disk-backed student records when running locally (`npm run dev`). */
+export async function buildBackupPayloadAsync(): Promise<LocalDataBackupPayload> {
+  const payload = buildBackupPayload()
+  if (typeof window === 'undefined') return payload
+  try {
+    const [studentsRes, progressRes] = await Promise.all([
+      fetch('/api/local-data/students', { cache: 'no-store' }),
+      fetch('/api/local-data/student-progress', { cache: 'no-store' }),
+    ])
+    if (studentsRes.ok) {
+      const data = (await studentsRes.json()) as { students?: unknown[] }
+      if (Array.isArray(data.students)) {
+        payload.localStorage.esl_students = JSON.stringify(data.students)
+      }
+    }
+    if (progressRes.ok) {
+      const data = (await progressRes.json()) as { progress?: Record<string, unknown> }
+      if (data.progress && typeof data.progress === 'object') {
+        payload.localStorage.esl_student_progress = JSON.stringify(data.progress)
+      }
+    }
+  } catch {
+    /* keep browser-only snapshot */
+  }
+  return payload
+}
+
 export function validateBackupPayload(data: unknown): LocalDataBackupPayload | null {
   if (!data || typeof data !== 'object') return null
   const o = data as Record<string, unknown>
@@ -74,6 +101,46 @@ export function applyBackupPayload(payload: LocalDataBackupPayload): { keysWritt
   return { keysWritten }
 }
 
+async function applyDiskStudentRecordsFromBackup(payload: LocalDataBackupPayload): Promise<void> {
+  const studentsRaw = payload.localStorage.esl_students
+  if (studentsRaw) {
+    try {
+      const students = JSON.parse(studentsRaw) as unknown[]
+      if (Array.isArray(students)) {
+        await fetch('/api/local-data/students', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ students }),
+        })
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  const progressRaw = payload.localStorage.esl_student_progress
+  if (progressRaw) {
+    try {
+      const progress = JSON.parse(progressRaw) as Record<string, unknown>
+      if (progress && typeof progress === 'object' && !Array.isArray(progress)) {
+        await fetch('/api/local-data/student-progress', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ progress }),
+        })
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/** Writes backup to browser storage and to on-disk student files when the local API is available. */
+export async function applyBackupPayloadAsync(payload: LocalDataBackupPayload): Promise<{ keysWritten: number }> {
+  const result = applyBackupPayload(payload)
+  await applyDiskStudentRecordsFromBackup(payload)
+  return result
+}
+
 export function downloadBackupJson(filename?: string): void {
   if (typeof window === 'undefined') return
   const payload = buildBackupPayload()
@@ -88,4 +155,23 @@ export function downloadBackupJson(filename?: string): void {
   a.click()
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
+}
+
+export async function downloadBackupJsonAsync(filename?: string): Promise<LocalDataBackupPayload> {
+  if (typeof window === 'undefined') {
+    return buildBackupPayload()
+  }
+  const payload = await buildBackupPayloadAsync()
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  const stamp = payload.exportedAt.slice(0, 19).replace(/[:T]/g, '-')
+  a.href = url
+  a.download = filename ?? `esl-backup-${stamp}.json`
+  a.rel = 'noopener'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+  return payload
 }

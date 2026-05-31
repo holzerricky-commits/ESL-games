@@ -1,3 +1,4 @@
+import { getCachedStudents, isStudentRecordsDiskActive } from '@/lib/local-data/student-records-client'
 import { buildChallengeCatalogForQuizIds } from '@/lib/challenges'
 import { buildPageAlignmentRuntime, resolveEffectiveAnchorToPdfPage } from '@/lib/books/page-alignment-runtime'
 import { mapPdfPageToDisplayLabel, type PageNumberingMode } from '@/lib/books/page-numbering'
@@ -26,6 +27,7 @@ import {
   type MapPathPoint,
   type MapPathSegments,
 } from '@/lib/students/challenge-map-layout'
+import { appendWhiteboardCaptureToNotebookHtml } from '@/lib/books/lesson-notebook-whiteboard-capture-html'
 import { buildSectionPathLabel, getPartPrimaryLabel } from '@/lib/books/part-section-display'
 import { isBookLessonPartTag, resolvePartStructureTag } from '@/lib/books/part-structure-tag'
 import type { BookLibraryPayload, BookRecord, BookUnitRecord } from '@/lib/books/types'
@@ -49,6 +51,13 @@ import type {
 } from '@/lib/types'
 
 const NEXT_CLASS_LIST_PLACEHOLDER = 'No class scheduled.'
+export const STUDENT_LOCAL_DATA_CHANGED_EVENT = 'esl-student-data-changed'
+
+function notifyStudentLocalDataChanged(studentId: string): void {
+  if (typeof window === 'undefined') return
+  if (typeof window.dispatchEvent !== 'function') return
+  window.dispatchEvent(new CustomEvent(STUDENT_LOCAL_DATA_CHANGED_EVENT, { detail: { studentId } }))
+}
 const WEEKLY_SCHEDULE_CONFIG_KEY = 'esl_weekly_schedule_config'
 const WEEKLY_SLOT_ASSIGNMENTS_KEY = 'esl_weekly_slot_assignments'
 const SLOT_MINUTES = 30 as const
@@ -168,7 +177,13 @@ export function ensureStudentAssignmentsMigrated(): void {
         : []
     return { ...s, assignedQuizIds: ids, updatedAt: new Date().toISOString() }
   })
-  if (changed) saveStudents(next)
+  // Avoid persisting a snapshot taken from stale localStorage before disk hydration
+  // (would overwrite on-disk fields such as avatarUrl).
+  if (!changed) return
+  if (typeof window !== 'undefined' && !isStudentRecordsDiskActive() && getCachedStudents() === null) {
+    return
+  }
+  saveStudents(next)
 }
 
 function catalogForStudentRecord(record: StudentRecord | undefined, quizzes: ReturnType<typeof getQuizzes>) {
@@ -845,6 +860,7 @@ export function getStudentsListView(library?: BookLibraryPayload | null): Studen
       id: student.id,
       studentKey,
       name: student.name,
+      avatarUrl: student.avatarUrl,
       levelLabel: estimateLevel(known?.totalQuizzes ?? 0),
       progressLabel,
       coinsLabel: `Coins: ${progress.totalCoins}`,
@@ -1965,11 +1981,67 @@ export function upsertStudentClassSession(
   return { ok: true, session }
 }
 
-/** Marks a class as live teaching: `in_progress` + `classStartedAt`. Blocks if another class is already in progress. */
+/** Ends any other live class for this student so a new one can start (e.g. forgot to tap End on the map). */
+function endOtherInProgressClassSessions(
+  studentId: string,
+  exceptClassId: string,
+): { ok: true } | { ok: false; error: string } {
+  const student = getStudents().find((s) => s.id === studentId)
+  if (!student) return { ok: false, error: 'Student not found.' }
+  const others = (student.scheduledClasses ?? []).filter(
+    (session) => session.id !== exceptClassId && session.status === 'in_progress',
+  )
+  for (const session of others) {
+    const ended = endStudentClassSession(studentId, session.id)
+    if (!ended.ok) return ended
+  }
+  return { ok: true }
+}
+
+/** Creates a lesson notebook on in-progress classes that predate notebook storage. */
+export function ensureStudentClassLessonNotebookSession(
+  studentId: string,
+  classId: string,
+): { ok: true } | { ok: false; error: string } {
+  const students = getStudents()
+  const idx = students.findIndex((s) => s.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  const sessions = student.scheduledClasses ?? []
+  const target = sessions.find((s) => s.id === classId)
+  if (!target) return { ok: false, error: 'Class session not found.' }
+  if (target.status !== 'in_progress') {
+    return { ok: false, error: 'Notebook is only available during a live class.' }
+  }
+  if (target.lessonNotebookSession?.sections?.length) {
+    return { ok: true }
+  }
+  const nowIso = new Date().toISOString()
+  const nextSessions = sessions.map((session) =>
+    session.id === classId
+      ? {
+          ...session,
+          lessonNotebookSession: createInitialLessonNotebookSession(student, session),
+          updatedAt: nowIso,
+        }
+      : session,
+  )
+  saveStudent({
+    ...student,
+    scheduledClasses: nextSessions,
+    updatedAt: nowIso,
+  })
+  return { ok: true }
+}
+
+/** Marks a class as live teaching: `in_progress` + `classStartedAt`. */
 export function startStudentClassSession(
   studentId: string,
   classId: string,
 ): { ok: true } | { ok: false; error: string } {
+  const endedOthers = endOtherInProgressClassSessions(studentId, classId)
+  if (!endedOthers.ok) return endedOthers
+
   const students = getStudents()
   const idx = students.findIndex((s) => s.id === studentId)
   if (idx < 0) return { ok: false, error: 'Student not found.' }
@@ -1981,11 +2053,7 @@ export function startStudentClassSession(
     return { ok: false, error: 'This class cannot be started.' }
   }
   if (target.status === 'in_progress') {
-    return { ok: true }
-  }
-  const otherInProgress = sessions.some((s) => s.id !== classId && s.status === 'in_progress')
-  if (otherInProgress) {
-    return { ok: false, error: 'Another class is already in progress. End that class first.' }
+    return ensureStudentClassLessonNotebookSession(studentId, classId)
   }
   const nowIso = new Date().toISOString()
   const nextSessions = sessions.map((session) =>
@@ -2007,6 +2075,7 @@ export function startStudentClassSession(
     scheduledClasses: sortClassesByDate(sanitized),
     updatedAt: nowIso,
   })
+  notifyStudentLocalDataChanged(studentId)
   return { ok: true }
 }
 
@@ -2093,6 +2162,7 @@ export function endStudentClassSession(
     curriculumHistory: nextCurriculumHistory,
     updatedAt: nowIso,
   })
+  notifyStudentLocalDataChanged(studentId)
   return { ok: true }
 }
 
@@ -2377,6 +2447,196 @@ export function upsertStudentClassLessonNotebookDoc(
     }
   }
   return { ok: true, docUpdatedAt: nowIso }
+}
+
+export function appendStudentClassLessonNotebookWhiteboardCapture(
+  studentId: string,
+  classId: string,
+  input: {
+    sectionId?: string
+    imageSrc: string
+    storagePath?: string
+    caption: string
+    bookId: string
+    unitId?: string
+    pageSpanKey: string
+    whiteboardPage: number
+    tocPartKey?: string
+    lessonPartLabel?: string
+    clientDocUpdatedAt?: string
+    /** Live editor HTML when intent headings are not persisted yet. */
+    baseHtml?: string
+  },
+):
+  | { ok: true; html: string; docUpdatedAt: string }
+  | { ok: false; error: string; conflict?: true; latestHtml?: string; latestUpdatedAt?: string } {
+  const ensured = ensureStudentClassLessonNotebookSession(studentId, classId)
+  if (!ensured.ok) return ensured
+
+  const session = getStudentClassSessionById(studentId, classId)
+  const notebook = session?.lessonNotebookSession
+  if (!notebook?.sections?.length) {
+    return { ok: false, error: 'Lesson notebook is not ready yet for this class.' }
+  }
+
+  const targetSectionId = input.sectionId?.trim() || notebook.sections[0]?.sectionId
+  if (!targetSectionId) return { ok: false, error: 'Notebook section not found.' }
+
+  const section = notebook.sections.find((row) => row.sectionId === targetSectionId)
+  if (!section) return { ok: false, error: 'Notebook section not found.' }
+
+  const richDocEntry = section.entries.find(
+    (entry) => entry.layer === 'doc' && entry.payload?.kind === 'doc_richtext',
+  )
+  const existingHtml =
+    typeof input.baseHtml === 'string' && input.baseHtml.trim()
+      ? input.baseHtml
+      : typeof richDocEntry?.payload?.html === 'string' && richDocEntry.payload.html.trim()
+        ? richDocEntry.payload.html
+        : '<p><br></p>'
+
+  const capturedAtIso = new Date().toISOString()
+  const nextHtml = appendWhiteboardCaptureToNotebookHtml(existingHtml, {
+    imageSrc: input.imageSrc,
+    caption: input.caption,
+    bookId: input.bookId,
+    unitId: input.unitId,
+    sessionKey: classId,
+    pageSpanKey: input.pageSpanKey,
+    whiteboardPage: input.whiteboardPage,
+    tocPartKey: input.tocPartKey,
+    storagePath: input.storagePath,
+    capturedAtIso,
+  })
+
+  const students = getStudents()
+  const idx = students.findIndex((s) => s.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  const nowIso = capturedAtIso
+  let found = false
+  let updated = false
+  const conflictSnapshots: { latestHtml: string; latestUpdatedAt: string }[] = []
+
+  const nextSessions = (student.scheduledClasses ?? []).map((sessionRow) => {
+    if (sessionRow.id !== classId) return sessionRow
+    found = true
+    const nb = sessionRow.lessonNotebookSession
+    if (!nb?.sections?.length) return sessionRow
+
+    const sections = nb.sections.map((sectionRow) => {
+      if (sectionRow.sectionId !== targetSectionId) return sectionRow
+      const existingDocIndex = sectionRow.entries.findIndex(
+        (entry) => entry.layer === 'doc' && entry.payload?.kind === 'doc_richtext',
+      )
+      const captureEntry: LessonNotebookEntry = {
+        entryId: makeNotebookId('lesson-notebook-entry'),
+        sectionId: sectionRow.sectionId,
+        layer: 'doc',
+        payload: {
+          kind: 'whiteboard_capture',
+          createdByTrigger: 'whiteboard_capture',
+          src: input.imageSrc,
+          storagePath: input.storagePath,
+          caption: input.caption,
+          bookId: input.bookId,
+          unitId: input.unitId,
+          pageSpanKey: input.pageSpanKey,
+          whiteboardPage: input.whiteboardPage,
+          tocPartKey: input.tocPartKey,
+          lessonPartLabel: input.lessonPartLabel,
+          capturedAt: capturedAtIso,
+        },
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      }
+
+      if (existingDocIndex >= 0) {
+        const existing = sectionRow.entries[existingDocIndex]
+        const existingUpdatedAt = existing.updatedAt
+        const hasConflict =
+          typeof input.clientDocUpdatedAt === 'string' &&
+          input.clientDocUpdatedAt.trim() &&
+          input.clientDocUpdatedAt !== existingUpdatedAt &&
+          nextHtml !== (typeof existing.payload?.html === 'string' ? existing.payload.html : '')
+        if (hasConflict) {
+          conflictSnapshots.push({
+            latestHtml: typeof existing.payload?.html === 'string' ? existing.payload.html : '',
+            latestUpdatedAt: existingUpdatedAt,
+          })
+          updated = true
+          return {
+            ...sectionRow,
+            entries: [
+              ...sectionRow.entries,
+              {
+                ...captureEntry,
+                payload: {
+                  ...captureEntry.payload,
+                  kind: 'merge_note',
+                  message: 'Whiteboard capture skipped due to notebook save conflict.',
+                },
+              },
+            ],
+          }
+        }
+        const nextEntries = [...sectionRow.entries]
+        nextEntries[existingDocIndex] = {
+          ...existing,
+          payload: { ...existing.payload, kind: 'doc_richtext', html: nextHtml },
+          updatedAt: nowIso,
+        }
+        nextEntries.push(captureEntry)
+        updated = true
+        return { ...sectionRow, entries: nextEntries }
+      }
+
+      updated = true
+      return {
+        ...sectionRow,
+        entries: [
+          ...sectionRow.entries,
+          {
+            entryId: makeNotebookId('lesson-notebook-entry'),
+            sectionId: sectionRow.sectionId,
+            layer: 'doc',
+            payload: { kind: 'doc_richtext', html: nextHtml },
+            createdAt: nowIso,
+            updatedAt: nowIso,
+          },
+          captureEntry,
+        ],
+      }
+    })
+
+    return {
+      ...sessionRow,
+      lessonNotebookSession: { ...nb, sections },
+      updatedAt: nowIso,
+    }
+  })
+
+  if (!found) return { ok: false, error: 'Class session not found.' }
+  if (!updated) return { ok: false, error: 'Lesson notebook is not ready yet for this class.' }
+
+  saveStudent({
+    ...student,
+    scheduledClasses: nextSessions,
+    updatedAt: nowIso,
+  })
+
+  const conflictResult = conflictSnapshots.at(-1)
+  if (conflictResult) {
+    return {
+      ok: false,
+      error: 'Save conflict detected. Refresh the notebook and try again.',
+      conflict: true,
+      latestHtml: conflictResult.latestHtml,
+      latestUpdatedAt: conflictResult.latestUpdatedAt,
+    }
+  }
+
+  return { ok: true, html: nextHtml, docUpdatedAt: nowIso }
 }
 
 export function upsertStudentClassLessonNotebookOverlayImages(

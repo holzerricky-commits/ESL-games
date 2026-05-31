@@ -3,12 +3,12 @@ import type { BookAnnotationInteractionMode } from '@/lib/books/annotation-stora
 import type { EyedropperVariant } from '@/lib/books/eyedropper-variant'
 import { inkFromEyedropperSample } from '@/lib/books/eyedropper-variant'
 import { sampleColorFromCaptureElement } from '@/lib/books/eyedropper-sample'
+import { WHITEBOARD_EYEDROPER_PAGE } from '@/lib/books/whiteboard-storage'
 
 interface UseEyedropperPickArgs {
   pageNumber: number
   spreadRightPage: number | null
   isWhiteboardOpen: boolean
-  whiteboardPage: number
   leftPageCaptureRef: MutableRefObject<HTMLDivElement | null>
   rightPageCaptureRef: MutableRefObject<HTMLDivElement | null>
   wbCaptureRootRef: MutableRefObject<HTMLDivElement | null>
@@ -21,7 +21,6 @@ export function useEyedropperPick({
   pageNumber,
   spreadRightPage,
   isWhiteboardOpen,
-  whiteboardPage,
   leftPageCaptureRef,
   rightPageCaptureRef,
   wbCaptureRootRef,
@@ -37,7 +36,7 @@ export function useEyedropperPick({
       inFlightRef.current = true
       try {
         let captureEl: HTMLElement | null = null
-        if (isWhiteboardOpen && targetPage === whiteboardPage) {
+        if (isWhiteboardOpen && targetPage === WHITEBOARD_EYEDROPER_PAGE) {
           captureEl = wbCaptureRootRef.current
         } else if (targetPage === pageNumber) {
           captureEl = leftPageCaptureRef.current
@@ -65,7 +64,6 @@ export function useEyedropperPick({
       setAnnotationMode,
       spreadRightPage,
       wbCaptureRootRef,
-      whiteboardPage,
     ],
   )
 

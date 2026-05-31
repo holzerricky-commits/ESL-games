@@ -1,25 +1,37 @@
 import { useCallback, useEffect } from 'react'
 import { toast } from 'sonner'
 import {
+  ensureStudentClassLessonNotebookSession,
   getStudentClassSessionById,
   upsertStudentClassLessonNotebookDoc,
-  upsertStudentClassLessonNotebookOverlayImages,
 } from '@/lib/students/selectors'
 
-type OverlayImage = { id: string; src: string; xNorm: number; yNorm: number; widthNorm: number }
+const LESSON_PAPER_EMPTY_HTML = '<p><br></p>'
+
 type LessonPaperSaveState = 'idle' | 'typing' | 'saving' | 'saved' | 'error'
 type LessonPaperHeader = { title: string; dateLabel: string; lessonPartLabel: string; pageLabel: string } | null
+type NotebookSection = NonNullable<
+  NonNullable<ReturnType<typeof getStudentClassSessionById>>['lessonNotebookSession']
+>['sections'][number]
+
+/** Prefer the section that already holds the flowing doc; otherwise the first section. */
+function resolveNotebookDocSection(sections: NotebookSection[]): NotebookSection | null {
+  if (!sections.length) return null
+  const withRichDoc = sections.find((section) =>
+    section.entries.some((entry) => entry.layer === 'doc' && entry.payload?.kind === 'doc_richtext'),
+  )
+  return withRichDoc ?? sections[0] ?? null
+}
 
 interface UseLessonPaperPersistenceArgs {
   studentId: string
   activeClassSessionId: string | null
   isLessonPaperOpen: boolean
   lessonPaperEditVersion: number
-  lessonPaperOverlayImages: OverlayImage[]
+  lessonPaperSectionId: string | null
   lessonPaperPrimarySectionId: string | null
   lessonPaperDraftStorageKey: string | null
   lessonPaperDocUpdatedAt: string | null
-  lessonPaperAutoFollowReadingEnabled: boolean
   lessonPaperEditorRef: React.MutableRefObject<HTMLDivElement | null>
   lessonPaperHtmlRef: React.MutableRefObject<string>
   lessonPaperHasPendingChangesRef: React.MutableRefObject<boolean>
@@ -29,23 +41,65 @@ interface UseLessonPaperPersistenceArgs {
   setLessonPaperSectionId: (v: string | null) => void
   setLessonPaperHeader: (v: LessonPaperHeader) => void
   setLessonPaperBreadcrumb: (v: string) => void
-  setLessonPaperOverlayImages: (v: OverlayImage[]) => void
   setLessonPaperDocUpdatedAt: (v: string | null) => void
   setLessonPaperHtml: (v: string) => void
   setLessonPaperSaveState: (v: LessonPaperSaveState) => void
 }
 
 export function useLessonPaperPersistence(args: UseLessonPaperPersistenceArgs) {
+  const resolveSaveSectionId = useCallback(() => {
+    return args.lessonPaperSectionId?.trim() || args.lessonPaperPrimarySectionId?.trim() || null
+  }, [args.lessonPaperSectionId, args.lessonPaperPrimarySectionId])
+
+  const persistLessonPaper = useCallback(
+    (htmlForSave: string): boolean => {
+      const sectionId = resolveSaveSectionId()
+      if (!args.activeClassSessionId || !sectionId) return false
+
+      args.setLessonPaperSaveState('saving')
+      const docResult = upsertStudentClassLessonNotebookDoc(args.studentId, args.activeClassSessionId, {
+        sectionId,
+        html: htmlForSave,
+        clientDocUpdatedAt: args.lessonPaperDocUpdatedAt ?? undefined,
+      })
+      if (!docResult.ok) {
+        if (docResult.conflict) {
+          if (typeof docResult.latestHtml === 'string' && args.lessonPaperEditorRef.current) {
+            args.lessonPaperEditorRef.current.innerHTML = docResult.latestHtml
+            args.setLessonPaperHtml(docResult.latestHtml)
+            args.lessonPaperHtmlRef.current = docResult.latestHtml
+          }
+          if (typeof docResult.latestUpdatedAt === 'string') {
+            args.setLessonPaperDocUpdatedAt(docResult.latestUpdatedAt)
+          }
+          toast.error('Notebook save conflict detected. Latest saved version was restored.')
+        }
+        args.setLessonPaperSaveState('error')
+        args.lessonPaperHasPendingChangesRef.current = false
+        return false
+      }
+      args.setLessonPaperDocUpdatedAt(docResult.docUpdatedAt)
+      if (args.lessonPaperDraftStorageKey) {
+        try {
+          localStorage.removeItem(args.lessonPaperDraftStorageKey)
+        } catch {
+          // ignore
+        }
+      }
+      args.lessonPaperHasPendingChangesRef.current = false
+      args.setLessonPaperSaveState('saved')
+      return true
+    },
+    [args, resolveSaveSectionId],
+  )
+
   const loadLessonPaperSection = useCallback(
     (session: NonNullable<ReturnType<typeof getStudentClassSessionById>>) => {
       const sections = session.lessonNotebookSession?.sections ?? []
-      const targetSection = sections[0]
+      const targetSection = resolveNotebookDocSection(sections)
       if (!targetSection) return false
       const richDocEntry = targetSection.entries.find(
         (entry) => entry.layer === 'doc' && entry.payload?.kind === 'doc_richtext',
-      )
-      const overlayImagesEntry = targetSection.entries.find(
-        (entry) => entry.layer === 'overlay' && entry.payload?.kind === 'overlay_images',
       )
       const headerEntry = targetSection.entries.find(
         (entry) => entry.layer === 'doc' && entry.payload?.kind === 'header_block',
@@ -81,40 +135,17 @@ export function useLessonPaperPersistence(args: UseLessonPaperPersistenceArgs) {
       })
       args.setLessonPaperBreadcrumb(headerBreadcrumb)
       const docHtml =
-        typeof richDocEntry?.payload?.html === 'string' && richDocEntry.payload.html.trim() ? richDocEntry.payload.html : '<p></p>'
-      const persistedOverlayImages = Array.isArray(overlayImagesEntry?.payload?.images)
-        ? overlayImagesEntry.payload.images
-            .filter(
-              (item): item is OverlayImage =>
-                !!item &&
-                typeof item === 'object' &&
-                typeof (item as { id?: unknown }).id === 'string' &&
-                typeof (item as { src?: unknown }).src === 'string' &&
-                Number.isFinite(Number((item as { xNorm?: unknown }).xNorm)) &&
-                Number.isFinite(Number((item as { yNorm?: unknown }).yNorm)) &&
-                Number.isFinite(Number((item as { widthNorm?: unknown }).widthNorm)),
-            )
-            .map((item) => ({
-              id: item.id,
-              src: item.src,
-              xNorm: Math.max(0, Math.min(0.95, Number(item.xNorm))),
-              yNorm: Math.max(0, Math.min(0.98, Number(item.yNorm))),
-              widthNorm: Math.max(0.08, Math.min(0.9, Number(item.widthNorm))),
-            }))
-        : []
+        typeof richDocEntry?.payload?.html === 'string' && richDocEntry.payload.html.trim()
+          ? richDocEntry.payload.html
+          : LESSON_PAPER_EMPTY_HTML
       const docUpdatedAt = richDocEntry?.updatedAt ?? null
       let hydratedHtml = docHtml
-      let hydratedOverlayImages = persistedOverlayImages
       if (typeof window !== 'undefined' && args.activeClassSessionId) {
         const draftKey = `lesson-paper-draft::${args.studentId}::${args.activeClassSessionId}::${targetSection.sectionId}`
         try {
           const raw = localStorage.getItem(draftKey)
           if (raw) {
-            const parsed = JSON.parse(raw) as {
-              updatedAt?: string
-              html?: string
-              overlayImages?: OverlayImage[]
-            }
+            const parsed = JSON.parse(raw) as { updatedAt?: string; html?: string }
             if (
               typeof parsed.html === 'string' &&
               parsed.html.trim() &&
@@ -122,18 +153,6 @@ export function useLessonPaperPersistence(args: UseLessonPaperPersistenceArgs) {
               (!docUpdatedAt || Date.parse(parsed.updatedAt) >= Date.parse(docUpdatedAt))
             ) {
               hydratedHtml = parsed.html
-              if (Array.isArray(parsed.overlayImages)) {
-                hydratedOverlayImages = parsed.overlayImages
-                  .filter((item) => item && typeof item.id === 'string' && typeof item.src === 'string')
-                  .slice(0, 40)
-                  .map((item) => ({
-                    id: item.id,
-                    src: item.src,
-                    xNorm: Math.max(0, Math.min(0.95, Number(item.xNorm))),
-                    yNorm: Math.max(0, Math.min(0.98, Number(item.yNorm))),
-                    widthNorm: Math.max(0.08, Math.min(0.9, Number(item.widthNorm))),
-                  }))
-              }
             }
           }
         } catch {
@@ -141,7 +160,6 @@ export function useLessonPaperPersistence(args: UseLessonPaperPersistenceArgs) {
         }
       }
       args.setLessonPaperSectionId(targetSection.sectionId)
-      args.setLessonPaperOverlayImages(hydratedOverlayImages)
       args.setLessonPaperDocUpdatedAt(docUpdatedAt)
       args.setLessonPaperHtml(hydratedHtml)
       args.lessonPaperHtmlRef.current = hydratedHtml
@@ -160,13 +178,31 @@ export function useLessonPaperPersistence(args: UseLessonPaperPersistenceArgs) {
       args.setLessonPaperSectionId(null)
       args.setLessonPaperDocUpdatedAt(null)
       args.setLessonPaperHeader(null)
-      args.setLessonPaperHtml('<p></p>')
-      args.lessonPaperHtmlRef.current = '<p></p>'
+      args.setLessonPaperHtml(LESSON_PAPER_EMPTY_HTML)
+      args.lessonPaperHtmlRef.current = LESSON_PAPER_EMPTY_HTML
       args.lessonPaperHasPendingChangesRef.current = false
-      if (args.lessonPaperEditorRef.current) args.lessonPaperEditorRef.current.innerHTML = '<p></p>'
+      if (args.lessonPaperEditorRef.current) args.lessonPaperEditorRef.current.innerHTML = LESSON_PAPER_EMPTY_HTML
       return
     }
-    const session = getStudentClassSessionById(args.studentId, args.activeClassSessionId)
+    let session = getStudentClassSessionById(args.studentId, args.activeClassSessionId)
+    if (!session) {
+      args.lessonPaperClassRef.current = args.activeClassSessionId
+      args.lessonPaperHydratedRef.current = true
+      args.setLessonPaperSectionId(null)
+      args.setLessonPaperDocUpdatedAt(null)
+      args.setLessonPaperHeader(null)
+      args.setLessonPaperHtml(LESSON_PAPER_EMPTY_HTML)
+      args.lessonPaperHtmlRef.current = LESSON_PAPER_EMPTY_HTML
+      args.lessonPaperHasPendingChangesRef.current = false
+      if (args.lessonPaperEditorRef.current) args.lessonPaperEditorRef.current.innerHTML = LESSON_PAPER_EMPTY_HTML
+      return
+    }
+    if (!session.lessonNotebookSession?.sections?.length) {
+      if (session.status === 'in_progress') {
+        ensureStudentClassLessonNotebookSession(args.studentId, args.activeClassSessionId)
+        session = getStudentClassSessionById(args.studentId, args.activeClassSessionId)
+      }
+    }
     if (!session?.lessonNotebookSession?.sections?.length) {
       args.lessonPaperClassRef.current = args.activeClassSessionId
       args.lessonPaperHydratedRef.current = true
@@ -178,7 +214,10 @@ export function useLessonPaperPersistence(args: UseLessonPaperPersistenceArgs) {
         lessonPartLabel: '',
         pageLabel: '',
       })
-      const fallback = '<p>Notebook will appear after class starts.</p>'
+      const fallback =
+        session?.status === 'in_progress'
+          ? LESSON_PAPER_EMPTY_HTML
+          : '<p>Start this class to use the lesson notebook.</p>'
       args.setLessonPaperHtml(fallback)
       args.lessonPaperHtmlRef.current = fallback
       args.lessonPaperHasPendingChangesRef.current = false
@@ -200,58 +239,31 @@ export function useLessonPaperPersistence(args: UseLessonPaperPersistenceArgs) {
 
   useEffect(() => {
     if (!args.isLessonPaperOpen) return
-    if (!args.lessonPaperAutoFollowReadingEnabled) return
-    if (!args.activeClassSessionId || !args.lessonPaperPrimarySectionId) return
+    if (!args.activeClassSessionId || !resolveSaveSectionId()) return
     if (!args.lessonPaperHasPendingChangesRef.current) return
     const htmlForSave = args.lessonPaperEditorRef.current?.innerHTML ?? args.lessonPaperHtmlRef.current
     if (args.lessonPaperSaveTimerRef.current) clearTimeout(args.lessonPaperSaveTimerRef.current)
     args.lessonPaperSaveTimerRef.current = setTimeout(() => {
-      args.setLessonPaperSaveState('saving')
-      const docResult = upsertStudentClassLessonNotebookDoc(args.studentId, args.activeClassSessionId!, {
-        sectionId: args.lessonPaperPrimarySectionId!,
-        html: htmlForSave,
-        clientDocUpdatedAt: args.lessonPaperDocUpdatedAt ?? undefined,
-      })
-      if (!docResult.ok) {
-        if (docResult.conflict) {
-          if (typeof docResult.latestHtml === 'string' && args.lessonPaperEditorRef.current) {
-            args.lessonPaperEditorRef.current.innerHTML = docResult.latestHtml
-            args.setLessonPaperHtml(docResult.latestHtml)
-            args.lessonPaperHtmlRef.current = docResult.latestHtml
-          }
-          if (typeof docResult.latestUpdatedAt === 'string') {
-            args.setLessonPaperDocUpdatedAt(docResult.latestUpdatedAt)
-          }
-          toast.error('Notebook save conflict detected. Latest saved version was restored.')
-        }
-        args.setLessonPaperSaveState('error')
-        args.lessonPaperHasPendingChangesRef.current = false
-        return
-      }
-      args.setLessonPaperDocUpdatedAt(docResult.docUpdatedAt)
-      const overlayResult = upsertStudentClassLessonNotebookOverlayImages(args.studentId, args.activeClassSessionId!, {
-        sectionId: args.lessonPaperPrimarySectionId!,
-        images: args.lessonPaperOverlayImages,
-      })
-      if (!overlayResult.ok) {
-        args.setLessonPaperSaveState('error')
-        args.lessonPaperHasPendingChangesRef.current = false
-        return
-      }
-      if (args.lessonPaperDraftStorageKey) {
-        try {
-          localStorage.removeItem(args.lessonPaperDraftStorageKey)
-        } catch {
-          // ignore
-        }
-      }
-      args.lessonPaperHasPendingChangesRef.current = false
-      args.setLessonPaperSaveState('saved')
+      args.lessonPaperSaveTimerRef.current = null
+      persistLessonPaper(htmlForSave)
     }, 1000)
     return () => {
       if (args.lessonPaperSaveTimerRef.current) clearTimeout(args.lessonPaperSaveTimerRef.current)
     }
-  }, [args])
+  }, [
+    args.isLessonPaperOpen,
+    args.lessonPaperEditVersion,
+    args.activeClassSessionId,
+    args.lessonPaperSectionId,
+    args.lessonPaperPrimarySectionId,
+    args.lessonPaperDocUpdatedAt,
+    persistLessonPaper,
+    resolveSaveSectionId,
+    args.lessonPaperEditorRef,
+    args.lessonPaperHtmlRef,
+    args.lessonPaperHasPendingChangesRef,
+    args.lessonPaperSaveTimerRef,
+  ])
 
   useEffect(() => {
     if (!args.lessonPaperDraftStorageKey) return
@@ -263,7 +275,6 @@ export function useLessonPaperPersistence(args: UseLessonPaperPersistenceArgs) {
           JSON.stringify({
             updatedAt: new Date().toISOString(),
             html: htmlForDraft,
-            overlayImages: args.lessonPaperOverlayImages,
           }),
         )
       } catch {
@@ -271,53 +282,18 @@ export function useLessonPaperPersistence(args: UseLessonPaperPersistenceArgs) {
       }
     }, 1000)
     return () => window.clearTimeout(timer)
-  }, [args.lessonPaperDraftStorageKey, args.lessonPaperEditVersion, args.lessonPaperOverlayImages, args.lessonPaperEditorRef, args.lessonPaperHtmlRef])
+  }, [args.lessonPaperDraftStorageKey, args.lessonPaperEditVersion, args.lessonPaperEditorRef, args.lessonPaperHtmlRef])
 
   const flushLessonPaperSaveNow = useCallback(() => {
-    if (!args.activeClassSessionId || !args.lessonPaperPrimarySectionId) return true
+    if (!args.activeClassSessionId || !resolveSaveSectionId()) return true
+    if (!args.lessonPaperHasPendingChangesRef.current) return true
+    if (args.lessonPaperSaveTimerRef.current) {
+      clearTimeout(args.lessonPaperSaveTimerRef.current)
+      args.lessonPaperSaveTimerRef.current = null
+    }
     const htmlForSave = args.lessonPaperEditorRef.current?.innerHTML ?? args.lessonPaperHtmlRef.current
-    const docResult = upsertStudentClassLessonNotebookDoc(args.studentId, args.activeClassSessionId, {
-      sectionId: args.lessonPaperPrimarySectionId,
-      html: htmlForSave,
-      clientDocUpdatedAt: args.lessonPaperDocUpdatedAt ?? undefined,
-    })
-    if (!docResult.ok) {
-      if (docResult.conflict) {
-        if (typeof docResult.latestHtml === 'string') {
-          args.setLessonPaperHtml(docResult.latestHtml)
-          args.lessonPaperHtmlRef.current = docResult.latestHtml
-          if (args.lessonPaperEditorRef.current) args.lessonPaperEditorRef.current.innerHTML = docResult.latestHtml
-        }
-        if (typeof docResult.latestUpdatedAt === 'string') {
-          args.setLessonPaperDocUpdatedAt(docResult.latestUpdatedAt)
-        }
-        toast.error('Notebook save conflict detected. Latest saved version was restored.')
-      }
-      args.setLessonPaperSaveState('error')
-      args.lessonPaperHasPendingChangesRef.current = false
-      return false
-    }
-    args.setLessonPaperDocUpdatedAt(docResult.docUpdatedAt)
-    const overlayResult = upsertStudentClassLessonNotebookOverlayImages(args.studentId, args.activeClassSessionId, {
-      sectionId: args.lessonPaperPrimarySectionId,
-      images: args.lessonPaperOverlayImages,
-    })
-    if (!overlayResult.ok) {
-      args.setLessonPaperSaveState('error')
-      args.lessonPaperHasPendingChangesRef.current = false
-      return false
-    }
-    if (args.lessonPaperDraftStorageKey) {
-      try {
-        localStorage.removeItem(args.lessonPaperDraftStorageKey)
-      } catch {
-        // ignore
-      }
-    }
-    args.lessonPaperHasPendingChangesRef.current = false
-    args.setLessonPaperSaveState('saved')
-    return true
-  }, [args])
+    return persistLessonPaper(htmlForSave)
+  }, [args, persistLessonPaper, resolveSaveSectionId])
 
   return { flushLessonPaperSaveNow }
 }

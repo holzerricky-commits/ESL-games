@@ -14,7 +14,7 @@ function dist2(ax: number, ay: number, bx: number, by: number): number {
 }
 
 /** Squared distance from point (px,py) to segment (x1,y1)-(x2,y2). */
-function pointToSegDistSq(
+export function pointToSegDistSq(
   px: number,
   py: number,
   x1: number,
@@ -163,7 +163,24 @@ function normPointHitByEraserLine(
   return false
 }
 
-function textCommandBBox(cmd: Extract<AnnotationCommand, { kind: 'text' }>): {
+/** Normalized line height multiplier for text bbox / anchor math. */
+export const TEXT_ANNOTATION_LINE_HEIGHT_RATIO = 1.4
+
+export function textBlockHeightNorm(fontSizeNorm: number, lineCount: number): number {
+  return fontSizeNorm * TEXT_ANNOTATION_LINE_HEIGHT_RATIO * Math.max(1, lineCount)
+}
+
+/** Top `y` when converting a center-anchored single-line box to top anchor (keeps first line fixed). */
+export function textTopYFromCenterAnchor(
+  centerY: number,
+  fontSizeNorm: number,
+  lineCountBeforeMultiline: number,
+): number {
+  const h = textBlockHeightNorm(fontSizeNorm, lineCountBeforeMultiline)
+  return Math.max(0, Math.min(1, centerY - h / 2))
+}
+
+export function textCommandBBox(cmd: Extract<AnnotationCommand, { kind: 'text' }>): {
   x: number
   y: number
   w: number
@@ -176,8 +193,9 @@ function textCommandBBox(cmd: Extract<AnnotationCommand, { kind: 'text' }>): {
     maxW,
     Math.max(0.06, ...lines.map((line) => line.length * cmd.fontSizeNorm * 0.55)),
   )
-  const h = cmd.fontSizeNorm * 1.4 * lineCount
-  return { x: cmd.x, y: cmd.y, w, h }
+  const h = textBlockHeightNorm(cmd.fontSizeNorm, lineCount)
+  const y = cmd.yAnchor === 'center' ? cmd.y - h / 2 : cmd.y
+  return { x: cmd.x, y, w, h }
 }
 
 export function penOrMarkerHitByEraserLine(

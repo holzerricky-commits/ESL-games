@@ -1,22 +1,34 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { X } from 'lucide-react'
 import { InteractiveVocabReaderShelf } from '@/components/books/interactive-vocab-reader-shelf'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { OverlayDialogs } from './sections/OverlayDialogs'
 import { PageListRail } from './sections/PageListRail'
-import { AnnotationRail } from './sections/AnnotationRail'
+import { BookOverlayLeftChrome } from './sections/BookOverlayLeftChrome'
 import { LessonPaperPanel } from './sections/LessonPaperPanel'
-import { BookViewport } from './sections/BookViewport'
+import { BookLessonPaperViewControls, BookPageNavigation } from './sections/BookViewport'
 import { AnnotationTopOptionsBar } from '@/components/students/annotation-top-options-bar'
 import { TopOverlayControls } from './sections/TopOverlayControls'
-import { WhiteboardHeader } from './sections/WhiteboardHeader'
 import { BookCanvasStage } from './sections/BookCanvasStage'
-import { BOOK_OPENED_FRAME_IMAGE_SRC } from './constants'
+import { WhiteboardToolbarLaunchOverlay } from './sections/WhiteboardToolbarLaunchOverlay'
+import { useWhiteboardToolbarLaunch } from './hooks/useWhiteboardToolbarLaunch'
+import { TranslateDock } from './sections/TranslateDock'
+import { VocabNotebookPanel } from './sections/VocabNotebookPanel'
+import {
+  BOOK_OVERLAY_GLASS_CHROME,
+  BOOK_OVERLAY_NOTEBOOK_UI_ENABLED,
+  BOOK_OVERLAY_VIEWPORT_CONTENT_HEIGHT,
+} from './constants'
 import type { FullscreenBookOverlayViewModel } from './hooks/useFullscreenBookOverlayController'
 import { BOOK_OVERLAY_SHORTCUT_LABELS as SC } from '@/lib/books/book-overlay-keyboard-shortcuts'
+import { WritingAssistProvider } from '@/lib/writing-assist/writing-assist-context'
+import { buildLessonVocabulary } from '@/lib/writing-assist/build-lesson-vocabulary'
+import { LessonCoachConnectDialog } from '@/components/lesson-coach/lesson-coach-connect-dialog'
+import { LessonCoachSyncProvider } from '@/lib/lesson-coach/lesson-coach-sync-context'
+import { requestSpreadSessionFlush } from '@/lib/books/spread-session-events'
 
 export function FullscreenBookOverlayView({
   vm,
@@ -25,15 +37,19 @@ export function FullscreenBookOverlayView({
   vm: FullscreenBookOverlayViewModel
   onClose: () => void
 }) {
+  const closeOverlay = () => {
+    requestSpreadSessionFlush()
+    onClose()
+  }
+
   const {
     ANIMATION_MS,
-    BOOK_FRAME_ASPECT_RATIO,
-    BOOK_FRAME_VIEWPORT_INSET_X,
-    BOOK_FRAME_VIEWPORT_INSET_Y,
+    readerViewportAspectRatio,
     PdfPage,
     WHITEBOARD_NOTEBOOK_SURFACE,
     activePageRowRef,
     annotationMode,
+    effectiveAnnotationMode,
     annotationTargetPage,
     applyLessonPaperCommand,
     bookStageRef,
@@ -41,9 +57,6 @@ export function FullscreenBookOverlayView({
     captionDraft,
     captureBusy,
     captureFormat,
-    clearInkOpen,
-    clearInkSpreadPagePair,
-    clearTargetPage,
     commitPageJump,
     copyLastCaptureToClipboard,
     currentNotebookPageSpanKey,
@@ -68,21 +81,25 @@ export function FullscreenBookOverlayView({
     isSinglePageMode,
     isVisible,
     isWhiteboardOpen,
+    isWhiteboardSessionOpen,
+    isWhiteboardMinimized,
+    minimizeWhiteboard,
+    expandWhiteboard,
+    openWhiteboard,
+    registerWhiteboardToolbarLaunch,
+    swapWhiteboardSlotSide,
+    toggleWhiteboardFullscreen,
+    setWhiteboardSlotSide,
+    applyWhiteboardSlotSide,
+    registerWhiteboardSlotMotion,
     userPresented,
     open,
     jpegQuality,
     lessonPaperBreadcrumb,
-    lessonPaperDrawTool,
+    lessonPaperEditVersion,
     lessonPaperEditorRef,
     lessonPaperHeader,
     lessonPaperLastPartContextKeyRef,
-    lessonPaperMode,
-    lessonPaperOverlayDragRef,
-    lessonPaperOverlayHostRef,
-    lessonPaperOverlayImages,
-    lessonPaperOverlayMode,
-    lessonPaperOverlayPageNumber,
-    lessonPaperOverlaySize,
     lessonPaperPanPx,
     lessonPaperScrollRef,
     lessonPaperScrollRunwayPx,
@@ -92,11 +109,23 @@ export function FullscreenBookOverlayView({
     makeUnitFileUrl,
     markerColor,
     markerThicknessStep,
+    shapeThicknessStep,
+    textThicknessStep,
+    stickyThicknessStep,
+    stampThicknessStep,
     numPages,
     numberingMode,
     onDocumentLoadSuccess,
     onLeftAnnotationCaps,
     onLessonPaperInput,
+    handleLessonPaperInputWithHtmlSync,
+    handleStartNotebookNote,
+    handleOpenWhiteboardForCapture,
+    handleOpenTranslateDockForVocab,
+    goToNotebookSourcePage,
+    returnToNotebookCurrentPage,
+    notebookReturnPage,
+    lessonPaperHtml,
     onLessonPaperPaste,
     onFirstSpreadPaintReady,
     onPdfPageLoadSuccess,
@@ -117,16 +146,20 @@ export function FullscreenBookOverlayView({
     pdfTo,
     penSwatchId,
     pickPenSwatch,
+    penStrokeProfile,
+    setPenStrokeProfile,
     penColorSource,
     penCustomHex,
     pickPenCustomColor,
     onEyedropperPick,
     textColor,
     setTextColor,
+    pickTextColor,
     shapeStrokeSwatchId,
-    setShapeStrokeSwatchId,
+    pickShapeStrokeSwatch,
     stickyFillColor,
     setStickyFillColor,
+    pickStickyFillColor,
     penColor,
     penInkStyle,
     penThicknessStep,
@@ -134,6 +167,14 @@ export function FullscreenBookOverlayView({
     setPenLineDashStyle,
     markerLineDashStyle,
     setMarkerLineDashStyle,
+    markerStraightStroke,
+    setMarkerStraightStroke,
+    markerDecoratedEdge,
+    setMarkerDecoratedEdge,
+    penAutoGroupConnected,
+    setPenAutoGroupConnected,
+    marqueeSelectRule,
+    setMarqueeSelectRule,
     shapeLineDashStyle,
     setShapeLineDashStyle,
     shapeStrokeEnabled,
@@ -150,7 +191,6 @@ export function FullscreenBookOverlayView({
     rightPageCaptureRef,
     runImageCapture,
     runPdfPacketExport,
-    scheduleLessonPaperEditorFocus,
     selectedBook,
     selectedBookId,
     selectedUnit,
@@ -159,23 +199,26 @@ export function FullscreenBookOverlayView({
     setCaptureFormat,
     setCaptionDialog,
     setCaptionDraft,
-    setClearInkOpen,
     setEraserLineThicknessStep,
     setEraserPixelThicknessStep,
     setHideChromeForCapture,
     setIsAnnotationRailVisible,
-    setIsLessonPaperOpen,
+    handleSetLessonPaperOpen,
+    lessonPaperSaveState,
+    notebookEditable,
     setIsPageListOpen,
     setIsWhiteboardOpen,
     setJpegQuality,
-    setLessonPaperDrawTool,
-    setLessonPaperMode,
     setLessonPaperViewMode,
     markerColorSource,
     markerCustomHex,
     pickMarkerSwatchColor,
     pickMarkerCustomColor,
     setMarkerThicknessStep,
+    setShapeThicknessStep,
+    setTextThicknessStep,
+    setStickyThicknessStep,
+    setStampThicknessStep,
     setPageJumpDraft,
     setPageJumpFocused,
     setPageListScrollRoot,
@@ -185,15 +228,21 @@ export function FullscreenBookOverlayView({
     setPenThicknessStep,
     setRegionSelectOpen,
     setStampVariant,
+    pickTextFillColor,
     setTextFillColor,
     setTextVisualStyle,
     setWatermarkEnabled,
-    setWhiteboardPage,
+    whiteboardStorageKey,
+    whiteboardLayoutMode,
+    whiteboardSlotSide,
+    whiteboardContentHeightPx,
+    extendWhiteboardRunway,
+    activeClassSessionId,
     shapeColor,
     shapeStrokeWidthScale,
     showSpreadRightPage,
     spreadDisplayScale,
-    spreadGutterOverlayStyle,
+    spreadGutterPullRatio,
     spreadPageWidth,
     spreadStrokeCaptureEnabled,
     spreadStrokeOverlayRef,
@@ -210,6 +259,10 @@ export function FullscreenBookOverlayView({
     eraserLineStrokeWidthScale,
     penStrokeWidthScale,
     strokeLineDashStyleForInk,
+    coachLessonId,
+    coachLessonTitle,
+    coachPartId,
+    coachPartTitle,
     studentId,
     studentName,
     suppressChrome,
@@ -225,8 +278,73 @@ export function FullscreenBookOverlayView({
     rightAnnRef,
     wbAnnRef,
     wbCaptureRootRef,
-    whiteboardPage,
+    translateDockOpen,
+    setTranslateDockOpen,
   } = vm
+
+  const [coachDialogOpen, setCoachDialogOpen] = useState(false)
+  const [coachSessionId, setCoachSessionId] = useState<string | null>(null)
+  const [coachUrl, setCoachUrl] = useState<string | null>(null)
+  const [vocabNotebookOpen, setVocabNotebookOpen] = useState(false)
+  const notebookUiEnabled = BOOK_OVERLAY_NOTEBOOK_UI_ENABLED
+  const lessonPaperLayoutActive = notebookUiEnabled && isLessonPaperOpen
+
+  const whiteboardLaunch = useWhiteboardToolbarLaunch({
+    surfaceStyle: WHITEBOARD_NOTEBOOK_SURFACE,
+  })
+
+  useEffect(() => {
+    registerWhiteboardToolbarLaunch({
+      playEnter: whiteboardLaunch.playEnter,
+      playExit: whiteboardLaunch.playExit,
+    })
+    return () => registerWhiteboardToolbarLaunch(null)
+  }, [
+    registerWhiteboardToolbarLaunch,
+    whiteboardLaunch.playEnter,
+    whiteboardLaunch.playExit,
+  ])
+
+  const handleWhiteboardRailClick = useCallback(() => {
+    if (!isWhiteboardSessionOpen) {
+      whiteboardLaunch.playEnter(openWhiteboard)
+      return
+    }
+    if (isWhiteboardMinimized) {
+      whiteboardLaunch.playEnter(expandWhiteboard)
+      return
+    }
+    whiteboardLaunch.playExit(minimizeWhiteboard)
+  }, [
+    isWhiteboardSessionOpen,
+    isWhiteboardMinimized,
+    openWhiteboard,
+    expandWhiteboard,
+    minimizeWhiteboard,
+    whiteboardLaunch,
+  ])
+
+  const handleMinimizeWhiteboardAnimated = useCallback(() => {
+    if (!isWhiteboardSessionOpen || isWhiteboardMinimized) {
+      minimizeWhiteboard()
+      return
+    }
+    whiteboardLaunch.playExit(minimizeWhiteboard)
+  }, [isWhiteboardMinimized, isWhiteboardSessionOpen, minimizeWhiteboard, whiteboardLaunch])
+
+  const handleExpandWhiteboardAnimated = useCallback(() => {
+    whiteboardLaunch.playEnter(expandWhiteboard)
+  }, [expandWhiteboard, whiteboardLaunch])
+
+  const lessonWordsForAssist = useMemo(
+    () =>
+      buildLessonVocabulary({
+        book: selectedBook,
+        unit: selectedUnit,
+        interactiveVocabPack,
+      }),
+    [selectedBook, selectedUnit, interactiveVocabPack],
+  )
 
   const showViewportPaintHold = useMemo(
     () =>
@@ -251,6 +369,11 @@ export function FullscreenBookOverlayView({
   )
 
   return (
+    <WritingAssistProvider
+      lessonWords={lessonWordsForAssist}
+      active={open && userPresented}
+    >
+    <LessonCoachSyncProvider sessionId={coachSessionId}>
     <div
       className={cn(
         'absolute inset-0 z-50 p-0 transition-opacity duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]',
@@ -260,6 +383,13 @@ export function FullscreenBookOverlayView({
       aria-hidden={!open || !userPresented}
       inert={!open || !userPresented ? true : undefined}
     >
+      {whiteboardLaunch.flight ? (
+        <WhiteboardToolbarLaunchOverlay
+          flight={whiteboardLaunch.flight}
+          surfaceStyle={WHITEBOARD_NOTEBOOK_SURFACE}
+          onComplete={whiteboardLaunch.onFlightComplete}
+        />
+      ) : null}
       <PageListRail
         hasResolvedUnit={hasResolvedUnit}
         numPages={numPages}
@@ -282,7 +412,9 @@ export function FullscreenBookOverlayView({
         goToPage={goToPage}
         setIsPageListOpen={setIsPageListOpen}
       />
-      <AnnotationRail
+      <BookOverlayLeftChrome
+        isPageListOpen={isPageListOpen}
+        setIsPageListOpen={setIsPageListOpen}
         hasResolvedUnit={hasResolvedUnit}
         numPages={numPages}
         selectedBookId={selectedBookId}
@@ -298,6 +430,8 @@ export function FullscreenBookOverlayView({
         setStampQuestionColor={setStampQuestionColor}
         penSwatchId={penSwatchId}
         pickPenSwatch={pickPenSwatch}
+        penStrokeProfile={penStrokeProfile}
+        setPenStrokeProfile={setPenStrokeProfile}
         penColorSource={penColorSource}
         penCustomHex={penCustomHex}
         pickPenCustomColor={pickPenCustomColor}
@@ -306,7 +440,7 @@ export function FullscreenBookOverlayView({
         stickyFillColor={stickyFillColor}
         setStickyFillColor={setStickyFillColor}
         shapeStrokeSwatchId={shapeStrokeSwatchId}
-        setShapeStrokeSwatchId={setShapeStrokeSwatchId}
+        pickShapeStrokeSwatch={pickShapeStrokeSwatch}
         markerColor={markerColor}
         markerColorSource={markerColorSource}
         markerCustomHex={markerCustomHex}
@@ -316,6 +450,14 @@ export function FullscreenBookOverlayView({
         setPenThicknessStep={setPenThicknessStep}
         markerThicknessStep={markerThicknessStep}
         setMarkerThicknessStep={setMarkerThicknessStep}
+        shapeThicknessStep={shapeThicknessStep}
+        setShapeThicknessStep={setShapeThicknessStep}
+        textThicknessStep={textThicknessStep}
+        setTextThicknessStep={setTextThicknessStep}
+        stickyThicknessStep={stickyThicknessStep}
+        setStickyThicknessStep={setStickyThicknessStep}
+        stampThicknessStep={stampThicknessStep}
+        setStampThicknessStep={setStampThicknessStep}
         eraserPixelThicknessStep={eraserPixelThicknessStep}
         setEraserPixelThicknessStep={setEraserPixelThicknessStep}
         eraserLineThicknessStep={eraserLineThicknessStep}
@@ -328,6 +470,12 @@ export function FullscreenBookOverlayView({
         setPenLineDashStyle={setPenLineDashStyle}
         markerLineDashStyle={markerLineDashStyle}
         setMarkerLineDashStyle={setMarkerLineDashStyle}
+        markerStraightStroke={markerStraightStroke}
+        setMarkerStraightStroke={setMarkerStraightStroke}
+        markerDecoratedEdge={markerDecoratedEdge}
+        setMarkerDecoratedEdge={setMarkerDecoratedEdge}
+        penAutoGroupConnected={penAutoGroupConnected}
+        setPenAutoGroupConnected={setPenAutoGroupConnected}
         shapeLineDashStyle={shapeLineDashStyle}
         setShapeLineDashStyle={setShapeLineDashStyle}
         shapeStrokeEnabled={shapeStrokeEnabled}
@@ -360,16 +508,123 @@ export function FullscreenBookOverlayView({
         setPdfDialogOpen={setPdfDialogOpen}
         toolbarCaps={toolbarCaps}
         isWhiteboardOpen={isWhiteboardOpen}
+        isWhiteboardSessionOpen={isWhiteboardSessionOpen}
+        isWhiteboardMinimized={isWhiteboardMinimized}
+        onWhiteboardRailClick={handleWhiteboardRailClick}
+        whiteboardToolbarButtonRef={whiteboardLaunch.toolbarButtonRef}
         getActiveAnnotationRef={getActiveAnnotationRef}
-        clearInkOpen={clearInkOpen}
-        setClearInkOpen={setClearInkOpen}
-        clearTargetPage={clearTargetPage}
-        clearInkSpreadPagePair={clearInkSpreadPagePair}
+        translateDockOpen={translateDockOpen}
+        onTranslateDockToggle={() => setTranslateDockOpen(!translateDockOpen)}
+        onOpenCoachDialog={() => setCoachDialogOpen(true)}
       />
+
+      <LessonCoachConnectDialog
+        open={coachDialogOpen}
+        onOpenChange={setCoachDialogOpen}
+        sessionId={coachSessionId}
+        coachUrl={coachUrl}
+        onSessionCreated={({ id, coachUrl: url }) => {
+          setCoachSessionId(id)
+          setCoachUrl(url)
+        }}
+        studentId={studentId}
+        studentName={studentName}
+        bookId={selectedBookId}
+        bookTitle={selectedBook?.title ?? null}
+        unitId={selectedUnit?.id ?? null}
+        unitTitle={selectedUnit?.title ?? null}
+        lessonId={coachLessonId}
+        lessonTitle={coachLessonTitle}
+        partId={coachPartId}
+        partTitle={coachPartTitle}
+      />
+
+      <AnnotationTopOptionsBar
+        hasResolvedUnit={hasResolvedUnit}
+        suppressChrome={suppressChrome}
+        chromePanelsOpen={isPageListOpen}
+        annotationMode={annotationMode}
+        setAnnotationMode={setAnnotationMode}
+        penSwatchId={penSwatchId}
+        pickPenSwatch={pickPenSwatch}
+        penStrokeProfile={penStrokeProfile}
+        penColorSource={penColorSource}
+        penCustomHex={penCustomHex}
+        pickPenCustomColor={pickPenCustomColor}
+        penThicknessStep={penThicknessStep}
+        setPenThicknessStep={setPenThicknessStep}
+        markerColor={markerColor}
+        pickMarkerSwatchColor={pickMarkerSwatchColor}
+        markerColorSource={markerColorSource}
+        markerCustomHex={markerCustomHex}
+        pickMarkerCustomColor={pickMarkerCustomColor}
+        shapeStrokeSwatchId={shapeStrokeSwatchId}
+        pickShapeStrokeSwatch={pickShapeStrokeSwatch}
+        markerThicknessStep={markerThicknessStep}
+        setMarkerThicknessStep={setMarkerThicknessStep}
+        shapeThicknessStep={shapeThicknessStep}
+        setShapeThicknessStep={setShapeThicknessStep}
+        textThicknessStep={textThicknessStep}
+        setTextThicknessStep={setTextThicknessStep}
+        stickyThicknessStep={stickyThicknessStep}
+        setStickyThicknessStep={setStickyThicknessStep}
+        stampThicknessStep={stampThicknessStep}
+        setStampThicknessStep={setStampThicknessStep}
+        eraserPixelThicknessStep={eraserPixelThicknessStep}
+        setEraserPixelThicknessStep={setEraserPixelThicknessStep}
+        eraserLineThicknessStep={eraserLineThicknessStep}
+        setEraserLineThicknessStep={setEraserLineThicknessStep}
+        penLineDashStyle={penLineDashStyle}
+        setPenLineDashStyle={setPenLineDashStyle}
+        markerLineDashStyle={markerLineDashStyle}
+        setMarkerLineDashStyle={setMarkerLineDashStyle}
+        markerStraightStroke={markerStraightStroke}
+        setMarkerStraightStroke={setMarkerStraightStroke}
+        markerDecoratedEdge={markerDecoratedEdge}
+        setMarkerDecoratedEdge={setMarkerDecoratedEdge}
+        penAutoGroupConnected={penAutoGroupConnected}
+        setPenAutoGroupConnected={setPenAutoGroupConnected}
+        marqueeSelectRule={marqueeSelectRule}
+        setMarqueeSelectRule={setMarqueeSelectRule}
+        shapeLineDashStyle={shapeLineDashStyle}
+        setShapeLineDashStyle={setShapeLineDashStyle}
+        shapeStrokeEnabled={shapeStrokeEnabled}
+        setShapeStrokeEnabled={setShapeStrokeEnabled}
+        shapeFillMode={shapeFillMode}
+        setShapeFillMode={setShapeFillMode}
+        shapeFillColor={shapeFillColor}
+        setShapeFillColor={setShapeFillColor}
+        textColor={textColor}
+        pickTextColor={pickTextColor}
+        textVisualStyle={textVisualStyle}
+        setTextVisualStyle={setTextVisualStyle}
+        textFillColor={textFillColor}
+        pickTextFillColor={pickTextFillColor}
+        stickyFillColor={stickyFillColor}
+        pickStickyFillColor={pickStickyFillColor}
+      />
+
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        onClick={closeOverlay}
+        aria-label="Close book overlay"
+        title={`Close book (${SC.closePanelOrBook})`}
+        className={cn(
+          BOOK_OVERLAY_GLASS_CHROME,
+          'pointer-events-auto absolute left-3 top-3 z-[60] h-8 w-8 rounded-2xl border p-0 text-white hover:bg-white/10 hover:text-white/85',
+          suppressChrome && 'pointer-events-none invisible opacity-0',
+        )}
+        aria-hidden={suppressChrome}
+      >
+        <X className="h-4 w-4" strokeWidth={2} aria-hidden />
+      </Button>
+
       <div
         className={cn(
           'absolute inset-0 flex min-h-0 min-w-0 items-center justify-center transition-[padding] duration-[650ms] ease-[cubic-bezier(0.4,0,0.2,1)] will-change-[padding] motion-reduce:transition-none',
-          isLessonPaperOpen && 'pr-[25vw]',
+          lessonPaperLayoutActive && 'pr-[25vw]',
         )}
       >
         <div
@@ -377,11 +632,11 @@ export function FullscreenBookOverlayView({
           className={cn(
             'relative z-10 transition-all duration-[650ms] ease-[cubic-bezier(0.4,0,0.2,1)] will-change-transform motion-reduce:transition-none',
             isVisible ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0',
-            isLessonPaperOpen && !isLessonPaperOverlayMode && 'w-full min-w-0 max-w-full',
+            lessonPaperLayoutActive && !isLessonPaperOverlayMode && 'w-full min-w-0 max-w-full',
           )}
           style={{
             transform: isLessonPaperOverlayMode
-              ? `translateX(calc(${isLessonPaperOpen ? '-12.5vw' : '0px'} + ${lessonPaperPanPx}px))`
+              ? `translateX(calc(${lessonPaperLayoutActive ? '-12.5vw' : '0px'} + ${lessonPaperPanPx}px))`
               : undefined,
           }}
         >
@@ -389,99 +644,26 @@ export function FullscreenBookOverlayView({
             className="relative mx-auto max-w-full shrink-0 will-change-[width,transform]"
             style={{
               width: isLessonPaperSplitView
-                ? `min(100%, calc(100vh * ${BOOK_FRAME_ASPECT_RATIO}))`
-                : isLessonPaperOpen
-                  ? /* Fill the flex content width (viewport minus notebook rail); cap by height like full-screen mode */
-                    `min(100%, calc(100vh * ${BOOK_FRAME_ASPECT_RATIO}))`
-                  : `min(100vw, calc(100vh * ${BOOK_FRAME_ASPECT_RATIO}))`,
-              aspectRatio: '1264 / 816',
+                ? `min(100%, calc(${BOOK_OVERLAY_VIEWPORT_CONTENT_HEIGHT} * ${readerViewportAspectRatio}))`
+                : lessonPaperLayoutActive
+                  ? `min(100%, calc(${BOOK_OVERLAY_VIEWPORT_CONTENT_HEIGHT} * ${readerViewportAspectRatio}))`
+                  : `min(100vw, calc(${BOOK_OVERLAY_VIEWPORT_CONTENT_HEIGHT} * ${readerViewportAspectRatio}))`,
+              maxHeight: BOOK_OVERLAY_VIEWPORT_CONTENT_HEIGHT,
+              aspectRatio: readerViewportAspectRatio,
               transition: `width ${ANIMATION_MS}ms cubic-bezier(0.4,0,0.2,1), transform ${ANIMATION_MS}ms cubic-bezier(0.4,0,0.2,1)`,
               backfaceVisibility: 'hidden',
               transform: 'translateZ(0)',
             }}
           >
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          onClick={onClose}
-          aria-label="Close book overlay"
-          title={`Close book (${SC.closePanelOrBook})`}
-          className="absolute right-2 top-2 z-30 h-9 w-9 rounded-full bg-[var(--card)]/95"
-        >
-          <X size={16} />
-        </Button>
-
         <TopOverlayControls
           hasResolvedUnit={hasResolvedUnit}
           suppressChrome={suppressChrome}
-          numPages={numPages}
           isPageListOpen={isPageListOpen}
-          setIsPageListOpen={setIsPageListOpen}
-          isWhiteboardOpen={isWhiteboardOpen}
-          setIsWhiteboardOpen={setIsWhiteboardOpen}
-          isSinglePageMode={isSinglePageMode}
-          pageNumber={pageNumber}
-          annotationTargetPage={annotationTargetPage}
-          setWhiteboardPage={setWhiteboardPage}
+          isWhiteboardExpanded={isWhiteboardOpen}
           interactiveVocabNode={interactiveVocabPack ? <InteractiveVocabReaderShelf pack={interactiveVocabPack} /> : null}
         />
 
-        <AnnotationTopOptionsBar
-          hasResolvedUnit={hasResolvedUnit}
-          suppressChrome={suppressChrome}
-          chromePanelsOpen={isPageListOpen || isWhiteboardOpen}
-          annotationMode={annotationMode}
-          penSwatchId={penSwatchId}
-          pickPenSwatch={pickPenSwatch}
-          penColorSource={penColorSource}
-          penThicknessStep={penThicknessStep}
-          setPenThicknessStep={setPenThicknessStep}
-          markerColor={markerColor}
-          pickMarkerSwatchColor={pickMarkerSwatchColor}
-          shapeStrokeSwatchId={shapeStrokeSwatchId}
-          setShapeStrokeSwatchId={setShapeStrokeSwatchId}
-          markerThicknessStep={markerThicknessStep}
-          setMarkerThicknessStep={setMarkerThicknessStep}
-          eraserPixelThicknessStep={eraserPixelThicknessStep}
-          setEraserPixelThicknessStep={setEraserPixelThicknessStep}
-          eraserLineThicknessStep={eraserLineThicknessStep}
-          setEraserLineThicknessStep={setEraserLineThicknessStep}
-        />
-
-        {/* eslint-disable-next-line @next/next/no-img-element -- decorative frame asset from local public folder */}
-        <img
-          src={BOOK_OPENED_FRAME_IMAGE_SRC}
-          alt="Open book frame"
-          className="pointer-events-none block h-full w-full select-none object-contain drop-shadow-[0_22px_44px_rgba(0,0,0,0.42)]"
-          draggable={false}
-        />
-
-        <div
-          className="absolute overflow-visible"
-          style={{
-            left: `${BOOK_FRAME_VIEWPORT_INSET_X * 100}%`,
-            right: `${BOOK_FRAME_VIEWPORT_INSET_X * 100}%`,
-            top: `${BOOK_FRAME_VIEWPORT_INSET_Y * 100}%`,
-            bottom: `${BOOK_FRAME_VIEWPORT_INSET_Y * 100}%`,
-          }}
-        >
-          <WhiteboardHeader
-            isWhiteboardOpen={isWhiteboardOpen}
-            selectedBookId={selectedBookId}
-            numPages={numPages}
-            suppressChrome={suppressChrome}
-            isSinglePageMode={isSinglePageMode}
-            showSpreadRightPage={showSpreadRightPage}
-            spreadRightPage={spreadRightPage}
-            whiteboardPage={whiteboardPage}
-            setWhiteboardPage={setWhiteboardPage}
-            pageNumber={pageNumber}
-            selectedBook={selectedBook}
-            selectedUnit={selectedUnit}
-            numberingMode={numberingMode}
-            setIsWhiteboardOpen={setIsWhiteboardOpen}
-          />
+        <div className="absolute inset-0 overflow-visible">
           <BookCanvasStage
             pageAreaRef={pageAreaRef}
             hasCurriculumOrHistory={hasCurriculumOrHistory}
@@ -496,16 +678,29 @@ export function FullscreenBookOverlayView({
             selectedUnitFilePath={selectedUnit?.filePath ?? ''}
             makeUnitFileUrl={makeUnitFileUrl}
             onDocumentLoadSuccess={onDocumentLoadSuccess}
-            isWhiteboardOpen={isWhiteboardOpen}
+            isWhiteboardOpen={isWhiteboardSessionOpen}
+            isWhiteboardMinimized={isWhiteboardMinimized}
+            onExpandWhiteboard={handleExpandWhiteboardAnimated}
+            onMinimizeWhiteboard={handleMinimizeWhiteboardAnimated}
+            whiteboardPanelAnchorRef={whiteboardLaunch.panelAnchorRef}
+            whiteboardPanelObscured={whiteboardLaunch.panelObscured}
+            suppressChrome={suppressChrome}
+            swapWhiteboardSlotSide={swapWhiteboardSlotSide}
+            toggleWhiteboardFullscreen={toggleWhiteboardFullscreen}
+            setWhiteboardSlotSide={setWhiteboardSlotSide}
+            applyWhiteboardSlotSide={applyWhiteboardSlotSide}
+            registerWhiteboardSlotMotion={registerWhiteboardSlotMotion}
             isSinglePageMode={isSinglePageMode}
             leftPageCaptureRef={leftPageCaptureRef}
             pageNumber={pageNumber}
             spreadPageWidth={layoutSpreadPageWidth}
+            spreadGutterPullRatio={spreadGutterPullRatio}
             onPdfPageLoadSuccess={onPdfPageLoadSuccess}
             selectedBookId={selectedBookId}
             selectedUnitId={selectedUnit?.id}
             pageCanvasHeightPx={pageCanvasHeightPx}
-            annotationMode={annotationMode}
+            annotationMode={effectiveAnnotationMode}
+            eyedropperVariant={eyedropperVariant}
             stampVariant={stampVariant}
             stampQuestionColor={stampQuestionColor}
             strokeWidthScale={strokeWidthScale}
@@ -516,10 +711,15 @@ export function FullscreenBookOverlayView({
             strokeColor={strokeColor}
             penInkColor={penColor}
             penInkStyle={penInkStyle}
+            penStrokeProfile={penStrokeProfile}
             shapeColor={shapeColor}
             textColor={textColor}
             stickyFillColor={stickyFillColor}
             strokeLineDashStyle={strokeLineDashStyleForInk}
+            markerStraightStroke={markerStraightStroke}
+            markerDecoratedEdge={markerDecoratedEdge}
+            penAutoGroupConnected={penAutoGroupConnected}
+            marqueeSelectRule={marqueeSelectRule}
             shapeLineDashStyle={shapeLineDashStyle}
             shapeStrokeEnabled={shapeStrokeEnabled}
             shapeFillMode={shapeFillMode}
@@ -536,10 +736,13 @@ export function FullscreenBookOverlayView({
             spreadRightPage={spreadRightPage}
             onRightAnnotationCaps={onRightAnnotationCaps}
             rightAnnRef={rightAnnRef}
-            spreadGutterOverlayStyle={spreadGutterOverlayStyle}
             wbCaptureRootRef={wbCaptureRootRef}
             WHITEBOARD_NOTEBOOK_SURFACE={WHITEBOARD_NOTEBOOK_SURFACE}
-            whiteboardPage={whiteboardPage}
+            whiteboardStorageKey={whiteboardStorageKey}
+            whiteboardLayoutMode={whiteboardLayoutMode}
+            whiteboardSlotSide={whiteboardSlotSide}
+            whiteboardContentHeightPx={whiteboardContentHeightPx}
+            extendWhiteboardRunway={extendWhiteboardRunway}
             wbAnnRef={wbAnnRef}
             onWhiteboardCaps={onWhiteboardCaps}
             regionSelectOpen={regionSelectOpen}
@@ -558,62 +761,75 @@ export function FullscreenBookOverlayView({
           />
         </div>
 
-        <BookViewport
-          hasResolvedUnit={hasResolvedUnit}
-          numPages={numPages}
+        {notebookUiEnabled ? (
+          <BookLessonPaperViewControls
+            suppressChrome={suppressChrome}
+            isLessonPaperOverlayMode={isLessonPaperOverlayMode}
+            lessonPaperViewMode={lessonPaperViewMode}
+            setLessonPaperViewMode={setLessonPaperViewMode}
+          />
+        ) : null}
+        <TranslateDock
+          open={translateDockOpen}
+          onOpenChange={setTranslateDockOpen}
           suppressChrome={suppressChrome}
-          visiblePages={visiblePages}
-          pageNumber={pageNumber}
-          goToAdjacentPage={goToAdjacentPage}
-          pageJumpDraft={pageJumpDraft}
-          setPageJumpDraft={setPageJumpDraft}
-          setPageJumpFocused={setPageJumpFocused}
-          spreadRightPage={spreadRightPage}
-          isSinglePageMode={isSinglePageMode}
-          selectedBook={selectedBook}
-          selectedUnit={selectedUnit}
-          numberingMode={numberingMode}
-          commitPageJump={commitPageJump}
-          printedJumpBounds={printedJumpBounds}
-          unitPageBounds={unitPageBounds}
-          isLessonPaperOverlayMode={isLessonPaperOverlayMode}
-          lessonPaperViewMode={lessonPaperViewMode}
-          setLessonPaperViewMode={setLessonPaperViewMode}
+          pageListOpen={isPageListOpen}
+          onOpenNotebook={notebookUiEnabled ? () => setVocabNotebookOpen(true) : undefined}
         />
+        {notebookUiEnabled ? (
+          <VocabNotebookPanel open={vocabNotebookOpen} onOpenChange={setVocabNotebookOpen} />
+        ) : null}
           </div>
+          <BookPageNavigation
+            hasResolvedUnit={hasResolvedUnit}
+            numPages={numPages}
+            suppressChrome={suppressChrome}
+            visiblePages={visiblePages}
+            pageNumber={pageNumber}
+            goToAdjacentPage={goToAdjacentPage}
+            pageJumpDraft={pageJumpDraft}
+            setPageJumpDraft={setPageJumpDraft}
+            setPageJumpFocused={setPageJumpFocused}
+            spreadRightPage={spreadRightPage}
+            isSinglePageMode={isSinglePageMode}
+            selectedBook={selectedBook}
+            selectedUnit={selectedUnit}
+            numberingMode={numberingMode}
+            commitPageJump={commitPageJump}
+            printedJumpBounds={printedJumpBounds}
+            unitPageBounds={unitPageBounds}
+          />
         </div>
-        <LessonPaperPanel
-          hasResolvedUnit={hasResolvedUnit}
-          isLessonPaperOpen={isLessonPaperOpen}
-          setIsLessonPaperOpen={setIsLessonPaperOpen}
-          lessonPaperMode={lessonPaperMode}
-          setLessonPaperMode={setLessonPaperMode}
-          scheduleLessonPaperEditorFocus={scheduleLessonPaperEditorFocus}
-          lessonPaperDrawTool={lessonPaperDrawTool}
-          setLessonPaperDrawTool={setLessonPaperDrawTool}
-          applyLessonPaperCommand={applyLessonPaperCommand}
-          lessonPaperScrollRef={lessonPaperScrollRef}
-          lessonPaperLastPartContextKeyRef={lessonPaperLastPartContextKeyRef}
-          selectedUnitTitle={selectedUnit?.title}
-          lessonPaperHeader={lessonPaperHeader}
-          lessonPaperBreadcrumb={lessonPaperBreadcrumb}
-          currentNotebookPageSpanKey={currentNotebookPageSpanKey}
-          lessonPaperOverlayHostRef={lessonPaperOverlayHostRef}
-          lessonPaperEditorRef={lessonPaperEditorRef}
-          onLessonPaperInput={onLessonPaperInput}
-          onLessonPaperPaste={onLessonPaperPaste}
-          selectedBookId={selectedBookId}
-          studentId={studentId}
-          selectedUnitId={selectedUnit?.id}
-          lessonPaperOverlayPageNumber={lessonPaperOverlayPageNumber}
-          lessonPaperOverlaySize={lessonPaperOverlaySize}
-          lessonPaperOverlayMode={lessonPaperOverlayMode}
-          stampVariant={stampVariant}
-          lessonPaperOverlayImages={lessonPaperOverlayImages}
-          lessonPaperOverlayDragRef={lessonPaperOverlayDragRef}
-          lessonPaperScrollRunwayPx={lessonPaperScrollRunwayPx}
-          ANIMATION_MS={ANIMATION_MS}
-        />
+        {notebookUiEnabled ? (
+          <LessonPaperPanel
+            hasResolvedUnit={hasResolvedUnit}
+            isLessonPaperOpen={isLessonPaperOpen}
+            setIsLessonPaperOpen={handleSetLessonPaperOpen}
+            lessonPaperSaveState={lessonPaperSaveState}
+            notebookEditable={notebookEditable}
+            lessonPaperEditVersion={lessonPaperEditVersion}
+            lessonPaperHtml={lessonPaperHtml}
+            pageNumber={pageNumber}
+            notebookReturnPage={notebookReturnPage}
+            onGoToNotebookSourcePage={goToNotebookSourcePage}
+            onReturnToNotebookCurrentPage={returnToNotebookCurrentPage}
+            onStartNotebookNote={handleStartNotebookNote}
+            onOpenWhiteboardForCapture={handleOpenWhiteboardForCapture}
+            onOpenTranslateDock={handleOpenTranslateDockForVocab}
+            applyLessonPaperCommand={applyLessonPaperCommand}
+            lessonPaperScrollRef={lessonPaperScrollRef}
+            lessonPaperLastPartContextKeyRef={lessonPaperLastPartContextKeyRef}
+            selectedUnitTitle={selectedUnit?.title}
+            lessonPaperHeader={lessonPaperHeader}
+            lessonPaperBreadcrumb={lessonPaperBreadcrumb}
+            currentNotebookPageSpanKey={currentNotebookPageSpanKey}
+            lessonPaperEditorRef={lessonPaperEditorRef}
+            onLessonPaperInput={handleLessonPaperInputWithHtmlSync}
+            onLessonPaperPaste={onLessonPaperPaste}
+            lessonPaperScrollRunwayPx={lessonPaperScrollRunwayPx}
+            ANIMATION_MS={ANIMATION_MS}
+          />
+        ) : null}
       </div>
 
       <OverlayDialogs
@@ -632,5 +848,7 @@ export function FullscreenBookOverlayView({
         onSaveCaption={handleCaptionSave}
       />
     </div>
+    </LessonCoachSyncProvider>
+    </WritingAssistProvider>
   )
 }

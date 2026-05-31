@@ -8,6 +8,14 @@ import type {
 } from './types'
 import { removeAnnotationsForStudent } from './books/annotation-storage'
 import { removeStudentAnnotationToolPrefs } from './books/student-annotation-tool-prefs'
+import {
+  getCachedStudentProgress,
+  getCachedStudents,
+  isStudentRecordsDiskActive,
+  setCachedStudentProgress,
+  setCachedStudents,
+} from './local-data/student-records-client'
+import { resolveStudentAvatarUrl } from './students/student-avatar-url'
 import { normalizeStudentKey } from './students/identity'
 import { clearMapViewportSession } from './students/map-viewport-session'
 import { normalizeQuizQuestions } from './quiz-difficulty'
@@ -145,8 +153,7 @@ export function saveStudentResult(result: StudentResult): void {
   localStorage.setItem(RESULTS_KEY, JSON.stringify(results))
 }
 
-export function getStudents(): StudentRecord[] {
-  if (typeof window === 'undefined') return []
+function getStudentsFromLocalStorage(): StudentRecord[] {
   try {
     const raw = localStorage.getItem(STUDENTS_KEY)
     const parsed = raw ? (JSON.parse(raw) as StudentRecord[]) : []
@@ -164,23 +171,80 @@ export function getStudents(): StudentRecord[] {
   }
 }
 
-export function saveStudent(student: StudentRecord): void {
-  const students = getStudents()
-  const idx = students.findIndex((s) => s.id === student.id)
-  if (idx >= 0) {
-    students[idx] = student
-  } else {
-    students.push(student)
-  }
+function writeStudentsToLocalStorage(students: StudentRecord[]): void {
   localStorage.setItem(STUDENTS_KEY, JSON.stringify(students))
 }
 
+export function getStudents(): StudentRecord[] {
+  if (typeof window === 'undefined') return []
+  const cached = getCachedStudents()
+  if (cached !== null) return cached
+  return getStudentsFromLocalStorage()
+}
+
+function withPreservedAvatarFields(incoming: StudentRecord[], previous: StudentRecord[]): StudentRecord[] {
+  const prevById = new Map(previous.map((s) => [s.id, s]))
+  return incoming.map((student) => {
+    const prev = prevById.get(student.id)
+    return {
+      ...student,
+      avatarUrl: resolveStudentAvatarUrl(student.id, student.avatarUrl ?? prev?.avatarUrl),
+    }
+  })
+}
+
+export function saveStudent(student: StudentRecord): void {
+  const students = getStudents()
+  const idx = students.findIndex((s) => s.id === student.id)
+  const prev = idx >= 0 ? students[idx] : undefined
+  const merged: StudentRecord = {
+    ...student,
+    avatarUrl: resolveStudentAvatarUrl(student.id, student.avatarUrl ?? prev?.avatarUrl),
+  }
+  if (idx >= 0) {
+    students[idx] = merged
+  } else {
+    students.push(merged)
+  }
+  if (isStudentRecordsDiskActive()) {
+    setCachedStudents(students)
+    return
+  }
+  try {
+    writeStudentsToLocalStorage(students)
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'QuotaExceededError') {
+      throw new Error(
+        'Browser storage is full. Reload the page while running npm run dev locally to move students to disk.',
+      )
+    }
+    throw err
+  }
+}
+
 export function saveStudents(students: StudentRecord[]): void {
-  localStorage.setItem(STUDENTS_KEY, JSON.stringify(students))
+  const previous = getStudents()
+  const merged = withPreservedAvatarFields(students, previous)
+  if (isStudentRecordsDiskActive()) {
+    setCachedStudents(merged)
+    return
+  }
+  try {
+    writeStudentsToLocalStorage(merged)
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'QuotaExceededError') {
+      throw new Error(
+        'Browser storage is full. Reload the page while running npm run dev locally to move students to disk.',
+      )
+    }
+    throw err
+  }
 }
 
 export function getStudentProgressMap(): Record<string, StudentProgressRecord> {
   if (typeof window === 'undefined') return {}
+  const cached = getCachedStudentProgress()
+  if (cached !== null) return cached
   try {
     const raw = localStorage.getItem(STUDENT_PROGRESS_KEY)
     return raw ? (JSON.parse(raw) as Record<string, StudentProgressRecord>) : {}
@@ -190,7 +254,20 @@ export function getStudentProgressMap(): Record<string, StudentProgressRecord> {
 }
 
 export function saveStudentProgressMap(map: Record<string, StudentProgressRecord>): void {
-  localStorage.setItem(STUDENT_PROGRESS_KEY, JSON.stringify(map))
+  if (isStudentRecordsDiskActive()) {
+    setCachedStudentProgress(map)
+    return
+  }
+  try {
+    localStorage.setItem(STUDENT_PROGRESS_KEY, JSON.stringify(map))
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'QuotaExceededError') {
+      throw new Error(
+        'Browser storage is full. Reload the page while running npm run dev locally to move progress to disk.',
+      )
+    }
+    throw err
+  }
 }
 
 export function upsertStudentProgressRecord(studentKey: string, record: StudentProgressRecord): void {

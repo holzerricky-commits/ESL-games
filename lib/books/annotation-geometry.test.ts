@@ -1,8 +1,45 @@
 import { describe, expect, it } from 'vitest'
 import type { AnnotationCommand } from '@/lib/books/annotation-command-types'
-import { computeEraserLineDeadIndices, polylineMinDistSq } from './annotation-geometry'
+import {
+  computeEraserLineDeadIndices,
+  polylineMinDistSq,
+  textCommandBBox,
+  textTopYFromCenterAnchor,
+} from './annotation-geometry'
 
 describe('annotation-geometry', () => {
+  it('textTopYFromCenterAnchor preserves the top edge of a single-line box', () => {
+    const fontSizeNorm = 0.04
+    const centerY = 0.5
+    const box = textCommandBBox({
+      kind: 'text',
+      id: 't0',
+      x: 0.1,
+      y: centerY,
+      yAnchor: 'center',
+      text: 'Hi',
+      fontSizeNorm,
+      color: '#111',
+    })
+    expect(textTopYFromCenterAnchor(centerY, fontSizeNorm, 1)).toBeCloseTo(box.y, 5)
+  })
+
+  it('textCommandBBox shifts top upward when yAnchor is center', () => {
+    const cmd = {
+      kind: 'text' as const,
+      id: 't1',
+      x: 0.1,
+      y: 0.5,
+      yAnchor: 'center' as const,
+      text: 'Hi',
+      fontSizeNorm: 0.04,
+      color: '#111',
+    }
+    const box = textCommandBBox(cmd)
+    expect(box.h).toBeCloseTo(0.04 * 1.4, 5)
+    expect(box.y).toBeCloseTo(0.5 - box.h / 2, 5)
+  })
+
   it('polylineMinDistSq returns 0 for overlapping segments', () => {
     const a: [number, number][] = [
       [0.2, 0.5],

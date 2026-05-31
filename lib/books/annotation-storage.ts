@@ -1,4 +1,8 @@
-import { DEFAULT_STAMP_QUESTION_COLOR, stampColorForVariant } from '@/lib/books/annotation-palettes'
+import {
+  DEFAULT_STAMP_QUESTION_COLOR,
+  migrateTextFillColor,
+  stampColorForVariant,
+} from '@/lib/books/annotation-palettes'
 import type {
   AnnotationCommand,
   AnnotationLineDashStyle,
@@ -16,6 +20,7 @@ import type {
   TextAnnotationCommand,
 } from '@/lib/books/annotation-command-types'
 import { isPenInkStyle, PEN_INK_TILE_PX, type PenInkStyle } from '@/lib/books/pen-ink'
+import { isPenStrokeProfile, type PenStrokeProfile } from '@/lib/books/pen-stroke-profile'
 
 export type BookAnnotationTool = 'pen' | 'marker' | 'eraser' | 'eraser-line'
 
@@ -31,7 +36,7 @@ export type BookAnnotationInteractionMode =
   | 'text'
   | 'sticky'
   | 'callout'
-  | 'laser'
+  | 'select'
   | 'eyedropper'
 
 /** Seven thickness steps (multiplier on base marker / eraser widths). */
@@ -178,6 +183,10 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
       if (tool === 'pen' && isPenInkStyle(rec.penInkStyle) && rec.penInkStyle !== 'solid') {
         penInkStyle = rec.penInkStyle
       }
+      let penStrokeProfile: PenStrokeProfile | undefined
+      if (tool === 'pen' && isPenStrokeProfile(rec.penStrokeProfile)) {
+        penStrokeProfile = rec.penStrokeProfile
+      }
       let penInkPatternPhaseX: number | undefined
       let penInkPatternPhaseY: number | undefined
       if (penInkStyle) {
@@ -190,6 +199,17 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
             ((rec.penInkPatternPhaseY % PEN_INK_TILE_PX) + PEN_INK_TILE_PX) % PEN_INK_TILE_PX
         }
       }
+      let figureGroupId: string | undefined
+      if (
+        (tool === 'pen' || tool === 'marker') &&
+        typeof rec.figureGroupId === 'string' &&
+        rec.figureGroupId.length > 0 &&
+        rec.figureGroupId.length <= 64
+      ) {
+        figureGroupId = rec.figureGroupId
+      }
+      const markerDecoratedEdge =
+        tool === 'marker' && rec.markerDecoratedEdge === true ? true : undefined
       const cmd: StrokeAnnotationCommand = {
         kind: 'stroke',
         id,
@@ -198,9 +218,12 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
         ...(widthScale != null ? { widthScale } : {}),
         ...(color ? { color } : {}),
         ...(penInkStyle ? { penInkStyle } : {}),
+        ...(penStrokeProfile ? { penStrokeProfile } : {}),
         ...(penInkPatternPhaseX != null ? { penInkPatternPhaseX } : {}),
         ...(penInkPatternPhaseY != null ? { penInkPatternPhaseY } : {}),
         ...(lineDashStyle ? { lineDashStyle } : {}),
+        ...(markerDecoratedEdge ? { markerDecoratedEdge } : {}),
+        ...(figureGroupId ? { figureGroupId } : {}),
       }
       out.push(cmd)
       continue
@@ -381,7 +404,11 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
       }
       let fillColor: string | undefined
       if (typeof rec.fillColor === 'string' && isHexColor(rec.fillColor)) {
-        fillColor = rec.fillColor
+        fillColor = migrateTextFillColor(rec.fillColor)
+      }
+      let yAnchor: TextAnnotationCommand['yAnchor']
+      if (rec.yAnchor === 'center' || rec.yAnchor === 'top') {
+        yAnchor = rec.yAnchor
       }
       out.push({
         kind: 'text',
@@ -394,6 +421,7 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
         ...(maxWidthNorm != null ? { maxWidthNorm } : {}),
         ...(visualStyle != null ? { visualStyle } : {}),
         ...(fillColor != null ? { fillColor } : {}),
+        ...(yAnchor != null ? { yAnchor } : {}),
       } satisfies TextAnnotationCommand)
       continue
     }
@@ -559,29 +587,26 @@ export function removeAnnotationsForStudent(studentId: string): void {
   writeAnnotationsRoot(next)
 }
 
-export function getAnnotationsForPage(
+export function getAnnotationsForStorageKey(
   studentId: string,
   bookId: string,
   unitId: string,
-  pageNumber: number,
-  channel: AnnotationStorageChannel = 'pdf',
+  storagePageKey: string,
 ): AnnotationCommand[] {
   const root = readAnnotationsRoot()
-  const pageKey = annotationStoragePageKey(pageNumber, channel)
-  const raw = root[studentId]?.[bookId]?.[unitId]?.[pageKey]
+  const raw = root[studentId]?.[bookId]?.[unitId]?.[storagePageKey]
   return sanitizeAnnotationCommands(raw)
 }
 
-export function setAnnotationsForPage(
+export function setAnnotationsForStorageKey(
   studentId: string,
   bookId: string,
   unitId: string,
-  pageNumber: number,
+  storagePageKey: string,
   commands: AnnotationCommand[],
-  channel: AnnotationStorageChannel = 'pdf',
 ): void {
   const root: BookAnnotationsRoot = { ...readAnnotationsRoot() }
-  const pageKey = annotationStoragePageKey(pageNumber, channel)
+  const pageKey = storagePageKey
   const clean = sanitizeAnnotationCommands(commands)
 
   const student = { ...(root[studentId] ?? {}) }
@@ -613,4 +638,27 @@ export function setAnnotationsForPage(
   }
 
   writeAnnotationsRoot(root)
+}
+
+export function getAnnotationsForPage(
+  studentId: string,
+  bookId: string,
+  unitId: string,
+  pageNumber: number,
+  channel: AnnotationStorageChannel = 'pdf',
+): AnnotationCommand[] {
+  const pageKey = annotationStoragePageKey(pageNumber, channel)
+  return getAnnotationsForStorageKey(studentId, bookId, unitId, pageKey)
+}
+
+export function setAnnotationsForPage(
+  studentId: string,
+  bookId: string,
+  unitId: string,
+  pageNumber: number,
+  commands: AnnotationCommand[],
+  channel: AnnotationStorageChannel = 'pdf',
+): void {
+  const pageKey = annotationStoragePageKey(pageNumber, channel)
+  setAnnotationsForStorageKey(studentId, bookId, unitId, pageKey, commands)
 }

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { clamp01, hexToHsl, hslToHex, type Hsl } from '@/lib/books/hsl-color'
+import { cn } from '@/lib/utils'
 
 const sectionLabelClass =
   'text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-[#c4b5a8]/85'
@@ -20,11 +21,14 @@ export function SpectrumColorPicker({
   customHex,
   onPickCustom,
   label = 'Custom color',
+  variant = 'default',
 }: {
   customHex: string
   onPickCustom: (hex: string) => void
   label?: string
+  variant?: 'default' | 'strip'
 }) {
+  const strip = variant === 'strip'
   const spectrumRef = useRef<HTMLDivElement>(null)
   const [hsl, setHsl] = useState<Hsl>(() => hexToHsl(customHex) ?? { h: 220, s: 1, l: 0.45 })
 
@@ -54,9 +58,15 @@ export function SpectrumColorPicker({
   const spectrumMarkerTop = `${(1 - hsl.l) * 100}%`
 
   return (
-    <div className="space-y-2">
-      <p className={sectionLabelClass}>{label}</p>
-      <p className="font-mono text-[0.7rem] text-[#c4b5a8]">{displayHex}</p>
+    <div className={strip ? 'space-y-1.5' : 'space-y-2'}>
+      {strip ? (
+        <p className="font-mono text-[0.65rem] text-white/50">{displayHex}</p>
+      ) : (
+        <>
+          <p className={sectionLabelClass}>{label}</p>
+          <p className="font-mono text-[0.7rem] text-[#c4b5a8]">{displayHex}</p>
+        </>
+      )}
 
       <div
         ref={spectrumRef}
@@ -66,7 +76,10 @@ export function SpectrumColorPicker({
         aria-valuemax={100}
         aria-valuetext={displayHex}
         tabIndex={0}
-        className="relative h-[7.5rem] w-full cursor-crosshair touch-none overflow-hidden rounded-md border border-white/14"
+        className={cn(
+          'relative w-full cursor-crosshair touch-none overflow-hidden rounded-md border',
+          strip ? 'h-[5.5rem] border-white/10' : 'h-[7.5rem] border-white/14',
+        )}
         style={{ background: spectrumFieldBackground }}
         onPointerDown={(e) => {
           e.currentTarget.setPointerCapture(e.pointerId)

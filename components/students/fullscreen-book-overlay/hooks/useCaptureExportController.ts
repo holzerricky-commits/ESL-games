@@ -17,6 +17,7 @@ import {
 import { clampPdfPage, getUnitReaderBounds } from '@/lib/books/page-range'
 import { saveUnitPage } from '@/lib/books/progress'
 import type { BookLibraryPayload } from '@/lib/books/types'
+import { requestSpreadSessionFlush } from '@/lib/books/spread-session-events'
 
 interface UseCaptureExportControllerArgs {
   selectedBookId: string | null
@@ -36,7 +37,7 @@ interface UseCaptureExportControllerArgs {
   isWhiteboardOpen: boolean
   selectedUnitId: string | null
   annotationTargetPage: number
-  whiteboardPage: number
+  bookPageAtCapture: number
   captureFormat: BookCaptureFormat
   jpegQuality: number
   setPageNumber: (v: number) => void
@@ -75,6 +76,7 @@ export function useCaptureExportController(args: UseCaptureExportControllerArgs)
       kind: 'full' | 'page' | 'region'
       regionCss?: DOMRect | Pick<DOMRect, 'x' | 'y' | 'width' | 'height'>
     }): Promise<void> => {
+      requestSpreadSessionFlush()
       const rootEl = opts.kind === 'full' || opts.kind === 'region' ? args.pageAreaRef.current : args.getCurrentPageCaptureEl()
       if (!rootEl) {
         toast.error('Nothing to capture yet.')
@@ -85,10 +87,10 @@ export function useCaptureExportController(args: UseCaptureExportControllerArgs)
         return
       }
 
-      const metaPage = args.isWhiteboardOpen ? args.whiteboardPage : args.isSinglePageMode ? args.pageNumber : args.annotationTargetPage
+      const metaPage = args.isWhiteboardOpen ? args.bookPageAtCapture : args.isSinglePageMode ? args.pageNumber : args.annotationTargetPage
       setCaptureBusy(true)
-      const prevLaser = args.annotationMode === 'laser'
-      if (prevLaser) args.setAnnotationMode('pen')
+      const prevSelect = args.annotationMode === 'select'
+      if (prevSelect) args.setAnnotationMode('pen')
       const useSuppress = hideChromeForCapture
       if (useSuppress) setSuppressChrome(true)
       await settleLayout(); await settleLayout()
@@ -129,7 +131,7 @@ export function useCaptureExportController(args: UseCaptureExportControllerArgs)
         toast.error(err instanceof Error ? err.message : 'Capture failed')
       } finally {
         if (useSuppress) setSuppressChrome(false)
-        if (prevLaser) args.setAnnotationMode('laser')
+        if (prevSelect) args.setAnnotationMode('select')
         setCaptureBusy(false)
         await settleLayout()
       }
@@ -138,6 +140,7 @@ export function useCaptureExportController(args: UseCaptureExportControllerArgs)
   )
 
   const runPdfPacketExport = useCallback(async (): Promise<void> => {
+    requestSpreadSessionFlush()
     if (args.isWhiteboardOpen) {
       toast.error('Close the whiteboard before exporting a page-range PDF.')
       return
@@ -155,8 +158,8 @@ export function useCaptureExportController(args: UseCaptureExportControllerArgs)
     }
     const prevSpread = args.isSinglePageMode
     const prevPage = args.pageNumber
-    const prevLaser = args.annotationMode === 'laser'
-    if (prevLaser) args.setAnnotationMode('pen')
+    const prevSelect = args.annotationMode === 'select'
+    if (prevSelect) args.setAnnotationMode('pen')
     setPdfExporting(true)
     setPdfDialogOpenState(false)
     args.setPdfDialogOpen(false)
@@ -212,7 +215,7 @@ export function useCaptureExportController(args: UseCaptureExportControllerArgs)
         saveUnitPage(args.selectedBookId, args.selectedUnitId, clampPdfPage(prevPage, bounds))
       }
       if (useSuppress) setSuppressChrome(false)
-      if (prevLaser) args.setAnnotationMode('laser')
+      if (prevSelect) args.setAnnotationMode('select')
       setPdfProgressLabel(null)
       setPdfExporting(false)
       setCaptureBusy(false)

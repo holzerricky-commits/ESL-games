@@ -30,6 +30,7 @@ import {
   resolveNextSectionForClass,
   updateStudentClassSelectedSection,
   upsertStudentClassLessonNotebookDoc,
+  appendStudentClassLessonNotebookWhiteboardCapture,
   upsertStudentClassLessonNotebookOverlayImages,
   ensureStudentClassLessonNotebookPageSpanSection,
   buildNotebookPageSpanKey,
@@ -478,6 +479,42 @@ describe('weekly schedule slots and rolling generation', () => {
     expect(docEntry?.payload?.html).toContain('<h3>Warm-up</h3>')
   })
 
+  it('appendStudentClassLessonNotebookWhiteboardCapture appends image block and metadata entry', () => {
+    saveStudents([seedStudent()])
+    const created = upsertStudentClassSession('student-1', {
+      title: 'Notebook class',
+      scheduledFor: '2026-04-25T09:00',
+      durationMin: 45,
+    })
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+    expect(startStudentClassSession('student-1', created.session.id).ok).toBe(true)
+    const sectionId = getStudentProfileView('student-1')?.scheduledClasses.find((s) => s.id === created.session.id)
+      ?.lessonNotebookSession?.sections?.[0]?.sectionId
+    expect(sectionId).toBeTruthy()
+    if (!sectionId) return
+
+    const saved = appendStudentClassLessonNotebookWhiteboardCapture('student-1', created.session.id, {
+      sectionId,
+      imageSrc: 'data:image/png;base64,abc',
+      caption: 'Whiteboard · Page 2',
+      bookId: 'book-1',
+      unitId: 'unit-1',
+      pageSpanKey: 'p2',
+      whiteboardPage: 2,
+    })
+    expect(saved.ok).toBe(true)
+    if (!saved.ok) return
+    expect(saved.html).toContain('data-notebook-entry="whiteboard_capture"')
+
+    const session = getStudentProfileView('student-1')?.scheduledClasses.find((s) => s.id === created.session.id)
+    const captureEntry = session?.lessonNotebookSession?.sections?.[0]?.entries?.find(
+      (entry) => entry.payload?.kind === 'whiteboard_capture',
+    )
+    expect(captureEntry?.payload?.whiteboardPage).toBe(2)
+    expect(captureEntry?.payload?.createdByTrigger).toBe('whiteboard_capture')
+  })
+
   it('upsertStudentClassLessonNotebookDoc stores lightweight doc snapshots on successive saves', () => {
     saveStudents([seedStudent()])
     const created = upsertStudentClassSession('student-1', {
@@ -687,7 +724,7 @@ describe('weekly schedule slots and rolling generation', () => {
     expect(secondNotebookId).toBe(firstNotebookId)
   })
 
-  it('startStudentClassSession refuses when another class is already in progress', () => {
+  it('startStudentClassSession auto-ends other in_progress class when starting a new one', () => {
     saveStudents([seedStudent()])
     const a = upsertStudentClassSession('student-1', {
       title: 'First',
@@ -702,12 +739,34 @@ describe('weekly schedule slots and rolling generation', () => {
     expect(a.ok && b.ok).toBe(true)
     if (!a.ok || !b.ok) return
     expect(startStudentClassSession('student-1', a.session.id).ok).toBe(true)
-    const blocked = startStudentClassSession('student-1', b.session.id)
-    expect(blocked.ok).toBe(false)
-    if (blocked.ok) return
-    expect(blocked.error).toMatch(/already in progress/i)
+    const startedB = startStudentClassSession('student-1', b.session.id)
+    expect(startedB.ok).toBe(true)
     const profile = getStudentProfileView('student-1')
-    expect(profile?.scheduledClasses.find((s) => s.id === b.session.id)?.status).not.toBe('in_progress')
+    expect(profile?.scheduledClasses.find((s) => s.id === a.session.id)?.status).toBe('completed')
+    expect(profile?.scheduledClasses.find((s) => s.id === b.session.id)?.status).toBe('in_progress')
+  })
+
+  it('after endStudentClassSession, another class on the same student can start', () => {
+    saveStudents([seedStudent()])
+    const a = upsertStudentClassSession('student-1', {
+      title: 'First',
+      scheduledFor: '2026-04-25T09:00',
+      durationMin: 45,
+    })
+    const b = upsertStudentClassSession('student-1', {
+      title: 'Second',
+      scheduledFor: '2026-04-26T09:00',
+      durationMin: 45,
+    })
+    expect(a.ok && b.ok).toBe(true)
+    if (!a.ok || !b.ok) return
+    expect(startStudentClassSession('student-1', a.session.id).ok).toBe(true)
+    expect(endStudentClassSession('student-1', a.session.id).ok).toBe(true)
+    const startedB = startStudentClassSession('student-1', b.session.id)
+    expect(startedB.ok).toBe(true)
+    const profile = getStudentProfileView('student-1')
+    expect(profile?.scheduledClasses.find((s) => s.id === a.session.id)?.status).toBe('completed')
+    expect(profile?.scheduledClasses.find((s) => s.id === b.session.id)?.status).toBe('in_progress')
   })
 
   it('endStudentClassSession completes in_progress class with end metadata', () => {

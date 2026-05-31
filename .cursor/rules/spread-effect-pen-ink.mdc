@@ -22,18 +22,19 @@ Cluster width = **`spreadPageWidth * 2 - spreadSidePullPx`** (one overlap), NOT 
 
 Must match:
 
-- `BookCanvasStage` spread grid `width`
+- `SpreadPageCluster` / `BookCanvasStage` cluster `width`
 - `spreadOverlayWidthPx`
-- `useSpreadGutterOverlayStyle` `clusterW` (`layoutSpreadPageWidth * 2 - overlapPx`)
+
+Layout: **inline-flex**, both pages **full width** (`shrink-0`), right page `marginLeft: -pull` only — do **not** use a 2-col grid with `overflow-hidden` + `justify-end` on the left column (that crops the outer left edge when overlap increases).
 
 Extra `spreadSidePullPx` in the grid made overlay norm coords wrong → stroke drew offset from the cursor while drawing.
 
 ### 2. Live preview coordinates (single pipeline)
 
 - Accumulate **`draft.points`** in spread-normalized space (`clientToSpreadNorm` on the spread capture canvas).
-- **Live pen/marker/eraser preview**: `splitSpreadNormPolylineToPageNormalizedChains(draft.points)` → `setLiveStrokeDraft` on each `BookPageAnnotationLayer` (same split as commit). **Do not** draw pen/marker on the spread overlay canvas.
-- Spread overlay canvas is **laser only** (+ pointer capture for all spread stroke tools).
-- **Never** draw live pen/marker on the spread overlay or remap through page rects for preview (except `eraser-line`, which uses client-space split).
+- **Live pen/marker/eraser preview**: draw the full spread-normalized polyline on the spread overlay draft canvases (ink + marker layers) so the seam stays continuous while drawing. **Commit** still uses `splitSpreadNormPolylineToPageNormalizedChains` → per-page storage.
+- Spread overlay also handles pointer capture for all spread stroke tools.
+- **Do not** preview pen/marker by splitting to per-page live drafts (overlap z-order breaks the seam). `eraser-line` still uses client-space split on page layers.
 
 ### 3. Commit coordinates
 

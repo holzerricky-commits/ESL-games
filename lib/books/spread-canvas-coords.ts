@@ -20,7 +20,7 @@ export function clientToSpreadNorm(
 
 /**
  * Spread cluster width: two pages minus one gutter overlap (not two overlaps).
- * Keep in sync with `useSpreadGutterOverlayStyle` / `SPREAD_CLUSTER_OVERLAP_RATIO`.
+ * Keep in sync with `BookCanvasStage` spread cluster overlap (`spreadSidePullPx`).
  */
 export function spreadClusterWidthPx(spreadPageWidthPx: number, spreadSidePullPx: number): number {
   return Math.max(0, Math.round(spreadPageWidthPx * 2 - spreadSidePullPx))

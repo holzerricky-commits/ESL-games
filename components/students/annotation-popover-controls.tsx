@@ -9,17 +9,29 @@ export const popoverSectionLabelClass =
 
 export const popoverStackClass = 'space-y-3.5'
 
-const segmentGroupClass =
-  'inline-flex gap-0.5 rounded-md border border-[#3d2a1a]/45 bg-[#0f0c0a]/70 p-0.5'
+export type PopoverControlSurface = 'default' | 'rail'
 
-const segmentButtonClass = (active: boolean, compact?: boolean) =>
-  cn(
+function segmentGroupClass(surface: PopoverControlSurface) {
+  return surface === 'rail'
+    ? 'inline-flex flex-wrap gap-0.5'
+    : 'inline-flex gap-0.5 rounded-md border border-[#3d2a1a]/45 bg-[#0f0c0a]/70 p-0.5'
+}
+
+function segmentButtonClass(active: boolean, surface: PopoverControlSurface, compact?: boolean) {
+  return cn(
     'flex items-center justify-center rounded text-xs font-medium transition-colors',
     compact ? 'h-7 w-9' : 'h-7 min-w-0 flex-1 px-2',
-    active ? 'bg-amber-600/35 text-white' : 'text-[#c4b5a8]/90 hover:bg-[#1f1a16]/90',
+    surface === 'rail'
+      ? active
+        ? 'bg-white/20 text-white'
+        : 'text-white/65 hover:bg-white/10'
+      : active
+        ? 'bg-amber-600/35 text-white'
+        : 'text-[#c4b5a8]/90 hover:bg-[#1f1a16]/90',
   )
+}
 
-function LineDashStyleIcon({ style }: { style: AnnotationLineDashStyle }) {
+export function LineDashStyleIcon({ style }: { style: AnnotationLineDashStyle }) {
   const stroke = 'currentColor'
   const sw = 2
   if (style === 'solid') {
@@ -61,13 +73,28 @@ function LineDashStyleIcon({ style }: { style: AnnotationLineDashStyle }) {
   )
 }
 
-const LINE_DASH_OPTIONS: { value: AnnotationLineDashStyle; label: string }[] = [
+export const LINE_DASH_OPTIONS: { value: AnnotationLineDashStyle; label: string }[] = [
   { value: 'solid', label: 'Solid line' },
   { value: 'dashed', label: 'Dashed line' },
   { value: 'dotted', label: 'Dotted line' },
 ]
 
-function NoBorderLineIcon() {
+/** Horizontal + vertical only (orthogonal snap), not a free-angle line. */
+export function StraightHVStrokeIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden className="text-[#e8dcc4]">
+      <path
+        d="M5 4.5v8M5 12.5h8.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="square"
+      />
+    </svg>
+  )
+}
+
+export function NoBorderLineIcon() {
   return (
     <svg width="22" height="8" viewBox="0 0 22 8" aria-hidden className="text-[#e8dcc4]">
       <line x1="2" y1="6.5" x2="20" y2="1.5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
@@ -75,7 +102,7 @@ function NoBorderLineIcon() {
   )
 }
 
-function ShapeFillSolidIcon() {
+export function ShapeFillSolidIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden className="text-[#e8dcc4]">
       <rect x="3" y="3" width="12" height="12" rx="1" fill="currentColor" />
@@ -83,7 +110,7 @@ function ShapeFillSolidIcon() {
   )
 }
 
-function ShapeFillTransparentIcon() {
+export function ShapeFillTransparentIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden className="text-[#e8dcc4]">
       <rect x="3" y="3" width="6" height="6" fill="#6b5d52" />
@@ -95,7 +122,7 @@ function ShapeFillTransparentIcon() {
   )
 }
 
-function ShapeFillNoneIcon() {
+export function ShapeFillNoneIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden className="text-[#e8dcc4]">
       <rect x="3" y="3" width="12" height="12" rx="1" fill="none" stroke="currentColor" strokeWidth="1.75" />
@@ -124,7 +151,7 @@ export function ShapeLineStyleIconRow({
   return (
     <div>
       <p className="sr-only">Line style and border</p>
-      <div className={segmentGroupClass} role="group" aria-label="Line style and border">
+      <div className={segmentGroupClass('default')} role="group" aria-label="Line style and border">
         {LINE_DASH_OPTIONS.map(({ value: opt, label }) => {
           const active = strokeEnabled && lineDashStyle === opt
           return (
@@ -138,7 +165,7 @@ export function ShapeLineStyleIconRow({
                 onLineDashStyleChange(opt)
                 onStrokeEnabledChange(true)
               }}
-              className={segmentButtonClass(active, true)}
+              className={segmentButtonClass(active, 'default', true)}
             >
               <LineDashStyleIcon style={opt} />
             </button>
@@ -153,7 +180,7 @@ export function ShapeLineStyleIconRow({
             onStrokeEnabledChange(false)
             if (fillMode === 'none') onFillModeChange('transparent')
           }}
-          className={segmentButtonClass(!strokeEnabled, true)}
+          className={segmentButtonClass(!strokeEnabled, 'default', true)}
         >
           <NoBorderLineIcon />
         </button>
@@ -185,7 +212,7 @@ export function ShapeFillIconRow({
   return (
     <div>
       <p className="sr-only">Fill</p>
-      <div className={segmentGroupClass} role="group" aria-label="Fill">
+      <div className={segmentGroupClass('default')} role="group" aria-label="Fill">
         {SHAPE_FILL_OPTIONS.map(({ value, ariaLabel, icon }) => (
           <button
             key={value}
@@ -197,7 +224,7 @@ export function ShapeFillIconRow({
               if (value === 'none' && !strokeEnabled) onStrokeEnabledChange(true)
               onFillModeChange(value)
             }}
-            className={segmentButtonClass(fillMode === value, true)}
+            className={segmentButtonClass(fillMode === value, 'default', true)}
           >
             {icon}
           </button>
@@ -220,7 +247,7 @@ export function LineDashStyleIconRow({
   return (
     <div>
       <p className="sr-only">Line style</p>
-      <div className={segmentGroupClass} role="group" aria-label="Line style">
+      <div className={segmentGroupClass('default')} role="group" aria-label="Line style">
         {LINE_DASH_OPTIONS.map(({ value: opt, label }) => {
           const active = value === opt
           return (
@@ -231,7 +258,7 @@ export function LineDashStyleIconRow({
               aria-label={label}
               aria-pressed={active}
               onClick={() => onChange(opt)}
-              className={segmentButtonClass(active, true)}
+              className={segmentButtonClass(active, 'default', true)}
             >
               <LineDashStyleIcon style={opt} />
             </button>
@@ -262,7 +289,7 @@ export function PopoverSegmentRow<T extends string>({
     <div className="space-y-2">
       <p className={popoverSectionLabelClass}>{label}</p>
       <div
-        className={cn(segmentGroupClass, fullWidth && 'flex w-full')}
+        className={cn(segmentGroupClass('default'), fullWidth && 'flex w-full')}
         role="group"
         aria-label={label}
       >
@@ -276,7 +303,7 @@ export function PopoverSegmentRow<T extends string>({
               aria-label={optLabel}
               aria-pressed={active}
               onClick={() => onChange(opt)}
-              className={segmentButtonClass(active, false)}
+              className={segmentButtonClass(active, 'default', false)}
             >
               {optLabel}
             </button>
@@ -295,6 +322,7 @@ export function PopoverIconSegmentRow<T extends string>({
   onChange,
   idPrefix,
   options,
+  surface = 'default',
 }: {
   label: string
   labelHidden?: boolean
@@ -302,32 +330,35 @@ export function PopoverIconSegmentRow<T extends string>({
   onChange: (v: T) => void
   idPrefix: string
   options: readonly { value: T; ariaLabel: string; icon: ReactNode }[]
+  surface?: PopoverControlSurface
 }) {
+  const group = (
+    <div className={segmentGroupClass(surface)} role="group" aria-label={label}>
+      {options.map(({ value: opt, ariaLabel, icon }) => {
+        const active = value === opt
+        return (
+          <button
+            key={opt}
+            type="button"
+            id={`${idPrefix}-${opt}`}
+            aria-label={ariaLabel}
+            aria-pressed={active}
+            onClick={() => onChange(opt)}
+            className={segmentButtonClass(active, surface, true)}
+          >
+            {icon}
+          </button>
+        )
+      })}
+    </div>
+  )
+
+  if (labelHidden) return group
+
   return (
     <div>
-      {labelHidden ? (
-        <p className="sr-only">{label}</p>
-      ) : (
-        <p className={cn(popoverSectionLabelClass, 'mb-2')}>{label}</p>
-      )}
-      <div className={segmentGroupClass} role="group" aria-label={label}>
-        {options.map(({ value: opt, ariaLabel, icon }) => {
-          const active = value === opt
-          return (
-            <button
-              key={opt}
-              type="button"
-              id={`${idPrefix}-${opt}`}
-              aria-label={ariaLabel}
-              aria-pressed={active}
-              onClick={() => onChange(opt)}
-              className={segmentButtonClass(active, true)}
-            >
-              {icon}
-            </button>
-          )
-        })}
-      </div>
+      <p className={cn(popoverSectionLabelClass, 'mb-2')}>{label}</p>
+      {group}
     </div>
   )
 }
@@ -340,6 +371,7 @@ export function PopoverIconGridRow<T extends string>({
   onChange,
   idPrefix,
   options,
+  surface = 'default',
 }: {
   label: string
   labelHidden?: boolean
@@ -347,36 +379,35 @@ export function PopoverIconGridRow<T extends string>({
   onChange: (v: T) => void
   idPrefix: string
   options: readonly { value: T; ariaLabel: string; icon: ReactNode }[]
+  surface?: PopoverControlSurface
 }) {
+  const group = (
+    <div className={segmentGroupClass(surface)} role="group" aria-label={label}>
+      {options.map(({ value: opt, ariaLabel, icon }) => {
+        const active = value === opt
+        return (
+          <button
+            key={opt}
+            type="button"
+            id={`${idPrefix}-${opt}`}
+            aria-label={ariaLabel}
+            aria-pressed={active}
+            onClick={() => onChange(opt)}
+            className={segmentButtonClass(active, surface, true)}
+          >
+            {icon}
+          </button>
+        )
+      })}
+    </div>
+  )
+
+  if (labelHidden) return group
+
   return (
     <div>
-      {labelHidden ? (
-        <p className="sr-only">{label}</p>
-      ) : (
-        <p className={cn(popoverSectionLabelClass, 'mb-2')}>{label}</p>
-      )}
-      <div
-        className={cn(segmentGroupClass, 'flex flex-wrap')}
-        role="group"
-        aria-label={label}
-      >
-        {options.map(({ value: opt, ariaLabel, icon }) => {
-          const active = value === opt
-          return (
-            <button
-              key={opt}
-              type="button"
-              id={`${idPrefix}-${opt}`}
-              aria-label={ariaLabel}
-              aria-pressed={active}
-              onClick={() => onChange(opt)}
-              className={segmentButtonClass(active, true)}
-            >
-              {icon}
-            </button>
-          )
-        })}
-      </div>
+      <p className={cn(popoverSectionLabelClass, 'mb-2')}>{label}</p>
+      {group}
     </div>
   )
 }

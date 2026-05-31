@@ -1,16 +1,7 @@
-import { ChevronLeft, ChevronRight, Redo2, Trash2, Undo2 } from 'lucide-react'
+import type { RefObject } from 'react'
+import { ChevronLeft, ChevronRight, Languages, LayoutTemplate, Redo2, Smartphone, Trash2, Undo2 } from 'lucide-react'
 import { BookAnnotationToolbar } from '@/components/students/book-annotation-toolbar'
 import { BookCaptureMenu } from '@/components/students/book-capture-menu'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { getUnitReaderBounds } from '@/lib/books/page-range'
@@ -26,12 +17,9 @@ import type { EyedropperVariant } from '@/lib/books/eyedropper-variant'
 import type { BookCaptureFormat } from '@/lib/books/book-capture'
 import type { BookLibraryPayload } from '@/lib/books/types'
 import { BOOK_OVERLAY_SHORTCUT_LABELS as SC } from '@/lib/books/book-overlay-keyboard-shortcuts'
+import { BOOK_OVERLAY_GLASS_CHROME } from '@/components/students/fullscreen-book-overlay/constants'
 
 type AnnotationCapabilities = { canUndo: boolean; canRedo: boolean }
-
-/** Shared chrome for the annotation rail so expanded + collapsed read as one control. */
-const ANNOTATION_RAIL_SURFACE =
-  'border border-white/10 bg-black/24 text-white/65 shadow-[0_6px_18px_rgba(0,0,0,0.18)] backdrop-blur-[1.5px]'
 
 /** Same footprint for the peek tab (collapsed) and the hide handle (expanded, inside shell). */
 const ANNOTATION_RAIL_HANDLE_LAYOUT =
@@ -53,13 +41,15 @@ interface AnnotationRailProps {
   setStampQuestionColor: (c: string) => void
   penSwatchId: string
   pickPenSwatch: (id: string) => void
+  penStrokeProfile: import('@/lib/books/pen-stroke-profile').PenStrokeProfile
+  setPenStrokeProfile: (profile: import('@/lib/books/pen-stroke-profile').PenStrokeProfile) => void
   penColorSource: AnnotationColorSource
   penCustomHex: string
   pickPenCustomColor: (hex: string) => void
   textColor: string
   setTextColor: (v: string) => void
   shapeStrokeSwatchId: string
-  setShapeStrokeSwatchId: (v: string) => void
+  pickShapeStrokeSwatch: (v: string) => void
   stickyFillColor: string
   setStickyFillColor: (v: string) => void
   markerColor: string
@@ -71,6 +61,14 @@ interface AnnotationRailProps {
   setPenThicknessStep: (v: AnnotationStrokeThicknessStep) => void
   markerThicknessStep: AnnotationStrokeThicknessStep
   setMarkerThicknessStep: (v: AnnotationStrokeThicknessStep) => void
+  shapeThicknessStep: AnnotationStrokeThicknessStep
+  setShapeThicknessStep: (v: AnnotationStrokeThicknessStep) => void
+  textThicknessStep: AnnotationStrokeThicknessStep
+  setTextThicknessStep: (v: AnnotationStrokeThicknessStep) => void
+  stickyThicknessStep: AnnotationStrokeThicknessStep
+  setStickyThicknessStep: (v: AnnotationStrokeThicknessStep) => void
+  stampThicknessStep: AnnotationStrokeThicknessStep
+  setStampThicknessStep: (v: AnnotationStrokeThicknessStep) => void
   eraserPixelThicknessStep: AnnotationStrokeThicknessStep
   setEraserPixelThicknessStep: (v: AnnotationStrokeThicknessStep) => void
   eraserLineThicknessStep: AnnotationStrokeThicknessStep
@@ -83,6 +81,12 @@ interface AnnotationRailProps {
   setPenLineDashStyle: (v: AnnotationLineDashStyle) => void
   markerLineDashStyle: AnnotationLineDashStyle
   setMarkerLineDashStyle: (v: AnnotationLineDashStyle) => void
+  markerStraightStroke: boolean
+  setMarkerStraightStroke: (v: boolean) => void
+  markerDecoratedEdge: boolean
+  setMarkerDecoratedEdge: (v: boolean) => void
+  penAutoGroupConnected: boolean
+  setPenAutoGroupConnected: (v: boolean) => void
   shapeLineDashStyle: AnnotationLineDashStyle
   setShapeLineDashStyle: (v: AnnotationLineDashStyle) => void
   shapeStrokeEnabled: boolean
@@ -115,11 +119,14 @@ interface AnnotationRailProps {
   setPdfDialogOpen: (v: boolean) => void
   toolbarCaps: AnnotationCapabilities
   isWhiteboardOpen: boolean
+  isWhiteboardSessionOpen: boolean
+  isWhiteboardMinimized: boolean
+  onWhiteboardRailClick: () => void
+  whiteboardToolbarButtonRef: RefObject<HTMLButtonElement | null>
   getActiveAnnotationRef: () => { current: { undo: () => void; redo: () => void; clear: () => void } | null }
-  clearInkOpen: boolean
-  setClearInkOpen: (v: boolean) => void
-  clearTargetPage: number
-  clearInkSpreadPagePair: { readonly left: number; readonly right: number } | null
+  translateDockOpen: boolean
+  onTranslateDockToggle: () => void
+  onOpenCoachDialog: () => void
 }
 
 export function AnnotationRail({
@@ -138,13 +145,15 @@ export function AnnotationRail({
   setStampQuestionColor,
   penSwatchId,
   pickPenSwatch,
+  penStrokeProfile,
+  setPenStrokeProfile,
   penColorSource,
   penCustomHex,
   pickPenCustomColor,
   textColor,
   setTextColor,
   shapeStrokeSwatchId,
-  setShapeStrokeSwatchId,
+  pickShapeStrokeSwatch,
   stickyFillColor,
   setStickyFillColor,
   markerColor,
@@ -156,6 +165,14 @@ export function AnnotationRail({
   setPenThicknessStep,
   markerThicknessStep,
   setMarkerThicknessStep,
+  shapeThicknessStep,
+  setShapeThicknessStep,
+  textThicknessStep,
+  setTextThicknessStep,
+  stickyThicknessStep,
+  setStickyThicknessStep,
+  stampThicknessStep,
+  setStampThicknessStep,
   eraserPixelThicknessStep,
   setEraserPixelThicknessStep,
   eraserLineThicknessStep,
@@ -168,6 +185,12 @@ export function AnnotationRail({
   setPenLineDashStyle,
   markerLineDashStyle,
   setMarkerLineDashStyle,
+  markerStraightStroke,
+  setMarkerStraightStroke,
+  markerDecoratedEdge,
+  setMarkerDecoratedEdge,
+  penAutoGroupConnected,
+  setPenAutoGroupConnected,
   shapeLineDashStyle,
   setShapeLineDashStyle,
   shapeStrokeEnabled,
@@ -200,19 +223,22 @@ export function AnnotationRail({
   setPdfDialogOpen,
   toolbarCaps,
   isWhiteboardOpen,
+  isWhiteboardSessionOpen,
+  isWhiteboardMinimized,
+  onWhiteboardRailClick,
+  whiteboardToolbarButtonRef,
   getActiveAnnotationRef,
-  clearInkOpen,
-  setClearInkOpen,
-  clearTargetPage,
-  clearInkSpreadPagePair,
+  translateDockOpen,
+  onTranslateDockToggle,
+  onOpenCoachDialog,
 }: AnnotationRailProps) {
   if (!hasResolvedUnit || numPages == null || !selectedBookId) return null
 
   return (
     <div
       className={cn(
-        /* Root must not steal hits from the book (z-28 sits above the stage); only chrome re-enables events. */
-        'pointer-events-none absolute left-0 top-1/2 z-[28] flex -translate-y-1/2 items-center',
+        /* Positioned by BookOverlayLeftChrome; only chrome re-enables pointer events. */
+        'pointer-events-none flex items-center',
         isLessonPaperOverlayMode ? 'max-w-[calc(50vw-18px)]' : 'max-w-[calc(100vw-18px)]',
         suppressChrome && 'invisible opacity-0',
       )}
@@ -226,12 +252,12 @@ export function AnnotationRail({
         >
           <div
             className={cn(
-              'flex max-h-[calc(100vh-210px)] min-h-0 w-max flex-col overflow-hidden rounded-2xl [scrollbar-width:thin]',
-              ANNOTATION_RAIL_SURFACE,
+              'flex max-h-[calc(100vh-210px)] w-max flex-col overflow-hidden rounded-2xl [scrollbar-width:thin]',
+              BOOK_OVERLAY_GLASS_CHROME,
             )}
           >
             <div
-              className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto overflow-x-visible py-1.5 pl-1 pr-1 text-white"
+              className="flex w-max flex-col items-center gap-1 overflow-y-auto overflow-x-visible py-1.5 pl-1 pr-1 text-white"
               role="toolbar"
               aria-label="Annotation tools"
             >
@@ -246,13 +272,15 @@ export function AnnotationRail({
               setStampQuestionColor={setStampQuestionColor}
               penSwatchId={penSwatchId}
               pickPenSwatch={pickPenSwatch}
+              penStrokeProfile={penStrokeProfile}
+              setPenStrokeProfile={setPenStrokeProfile}
               penColorSource={penColorSource}
               penCustomHex={penCustomHex}
               pickPenCustomColor={pickPenCustomColor}
               textColor={textColor}
               setTextColor={setTextColor}
               shapeStrokeSwatchId={shapeStrokeSwatchId}
-              setShapeStrokeSwatchId={setShapeStrokeSwatchId}
+              pickShapeStrokeSwatch={pickShapeStrokeSwatch}
               stickyFillColor={stickyFillColor}
               setStickyFillColor={setStickyFillColor}
               markerColor={markerColor}
@@ -264,6 +292,14 @@ export function AnnotationRail({
               setPenThicknessStep={setPenThicknessStep}
               markerThicknessStep={markerThicknessStep}
               setMarkerThicknessStep={setMarkerThicknessStep}
+              shapeThicknessStep={shapeThicknessStep}
+              setShapeThicknessStep={setShapeThicknessStep}
+              textThicknessStep={textThicknessStep}
+              setTextThicknessStep={setTextThicknessStep}
+              stickyThicknessStep={stickyThicknessStep}
+              setStickyThicknessStep={setStickyThicknessStep}
+              stampThicknessStep={stampThicknessStep}
+              setStampThicknessStep={setStampThicknessStep}
               eraserPixelThicknessStep={eraserPixelThicknessStep}
               setEraserPixelThicknessStep={setEraserPixelThicknessStep}
               eraserLineThicknessStep={eraserLineThicknessStep}
@@ -276,6 +312,10 @@ export function AnnotationRail({
               setPenLineDashStyle={setPenLineDashStyle}
               markerLineDashStyle={markerLineDashStyle}
               setMarkerLineDashStyle={setMarkerLineDashStyle}
+              markerStraightStroke={markerStraightStroke}
+              setMarkerStraightStroke={setMarkerStraightStroke}
+              markerDecoratedEdge={markerDecoratedEdge}
+              setMarkerDecoratedEdge={setMarkerDecoratedEdge}
               shapeLineDashStyle={shapeLineDashStyle}
               setShapeLineDashStyle={setShapeLineDashStyle}
               shapeStrokeEnabled={shapeStrokeEnabled}
@@ -316,6 +356,35 @@ export function AnnotationRail({
             />
             <span className="my-1 h-px w-7 shrink-0 bg-white/20" aria-hidden />
             <Button
+              ref={whiteboardToolbarButtonRef}
+              type="button"
+              variant="ghost"
+              size="icon"
+              className={cn(
+                'h-8 w-8 shrink-0 rounded-full text-white hover:bg-white/15',
+                isWhiteboardOpen && 'bg-white/20 ring-1 ring-white/25',
+                isWhiteboardMinimized && 'bg-white/12 ring-1 ring-white/20',
+              )}
+              aria-label={
+                !isWhiteboardSessionOpen
+                  ? 'Open lesson board'
+                  : isWhiteboardMinimized
+                    ? 'Restore lesson board'
+                    : 'Minimize lesson board'
+              }
+              aria-pressed={isWhiteboardSessionOpen}
+              title={
+                !isWhiteboardSessionOpen
+                  ? `Lesson board (${SC.whiteboard})`
+                  : isWhiteboardMinimized
+                    ? `Restore lesson board (${SC.whiteboard})`
+                    : `Minimize lesson board (${SC.whiteboard})`
+              }
+              onClick={onWhiteboardRailClick}
+            >
+              <LayoutTemplate className="h-4 w-4" strokeWidth={2} />
+            </Button>
+            <Button
               type="button"
               variant="ghost"
               size="icon"
@@ -350,16 +419,43 @@ export function AnnotationRail({
                   ? `Clear whiteboard (${SC.clearPage})`
                   : `Clear all ink on this page (${SC.clearPage})`
               }
-              onClick={() => setClearInkOpen(true)}
+              onClick={() => getActiveAnnotationRef().current?.clear()}
             >
               <Trash2 className="h-4 w-4" strokeWidth={2} />
+            </Button>
+            <span className="my-1 h-px w-7 shrink-0 bg-white/20" aria-hidden />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className={cn(
+                'h-8 w-8 shrink-0 rounded-full text-white hover:bg-white/15',
+                translateDockOpen && 'bg-white/20 ring-1 ring-white/25',
+              )}
+              aria-label={translateDockOpen ? 'Close translate dock' : 'Open translate dock'}
+              aria-pressed={translateDockOpen}
+              title={`Translate to Chinese (${SC.translate})`}
+              onClick={onTranslateDockToggle}
+            >
+              <Languages className="h-4 w-4" strokeWidth={2} />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0 rounded-full text-white hover:bg-white/15"
+              aria-label="Open teacher coach on phone"
+              title="Coach on phone (same Wi‑Fi)"
+              onClick={onOpenCoachDialog}
+            >
+              <Smartphone className="h-4 w-4" strokeWidth={2} />
             </Button>
             </div>
           </div>
           <button
             type="button"
             className={cn(
-              ANNOTATION_RAIL_SURFACE,
+              BOOK_OVERLAY_GLASS_CHROME,
               ANNOTATION_RAIL_HANDLE_LAYOUT,
               'absolute left-full top-1/2 z-[1] -translate-x-1 -translate-y-1/2 border-l-0 transition-colors hover:bg-white/10 hover:text-white/85',
             )}
@@ -374,7 +470,7 @@ export function AnnotationRail({
         <button
           type="button"
           className={cn(
-            ANNOTATION_RAIL_SURFACE,
+            BOOK_OVERLAY_GLASS_CHROME,
             ANNOTATION_RAIL_HANDLE_LAYOUT,
             'border-l-0 transition-colors hover:bg-white/10 hover:text-white/85',
             !suppressChrome && 'pointer-events-auto',
@@ -386,44 +482,6 @@ export function AnnotationRail({
           <ChevronRight className="h-3 w-3 shrink-0" strokeWidth={2} />
         </button>
       )}
-
-      <AlertDialog open={clearInkOpen} onOpenChange={setClearInkOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{isWhiteboardOpen ? 'Clear this whiteboard?' : clearInkSpreadPagePair ? 'Clear both open pages?' : 'Clear this page?'}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {isWhiteboardOpen ? (
-                <>
-                  Remove everything on the whiteboard for page {clearTargetPage}. PDF ink on the book is not affected.
-                  Undo history for this whiteboard will be cleared as well.
-                </>
-              ) : clearInkSpreadPagePair ? (
-                <>
-                  Remove all annotations on pages {clearInkSpreadPagePair.left} and {clearInkSpreadPagePair.right}.
-                  Undo history for both pages will be cleared as well.
-                </>
-              ) : (
-                <>
-                  Remove all annotations on page {clearTargetPage}. The undo history for this page will be cleared as
-                  well.
-                </>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-[var(--brand-red)] text-white hover:bg-[var(--brand-red)]/90"
-              onClick={() => {
-                getActiveAnnotationRef().current?.clear()
-                setClearInkOpen(false)
-              }}
-            >
-              {isWhiteboardOpen ? 'Clear whiteboard' : clearInkSpreadPagePair ? 'Clear both pages' : 'Clear page'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   )
 }

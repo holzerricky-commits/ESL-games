@@ -81,6 +81,10 @@ export interface BookRecord {
   title: string
   description?: string
   pageAlignmentByFile?: Record<string, BookFilePageAlignment>
+  /** Fraction of page width pulled at spread seam (default 0.018). */
+  spreadGutterPullRatio?: number
+  /** Per unit PDF filePath overrides; wins over book default when present. */
+  spreadGutterByFile?: Record<string, number>
   units: BookUnitRecord[]
 }
 

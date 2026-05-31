@@ -1,6 +1,6 @@
-'use client'
+﻿'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import {
   BookMarked,
@@ -16,6 +16,7 @@ import {
   Pointer,
   Pencil,
   Trash2,
+  Wand2,
 } from 'lucide-react'
 import { PdfPageThumbnail } from '@/components/students/pdf-page-thumbnail'
 import { toast } from 'sonner'
@@ -36,15 +37,44 @@ import {
   mergeCoverIntoHiddenPages,
   resolveEffectiveAnchorToPdfPage,
 } from '@/lib/books/page-alignment-runtime'
+import { SpreadPageCluster } from '@/components/books/spread-page-cluster'
+import {
+  computeSpreadClusterMetrics,
+  computeSpreadFitScale,
+  computeSpreadPageWidth,
+} from '@/lib/books/spread-viewport-layout'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  bookSpreadGutterPullRatioForSave,
+  buildSpreadGutterByFileForSave,
+  clampSpreadGutterPullRatio,
+  DEFAULT_SPREAD_GUTTER_PULL_RATIO,
+  resolveSpreadGutterPullRatio,
+  spreadSidePullPx,
+} from '@/lib/books/spread-gutter'
+import {
+  estimateSpreadGutterPullRatioFromPdf,
+  pickSpreadPairsForAutoAnalysis,
+} from '@/lib/books/spread-gutter-auto-client'
 import { cn } from '@/lib/utils'
 
 const PdfDocument = dynamic(() => import('react-pdf').then((mod) => mod.Document), { ssr: false })
 const PdfPage = dynamic(() => import('react-pdf').then((mod) => mod.Page), { ssr: false })
 const PDF_DOCUMENT_OPTIONS = { wasmUrl: '/wasm/' } as const
+const DEFAULT_PREVIEW_PAGE_ASPECT_RATIO = 1 / 1.414
+/** Slider permille: 0–200 → 0%–20% page-width overlap at the seam. */
+const SPREAD_GUTTER_SLIDER_MAX = 200
+
+function ratioToSliderPermille(ratio: number): number {
+  return Math.round(clampSpreadGutterPullRatio(ratio) * 1000)
+}
+
+function sliderPermilleToRatio(permille: number): number {
+  return clampSpreadGutterPullRatio(permille / 1000)
+}
 
 function parsePositiveInt(raw: string): number | null {
   const n = Math.floor(Number.parseInt(raw.trim(), 10))
@@ -207,6 +237,8 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
   const [notCountedPdfPagesInput, setNotCountedPdfPagesInput] = useState('')
   const [hiddenPdfPagesInput, setHiddenPdfPagesInput] = useState('')
   const [previewPage, setPreviewPage] = useState(1)
+  const [previewPageJumpDraft, setPreviewPageJumpDraft] = useState('1')
+  const [previewPageJumpFocused, setPreviewPageJumpFocused] = useState(false)
   const [previewNumPages, setPreviewNumPages] = useState<number | null>(null)
   const [pdfReady, setPdfReady] = useState(false)
   const [drafts, setDrafts] = useState<TocUnitDraft[]>([])
@@ -218,6 +250,13 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
   const [saving, setSaving] = useState(false)
   const [lastNumPages, setLastNumPages] = useState<number | null>(null)
   const [structureUnitIdx, setStructureUnitIdx] = useState(0)
+  const [bookSpreadGutterPullRatio, setBookSpreadGutterPullRatio] = useState(DEFAULT_SPREAD_GUTTER_PULL_RATIO)
+  const [fileGutterOverrideEnabled, setFileGutterOverrideEnabled] = useState(false)
+  const [fileSpreadGutterPullRatio, setFileSpreadGutterPullRatio] = useState(DEFAULT_SPREAD_GUTTER_PULL_RATIO)
+  const [gutterAutoBusy, setGutterAutoBusy] = useState(false)
+  const [previewPageAspectRatio, setPreviewPageAspectRatio] = useState(DEFAULT_PREVIEW_PAGE_ASPECT_RATIO)
+  const [previewViewportSize, setPreviewViewportSize] = useState({ w: 0, h: 0 })
+  const previewViewportRef = useRef<HTMLDivElement | null>(null)
   const [selectedUnitIndicesForMerge, setSelectedUnitIndicesForMerge] = useState<Set<number>>(() => new Set())
   const [openLessonId, setOpenLessonId] = useState<string | null>(null)
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null)
@@ -417,9 +456,141 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
     setHiddenPdfPagesInput(stringifyPageListInput(mergeCoverIntoHiddenPages(saved?.hiddenPdfPages)))
   }, [selectedBook, sourceFilePath])
 
+  useEffect(() => {
+    if (!selectedBook) {
+      setBookSpreadGutterPullRatio(DEFAULT_SPREAD_GUTTER_PULL_RATIO)
+      setFileGutterOverrideEnabled(false)
+      setFileSpreadGutterPullRatio(DEFAULT_SPREAD_GUTTER_PULL_RATIO)
+      return
+    }
+    const bookDefault =
+      selectedBook.spreadGutterPullRatio ?? DEFAULT_SPREAD_GUTTER_PULL_RATIO
+    setBookSpreadGutterPullRatio(bookDefault)
+    const fileOverride =
+      sourceFilePath && selectedBook.spreadGutterByFile?.[sourceFilePath]
+    if (typeof fileOverride === 'number' && Number.isFinite(fileOverride)) {
+      setFileGutterOverrideEnabled(true)
+      setFileSpreadGutterPullRatio(fileOverride)
+    } else {
+      setFileGutterOverrideEnabled(false)
+      setFileSpreadGutterPullRatio(bookDefault)
+    }
+  }, [selectedBook, sourceFilePath])
+
+  /** Drop unsaved per-PDF overlap when preview spread changes; keep saved overrides. */
+  useEffect(() => {
+    if (!selectedBook || !sourceFilePath) return
+    const fileOverride = selectedBook.spreadGutterByFile?.[sourceFilePath]
+    if (typeof fileOverride === 'number' && Number.isFinite(fileOverride)) {
+      setFileGutterOverrideEnabled(true)
+      setFileSpreadGutterPullRatio(fileOverride)
+    } else {
+      setFileGutterOverrideEnabled(false)
+      setFileSpreadGutterPullRatio(bookSpreadGutterPullRatio)
+    }
+  }, [previewLeftPage, selectedBook, sourceFilePath, bookSpreadGutterPullRatio])
+
+  const previewSpreadGutterPullRatio = useMemo(() => {
+    if (!selectedBook) return DEFAULT_SPREAD_GUTTER_PULL_RATIO
+    const draftBook: BookRecord = {
+      ...selectedBook,
+      spreadGutterPullRatio: bookSpreadGutterPullRatio,
+      spreadGutterByFile:
+        fileGutterOverrideEnabled && sourceFilePath
+          ? {
+              ...(selectedBook.spreadGutterByFile ?? {}),
+              [sourceFilePath]: fileSpreadGutterPullRatio,
+            }
+          : selectedBook.spreadGutterByFile,
+    }
+    return resolveSpreadGutterPullRatio(draftBook, sourceFilePath || null)
+  }, [
+    selectedBook,
+    sourceFilePath,
+    bookSpreadGutterPullRatio,
+    fileGutterOverrideEnabled,
+    fileSpreadGutterPullRatio,
+  ])
+
+  useEffect(() => {
+    setPreviewPageAspectRatio(DEFAULT_PREVIEW_PAGE_ASPECT_RATIO)
+  }, [sourceFilePath])
+
+  useEffect(() => {
+    const el = previewViewportRef.current
+    if (!el) return
+    const sync = () => {
+      const bounds = el.getBoundingClientRect()
+      setPreviewViewportSize({ w: bounds.width, h: bounds.height })
+    }
+    sync()
+    const ro = new ResizeObserver(sync)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [open, previewUrl, pdfReady])
+
+  const previewSpreadPageWidth = useMemo(() => {
+    const { w, h } = previewViewportSize
+    if (!(w > 0) || !(h > 0)) return 320
+    return computeSpreadPageWidth(w, h, previewPageAspectRatio)
+  }, [previewViewportSize, previewPageAspectRatio])
+
+  const previewCluster = useMemo(
+    () => computeSpreadClusterMetrics(previewSpreadPageWidth, previewPageAspectRatio, previewSpreadGutterPullRatio),
+    [previewSpreadPageWidth, previewPageAspectRatio, previewSpreadGutterPullRatio],
+  )
+
+  const previewFitScale = useMemo(
+    () =>
+      computeSpreadFitScale(
+        previewViewportSize.w,
+        previewViewportSize.h,
+        previewCluster.spreadOverlayWidthPx,
+        previewCluster.pageCanvasHeightPx,
+      ),
+    [previewViewportSize, previewCluster.spreadOverlayWidthPx, previewCluster.pageCanvasHeightPx],
+  )
+
+  const onPreviewPdfPageLoadSuccess = useCallback(
+    (page: { originalWidth?: number; originalHeight?: number; width: number; height: number }) => {
+      const ow = page.originalWidth ?? page.width
+      const oh = page.originalHeight ?? page.height
+      if (!(ow > 0) || !(oh > 0)) return
+      const ratio = ow / oh
+      if (Number.isFinite(ratio) && ratio > 0) setPreviewPageAspectRatio(ratio)
+    },
+    [],
+  )
+
   function goToPreviewPage(nextPage: number) {
     setPreviewPage(clampPreviewPage(nearestVisiblePage(nextPage, visiblePreviewPages)))
   }
+
+  const commitPreviewPageJump = useCallback(() => {
+    const raw = previewPageJumpDraft.trim()
+    const match = raw.match(/^(\d+)/)
+    if (!match) {
+      setPreviewPageJumpDraft(String(previewLeftEffective ?? previewLeftPage))
+      return
+    }
+    const anchor = parseInt(match[1]!, 10)
+    if (!Number.isFinite(anchor)) return
+    const pdfPage = resolveEffectiveAnchorToPdfPage(anchor, alignmentRuntime)
+    if (pdfPage != null) {
+      goToPreviewPage(pdfPage)
+      return
+    }
+    if (previewNumPages != null) {
+      goToPreviewPage(clampPreviewPageNumber(anchor, previewNumPages))
+    }
+  }, [
+    alignmentRuntime,
+    previewLeftEffective,
+    previewLeftPage,
+    previewNumPages,
+    previewPageJumpDraft,
+    visiblePreviewPages,
+  ])
 
   function goToMappedAnchorPage(anchorPage: number | null | undefined) {
     if (typeof anchorPage !== 'number' || !Number.isFinite(anchorPage)) return
@@ -436,6 +607,39 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
     goToPreviewPage(nextPage)
   }
 
+  const canAutoAdjustGutter = Boolean(
+    previewUrl && pdfReady && previewRightPage != null && !gutterAutoBusy,
+  )
+
+  const runAutoGutterAdjustForPdf = useCallback(async () => {
+    if (!previewUrl || previewRightPage == null) {
+      toast.error('Open a two-page spread in the preview first.')
+      return
+    }
+    const spreads = pickSpreadPairsForAutoAnalysis(visiblePreviewPages, previewLeftPage)
+    if (!spreads.length) {
+      toast.error('No spread available to analyze.')
+      return
+    }
+    setGutterAutoBusy(true)
+    try {
+      const ratio = await estimateSpreadGutterPullRatioFromPdf(previewUrl, spreads)
+      const pct = (ratio * 100).toFixed(1)
+      setFileGutterOverrideEnabled(true)
+      setFileSpreadGutterPullRatio(ratio)
+      toast.success(`PDF overlap set to ${pct}%`, {
+        description:
+          spreads.length > 1
+            ? `Median of ${spreads.length} spreads; use “Save structure” to keep.`
+            : 'Use “Save structure” to keep this PDF override.',
+      })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Auto-adjust failed')
+    } finally {
+      setGutterAutoBusy(false)
+    }
+  }, [previewUrl, previewRightPage, visiblePreviewPages, previewLeftPage])
+
   function onPreviewDocumentLoadSuccess(meta: { numPages: number }) {
     setPreviewNumPages(meta.numPages)
     setLastNumPages(meta.numPages)
@@ -448,6 +652,15 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
       setPreviewPage(nearestVisiblePage(previewPage, visiblePreviewPages))
     }
   }, [previewPage, visiblePreviewPages])
+
+  useEffect(() => {
+    if (previewPageJumpFocused) return
+    setPreviewPageJumpDraft(String(previewLeftEffective ?? previewLeftPage))
+  }, [previewLeftEffective, previewLeftPage, previewPageJumpFocused])
+
+  useEffect(() => {
+    setPreviewPageJumpFocused(false)
+  }, [sourceFilePath])
 
   const extractBatchesWithAi = useCallback(async (
     images: Array<{ pdfPage: number; mimeType: string; base64: string }>,
@@ -840,10 +1053,24 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
                   }
                 : {}),
             }
+            const nextSpreadGutterByFile = sourceFilePath
+              ? buildSpreadGutterByFileForSave(
+                  selectedBook.spreadGutterByFile,
+                  sourceFilePath,
+                  bookSpreadGutterPullRatio,
+                  fileGutterOverrideEnabled,
+                  fileSpreadGutterPullRatio,
+                )
+              : selectedBook.spreadGutterByFile
+            const nextSpreadGutterPullRatio = bookSpreadGutterPullRatioForSave(bookSpreadGutterPullRatio)
+            const { spreadGutterPullRatio: _omitBookGutter, spreadGutterByFile: _omitFileGutter, ...bookRest } =
+              selectedBook
             return {
-              ...selectedBook,
+              ...bookRest,
               units,
               pageAlignmentByFile: nextPageAlignmentByFile,
+              ...(nextSpreadGutterPullRatio != null ? { spreadGutterPullRatio: nextSpreadGutterPullRatio } : {}),
+              ...(nextSpreadGutterByFile ? { spreadGutterByFile: nextSpreadGutterByFile } : {}),
             }
           }),
         }
@@ -1022,6 +1249,92 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
                   </p>
                 </div>
               </div>
+              {selectedBook ? (
+                <div className="space-y-3 border-t border-border/40 pt-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium text-muted-foreground">
+                      Spread seam overlap (whole book)
+                    </Label>
+                    <input
+                      type="range"
+                      min={0}
+                      max={SPREAD_GUTTER_SLIDER_MAX}
+                      step={1}
+                      value={ratioToSliderPermille(bookSpreadGutterPullRatio)}
+                      onChange={(e) =>
+                        setBookSpreadGutterPullRatio(sliderPermilleToRatio(Number(e.target.value)))
+                      }
+                      className="h-2 w-full accent-[var(--brand-primary)]"
+                      aria-label="Book spread seam overlap"
+                    />
+                    <p className="text-[11px] tabular-nums text-muted-foreground">
+                      {(bookSpreadGutterPullRatio * 100).toFixed(1)}% ·{' '}
+                      {spreadSidePullPx(previewSpreadPageWidth, bookSpreadGutterPullRatio)}px at preview width
+                    </p>
+                  </div>
+                  {sourceFilePath ? (
+                    <div className="space-y-1.5">
+                      <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                        <input
+                          type="checkbox"
+                          className="h-3.5 w-3.5 rounded border-border"
+                          checked={fileGutterOverrideEnabled}
+                          onChange={(e) => {
+                            const enabled = e.target.checked
+                            setFileGutterOverrideEnabled(enabled)
+                            if (enabled) {
+                              setFileSpreadGutterPullRatio(
+                                selectedBook.spreadGutterByFile?.[sourceFilePath]
+                                  ?? bookSpreadGutterPullRatio,
+                              )
+                            }
+                          }}
+                        />
+                        Custom overlap for this PDF ({fileBasename(sourceFilePath)})
+                      </label>
+                      {fileGutterOverrideEnabled ? (
+                        <>
+                          <input
+                            type="range"
+                            min={0}
+                            max={SPREAD_GUTTER_SLIDER_MAX}
+                            step={1}
+                            value={ratioToSliderPermille(fileSpreadGutterPullRatio)}
+                            onChange={(e) =>
+                              setFileSpreadGutterPullRatio(sliderPermilleToRatio(Number(e.target.value)))
+                            }
+                            className="h-2 w-full accent-[var(--brand-primary)]"
+                            aria-label="PDF spread seam overlap override"
+                          />
+                          <p className="text-[11px] tabular-nums text-muted-foreground">
+                            This file: {(fileSpreadGutterPullRatio * 100).toFixed(1)}%
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-[11px] leading-snug text-muted-foreground">
+                          Units using this PDF inherit the book default unless overridden here.
+                        </p>
+                      )}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-1.5"
+                        disabled={!canAutoAdjustGutter}
+                        onClick={() => void runAutoGutterAdjustForPdf()}
+                      >
+                        <Wand2 className={cn('h-3.5 w-3.5', gutterAutoBusy && 'animate-pulse')} aria-hidden />
+                        {gutterAutoBusy ? 'Analyzing…' : 'Auto-adjust this PDF'}
+                      </Button>
+                    </div>
+                  ) : null}
+                  <p className="text-[11px] leading-snug text-muted-foreground">
+                    Preview uses {(previewSpreadGutterPullRatio * 100).toFixed(1)}% overlap (
+                    {previewCluster.gutterPullPx}px at {previewSpreadPageWidth}px page width). Tune on spreads with art
+                    across the seam.
+                  </p>
+                </div>
+              ) : null}
               {!aiExtractionCompleted ? (
                 <p className="text-[11px] text-muted-foreground">Run AI extraction once to unlock page alignment fields.</p>
               ) : null}
@@ -1510,7 +1823,35 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
                       <span className="text-muted-foreground/70"> · {alignmentRuntime.effectiveTotal} counted</span>
                     ) : null}
                   </span>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {drafts.length ? (
+                      <>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => setUnitCoverFromPreview(structureUnitIdx, previewLeftPage)}
+                          title={`Set unit ${structureUnitIdx + 1} cover to left page`}
+                          aria-label="Set unit cover from left page"
+                        >
+                          <BookMarked size={14} />
+                        </Button>
+                        {previewRightPage != null ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => setUnitCoverFromPreview(structureUnitIdx, previewRightPage)}
+                            title={`Set unit ${structureUnitIdx + 1} cover to right page`}
+                            aria-label="Set unit cover from right page"
+                          >
+                            <BookMarked size={14} />
+                          </Button>
+                        ) : null}
+                      </>
+                    ) : null}
                     <Button
                       type="button"
                       variant="outline"
@@ -1523,6 +1864,27 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
                       <ChevronLeft size={16} />
                       Prev
                     </Button>
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      className="h-8 w-[3.25rem] px-1 text-center font-mono text-xs tabular-nums"
+                      value={previewPageJumpDraft}
+                      onChange={(e) => setPreviewPageJumpDraft(e.target.value)}
+                      onFocus={() => setPreviewPageJumpFocused(true)}
+                      onBlur={() => {
+                        setPreviewPageJumpFocused(false)
+                        commitPreviewPageJump()
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          ;(e.target as HTMLInputElement).blur()
+                        }
+                      }}
+                      disabled={!visiblePreviewPages.length}
+                      aria-label="Go to counted page"
+                      title="Counted page (same as Preview label). Enter to go."
+                    />
                     <Button
                       type="button"
                       variant="outline"
@@ -1547,61 +1909,43 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
                   loading={<p className="p-6 text-sm text-muted-foreground">Loading PDF preview...</p>}
                   error={<p className="p-6 text-sm text-[var(--brand-red)]">Could not open this PDF preview.</p>}
                 >
-                  <div className="grid min-h-0 flex-1 gap-2 2xl:grid-cols-2">
-                    <div className="min-h-0 overflow-auto rounded-lg border border-border/60 bg-background p-1 shadow-sm">
-                      <div className="mb-1 flex items-center justify-between gap-2 px-1 text-[11px] font-medium text-muted-foreground">
-                        <span className="min-w-0 flex-1 text-center">
-                        {previewLeftEffective != null ? (
-                          `Page ${previewLeftEffective}`
-                        ) : (
-                          <span title="Ghosted page" aria-label="Ghosted page">
-                            <Ghost size={12} />
-                          </span>
-                        )}
-                        </span>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          className="h-5 w-5"
-                          onClick={() => setUnitCoverFromPreview(structureUnitIdx, previewLeftPage)}
-                          title={`Set unit ${structureUnitIdx + 1} cover to this page`}
-                          aria-label={`Set unit ${structureUnitIdx + 1} cover to this left page`}
-                          disabled={!drafts.length}
-                        >
-                          <BookMarked size={12} />
-                        </Button>
-                      </div>
-                      <PdfPage pageNumber={previewLeftPage} height={620} renderTextLayer={false} renderAnnotationLayer={false} />
+                  <div
+                    ref={previewViewportRef}
+                    className="flex min-h-[280px] flex-1 items-center justify-center overflow-hidden rounded-lg bg-[var(--surface-2)] p-2"
+                  >
+                    <div
+                      className="relative flex w-max max-w-full items-center justify-center leading-none"
+                      style={{
+                        transform: previewFitScale < 1 ? `scale(${previewFitScale})` : undefined,
+                        transformOrigin: 'center center',
+                      }}
+                    >
+                      <SpreadPageCluster
+                        spreadOverlayWidthPx={previewCluster.spreadOverlayWidthPx}
+                        pageCanvasHeightPx={previewCluster.pageCanvasHeightPx}
+                        gutterPullPx={previewCluster.gutterPullPx}
+                        leftPage={
+                          <PdfPage
+                            pageNumber={previewLeftPage}
+                            width={previewSpreadPageWidth}
+                            renderTextLayer={false}
+                            renderAnnotationLayer={false}
+                            onLoadSuccess={onPreviewPdfPageLoadSuccess}
+                          />
+                        }
+                        rightPage={
+                          previewRightPage != null ? (
+                            <PdfPage
+                              pageNumber={previewRightPage}
+                              width={previewSpreadPageWidth}
+                              renderTextLayer={false}
+                              renderAnnotationLayer={false}
+                              onLoadSuccess={onPreviewPdfPageLoadSuccess}
+                            />
+                          ) : null
+                        }
+                      />
                     </div>
-                    {previewRightPage != null ? (
-                      <div className="min-h-0 overflow-auto rounded-lg border border-border/60 bg-background p-1 shadow-sm">
-                        <div className="mb-1 flex items-center justify-between gap-2 px-1 text-[11px] font-medium text-muted-foreground">
-                          <span className="min-w-0 flex-1 text-center">
-                          {previewRightEffective != null ? (
-                            `Page ${previewRightEffective}`
-                          ) : (
-                            <span title="Ghosted page" aria-label="Ghosted page">
-                              <Ghost size={12} />
-                            </span>
-                          )}
-                          </span>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="icon"
-                            className="h-5 w-5"
-                            onClick={() => setUnitCoverFromPreview(structureUnitIdx, previewRightPage)}
-                            title={`Set unit ${structureUnitIdx + 1} cover to this page`}
-                            aria-label={`Set unit ${structureUnitIdx + 1} cover to this right page`}
-                            disabled={!drafts.length}
-                          >
-                            <BookMarked size={12} />
-                          </Button>
-                        </div>
-                        <PdfPage pageNumber={previewRightPage} height={620} renderTextLayer={false} renderAnnotationLayer={false} />
-                      </div>
-                    ) : null}
                   </div>
                 </PdfDocument>
               </div>

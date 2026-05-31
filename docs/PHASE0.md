@@ -16,8 +16,9 @@ Choose how you will open the app while on a call:
 
 ## 2. Data safety
 
-- App data for quizzes, students, results, book annotations, reader progress, etc. is stored under browser **`localStorage`** keys starting with `esl_`.
-- Clearing site data or using another browser **drops** that data unless you have a backup.
+- **Local dev (`npm run dev`):** students, class sessions, and map progress are saved under **`data/students/`** on your PC (`students.json`, `student-progress.json`). The app migrates them out of the browser on first load when possible.
+- **Other data** (quizzes, results, book annotations, etc.) still uses browser **`localStorage`** keys starting with `esl_`.
+- Clearing site data or using another browser **drops** browser-only data unless you have a backup.
 
 **Built-in backup (Settings):**
 
@@ -35,6 +36,8 @@ On your **run target** browser:
 2. Assign curriculum / book as you normally would.
 3. Open the **book reader** from that student’s flow; turn several pages; exit cleanly.
 4. Note anything awkward for **screen share** (tiny controls, too many clicks).
+
+**Teacher-only coach (phone on same Wi‑Fi):** Full phased plan — **`docs/TEACHER_COCKPIT_AND_DICTATION_PHASES.md`**. Phase 1: open book overlay → phone icon → create session → scan QR. Use **`npm run dev:lan`** and open the app at `http://<your-PC-IP>:3000` (not `localhost`). If buttons do nothing on the IP URL, add your IP to **`allowedDevOrigins`** in `next.config.mjs` or set `ALLOWED_DEV_ORIGINS=your.ip.here` in `.env.local`, then restart the dev server.
 
 ## 4. Optional activity
 

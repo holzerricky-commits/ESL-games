@@ -14,7 +14,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { BOOK_OVERLAY_GLASS_CHROME } from '@/components/students/fullscreen-book-overlay/constants'
 import { computeClassTimerState } from '@/lib/students/class-session-timer'
+import { cn } from '@/lib/utils'
 import { endStudentClassSession } from '@/lib/students/selectors'
 import type { StudentClassSessionView } from '@/lib/students/types'
 
@@ -49,6 +51,8 @@ export interface ClassSessionMapTimerProps {
   studentId: string
   session: StudentClassSessionView
   assignedBookIds: string[]
+  /** Raise above map chrome when the book overlay is open. */
+  elevated?: boolean
 }
 
 function multiplierFromHandleOffsetPx(offsetPx: number): number {
@@ -59,7 +63,7 @@ function multiplierFromHandleOffsetPx(offsetPx: number): number {
   return 1 - n * (1 - TIME_WARP_MIN_MULTIPLIER)
 }
 
-export function ClassSessionMapTimer({ studentId, session, assignedBookIds }: ClassSessionMapTimerProps) {
+export function ClassSessionMapTimer({ studentId, session, assignedBookIds, elevated = false }: ClassSessionMapTimerProps) {
   const router = useRouter()
   const { title, classStartedAt, durationMin } = session
 
@@ -161,14 +165,30 @@ export function ClassSessionMapTimer({ studentId, session, assignedBookIds }: Cl
     }
   }, [session.lessonNotebookSession])
 
-  const shell =
-    variant === 'over'
-      ? 'border-red-500/45 bg-red-500/12 text-red-950 dark:text-red-50'
-      : variant === 'warning'
-        ? 'motion-safe:animate-pulse border-amber-500/50 bg-amber-500/20 text-amber-950 dark:text-amber-50'
-        : variant === 'muted'
-          ? 'border-[var(--border)] bg-[var(--surface-2)] text-muted-foreground'
-          : 'border-amber-500/40 bg-amber-500/15 text-amber-950 dark:text-amber-50'
+  const shell = (() => {
+    if (elevated) {
+      if (variant === 'over') {
+        return 'border-red-400/45 bg-red-500/25 text-red-50'
+      }
+      if (variant === 'warning') {
+        return 'motion-safe:animate-pulse border-amber-400/40 bg-amber-500/20 text-amber-50'
+      }
+      if (variant === 'muted') {
+        return cn(BOOK_OVERLAY_GLASS_CHROME, 'text-white/55')
+      }
+      return cn(BOOK_OVERLAY_GLASS_CHROME, 'text-white/80')
+    }
+    if (variant === 'over') {
+      return 'border-red-500/45 bg-red-500/12 text-red-950 dark:text-red-50'
+    }
+    if (variant === 'warning') {
+      return 'motion-safe:animate-pulse border-amber-500/50 bg-amber-500/20 text-amber-950 dark:text-amber-50'
+    }
+    if (variant === 'muted') {
+      return 'border-[var(--border)] bg-[var(--surface-2)] text-muted-foreground'
+    }
+    return 'border-[var(--border)] bg-[var(--surface-2)]/90 text-foreground backdrop-blur-sm'
+  })()
 
   const warpMult = ENABLE_TIME_WARP_FOR_TESTING ? multiplierFromHandleOffsetPx(handleOffsetPx) : 1
 
@@ -181,7 +201,18 @@ export function ClassSessionMapTimer({ studentId, session, assignedBookIds }: Cl
     }
   }
 
-  function confirmEndClass() {
+  function finishClass(result: ReturnType<typeof endStudentClassSession>) {
+    setEndBusy(false)
+    if (!result.ok) {
+      setEndError(result.error)
+      return
+    }
+    setEndOpen(false)
+    router.replace('/students')
+    router.refresh()
+  }
+
+  function confirmEndClassWithSave() {
     setEndError(null)
     const bookmark = buildAutoBookmarkAtEnd(session, assignedBookIds)
     if (!bookmark) {
@@ -196,28 +227,44 @@ export function ClassSessionMapTimer({ studentId, session, assignedBookIds }: Cl
       ...(recap ? { classEndNote: recap } : {}),
       ...(sessionLog ? { sessionNote: sessionLog } : {}),
     })
-    setEndBusy(false)
-    if (!result.ok) {
-      setEndError(result.error)
-      return
-    }
-    setEndOpen(false)
-    router.replace('/students')
-    router.refresh()
+    finishClass(result)
+  }
+
+  function confirmEndClassWithoutSave() {
+    setEndError(null)
+    setEndBusy(true)
+    const result = endStudentClassSession(studentId, session.id)
+    finishClass(result)
   }
 
   return (
     <>
       <div
-        className={`pointer-events-auto absolute left-1/2 top-3 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full border px-3 py-1.5 text-xs shadow-sm backdrop-blur-sm ${shell}`}
+        className={cn(
+          'pointer-events-auto absolute right-3 top-3 flex items-center gap-2 rounded-full border shadow-sm',
+          elevated ? 'z-[55] max-w-[min(100vw-6rem,14rem)] px-2 py-1 text-[10px]' : 'z-40 max-w-[min(100vw-6rem,18rem)] px-3 py-1.5 text-xs backdrop-blur-sm',
+          shell,
+        )}
       >
         <div className="flex items-baseline gap-1.5">
-          <span className="font-mono text-sm font-bold tabular-nums tracking-tight">{label}</span>
+          <span
+            className={cn(
+              'font-mono tabular-nums tracking-tight',
+              elevated ? 'text-xs font-semibold text-white' : 'text-sm font-bold',
+            )}
+          >
+            {label}
+          </span>
           <span className="text-[10px] font-semibold uppercase tracking-wide opacity-80">{suffix}</span>
         </div>
         <button
           type="button"
-          className="rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide opacity-85 ring-1 ring-black/10 transition-colors hover:opacity-100 dark:ring-white/15"
+          className={cn(
+            'rounded-full font-semibold uppercase tracking-wide opacity-85 transition-colors hover:opacity-100',
+            elevated
+              ? 'px-2 py-0.5 text-[9px] ring-1 ring-white/15'
+              : 'px-2.5 py-0.5 text-[10px] ring-1 ring-black/10 dark:ring-white/15',
+          )}
           onClick={() => handleEndOpenChange(true)}
         >
           End
@@ -232,7 +279,7 @@ export function ClassSessionMapTimer({ studentId, session, assignedBookIds }: Cl
               <div className="space-y-2 text-left text-sm text-muted-foreground">
                 <p>Are you sure you want to end this class now?</p>
                 <div>
-                  <p className="font-medium text-foreground">Saved automatically</p>
+                  <p className="font-medium text-foreground">When you choose “End and save”</p>
                   <ul className="mt-1 list-inside list-disc space-y-0.5 text-xs">
                     <li>Class finished + end time</li>
                     <li>Lesson bookmark + reader curriculum page (when a unit can be matched)</li>
@@ -274,8 +321,11 @@ export function ClassSessionMapTimer({ studentId, session, assignedBookIds }: Cl
             <Button type="button" variant="outline" onClick={() => handleEndOpenChange(false)} disabled={endBusy}>
               Cancel
             </Button>
-            <Button type="button" variant="destructive" onClick={confirmEndClass} disabled={endBusy}>
-              {endBusy ? 'Saving…' : 'End class'}
+            <Button type="button" variant="secondary" onClick={confirmEndClassWithoutSave} disabled={endBusy}>
+              {endBusy ? 'Ending…' : 'End without saving'}
+            </Button>
+            <Button type="button" variant="destructive" onClick={confirmEndClassWithSave} disabled={endBusy}>
+              {endBusy ? 'Saving…' : 'End and save'}
             </Button>
           </DialogFooter>
         </DialogContent>

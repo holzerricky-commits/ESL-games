@@ -1,12 +1,26 @@
 import type { AnnotationCommand, AnnotationLineDashStyle, StrokeAnnotationCommand } from '@/lib/books/annotation-command-types'
+import { drawDecoratedMarkerBand } from '@/lib/books/marker-edge-decoration'
 import { applyPenStrokeStyle, resolvePenInkPatternOrigin, type PenInkPatternOrigin } from '@/lib/books/pen-ink'
+import { penProfileDrawStyle } from '@/lib/books/pen-stroke-profile'
 
-const PEN_LINE_WIDTH = 2.5
+export const PEN_LINE_WIDTH = 2.5
 const DEFAULT_PEN_COLOR = '#2a1d12'
-const MARKER_LINE_WIDTH = 22
-const MARKER_ALPHA = 0.38
-const DEFAULT_MARKER_COLOR = '#eab308'
-const ERASER_LINE_WIDTH = 18
+/** Highlighter stroke width in CSS px (before widthScale). */
+export const MARKER_LINE_WIDTH = 22
+const DEFAULT_MARKER_COLOR = '#facc15'
+
+/**
+ * Marker ink is drawn at full opacity on a dedicated canvas with CSS `mix-blend-mode: multiply`
+ * so white paper picks up a saturated tint while black text stays dark underneath.
+ */
+export function applyMarkerStrokeStyle(ctx: CanvasRenderingContext2D, color: string): void {
+  ctx.globalCompositeOperation = 'source-over'
+  ctx.globalAlpha = 1
+  ctx.strokeStyle = color
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+}
+export const ERASER_LINE_WIDTH = 18
 
 const DEFAULT_SHAPE_STROKE_PX = 2.25
 
@@ -33,64 +47,27 @@ export function applyAnnotationLineDash(
   ctx.setLineDash([lw * 0.15, lw * 2.1])
 }
 
-export function drawStrokePath(
+function drawStrokeCapDot(ctx: CanvasRenderingContext2D, x: number, y: number, lineWidth: number): void {
+  const r = Math.max(lineWidth / 2, 0.5)
+  ctx.beginPath()
+  ctx.arc(x, y, r, 0, Math.PI * 2)
+  ctx.fill()
+}
+
+function traceStrokePoints(
   ctx: CanvasRenderingContext2D,
-  cmd: Pick<
-    StrokeAnnotationCommand,
-    | 'tool'
-    | 'points'
-    | 'widthScale'
-    | 'color'
-    | 'penInkStyle'
-    | 'lineDashStyle'
-    | 'penInkPatternPhaseX'
-    | 'penInkPatternPhaseY'
-  >,
-  widthPx: number,
-  heightPx: number,
-  pagePatternOrigin?: PenInkPatternOrigin,
+  tool: StrokeAnnotationCommand['tool'],
+  points: [number, number][],
+  sx: (nx: number) => number,
+  sy: (ny: number) => number,
 ): void {
-  const { tool, points } = cmd
-  if (tool === 'eraser-line' || points.length < 2) return
-
-  const scale = cmd.widthScale != null && Number.isFinite(cmd.widthScale) ? cmd.widthScale : 1
-
-  const sx = (nx: number) => nx * widthPx
-  const sy = (ny: number) => ny * heightPx
-
-  ctx.lineCap = 'round'
-  ctx.lineJoin = 'round'
-
-  if (tool === 'eraser') {
-    ctx.globalCompositeOperation = 'destination-out'
-    ctx.globalAlpha = 1
-    ctx.strokeStyle = '#000'
-    ctx.lineWidth = ERASER_LINE_WIDTH * scale
-  } else if (tool === 'marker') {
-    ctx.globalCompositeOperation = 'source-over'
-    ctx.globalAlpha = MARKER_ALPHA
-    ctx.strokeStyle = cmd.color ?? DEFAULT_MARKER_COLOR
-    ctx.lineWidth = MARKER_LINE_WIDTH * scale
-  } else {
-    ctx.globalCompositeOperation = 'source-over'
-    ctx.globalAlpha = 1
-    applyPenStrokeStyle(
-      ctx,
-      cmd.penInkStyle,
-      cmd.color ?? DEFAULT_PEN_COLOR,
-      resolvePenInkPatternOrigin(pagePatternOrigin, cmd),
-    )
-    ctx.lineWidth = PEN_LINE_WIDTH * scale
+  if (points.length === 1) {
+    // Highlighter needs two points for a stroke; a filled dot looks like a solid blob before multiply reads right.
+    if (tool !== 'marker') {
+      drawStrokeCapDot(ctx, sx(points[0]![0]), sy(points[0]![1]), ctx.lineWidth)
+    }
+    return
   }
-
-  const outlinePx =
-    tool === 'marker' ? MARKER_LINE_WIDTH * scale : tool === 'pen' ? PEN_LINE_WIDTH * scale : ERASER_LINE_WIDTH * scale
-  if (tool === 'pen' || tool === 'marker') {
-    applyAnnotationLineDash(ctx, cmd.lineDashStyle, outlinePx)
-    ctx.lineCap = 'round'
-    ctx.lineJoin = 'round'
-  }
-
   ctx.beginPath()
   if (tool === 'pen' && points.length >= 3) {
     ctx.moveTo(sx(points[0][0]), sy(points[0][1]))
@@ -110,9 +87,95 @@ export function drawStrokePath(
     }
   }
   ctx.stroke()
-  if (tool === 'pen' || tool === 'marker') {
+}
+
+export type DrawStrokePathOptions = {
+  pagePatternOrigin?: PenInkPatternOrigin
+}
+
+export function drawStrokePath(
+  ctx: CanvasRenderingContext2D,
+  cmd: Pick<
+    StrokeAnnotationCommand,
+    | 'tool'
+    | 'points'
+    | 'widthScale'
+    | 'color'
+    | 'penInkStyle'
+    | 'penStrokeProfile'
+    | 'lineDashStyle'
+    | 'markerDecoratedEdge'
+    | 'penInkPatternPhaseX'
+    | 'penInkPatternPhaseY'
+  >,
+  widthPx: number,
+  heightPx: number,
+  options?: DrawStrokePathOptions,
+): void {
+  const pagePatternOrigin = options?.pagePatternOrigin
+  const { tool, points } = cmd
+  if (points.length === 0) return
+  if (tool === 'eraser-line' && points.length < 2) return
+
+  const scale = cmd.widthScale != null && Number.isFinite(cmd.widthScale) ? cmd.widthScale : 1
+
+  const sx = (nx: number) => nx * widthPx
+  const sy = (ny: number) => ny * heightPx
+
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+
+  if (tool === 'eraser') {
+    ctx.globalCompositeOperation = 'destination-out'
+    ctx.globalAlpha = 1
+    ctx.strokeStyle = '#000'
+    ctx.fillStyle = '#000'
+    ctx.lineWidth = ERASER_LINE_WIDTH * scale
+    traceStrokePoints(ctx, tool, points, sx, sy)
+    ctx.globalCompositeOperation = 'source-over'
+    ctx.globalAlpha = 1
+    return
+  }
+
+  if (tool === 'marker') {
+    const markerColor = cmd.color ?? DEFAULT_MARKER_COLOR
+    const markerLw = MARKER_LINE_WIDTH * scale
+    const dashSolid = !cmd.lineDashStyle || cmd.lineDashStyle === 'solid'
+    if (cmd.markerDecoratedEdge === true && dashSolid) {
+      drawDecoratedMarkerBand(ctx, points, markerColor, markerLw, widthPx, heightPx)
+      return
+    }
+    applyMarkerStrokeStyle(ctx, markerColor)
+    ctx.lineWidth = markerLw
+    applyAnnotationLineDash(ctx, cmd.lineDashStyle, markerLw)
+    ctx.fillStyle = markerColor
+    traceStrokePoints(ctx, tool, points, sx, sy)
+    ctx.setLineDash([])
+    return
+  }
+
+  const outlinePx = PEN_LINE_WIDTH * scale
+  const profileStyle = penProfileDrawStyle(cmd.penStrokeProfile)
+  const inkOrigin = resolvePenInkPatternOrigin(pagePatternOrigin, cmd)
+  const inkColor = cmd.color ?? DEFAULT_PEN_COLOR
+
+  const drawPenPass = (lineWidth: number, alpha: number) => {
+    ctx.globalCompositeOperation = 'source-over'
+    ctx.globalAlpha = alpha
+    applyPenStrokeStyle(ctx, cmd.penInkStyle, inkColor, inkOrigin)
+    ctx.lineWidth = lineWidth
+    applyAnnotationLineDash(ctx, cmd.lineDashStyle, lineWidth)
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    ctx.fillStyle = ctx.strokeStyle
+    traceStrokePoints(ctx, 'pen', points, sx, sy)
     ctx.setLineDash([])
   }
+
+  for (const pass of profileStyle.softPasses ?? []) {
+    drawPenPass(outlinePx * pass.widthFactor, pass.alpha)
+  }
+  drawPenPass(outlinePx, profileStyle.alpha)
 
   ctx.globalCompositeOperation = 'source-over'
   ctx.globalAlpha = 1
@@ -196,17 +259,81 @@ function drawStampSymbol(
 /**
  * Draw one persisted annotation command. Skips `text` / `sticky` (DOM layer) and `eraser-line` (geometry-only).
  */
+export function isMarkerStrokeCommand(cmd: AnnotationCommand): boolean {
+  return cmd.kind === 'stroke' && cmd.tool === 'marker'
+}
+
+export function clearAnnotationCanvas(ctx: CanvasRenderingContext2D): void {
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height)
+}
+
+export function applyAnnotationCanvasDpr(ctx: CanvasRenderingContext2D): void {
+  const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+}
+
+/** Draw non-marker commands on an ink canvas slice. */
+export function replayInkSlice(
+  inkCtx: CanvasRenderingContext2D,
+  commands: readonly AnnotationCommand[],
+  indices: readonly number[],
+  widthPx: number,
+  heightPx: number,
+  penInkPatternOrigin?: PenInkPatternOrigin,
+): void {
+  clearAnnotationCanvas(inkCtx)
+  applyAnnotationCanvasDpr(inkCtx)
+  for (const i of indices) {
+    const cmd = commands[i]
+    if (!cmd || isMarkerStrokeCommand(cmd)) continue
+    drawAnnotationCommand(inkCtx, cmd, widthPx, heightPx, { pagePatternOrigin: penInkPatternOrigin })
+  }
+}
+
+/** Draw highlighter strokes on a multiply-blend marker canvas slice. */
+export function replayMarkerSlice(
+  markerCtx: CanvasRenderingContext2D,
+  commands: readonly AnnotationCommand[],
+  indices: readonly number[],
+  widthPx: number,
+  heightPx: number,
+  options?: DrawStrokePathOptions,
+): void {
+  clearAnnotationCanvas(markerCtx)
+  applyAnnotationCanvasDpr(markerCtx)
+  for (const i of indices) {
+    const cmd = commands[i]
+    if (!cmd || !isMarkerStrokeCommand(cmd)) continue
+    drawAnnotationCommand(markerCtx, cmd, widthPx, heightPx, options)
+  }
+}
+
+/** Draw a subset of commands on one ink + marker canvas pair (legacy combined slice). */
+export function replayCanvasSlice(
+  inkCtx: CanvasRenderingContext2D,
+  markerCtx: CanvasRenderingContext2D,
+  commands: readonly AnnotationCommand[],
+  indices: readonly number[],
+  widthPx: number,
+  heightPx: number,
+  options?: DrawStrokePathOptions,
+): void {
+  replayInkSlice(inkCtx, commands, indices, widthPx, heightPx, options?.pagePatternOrigin)
+  replayMarkerSlice(markerCtx, commands, indices, widthPx, heightPx, options)
+}
+
 export function drawAnnotationCommand(
   ctx: CanvasRenderingContext2D,
   cmd: AnnotationCommand,
   widthPx: number,
   heightPx: number,
-  pagePatternOrigin?: PenInkPatternOrigin,
+  options?: DrawStrokePathOptions,
 ): void {
   switch (cmd.kind) {
     case 'stroke': {
       if (cmd.tool !== 'eraser-line') {
-        drawStrokePath(ctx, cmd, widthPx, heightPx, pagePatternOrigin)
+        drawStrokePath(ctx, cmd, widthPx, heightPx, options)
       }
       break
     }

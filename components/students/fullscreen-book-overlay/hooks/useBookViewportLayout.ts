@@ -1,4 +1,5 @@
 import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from 'react'
+import { computeSinglePageWidth, computeSpreadPageWidth } from '@/lib/books/spread-viewport-layout'
 import type { BookLibraryPayload } from '@/lib/books/types'
 
 interface UseBookViewportLayoutArgs {
@@ -42,18 +43,17 @@ export function useBookViewportLayout({
       const useSinglePageMode = false
       setIsSinglePageMode(useSinglePageMode)
 
-      const safeHeight = bounds.height * 0.996
       const minWidth = useSinglePageMode ? 420 : 1
       // Do not key on `pageAspectRatio`: primed from PDF before first paint (B3); target width still
       // updates on every sync when aspect refines, while `spreadPageWidth` resets on book/unit/mode
       // and when lesson notebook opens or closes (viewport width step changes).
       const baseKey = `${selectedBookId ?? ''}|${selectedUnitId ?? ''}|${useSinglePageMode ? '1' : '0'}|lp:${isLessonPaperOpen ? 1 : 0}`
 
+      const nextWidth = useSinglePageMode
+        ? computeSinglePageWidth(bounds.width, bounds.height, pageAspectRatio, minWidth)
+        : computeSpreadPageWidth(bounds.width, bounds.height, pageAspectRatio, minWidth)
+
       if (useSinglePageMode) {
-        const widthFitSingle = bounds.width * 0.996
-        const heightFitSingle = safeHeight * pageAspectRatio
-        const finalSingleWidth = Math.min(widthFitSingle, heightFitSingle)
-        const nextWidth = Math.floor(Math.max(minWidth, finalSingleWidth))
         setTargetSpreadPageWidth(nextWidth)
         if (spreadRenderBaseKeyRef.current !== baseKey) {
           setSpreadPageWidth(nextWidth)
@@ -62,11 +62,6 @@ export function useBookViewportLayout({
         return
       }
 
-      const perPageWidthForSpread = bounds.width / 2
-      const widthFitSpread = perPageWidthForSpread
-      const heightFitSpread = safeHeight * pageAspectRatio
-      const finalSpreadWidth = Math.min(widthFitSpread, heightFitSpread)
-      const nextWidth = Math.floor(Math.max(minWidth, finalSpreadWidth))
       setTargetSpreadPageWidth(nextWidth)
       if (spreadRenderBaseKeyRef.current !== baseKey) {
         setSpreadPageWidth(nextWidth)

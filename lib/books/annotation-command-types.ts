@@ -1,4 +1,5 @@
 import type { PenInkStyle } from '@/lib/books/pen-ink'
+import type { PenStrokeProfile } from '@/lib/books/pen-stroke-profile'
 
 /** Legacy stroke tools (polyline on canvas). */
 export type StrokeTool = 'pen' | 'marker' | 'eraser' | 'eraser-line'
@@ -33,11 +34,17 @@ export interface StrokeAnnotationCommand {
   color?: string
   /** Pen effect ink (rainbow, galaxy, metallics, etc.); omit for solid/marker. */
   penInkStyle?: PenInkStyle
+  /** Pen / brush / pencil / fine-liner / effects (defaults to pen). */
+  penStrokeProfile?: PenStrokeProfile
   /** Per-stroke pattern shift (px); retracing the same path gets different colors. */
   penInkPatternPhaseX?: number
   penInkPatternPhaseY?: number
   /** Pen/marker only; default solid. */
   lineDashStyle?: AnnotationLineDashStyle
+  /** Marker only: themed upper-edge ornaments were enabled when this stroke was drawn. */
+  markerDecoratedEdge?: boolean
+  /** Explicit figure group; pen/marker only. Omitted = ungrouped. */
+  figureGroupId?: string
 }
 
 export interface LineAnnotationCommand {
@@ -135,11 +142,16 @@ export interface CalloutAnnotationCommand {
 /** `plain` = text only (no box). `filled` = solid background, no border or shadow. */
 export type TextAnnotationVisualStyle = 'plain' | 'filled'
 
+/** Vertical placement of `y`: top edge of box (legacy) or vertical center of text block. */
+export type TextAnnotationYAnchor = 'top' | 'center'
+
 export interface TextAnnotationCommand {
   kind: 'text'
   id: string
   x: number
   y: number
+  /** When `center`, `y` is the vertical midpoint; `top` = first line stays fixed as lines grow. */
+  yAnchor?: TextAnnotationYAnchor
   text: string
   fontSizeNorm: number
   color: string

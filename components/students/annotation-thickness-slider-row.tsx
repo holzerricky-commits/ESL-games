@@ -8,21 +8,26 @@ import { popoverSectionLabelClass } from '@/components/students/annotation-popov
 
 const THICKNESS_STEP_MAX = 6
 const SLIDER_THUMB_PX = 14
+const SLIDER_THUMB_PX_COMPACT = 10
 
 /** Default marker / eraser preview dot sizes (matches legacy ThicknessRow). */
 export const ANNOTATION_DEFAULT_THICKNESS_PREVIEW_DOTS = [0, 1, 2, 3, 4, 5, 6].map(
   (i) => 4 + i * 1.75,
 ) as readonly number[]
 
-function sliderStepLeft(step: number): string {
-  const thumbInset = SLIDER_THUMB_PX / 2
+function sliderStepLeft(step: number, thumbPx: number): string {
+  const thumbInset = thumbPx / 2
   const ratio = step / THICKNESS_STEP_MAX
-  return `calc(${thumbInset}px + (100% - ${SLIDER_THUMB_PX}px) * ${ratio})`
+  return `calc(${thumbInset}px + (100% - ${thumbPx}px) * ${ratio})`
 }
 
-function clientXToThicknessStep(clientX: number, railRect: DOMRect): AnnotationStrokeThicknessStep {
-  const thumbInset = SLIDER_THUMB_PX / 2
-  const usable = railRect.width - SLIDER_THUMB_PX
+function clientXToThicknessStep(
+  clientX: number,
+  railRect: DOMRect,
+  thumbPx: number,
+): AnnotationStrokeThicknessStep {
+  const thumbInset = thumbPx / 2
+  const usable = railRect.width - thumbPx
   const x = clientX - railRect.left - thumbInset
   const ratio = usable > 0 ? Math.max(0, Math.min(1, x / usable)) : 0
   return Math.round(ratio * THICKNESS_STEP_MAX) as AnnotationStrokeThicknessStep
@@ -35,24 +40,27 @@ export function ThicknessSliderRow({
   idPrefix,
   previewDots = ANNOTATION_PEN_THICKNESS_PREVIEW_DOTS,
   ariaLabel = 'Thickness',
+  compact = false,
 }: {
   value: AnnotationStrokeThicknessStep
   onChange: (s: AnnotationStrokeThicknessStep) => void
   idPrefix: string
   previewDots?: readonly number[]
   ariaLabel?: string
+  compact?: boolean
 }) {
   const railRef = useRef<HTMLDivElement>(null)
   const draggingRef = useRef(false)
+  const thumbPx = compact ? SLIDER_THUMB_PX_COMPACT : SLIDER_THUMB_PX
   const maxDotPx = previewDots[THICKNESS_STEP_MAX] ?? previewDots[previewDots.length - 1] ?? 14
 
   const updateFromClientX = useCallback(
     (clientX: number) => {
       const rail = railRef.current
       if (!rail) return
-      onChange(clientXToThicknessStep(clientX, rail.getBoundingClientRect()))
+      onChange(clientXToThicknessStep(clientX, rail.getBoundingClientRect(), thumbPx))
     },
-    [onChange],
+    [onChange, thumbPx],
   )
 
   useEffect(() => {
@@ -78,37 +86,51 @@ export function ThicknessSliderRow({
     updateFromClientX(clientX)
   }
 
+  const rail = (
+    <div
+      ref={railRef}
+      id={`${idPrefix}-thick-slider`}
+      role="slider"
+      aria-label={ariaLabel}
+      aria-valuemin={0}
+      aria-valuemax={THICKNESS_STEP_MAX}
+      aria-valuenow={value}
+      aria-valuetext={`Stroke size ${value + 1}`}
+      className={cn(
+        'relative flex w-full cursor-pointer touch-none items-center select-none',
+        compact ? 'h-6' : 'h-8',
+      )}
+      onPointerDown={(e) => {
+        if (e.button !== 0) return
+        e.preventDefault()
+        startDrag(e.clientX)
+      }}
+    >
+      <div className="pointer-events-none relative h-1 w-full rounded-full bg-[#2a2118]">
+        <div
+          className="absolute inset-y-0 left-0 rounded-full bg-amber-500/45"
+          style={{ width: sliderStepLeft(value, thumbPx) }}
+        />
+      </div>
+      <div
+        className={cn(
+          'pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-amber-400/70 bg-amber-100 shadow-sm',
+          compact ? 'size-2.5' : 'size-3.5',
+        )}
+        style={{ left: sliderStepLeft(value, thumbPx) }}
+        aria-hidden
+      />
+    </div>
+  )
+
+  if (compact) {
+    return <div className="flex min-w-0 flex-1 items-center">{rail}</div>
+  }
+
   return (
     <div className="space-y-2.5">
       <p className={popoverSectionLabelClass}>Thickness</p>
-      <div
-        ref={railRef}
-        id={`${idPrefix}-thick-slider`}
-        role="slider"
-        aria-label={ariaLabel}
-        aria-valuemin={0}
-        aria-valuemax={THICKNESS_STEP_MAX}
-        aria-valuenow={value}
-        aria-valuetext={`Stroke size ${value + 1}`}
-        className="relative flex h-8 w-full cursor-pointer touch-none items-center select-none"
-        onPointerDown={(e) => {
-          if (e.button !== 0) return
-          e.preventDefault()
-          startDrag(e.clientX)
-        }}
-      >
-        <div className="pointer-events-none relative h-1 w-full rounded-full bg-[#2a2118]">
-          <div
-            className="absolute inset-y-0 left-0 rounded-full bg-amber-500/45"
-            style={{ width: sliderStepLeft(value) }}
-          />
-        </div>
-        <div
-          className="pointer-events-none absolute top-1/2 size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-amber-400/70 bg-amber-100 shadow-sm"
-          style={{ left: sliderStepLeft(value) }}
-          aria-hidden
-        />
-      </div>
+      {rail}
       <div className="relative mt-1 w-full" style={{ minHeight: maxDotPx }}>
         {previewDots.map((dotPx, i) => {
           const step = i as AnnotationStrokeThicknessStep
@@ -123,7 +145,7 @@ export function ThicknessSliderRow({
               aria-pressed={active}
               onClick={() => onChange(step)}
               className="absolute bottom-0 z-[1] flex h-10 w-10 -translate-x-1/2 items-end justify-center rounded-md"
-              style={{ left: sliderStepLeft(i) }}
+              style={{ left: sliderStepLeft(step, thumbPx) }}
             >
               <span
                 className={cn(

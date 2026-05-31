@@ -43,6 +43,8 @@ export interface ReaderPageSlotProps {
   pageNumber: number
   spreadPageWidth: number
   pageCanvasHeightPx: number
+  /** Clip the PDF/prefetch layer from the left so the seam overlap shows the left page (spread right slot). */
+  pdfClipLeftPx?: number
   pdf: PDFDocumentProxy
   PdfPage: ComponentType<any>
   onPdfPageLoadSuccess: (page: { originalWidth?: number; originalHeight?: number; width: number; height: number }) => void
@@ -60,6 +62,7 @@ export function ReaderPageSlot({
   pageNumber,
   spreadPageWidth,
   pageCanvasHeightPx,
+  pdfClipLeftPx = 0,
   pdf,
   PdfPage,
   onPdfPageLoadSuccess,
@@ -79,6 +82,9 @@ export function ReaderPageSlot({
   )
 
   const showPrefetch = prefetchBmp != null && !reactPdfLoaded
+  const pdfClipLeft = pdfClipLeftPx > 0 ? Math.round(pdfClipLeftPx) : 0
+  const pdfClipStyle =
+    pdfClipLeft > 0 ? ({ clipPath: `inset(0 0 0 ${pdfClipLeft}px)` } as const) : undefined
 
   return (
     <div
@@ -87,7 +93,10 @@ export function ReaderPageSlot({
       style={{ width: spreadPageWidth, minHeight: pageCanvasHeightPx }}
     >
       {showPrefetch ? (
-        <div className="absolute inset-0 z-0 flex items-start justify-center overflow-hidden bg-white">
+        <div
+          className="absolute inset-0 z-0 flex items-start justify-center overflow-hidden bg-white"
+          style={pdfClipStyle}
+        >
           <ReaderPrefetchCanvas
             bitmap={prefetchBmp}
             cssWidth={spreadPageWidth}
@@ -97,7 +106,7 @@ export function ReaderPageSlot({
       ) : null}
       <div
         className={cn('relative z-[1]', showPrefetch && 'pointer-events-none opacity-0')}
-        style={{ width: spreadPageWidth, minHeight: pageCanvasHeightPx }}
+        style={{ width: spreadPageWidth, minHeight: pageCanvasHeightPx, ...pdfClipStyle }}
       >
         <PdfPage
           key={`rp-${pageNumber}`}

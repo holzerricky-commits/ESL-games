@@ -1,13 +1,15 @@
 'use client'
 
 import Link from 'next/link'
-import { useMemo } from 'react'
-import { BookOpen, Calendar, Play } from 'lucide-react'
+import { useMemo, useState, type ReactNode } from 'react'
+import { BookOpen, Calendar, ChevronRight, Map, UserRound } from 'lucide-react'
 import type { BookLibraryPayload } from '@/lib/books/types'
 import { getStudentDefaultBookUnitForReader } from '@/lib/students/selectors'
 import { Button } from '@/components/ui/button'
-import { StudentCardLessonPreview } from '@/components/students/student-card-lesson-preview'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { resolveStudentAvatarUrl } from '@/lib/students/student-avatar-url'
 import type { StudentListItemView } from '@/lib/students/types'
+import { cn } from '@/lib/utils'
 
 interface StudentCardProps {
   student: StudentListItemView
@@ -21,6 +23,77 @@ function initialsFromName(name: string) {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
 }
 
+function StudentCardAvatar({
+  studentId,
+  name,
+  avatarUrl,
+  className,
+}: {
+  studentId: string
+  name: string
+  avatarUrl?: string
+  className?: string
+}) {
+  const [imageFailed, setImageFailed] = useState(false)
+  const avatarSrc = resolveStudentAvatarUrl(studentId, avatarUrl)
+  const showImage = !imageFailed
+
+  return (
+    <div
+      className={cn(
+        'relative h-20 w-20 shrink-0 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-2)] shadow-sm',
+        className,
+      )}
+    >
+      {showImage ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={avatarSrc}
+          alt=""
+          className="h-full w-full object-cover"
+          onError={() => setImageFailed(true)}
+        />
+      ) : (
+        <div
+          className="flex h-full w-full items-center justify-center bg-[color-mix(in_oklab,var(--muted)_40%,var(--surface-2))] text-xl font-bold tracking-wide text-muted-foreground"
+          aria-hidden
+        >
+          {initialsFromName(name)}
+        </div>
+      )}
+      <span className="sr-only">{name} avatar</span>
+    </div>
+  )
+}
+
+function QuickActionButton({
+  href,
+  label,
+  icon,
+}: {
+  href: string
+  label: string
+  icon: ReactNode
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          asChild
+          variant="outline"
+          size="icon-sm"
+          className="size-8 shrink-0 border-[var(--border)] text-muted-foreground hover:border-[var(--brand-blue)]/50 hover:bg-[var(--surface-2)] hover:text-foreground"
+        >
+          <Link href={href} aria-label={label}>
+            {icon}
+          </Link>
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="top">{label}</TooltipContent>
+    </Tooltip>
+  )
+}
+
 export function StudentCard({ student, library = null }: StudentCardProps) {
   const studentHref = `/students/${student.id}`
   const teacherHref = `/students/${student.id}/plan`
@@ -31,112 +104,69 @@ export function StudentCard({ student, library = null }: StudentCardProps) {
     if (!pick) return base
     return `${base}&book=${encodeURIComponent(pick.bookId)}&unit=${encodeURIComponent(pick.unitId)}`
   }, [student.id, library])
-  const avatarSrc = student.avatarUrl?.trim()
-
-  const thumbLabel =
-    student.curriculumThumbPage != null
-      ? `${student.curriculumUnitLabel} · page ${student.curriculumThumbPage}`
-      : 'Lesson preview'
 
   return (
-    <article className="flex h-full min-h-[248px] flex-col rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-sm transition-[border-color,box-shadow] hover:border-[var(--brand-blue)]/45 hover:shadow-md">
-      <div className="flex items-start gap-3">
-        {avatarSrc ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={avatarSrc}
-            alt={`${student.name} avatar`}
-            className="h-11 w-11 shrink-0 rounded-full border border-[var(--border)] object-cover"
-          />
-        ) : (
-          <div
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface-2)] text-sm font-bold text-muted-foreground"
-            aria-label={`${student.name} placeholder avatar`}
-          >
-            {initialsFromName(student.name)}
-          </div>
-        )}
+    <article className="flex h-full flex-col rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-sm transition-[border-color,box-shadow] hover:border-[var(--brand-blue)]/45 hover:shadow-md">
+      <div className="flex gap-4">
+        <StudentCardAvatar studentId={student.id} name={student.name} avatarUrl={student.avatarUrl} />
 
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-base font-semibold text-foreground">{student.name}</h2>
-          <div className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
-            <Calendar size={14} aria-hidden />
-            <p className="truncate">{student.nextClassLabel}</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-4 flex flex-1 gap-3">
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-foreground">Current lesson</p>
-          <p className="mt-1 truncate text-sm text-muted-foreground">{student.curriculumBookLabel}</p>
-          <p className="truncate text-sm text-muted-foreground">{student.curriculumUnitLabel}</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Page <span className="font-medium text-foreground">{student.curriculumPageLabel}</span>
-          </p>
-        </div>
-
-        <div className="flex w-[72px] shrink-0 items-start justify-end">
-          {student.curriculumThumbFilePath &&
-          student.curriculumThumbUnitId &&
-          student.curriculumThumbPage != null ? (
-            <StudentCardLessonPreview
-              filePath={student.curriculumThumbFilePath}
-              unitId={student.curriculumThumbUnitId}
-              page={student.curriculumThumbPage}
-              label={thumbLabel}
-              className="rounded-md"
-            />
-          ) : (
-            <div
-              className="flex aspect-[1/1.414] w-[72px] flex-col items-center justify-center gap-1 rounded-md border border-dashed border-[var(--border)] bg-[var(--surface-2)]/50 text-muted-foreground"
-              aria-hidden
-            >
-              <BookOpen size={16} strokeWidth={1.75} className="opacity-55" />
-              <span className="px-1 text-center text-[10px] leading-tight">No preview</span>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="min-w-0">
+            <h2 className="truncate text-base font-semibold leading-tight text-foreground">{student.name}</h2>
+            <div className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
+              <Calendar size={14} className="shrink-0 opacity-70" aria-hidden />
+              <p className="truncate">{student.nextClassLabel}</p>
             </div>
-          )}
+          </div>
+
+          <div className="mt-3 min-w-0 rounded-xl border border-[var(--border)]/80 bg-[var(--surface-2)]/40 px-3 py-2.5">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Current lesson</p>
+            <p className="mt-1 truncate text-sm font-medium text-foreground">{student.curriculumBookLabel}</p>
+            <p className="truncate text-sm text-muted-foreground">{student.curriculumUnitLabel}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Page <span className="font-semibold tabular-nums text-foreground">{student.curriculumPageLabel}</span>
+            </p>
+          </div>
         </div>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-[var(--border)] pt-3">
-        <Button
-          asChild
-          variant="ghost"
-          size="sm"
-          className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground"
-        >
-          <Link href={booksHref} aria-label={`Open library reader for ${student.name}`}>
-            <BookOpen size={13} className="mr-1" />
-            Book
-          </Link>
-        </Button>
-        <Button
-          asChild
-          variant="ghost"
-          size="sm"
-          className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground"
-        >
-          <Link href={playHref} aria-label={`Open fullscreen map play for ${student.name}`}>
-            <Play size={13} className="mr-1" />
-            Play
-          </Link>
-        </Button>
-        <Button
-          asChild
-          variant="outline"
-          size="sm"
-          className="h-8 border-[var(--border)] text-foreground hover:border-[var(--brand-blue)]"
-        >
-          <Link href={studentHref} aria-label={`Open student view for ${student.name}`}>
-            Student
-          </Link>
-        </Button>
-        <Button asChild size="sm" className="h-8 bg-[var(--brand-blue)] px-3 text-white hover:bg-[var(--brand-blue-bright)]">
-          <Link href={teacherHref} aria-label={`Open teacher plan view for ${student.name}`}>
-            Teacher
-          </Link>
-        </Button>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--border)] pt-3">
+        <div className="flex items-center gap-1.5">
+          <QuickActionButton
+            href={booksHref}
+            label={`Open library for ${student.name}`}
+            icon={<BookOpen size={15} aria-hidden />}
+          />
+          <QuickActionButton
+            href={playHref}
+            label={`Open challenge map for ${student.name}`}
+            icon={<Map size={15} aria-hidden />}
+          />
+        </div>
+
+        <div className="flex min-w-0 flex-1 items-center justify-end gap-2 sm:flex-none">
+          <Button
+            asChild
+            variant="outline"
+            size="sm"
+            className="h-8 min-w-0 border-[var(--border)] px-3 text-foreground hover:border-[var(--brand-blue)]/50"
+          >
+            <Link href={studentHref} className="inline-flex items-center gap-1.5">
+              <UserRound size={14} aria-hidden />
+              <span className="truncate">Student</span>
+            </Link>
+          </Button>
+          <Button
+            asChild
+            size="sm"
+            className="h-8 shrink-0 bg-[var(--brand-blue)] px-3 text-white hover:bg-[var(--brand-blue-bright)]"
+          >
+            <Link href={teacherHref} className="inline-flex items-center gap-1">
+              <span>Plan</span>
+              <ChevronRight size={14} className="opacity-90" aria-hidden />
+            </Link>
+          </Button>
+        </div>
       </div>
     </article>
   )

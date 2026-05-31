@@ -213,6 +213,8 @@ export interface StudentRecord {
   name: string
   createdAt: string
   updatedAt: string
+  /** Optional profile image URL (local `/student-avatars/...` or remote). */
+  avatarUrl?: string
   note?: string
   className?: string
   /** Default Timed Challenge difficulty; used when launching play from profile / plan. */

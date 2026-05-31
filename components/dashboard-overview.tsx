@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowRight, CalendarClock, Clock3, Play } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { ensureStudentRecordsHydrated } from '@/lib/local-data/student-records-client'
 import { getTodaysClassSessionsForTeacher, startStudentClassSession, type TodaysClassSessionRow } from '@/lib/students/selectors'
 
 export function DashboardOverview() {
@@ -33,20 +34,30 @@ export function DashboardOverview() {
     [],
   )
 
-  function handleStartClass(row: TodaysClassSessionRow) {
+  async function handleStartClass(row: TodaysClassSessionRow) {
     const { studentId, session } = row
-    if (session.status === 'completed' || session.status === 'cancelled') return
-    if (session.status !== 'in_progress') {
-      setStartBusyId(session.id)
-      const started = startStudentClassSession(studentId, session.id)
-      setStartBusyId(null)
-      if (!started.ok) {
-        toast.error(started.error)
-        return
-      }
+    if (session.status === 'completed' || session.status === 'cancelled') {
+      toast.error('This class is already finished.')
       refreshTodays()
+      return
     }
-    router.push(`/students/${studentId}/map?classSession=${encodeURIComponent(session.id)}`)
+    setStartBusyId(session.id)
+    try {
+      await ensureStudentRecordsHydrated()
+      if (session.status !== 'in_progress') {
+        const started = startStudentClassSession(studentId, session.id)
+        if (!started.ok) {
+          toast.error(started.error)
+          return
+        }
+        refreshTodays()
+      }
+      router.push(`/students/${studentId}/map?classSession=${encodeURIComponent(session.id)}`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not start class.')
+    } finally {
+      setStartBusyId(null)
+    }
   }
 
   return (
@@ -122,7 +133,7 @@ export function DashboardOverview() {
                       size="sm"
                       className="bg-emerald-600 text-white hover:bg-emerald-700"
                       disabled={startBusyId === row.session.id}
-                      onClick={() => handleStartClass(row)}
+                      onClick={() => void handleStartClass(row)}
                     >
                       {startBusyId === row.session.id ? (
                         '…'

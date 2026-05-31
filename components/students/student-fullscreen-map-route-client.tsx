@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { LocalStudentDataHydrator } from '@/components/local-student-data-hydrator'
 import { ClassSessionMapTimer } from '@/components/students/class-session-map-timer'
 import { FantasyHUD } from '@/components/students/fantasy-hud'
 import { FullscreenBookOverlay } from '@/components/students/fullscreen-book-overlay'
 import { StudentMapTab } from '@/components/students/tabs/student-map-tab'
-import { preloadBookOpenedFrameImage, removeBookOpenedFramePreload } from '@/components/students/fullscreen-book-overlay/constants'
 import { ensureReactPdfWorker } from '@/lib/books/ensure-react-pdf-worker'
 import { fetchBooksLibraryCached } from '@/lib/books/fetch-books-library-cached'
 import { warmMapInitialBookSpreadPrefetch } from '@/lib/books/map-initial-book-spread-warmup'
@@ -104,10 +104,6 @@ export function StudentFullscreenMapRouteClient({
       )
       .catch(() => {})
     void ensureReactPdfWorker().catch(() => {})
-    preloadBookOpenedFrameImage()
-    return () => {
-      removeBookOpenedFramePreload()
-    }
   }, [isHydrated, studentId])
 
   if (!isHydrated) {
@@ -134,13 +130,20 @@ export function StudentFullscreenMapRouteClient({
   const activeSession =
     activeClassSessionId ? student.scheduledClasses?.find((s) => s.id === activeClassSessionId) : undefined
 
+  const liveClassSessionId =
+    activeSession?.status === 'in_progress'
+      ? activeSession.id
+      : student.scheduledClasses?.find((s) => s.status === 'in_progress')?.id ?? null
+
   return (
     <div className="fixed inset-0 z-0 overflow-hidden overscroll-none bg-background">
+      <LocalStudentDataHydrator />
       {activeSession?.status === 'in_progress' ? (
         <ClassSessionMapTimer
           studentId={student.id}
           session={activeSession}
           assignedBookIds={student.assignedBookIds ?? []}
+          elevated={mapBookChromeOpen}
         />
       ) : null}
       {/*
@@ -164,6 +167,7 @@ export function StudentFullscreenMapRouteClient({
       <FullscreenBookOverlay
         key={student.id}
         studentId={student.id}
+        activeClassSessionId={liveClassSessionId}
         assignedBookIds={student.assignedBookIds}
         assignedUnitRefs={student.assignedUnitRefs}
         curriculumHistory={student.curriculumHistory}

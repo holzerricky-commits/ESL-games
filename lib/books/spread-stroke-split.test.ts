@@ -5,6 +5,7 @@ import {
   seamClientX,
   splitPolylineAtVerticalSeam,
   splitSpreadNormPolylineToPageNormalizedChains,
+  splitSpreadNormPolylineViaClientRects,
   spreadNormPointToPageNorm,
 } from '@/lib/books/spread-stroke-split'
 
@@ -52,10 +53,10 @@ describe('splitPolylineAtVerticalSeam', () => {
       ],
       seam,
     )
-    expect(left.length).toBeGreaterThanOrEqual(2)
-    expect(right.length).toBe(0)
-    expect(left[0]).toEqual([0, 0])
-    expect(left[left.length - 1]).toEqual([80, 20])
+    expect(left).toHaveLength(1)
+    expect(right).toHaveLength(0)
+    expect(left[0]![0]).toEqual([0, 0])
+    expect(left[0]!.at(-1)).toEqual([80, 20])
   })
 
   it('keeps an all-right polyline on the right only', () => {
@@ -66,8 +67,9 @@ describe('splitPolylineAtVerticalSeam', () => {
       ],
       seam,
     )
-    expect(left.length).toBe(0)
-    expect(right.length).toBe(2)
+    expect(left).toHaveLength(0)
+    expect(right).toHaveLength(1)
+    expect(right[0]).toHaveLength(2)
   })
 
   it('splits a horizontal stroke across the seam with a junction on both sides', () => {
@@ -78,13 +80,38 @@ describe('splitPolylineAtVerticalSeam', () => {
       ],
       seam,
     )
-    expect(left.length).toBeGreaterThanOrEqual(2)
-    expect(right.length).toBeGreaterThanOrEqual(2)
-    expect(left[left.length - 1][0]).toBeCloseTo(100, 5)
-    expect(right[0][0]).toBeCloseTo(100, 5)
-    expect(left[left.length - 1][1]).toBeCloseTo(40, 5)
-    expect(right[0][1]).toBeCloseTo(40, 5)
-    expect(right[right.length - 1]).toEqual([150, 40])
+    expect(left).toHaveLength(1)
+    expect(right).toHaveLength(1)
+    const leftChain = left[0]!
+    const rightChain = right[0]!
+    expect(leftChain.length).toBeGreaterThanOrEqual(2)
+    expect(rightChain.length).toBeGreaterThanOrEqual(2)
+    expect(leftChain[leftChain.length - 1]![0]).toBeCloseTo(100, 5)
+    expect(rightChain[0]![0]).toBeCloseTo(100, 5)
+    expect(leftChain[leftChain.length - 1]![1]).toBeCloseTo(40, 5)
+    expect(rightChain[0]![1]).toBeCloseTo(40, 5)
+    expect(rightChain[rightChain.length - 1]).toEqual([150, 40])
+  })
+
+  it('does not connect two seam crossings on the same page with a straight chord', () => {
+    const { left, right } = splitPolylineAtVerticalSeam(
+      [
+        [20, 30],
+        [140, 30],
+        [140, 70],
+        [20, 70],
+      ],
+      seam,
+    )
+    expect(left).toHaveLength(2)
+    expect(right).toHaveLength(1)
+    const rightChain = right[0]!
+    expect(rightChain.length).toBeGreaterThanOrEqual(3)
+    expect(rightChain[0]![0]).toBeCloseTo(100, 5)
+    expect(rightChain[rightChain.length - 1]![0]).toBeCloseTo(100, 5)
+    const ys = rightChain.map((p) => p[1])
+    expect(Math.min(...ys)).toBeLessThan(40)
+    expect(Math.max(...ys)).toBeGreaterThan(60)
   })
 
   it('returns empty both sides for fewer than 2 points', () => {
@@ -126,9 +153,32 @@ describe('splitSpreadNormPolylineToPageNormalizedChains', () => {
       ],
       layout,
     )
-    expect(leftNorm.length).toBeGreaterThanOrEqual(2)
-    expect(rightNorm.length).toBeGreaterThanOrEqual(2)
-    expect(leftNorm[leftNorm.length - 1][1]).toBeCloseTo(0.4, 5)
-    expect(rightNorm[0][1]).toBeCloseTo(0.4, 5)
+    expect(leftNorm).toHaveLength(1)
+    expect(rightNorm).toHaveLength(1)
+    expect(leftNorm[0]!.length).toBeGreaterThanOrEqual(2)
+    expect(rightNorm[0]!.length).toBeGreaterThanOrEqual(2)
+    expect(leftNorm[0]!.at(-1)![1]).toBeCloseTo(0.4, 5)
+    expect(rightNorm[0]![0]![1]).toBeCloseTo(0.4, 5)
+  })
+})
+
+describe('splitSpreadNormPolylineViaClientRects', () => {
+  it('maps spread norm through page rects so Y matches each page slot', () => {
+    const spread = { left: 0, top: 0, width: 800, height: 200, right: 800 }
+    const left = { left: 0, top: 20, width: 400, height: 200, right: 400 }
+    const right = { left: 392, top: 20, width: 400, height: 200, right: 792 }
+    const { leftNorm, rightNorm } = splitSpreadNormPolylineViaClientRects(
+      [
+        [0.1, 0.5],
+        [0.9, 0.5],
+      ],
+      spread,
+      left,
+      right,
+    )
+    expect(leftNorm[0]![0]![1]).toBeCloseTo(0.4, 5)
+    expect(rightNorm[0]![0]![1]).toBeCloseTo(0.4, 5)
+    expect(leftNorm[0]!.at(-1)![1]).toBeCloseTo(0.4, 5)
+    expect(rightNorm[0]!.at(-1)![1]).toBeCloseTo(0.4, 5)
   })
 })

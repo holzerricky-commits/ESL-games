@@ -14,9 +14,10 @@ import { cn } from '@/lib/utils'
 const sectionLabelClass =
   'text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-[#c4b5a8]/85'
 
-function swatchButtonClass(active: boolean) {
+function swatchButtonClass(active: boolean, size: 'default' | 'compact' = 'default') {
   return cn(
-    'h-8 w-8 shrink-0 rounded-full border-2 transition-transform',
+    size === 'compact' ? 'h-6 w-6' : 'h-8 w-8',
+    'shrink-0 rounded-full border-2 transition-transform',
     active ? 'scale-110 border-transparent ring-2 ring-amber-400/70' : 'border-black/25 hover:scale-105',
   )
 }
@@ -30,17 +31,25 @@ const customPickerSwatchStyle: CSSProperties = {
   ].join(', '),
 }
 
-function SwatchSection({ label, children }: { label: string; children: ReactNode }) {
+function SwatchSection({
+  label,
+  labelHidden = false,
+  children,
+}: {
+  label: string
+  labelHidden?: boolean
+  children: ReactNode
+}) {
   return (
-    <div className="space-y-2">
-      <p className={sectionLabelClass}>{label}</p>
+    <div className={labelHidden ? undefined : 'space-y-2'}>
+      {labelHidden ? null : <p className={sectionLabelClass}>{label}</p>}
       {children}
     </div>
   )
 }
 
-function SwatchList({ children }: { children: ReactNode }) {
-  return <div className="flex flex-wrap gap-2">{children}</div>
+function SwatchList({ compact = false, children }: { compact?: boolean; children: ReactNode }) {
+  return <div className={cn('flex flex-wrap', compact ? 'gap-1.5' : 'gap-2')}>{children}</div>
 }
 
 function CustomColorPickerSwatch({
@@ -100,6 +109,8 @@ export function ColorSwatchRow({
   idPrefix,
   label = 'Color',
   colorSource = 'swatch',
+  labelHidden = false,
+  swatchSize = 'default',
 }: {
   colors: readonly string[]
   current: string
@@ -108,10 +119,13 @@ export function ColorSwatchRow({
   label?: string
   /** When `custom`, preset chips are not shown as selected. */
   colorSource?: AnnotationColorSource
+  labelHidden?: boolean
+  swatchSize?: 'default' | 'compact'
 }) {
+  const compact = swatchSize === 'compact'
   return (
-    <SwatchSection label={label}>
-      <SwatchList>
+    <SwatchSection label={label} labelHidden={labelHidden}>
+      <SwatchList compact={compact}>
         {colors.map((hex, i) => {
           const active = colorSource === 'swatch' && current.toLowerCase() === hex.toLowerCase()
           return (
@@ -122,7 +136,7 @@ export function ColorSwatchRow({
               aria-label={`Color ${hex}`}
               aria-pressed={active}
               onClick={() => onPick(hex)}
-              className={swatchButtonClass(active)}
+              className={swatchButtonClass(active, swatchSize)}
               style={{ backgroundColor: hex }}
             />
           )
@@ -223,6 +237,9 @@ export function PenSwatchRow({
   customHex,
   customPickerOpen = false,
   onOpenCustomPicker,
+  labelHidden = false,
+  swatchSize = 'default',
+  swatches = ANNOTATION_PEN_SWATCHES,
 }: {
   swatchId: string
   onPick: (id: string) => void
@@ -233,10 +250,15 @@ export function PenSwatchRow({
   customHex?: string
   customPickerOpen?: boolean
   onOpenCustomPicker?: () => void
+  labelHidden?: boolean
+  swatchSize?: 'default' | 'compact'
+  /** Subset of pen swatches (e.g. solids vs effect inks for the active pen profile). */
+  swatches?: readonly import('@/lib/books/annotation-palettes').PenSwatch[]
 }) {
+  const compact = swatchSize === 'compact'
   const { manifestTilesLoading } = useBrushPatternPreload(preloadEnabled)
 
-  const activeSwatch = ANNOTATION_PEN_SWATCHES.find((s) => s.id === swatchId)
+  const activeSwatch = swatches.find((s) => s.id === swatchId) ?? swatches[0]
   const activePatternId = activeSwatch?.patternId
   const activeAssetLoading =
     manifestTilesLoading ||
@@ -246,15 +268,15 @@ export function PenSwatchRow({
       !isBrushPatternTileReady(activePatternId))
 
   return (
-    <SwatchSection label={label}>
-      {manifestTilesLoading ? (
+    <SwatchSection label={label} labelHidden={labelHidden}>
+      {!compact && manifestTilesLoading ? (
         <p className="flex items-center gap-1.5 text-[0.65rem] text-[#c4b5a8]/90" aria-live="polite">
           <Loader2 className="h-3 w-3 shrink-0 animate-spin" aria-hidden />
           Loading brush textures…
         </p>
       ) : null}
-      <SwatchList>
-        {ANNOTATION_PEN_SWATCHES.map((swatch, i) => {
+      <SwatchList compact={compact}>
+        {swatches.map((swatch, i) => {
           const active = colorSource === 'swatch' && swatchId === swatch.id
           return (
             <button
@@ -264,7 +286,7 @@ export function PenSwatchRow({
               aria-label={swatch.label}
               aria-pressed={active}
               onClick={() => onPick(swatch.id)}
-              className={swatchButtonClass(active)}
+              className={swatchButtonClass(active, swatchSize)}
               style={penSwatchPreviewStyle(swatch.patternId, swatch.color)}
             />
           )
@@ -279,7 +301,7 @@ export function PenSwatchRow({
           />
         ) : null}
       </SwatchList>
-      {activeAssetLoading && !manifestTilesLoading ? (
+      {!compact && activeAssetLoading && !manifestTilesLoading ? (
         <p className="flex items-center gap-1.5 text-[0.65rem] text-amber-200/90" aria-live="polite">
           <Loader2 className="h-3 w-3 shrink-0 animate-spin" aria-hidden />
           Preparing selected brush…

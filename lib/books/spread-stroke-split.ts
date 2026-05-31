@@ -7,6 +7,11 @@ function clamp01(n: number): number {
 
 export type PageRect = Pick<DOMRectReadOnly, 'left' | 'top' | 'width' | 'height' | 'right'>
 
+export type SeamSplitPolylineChains = {
+  left: [number, number][][]
+  right: [number, number][][]
+}
+
 /**
  * Vertical seam between two page boxes in client space (handles overlap from spread gutter).
  */
@@ -58,26 +63,59 @@ function pushDistinct(chain: [number, number][], p: readonly [number, number]) {
   }
 }
 
+type ChainState = {
+  leftChains: [number, number][][]
+  rightChains: [number, number][][]
+  left: [number, number][] | null
+  right: [number, number][] | null
+}
+
+function openLeft(state: ChainState): [number, number][] {
+  if (!state.left) {
+    state.left = []
+    state.leftChains.push(state.left)
+  }
+  return state.left
+}
+
+function openRight(state: ChainState): [number, number][] {
+  if (!state.right) {
+    state.right = []
+    state.rightChains.push(state.right)
+  }
+  return state.right
+}
+
+function closeLeft(state: ChainState): void {
+  state.left = null
+}
+
+function closeRight(state: ChainState): void {
+  state.right = null
+}
+
+function pushToBothSides(state: ChainState, p: readonly [number, number]): void {
+  pushDistinct(openLeft(state), p)
+  pushDistinct(openRight(state), p)
+}
+
 /**
- * Split a polyline in client coordinates at a vertical seam.
- * Points on the seam are duplicated on both sides so each chain stays connected.
+ * Split a polyline at a vertical seam into separate chains per page.
+ * Each time the stroke leaves a page (crosses the seam), that page's chain is closed so
+ * re-entry later does not draw a straight connector between the two crossing points.
  */
 export function splitPolylineAtVerticalSeam(
   points: readonly (readonly [number, number])[],
   seamX: number,
-): { left: [number, number][]; right: [number, number][] } {
-  const left: [number, number][] = []
-  const right: [number, number][] = []
-  if (points.length < 2) return { left, right }
+): SeamSplitPolylineChains {
+  const state: ChainState = { leftChains: [], rightChains: [], left: null, right: null }
+  if (points.length < 2) return { left: [], right: [] }
 
   const p0 = points[0]
   const s0 = sideOfSeam(p0[0], seamX)
-  if (s0 === 'L') pushDistinct(left, p0)
-  else if (s0 === 'R') pushDistinct(right, p0)
-  else {
-    pushDistinct(left, p0)
-    pushDistinct(right, p0)
-  }
+  if (s0 === 'L') pushDistinct(openLeft(state), p0)
+  else if (s0 === 'R') pushDistinct(openRight(state), p0)
+  else pushToBothSides(state, p0)
 
   for (let i = 1; i < points.length; i++) {
     const prev = points[i - 1]
@@ -86,42 +124,42 @@ export function splitPolylineAtVerticalSeam(
     const sc = sideOfSeam(cur[0], seamX)
 
     if (sp === 'L' && sc === 'L') {
-      pushDistinct(left, cur)
+      pushDistinct(openLeft(state), cur)
     } else if (sp === 'R' && sc === 'R') {
-      pushDistinct(right, cur)
+      pushDistinct(openRight(state), cur)
     } else if (sp === 'M' && sc === 'M') {
-      pushDistinct(left, cur)
-      pushDistinct(right, cur)
+      pushToBothSides(state, cur)
     } else if (sp === 'L' && sc === 'M') {
-      pushDistinct(left, cur)
-      pushDistinct(right, cur)
+      pushToBothSides(state, cur)
     } else if (sp === 'M' && sc === 'L') {
-      pushDistinct(left, cur)
-      pushDistinct(right, cur)
+      pushToBothSides(state, cur)
     } else if (sp === 'R' && sc === 'M') {
-      pushDistinct(left, cur)
-      pushDistinct(right, cur)
+      pushToBothSides(state, cur)
     } else if (sp === 'M' && sc === 'R') {
-      pushDistinct(left, cur)
-      pushDistinct(right, cur)
+      pushToBothSides(state, cur)
     } else if (sp === 'L' && sc === 'R') {
       const hit = intersectSegmentWithVerticalLine(prev[0], prev[1], cur[0], cur[1], seamX)
-      if (hit) {
-        pushDistinct(left, hit)
-        pushDistinct(right, hit)
-      }
-      pushDistinct(right, cur)
+      if (hit) pushDistinct(openLeft(state), hit)
+      closeLeft(state)
+      if (hit) pushDistinct(openRight(state), hit)
+      else openRight(state)
+      pushDistinct(openRight(state), cur)
     } else if (sp === 'R' && sc === 'L') {
       const hit = intersectSegmentWithVerticalLine(prev[0], prev[1], cur[0], cur[1], seamX)
-      if (hit) {
-        pushDistinct(right, hit)
-        pushDistinct(left, hit)
-      }
-      pushDistinct(left, cur)
+      if (hit) pushDistinct(openRight(state), hit)
+      closeRight(state)
+      if (hit) pushDistinct(openLeft(state), hit)
+      else openLeft(state)
+      pushDistinct(openLeft(state), cur)
     }
   }
 
-  return { left, right }
+  return { left: state.leftChains, right: state.rightChains }
+}
+
+/** First chain on each side (legacy helper for two-point / single-cross callers). */
+export function firstSeamSplitChain(chains: [number, number][][]): [number, number][] {
+  return chains[0] ?? []
 }
 
 /**
@@ -131,11 +169,15 @@ export function splitClientPolylineToPageNormalizedChains(
   pts: readonly (readonly [number, number])[],
   leftRect: PageRect,
   rightRect: PageRect,
-): { leftNorm: [number, number][]; rightNorm: [number, number][] } {
+): { leftNorm: [number, number][][]; rightNorm: [number, number][][] } {
   const seam = seamClientX(leftRect, rightRect)
   const { left: leftClient, right: rightClient } = splitPolylineAtVerticalSeam(pts, seam)
-  const leftNorm: [number, number][] = leftClient.map(([cx, cy]) => clientPointToPageNorm(leftRect, cx, cy))
-  const rightNorm: [number, number][] = rightClient.map(([cx, cy]) => clientPointToPageNorm(rightRect, cx, cy))
+  const leftNorm = leftClient.map((chain) =>
+    chain.map(([cx, cy]) => clientPointToPageNorm(leftRect, cx, cy)),
+  )
+  const rightNorm = rightClient.map((chain) =>
+    chain.map(([cx, cy]) => clientPointToPageNorm(rightRect, cx, cy)),
+  )
   return { leftNorm, rightNorm }
 }
 
@@ -160,63 +202,8 @@ export function spreadNormPointToPageNorm(
 export function splitSpreadNormPolylineAtSeam(
   points: readonly (readonly [number, number])[],
   seamNormX: number,
-): { left: [number, number][]; right: [number, number][] } {
-  const left: [number, number][] = []
-  const right: [number, number][] = []
-  if (points.length < 2) return { left, right }
-
-  const p0 = points[0]
-  const s0 = sideOfSeam(p0[0], seamNormX)
-  if (s0 === 'L') pushDistinct(left, p0)
-  else if (s0 === 'R') pushDistinct(right, p0)
-  else {
-    pushDistinct(left, p0)
-    pushDistinct(right, p0)
-  }
-
-  for (let i = 1; i < points.length; i++) {
-    const prev = points[i - 1]
-    const cur = points[i]
-    const sp = sideOfSeam(prev[0], seamNormX)
-    const sc = sideOfSeam(cur[0], seamNormX)
-
-    if (sp === 'L' && sc === 'L') {
-      pushDistinct(left, cur)
-    } else if (sp === 'R' && sc === 'R') {
-      pushDistinct(right, cur)
-    } else if (sp === 'M' && sc === 'M') {
-      pushDistinct(left, cur)
-      pushDistinct(right, cur)
-    } else if (sp === 'L' && sc === 'M') {
-      pushDistinct(left, cur)
-      pushDistinct(right, cur)
-    } else if (sp === 'M' && sc === 'L') {
-      pushDistinct(left, cur)
-      pushDistinct(right, cur)
-    } else if (sp === 'R' && sc === 'M') {
-      pushDistinct(left, cur)
-      pushDistinct(right, cur)
-    } else if (sp === 'M' && sc === 'R') {
-      pushDistinct(left, cur)
-      pushDistinct(right, cur)
-    } else if (sp === 'L' && sc === 'R') {
-      const hit = intersectSegmentWithVerticalLine(prev[0], prev[1], cur[0], cur[1], seamNormX)
-      if (hit) {
-        pushDistinct(left, hit)
-        pushDistinct(right, hit)
-      }
-      pushDistinct(right, cur)
-    } else if (sp === 'R' && sc === 'L') {
-      const hit = intersectSegmentWithVerticalLine(prev[0], prev[1], cur[0], cur[1], seamNormX)
-      if (hit) {
-        pushDistinct(right, hit)
-        pushDistinct(left, hit)
-      }
-      pushDistinct(left, cur)
-    }
-  }
-
-  return { left, right }
+): SeamSplitPolylineChains {
+  return splitPolylineAtVerticalSeam(points, seamNormX)
 }
 
 export type SpreadInkLayout = {
@@ -227,6 +214,16 @@ export type SpreadInkLayout = {
   seamNormX: number
 }
 
+function mapSpreadChainToPageNorm(
+  chain: readonly (readonly [number, number])[],
+  pageOriginXPx: number,
+  layout: SpreadInkLayout,
+): [number, number][] {
+  return chain.map(([px, py]) =>
+    spreadNormPointToPageNorm(px, py, pageOriginXPx, layout.spreadPageWidthPx, layout.spreadOverlayWidthPx),
+  )
+}
+
 /**
  * Split spread-overlay stroke points and map each side to page-normalized chains.
  * Use the same `draft.points` as live preview so path + effect-ink pattern stay aligned after commit.
@@ -234,13 +231,28 @@ export type SpreadInkLayout = {
 export function splitSpreadNormPolylineToPageNormalizedChains(
   spreadNormPts: readonly (readonly [number, number])[],
   layout: SpreadInkLayout,
-): { leftNorm: [number, number][]; rightNorm: [number, number][] } {
+): { leftNorm: [number, number][][]; rightNorm: [number, number][][] } {
   const { left, right } = splitSpreadNormPolylineAtSeam(spreadNormPts, layout.seamNormX)
-  const leftNorm: [number, number][] = left.map(([px, py]) =>
-    spreadNormPointToPageNorm(px, py, layout.leftPageOriginXPx, layout.spreadPageWidthPx, layout.spreadOverlayWidthPx),
-  )
-  const rightNorm: [number, number][] = right.map(([px, py]) =>
-    spreadNormPointToPageNorm(px, py, layout.rightPageOriginXPx, layout.spreadPageWidthPx, layout.spreadOverlayWidthPx),
-  )
+  const leftNorm = left.map((chain) => mapSpreadChainToPageNorm(chain, layout.leftPageOriginXPx, layout))
+  const rightNorm = right.map((chain) => mapSpreadChainToPageNorm(chain, layout.rightPageOriginXPx, layout))
   return { leftNorm, rightNorm }
+}
+
+/** Map spread-overlay norm points through live DOM rects so commit matches live preview geometry. */
+export function splitSpreadNormPolylineViaClientRects(
+  spreadNormPts: readonly (readonly [number, number])[],
+  spreadRect: PageRect,
+  leftRect: PageRect,
+  rightRect: PageRect,
+): { leftNorm: [number, number][][]; rightNorm: [number, number][][] } {
+  const w = spreadRect.width
+  const h = spreadRect.height
+  if (!(w > 0) || !(h > 0) || spreadNormPts.length === 0) {
+    return { leftNorm: [], rightNorm: [] }
+  }
+  const clientPts = spreadNormPts.map(
+    ([nx, ny]) =>
+      [spreadRect.left + nx * w, spreadRect.top + ny * h] as [number, number],
+  )
+  return splitClientPolylineToPageNormalizedChains(clientPts, leftRect, rightRect)
 }

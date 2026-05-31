@@ -1,7 +1,12 @@
 import { useEffect, useRef } from 'react'
 import type { AnnotationStrokeThicknessStep, BookAnnotationInteractionMode } from '@/lib/books/annotation-storage'
 import type { StampVariant } from '@/lib/books/annotation-command-types'
-import { isBookOverlayKeyboardTypingTarget } from '@/lib/books/book-overlay-keyboard-guards'
+import {
+  commitBookOverlayTypingTarget,
+  isBookOverlayKeyboardTypingTarget,
+  isWritingAssistTabActive,
+} from '@/lib/books/book-overlay-keyboard-guards'
+import { requestSpreadSessionFlush } from '@/lib/books/spread-session-events'
 import {
   BOOK_OVERLAY_DEFAULT_SHAPE_MODE,
   BOOK_OVERLAY_ERASER_MODES,
@@ -15,6 +20,7 @@ import {
   type ShortcutTapState,
 } from '@/lib/books/book-overlay-keyboard-shortcuts'
 import { EYEDROPPER_VARIANTS, type EyedropperVariant } from '@/lib/books/eyedropper-variant'
+import { PEN_STROKE_PROFILES, type PenStrokeProfile } from '@/lib/books/pen-stroke-profile'
 
 const MAX_THICKNESS_STEP = 6 satisfies AnnotationStrokeThicknessStep
 
@@ -26,9 +32,10 @@ interface UseBookOverlayKeyboardShortcutsArgs {
   open: boolean
   onClose: () => void
   isLessonPaperOpen: boolean
-  lessonPaperMode: 'type' | 'draw' | 'select'
   annotationMode: BookAnnotationInteractionMode
   setAnnotationMode: (m: BookAnnotationInteractionMode) => void
+  penStrokeProfile: PenStrokeProfile
+  setPenStrokeProfile: (profile: PenStrokeProfile) => void
   stampVariant: StampVariant
   setStampVariant: (v: StampVariant) => void
   eyedropperVariant: EyedropperVariant
@@ -38,21 +45,69 @@ interface UseBookOverlayKeyboardShortcutsArgs {
   isPageListOpen: boolean
   setIsPageListOpen: (v: boolean) => void
   isWhiteboardOpen: boolean
+  isWhiteboardSessionOpen: boolean
+  isWhiteboardMinimized: boolean
   setIsWhiteboardOpen: (v: boolean) => void
-  clearInkOpen: boolean
+  launchOpenWhiteboard?: () => void
+  launchExpandWhiteboard?: () => void
+  launchCloseWhiteboard?: () => void
+  toggleWhiteboardFullscreen?: () => void
+  setWhiteboardSlotSide?: (side: 'left' | 'right') => void
   pdfDialogOpen: boolean
   regionSelectOpen: boolean
   captionDialogOpen: boolean
-  setClearInkOpen: (v: boolean) => void
+  translateDockOpen: boolean
+  setTranslateDockOpen: (v: boolean) => void
   penThicknessStep: AnnotationStrokeThicknessStep
   setPenThicknessStep: (s: AnnotationStrokeThicknessStep) => void
   markerThicknessStep: AnnotationStrokeThicknessStep
   setMarkerThicknessStep: (s: AnnotationStrokeThicknessStep) => void
+  shapeThicknessStep: AnnotationStrokeThicknessStep
+  setShapeThicknessStep: (s: AnnotationStrokeThicknessStep) => void
+  textThicknessStep: AnnotationStrokeThicknessStep
+  setTextThicknessStep: (s: AnnotationStrokeThicknessStep) => void
+  stickyThicknessStep: AnnotationStrokeThicknessStep
+  setStickyThicknessStep: (s: AnnotationStrokeThicknessStep) => void
+  stampThicknessStep: AnnotationStrokeThicknessStep
+  setStampThicknessStep: (s: AnnotationStrokeThicknessStep) => void
   eraserPixelThicknessStep: AnnotationStrokeThicknessStep
   setEraserPixelThicknessStep: (s: AnnotationStrokeThicknessStep) => void
   toolbarCaps: { canUndo: boolean; canRedo: boolean }
+  selectAllOnActivePage: () => void
+  getPageAnnotationRef: () => {
+    current: {
+      getSelectedIds?: () => string[]
+      selectAll?: () => void
+      deleteSelected?: () => boolean
+      copySelected?: () => boolean
+      pasteFromClipboard?: () => boolean
+      groupSelected?: () => boolean
+      ungroupSelected?: () => boolean
+      toggleGroupSelected?: () => boolean
+      removeFromGroupSelected?: () => boolean
+      deselectAll?: () => void
+      duplicateSelected?: () => boolean
+      selectNextInStack?: (direction: 1 | -1) => void
+    } | null
+  }
   getActiveAnnotationRef: () => {
-    current: { undo: () => void; redo: () => void; clear: () => void } | null
+    current: {
+      undo: () => void
+      redo: () => void
+      clear: () => void
+      getSelectedIds?: () => string[]
+      selectAll?: () => void
+      deleteSelected?: () => boolean
+      copySelected?: () => boolean
+      pasteFromClipboard?: () => boolean
+      groupSelected?: () => boolean
+      ungroupSelected?: () => boolean
+      toggleGroupSelected?: () => boolean
+      removeFromGroupSelected?: () => boolean
+      deselectAll?: () => void
+      duplicateSelected?: () => boolean
+      selectNextInStack?: (direction: 1 | -1) => void
+    } | null
   }
 }
 
@@ -60,9 +115,10 @@ export function useBookOverlayKeyboardShortcuts({
   open,
   onClose,
   isLessonPaperOpen,
-  lessonPaperMode,
   annotationMode,
   setAnnotationMode,
+  penStrokeProfile,
+  setPenStrokeProfile,
   stampVariant,
   setStampVariant,
   eyedropperVariant,
@@ -72,24 +128,42 @@ export function useBookOverlayKeyboardShortcuts({
   isPageListOpen,
   setIsPageListOpen,
   isWhiteboardOpen,
+  isWhiteboardSessionOpen,
+  isWhiteboardMinimized,
   setIsWhiteboardOpen,
-  clearInkOpen,
+  launchOpenWhiteboard,
+  launchExpandWhiteboard,
+  launchCloseWhiteboard,
+  toggleWhiteboardFullscreen,
+  setWhiteboardSlotSide,
   pdfDialogOpen,
   regionSelectOpen,
   captionDialogOpen,
-  setClearInkOpen,
+  translateDockOpen,
+  setTranslateDockOpen,
   penThicknessStep,
   setPenThicknessStep,
   markerThicknessStep,
   setMarkerThicknessStep,
+  shapeThicknessStep,
+  setShapeThicknessStep,
+  textThicknessStep,
+  setTextThicknessStep,
+  stickyThicknessStep,
+  setStickyThicknessStep,
+  stampThicknessStep,
+  setStampThicknessStep,
   eraserPixelThicknessStep,
   setEraserPixelThicknessStep,
   toolbarCaps,
+  selectAllOnActivePage,
+  getPageAnnotationRef,
   getActiveAnnotationRef,
 }: UseBookOverlayKeyboardShortcutsArgs) {
   const lastShapeRef = useRef<BookOverlayShapeMode>(BOOK_OVERLAY_DEFAULT_SHAPE_MODE)
   const stampTapRef = useRef<ShortcutTapState>(INITIAL_SHORTCUT_TAP_STATE)
   const shapeTapRef = useRef<ShortcutTapState>(INITIAL_SHORTCUT_TAP_STATE)
+  const penTapRef = useRef<ShortcutTapState>(INITIAL_SHORTCUT_TAP_STATE)
   const eyedropperTapRef = useRef<ShortcutTapState>(INITIAL_SHORTCUT_TAP_STATE)
   const eraserTapRef = useRef<ShortcutTapState>(INITIAL_SHORTCUT_TAP_STATE)
 
@@ -102,10 +176,17 @@ export function useBookOverlayKeyboardShortcuts({
   useEffect(() => {
     if (!open) return
 
+    function isAnnotationFieldTyping(): boolean {
+      return (
+        isBookOverlayKeyboardTypingTarget() &&
+        !isLessonPaperOpen
+      )
+    }
+
     function shouldIgnoreToolShortcuts(): boolean {
       if (isBookOverlayKeyboardTypingTarget()) return true
-      if (isLessonPaperOpen && lessonPaperMode === 'type') return true
-      if (clearInkOpen || pdfDialogOpen || regionSelectOpen || captionDialogOpen) return true
+      if (isLessonPaperOpen) return true
+      if (pdfDialogOpen || regionSelectOpen || captionDialogOpen) return true
       return false
     }
 
@@ -144,6 +225,11 @@ export function useBookOverlayKeyboardShortcuts({
       return idx >= 0 ? idx : 0
     }
 
+    function penCurrentIndex(): number {
+      const idx = PEN_STROKE_PROFILES.indexOf(penStrokeProfile)
+      return idx >= 0 ? idx : 0
+    }
+
     function eyedropperCurrentIndex(): number {
       const idx = EYEDROPPER_VARIANTS.indexOf(eyedropperVariant)
       return idx >= 0 ? idx : 0
@@ -157,12 +243,28 @@ export function useBookOverlayKeyboardShortcuts({
     }
 
     function adjustThickness(delta: -1 | 1) {
-      if (annotationMode === 'pen' || annotationMode === 'text') {
+      if (annotationMode === 'pen') {
         setPenThicknessStep(clampThicknessStep(penThicknessStep + delta))
         return
       }
-      if (annotationMode === 'marker' || annotationMode === 'sticky') {
+      if (annotationMode === 'text') {
+        setTextThicknessStep(clampThicknessStep(textThicknessStep + delta))
+        return
+      }
+      if (annotationMode === 'marker') {
         setMarkerThicknessStep(clampThicknessStep(markerThicknessStep + delta))
+        return
+      }
+      if (annotationMode === 'sticky') {
+        setStickyThicknessStep(clampThicknessStep(stickyThicknessStep + delta))
+        return
+      }
+      if (isBookOverlayShapeMode(annotationMode)) {
+        setShapeThicknessStep(clampThicknessStep(shapeThicknessStep + delta))
+        return
+      }
+      if (annotationMode === 'stamp' || annotationMode === 'callout') {
+        setStampThicknessStep(clampThicknessStep(stampThicknessStep + delta))
         return
       }
       if (annotationMode === 'eraser') {
@@ -175,9 +277,36 @@ export function useBookOverlayKeyboardShortcuts({
 
       const key = e.key
       const keyLower = key.length === 1 ? key.toLowerCase() : key
+      const mod = e.ctrlKey || e.metaKey
+      const annotationTyping = isAnnotationFieldTyping()
+      /** Alt+letter while typing: commit field then run tool (Ctrl is reserved by the browser). */
+      const altCommitThenShortcut = annotationTyping && e.altKey && !mod
+
+      if (altCommitThenShortcut) {
+        commitBookOverlayTypingTarget()
+      }
+
+      if (key === 'Escape' && annotationTyping) {
+        e.preventDefault()
+        e.stopPropagation()
+        commitBookOverlayTypingTarget()
+        return
+      }
 
       if (key === 'Escape') {
-        if (clearInkOpen || pdfDialogOpen || regionSelectOpen || captionDialogOpen) return
+        if (pdfDialogOpen || regionSelectOpen || captionDialogOpen) return
+        const annForEsc = getPageAnnotationRef().current
+        const escSel = annForEsc?.getSelectedIds?.() ?? []
+        if (escSel.length > 0) {
+          e.preventDefault()
+          annForEsc?.deselectAll?.()
+          return
+        }
+        if (translateDockOpen) {
+          e.preventDefault()
+          setTranslateDockOpen(false)
+          return
+        }
         if (isWhiteboardOpen) {
           e.preventDefault()
           setIsWhiteboardOpen(false)
@@ -188,12 +317,11 @@ export function useBookOverlayKeyboardShortcuts({
           setIsPageListOpen(false)
           return
         }
+        requestSpreadSessionFlush()
         e.preventDefault()
         onClose()
         return
       }
-
-      const mod = e.ctrlKey || e.metaKey
 
       if (mod && (keyLower === 'z' || keyLower === 'y')) {
         if (shouldIgnoreToolShortcuts()) return
@@ -216,8 +344,81 @@ export function useBookOverlayKeyboardShortcuts({
       if (mod && e.shiftKey && key === 'Backspace') {
         if (shouldIgnoreToolShortcuts()) return
         e.preventDefault()
-        setClearInkOpen(true)
+        getActiveAnnotationRef().current?.clear()
         return
+      }
+
+      if (mod && !e.shiftKey && keyLower === 's') {
+        if (shouldIgnoreToolShortcuts()) return
+        requestSpreadSessionFlush()
+        e.preventDefault()
+        return
+      }
+
+      if (mod && keyLower === 'a') {
+        if (shouldIgnoreToolShortcuts()) return
+        e.preventDefault()
+        const ann = getPageAnnotationRef().current
+        if (e.shiftKey) {
+          ann?.deselectAll?.()
+        } else {
+          selectAllOnActivePage()
+        }
+        return
+      }
+
+      if (mod && !e.shiftKey && keyLower === 'd') {
+        if (shouldIgnoreToolShortcuts()) return
+        const ann = getPageAnnotationRef().current
+        if (ann?.duplicateSelected?.()) {
+          e.preventDefault()
+        }
+        return
+      }
+
+      if (mod && !e.shiftKey && (keyLower === 'c' || keyLower === 'v')) {
+        if (shouldIgnoreToolShortcuts()) return
+        const ann = getPageAnnotationRef().current
+        if (!ann) {
+          /* fall through */
+        } else if (keyLower === 'c') {
+          const ids = ann.getSelectedIds?.() ?? []
+          if (ids.length === 0) return
+          if (ann.copySelected?.()) {
+            e.preventDefault()
+          }
+          return
+        } else if (keyLower === 'v') {
+          if (ann.pasteFromClipboard?.()) {
+            e.preventDefault()
+          }
+          return
+        }
+      }
+
+      if (mod && keyLower === 'g') {
+        if (shouldIgnoreToolShortcuts()) return
+        const ann = getPageAnnotationRef().current
+        const selected = ann?.getSelectedIds?.() ?? []
+        if (selected.length > 0) {
+          const ok = e.shiftKey
+            ? ann?.removeFromGroupSelected?.()
+            : ann?.toggleGroupSelected?.()
+          if (ok) {
+            e.preventDefault()
+          }
+        }
+        return
+      }
+
+      if (!mod && !e.altKey && (key === 'Delete' || key === 'Backspace')) {
+        if (shouldIgnoreToolShortcuts()) return
+        const ann = getPageAnnotationRef().current
+        const ids = ann?.getSelectedIds?.() ?? []
+        if (ids.length > 0 && ann?.deleteSelected?.()) {
+          e.preventDefault()
+          return
+        }
       }
 
       if (e.altKey && BOOK_OVERLAY_STAMP_VARIANT_BY_DIGIT[key]) {
@@ -229,8 +430,20 @@ export function useBookOverlayKeyboardShortcuts({
         return
       }
 
+      if (key === 'Tab' && !mod && !e.altKey) {
+        if (isWritingAssistTabActive()) return
+        if (shouldIgnoreToolShortcuts()) return
+        if (annotationMode !== 'select') return
+        const ann = getPageAnnotationRef().current
+        if (!ann?.selectNextInStack) return
+        e.preventDefault()
+        ann.selectNextInStack(e.shiftKey ? -1 : 1)
+        return
+      }
+
       if (shouldIgnoreToolShortcuts()) return
       if (mod) return
+      if (annotationTyping && e.altKey && !altCommitThenShortcut) return
 
       if (key === 'Backquote') {
         e.preventDefault()
@@ -238,7 +451,7 @@ export function useBookOverlayKeyboardShortcuts({
         return
       }
 
-      if (keyLower === 'g') {
+      if (keyLower === 'l') {
         e.preventDefault()
         setIsPageListOpen(!isPageListOpen)
         if (!isPageListOpen) setIsWhiteboardOpen(false)
@@ -247,8 +460,38 @@ export function useBookOverlayKeyboardShortcuts({
 
       if (keyLower === 'w') {
         e.preventDefault()
-        setIsWhiteboardOpen(!isWhiteboardOpen)
-        if (!isWhiteboardOpen) setIsPageListOpen(false)
+        if (!isWhiteboardSessionOpen) {
+          launchOpenWhiteboard?.()
+          setIsPageListOpen(false)
+        } else if (isWhiteboardMinimized) {
+          launchExpandWhiteboard?.()
+        } else {
+          launchCloseWhiteboard?.()
+        }
+        return
+      }
+
+      if (isWhiteboardOpen && keyLower === 'f' && !mod && !e.altKey) {
+        e.preventDefault()
+        toggleWhiteboardFullscreen?.()
+        return
+      }
+
+      if (
+        isWhiteboardOpen &&
+        e.altKey &&
+        !mod &&
+        (key === 'ArrowLeft' || key === 'ArrowRight') &&
+        setWhiteboardSlotSide
+      ) {
+        e.preventDefault()
+        setWhiteboardSlotSide(key === 'ArrowLeft' ? 'left' : 'right')
+        return
+      }
+
+      if (keyLower === 'c') {
+        e.preventDefault()
+        setTranslateDockOpen(!translateDockOpen)
         return
       }
 
@@ -259,7 +502,10 @@ export function useBookOverlayKeyboardShortcuts({
       }
 
       if (keyLower === 'p') {
+        if (e.repeat) return
         e.preventDefault()
+        const idx = tapIndex(penTapRef, PEN_STROKE_PROFILES.length, penCurrentIndex())
+        setPenStrokeProfile(PEN_STROKE_PROFILES[idx]!)
         setAnnotationMode('pen')
         return
       }
@@ -313,9 +559,9 @@ export function useBookOverlayKeyboardShortcuts({
         setAnnotationMode('callout')
         return
       }
-      if (keyLower === 'l') {
+      if (keyLower === 'v') {
         e.preventDefault()
-        setAnnotationMode('laser')
+        setAnnotationMode('select')
         return
       }
 
@@ -331,15 +577,16 @@ export function useBookOverlayKeyboardShortcuts({
       }
     }
 
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [
     open,
     onClose,
     isLessonPaperOpen,
-    lessonPaperMode,
     annotationMode,
     setAnnotationMode,
+    penStrokeProfile,
+    setPenStrokeProfile,
     stampVariant,
     setStampVariant,
     eyedropperVariant,
@@ -349,19 +596,36 @@ export function useBookOverlayKeyboardShortcuts({
     isPageListOpen,
     setIsPageListOpen,
     isWhiteboardOpen,
+    isWhiteboardSessionOpen,
+    isWhiteboardMinimized,
     setIsWhiteboardOpen,
-    clearInkOpen,
+    launchOpenWhiteboard,
+    launchExpandWhiteboard,
+    launchCloseWhiteboard,
+    toggleWhiteboardFullscreen,
+    setWhiteboardSlotSide,
     pdfDialogOpen,
     regionSelectOpen,
     captionDialogOpen,
-    setClearInkOpen,
+    translateDockOpen,
+    setTranslateDockOpen,
     penThicknessStep,
     setPenThicknessStep,
     markerThicknessStep,
     setMarkerThicknessStep,
+    shapeThicknessStep,
+    setShapeThicknessStep,
+    textThicknessStep,
+    setTextThicknessStep,
+    stickyThicknessStep,
+    setStickyThicknessStep,
+    stampThicknessStep,
+    setStampThicknessStep,
     eraserPixelThicknessStep,
     setEraserPixelThicknessStep,
     toolbarCaps,
+    selectAllOnActivePage,
+    getPageAnnotationRef,
     getActiveAnnotationRef,
   ])
 }

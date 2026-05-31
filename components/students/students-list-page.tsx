@@ -17,13 +17,17 @@ import { StudentsSearchBar } from '@/components/students/students-search-bar'
 import { StudentCard } from '@/components/students/student-card'
 import { StudentsEmptyState } from '@/components/students/students-empty-state'
 import type { BookLibraryPayload } from '@/lib/books/types'
-import { addStudentRecord, getStudentsListView } from '@/lib/students/selectors'
+import {
+  ensureStudentRecordsHydrated,
+  STUDENT_RECORDS_HYDRATED_EVENT,
+} from '@/lib/local-data/student-records-client'
+import { addStudentRecord, getStudentsListView, STUDENT_LOCAL_DATA_CHANGED_EVENT } from '@/lib/students/selectors'
 import { DEFAULT_PLAY_TIER, DIFFICULTY_TIER_LABELS, DIFFICULTY_TIERS } from '@/lib/quiz-difficulty'
 import type { StudentListItemView } from '@/lib/students/types'
 import type { DifficultyTier } from '@/lib/types'
 
 export function StudentsListPage() {
-  const [isHydrated, setIsHydrated] = useState(false)
+  const [recordsReady, setRecordsReady] = useState(false)
   const [query, setQuery] = useState('')
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [studentName, setStudentName] = useState('')
@@ -34,7 +38,18 @@ export function StudentsListPage() {
   const [reloadTick, setReloadTick] = useState(0)
   const [bookLibrary, setBookLibrary] = useState<BookLibraryPayload | null>(null)
   useEffect(() => {
-    setIsHydrated(true)
+    let cancelled = false
+    void ensureStudentRecordsHydrated().then(() => {
+      if (!cancelled) setRecordsReady(true)
+    })
+    const bump = () => setReloadTick((tick) => tick + 1)
+    window.addEventListener(STUDENT_RECORDS_HYDRATED_EVENT, bump)
+    window.addEventListener(STUDENT_LOCAL_DATA_CHANGED_EVENT, bump)
+    return () => {
+      cancelled = true
+      window.removeEventListener(STUDENT_RECORDS_HYDRATED_EVENT, bump)
+      window.removeEventListener(STUDENT_LOCAL_DATA_CHANGED_EVENT, bump)
+    }
   }, [])
 
   useEffect(() => {
@@ -59,8 +74,8 @@ export function StudentsListPage() {
   }, [])
 
   const students: StudentListItemView[] = useMemo(
-    () => (isHydrated ? getStudentsListView(bookLibrary ?? undefined) : []),
-    [isHydrated, reloadTick, bookLibrary],
+    () => (recordsReady ? getStudentsListView(bookLibrary ?? undefined) : []),
+    [recordsReady, reloadTick, bookLibrary],
   )
 
   const filteredStudents = useMemo(() => {

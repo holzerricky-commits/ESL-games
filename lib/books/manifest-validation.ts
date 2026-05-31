@@ -43,11 +43,15 @@ const bookFilePageAlignmentSchema = z.object({
   hiddenPdfPages: z.array(z.number().int().min(1)).max(500).optional(),
 }).strict()
 
+const spreadGutterPullRatioSchema = z.number().min(0).max(0.2)
+
 const bookRecordSchema = z.object({
   id: z.string().min(1),
   title: z.string(),
   description: z.string().optional(),
   pageAlignmentByFile: z.record(z.string().min(1), bookFilePageAlignmentSchema).optional(),
+  spreadGutterPullRatio: spreadGutterPullRatioSchema.optional(),
+  spreadGutterByFile: z.record(z.string().min(1), spreadGutterPullRatioSchema).optional(),
   units: z.array(bookUnitSchema).min(1),
 }).strict()
 

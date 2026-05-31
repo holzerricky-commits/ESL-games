@@ -3,25 +3,23 @@ import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } 
 interface UseWhiteboardOnBookUnitChangeArgs {
   selectedBookId: string | null
   selectedUnitId: string | null
-  pageNumber: number
-  setWhiteboardPage: Dispatch<SetStateAction<number>>
+  resetWhiteboardPlacementForUnit: () => void
   setLessonPaperViewMode: Dispatch<SetStateAction<'left' | 'right' | 'split'>>
   lessonPaperPanRef: MutableRefObject<number>
 }
 
-/** When the focused book/unit changes, sync whiteboard target to the current reader page and reset lesson-paper split pan. */
+/** When the focused book/unit changes, reset whiteboard placement and lesson-paper split pan. */
 export function useWhiteboardOnBookUnitChange({
   selectedBookId,
   selectedUnitId,
-  pageNumber,
-  setWhiteboardPage,
+  resetWhiteboardPlacementForUnit,
   setLessonPaperViewMode,
   lessonPaperPanRef,
 }: UseWhiteboardOnBookUnitChangeArgs) {
   useEffect(() => {
     if (!selectedBookId || !selectedUnitId) return
-    setWhiteboardPage(pageNumber)
+    resetWhiteboardPlacementForUnit()
     setLessonPaperViewMode('left')
     lessonPaperPanRef.current = 0
-  }, [selectedBookId, selectedUnitId]) // eslint-disable-line react-hooks/exhaustive-deps -- sync to current page only when book/unit changes
+  }, [selectedBookId, selectedUnitId]) // eslint-disable-line react-hooks/exhaustive-deps -- reset only when book/unit changes
 }

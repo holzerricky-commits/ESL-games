@@ -9,3 +9,20 @@ export function isBookOverlayKeyboardTypingTarget(): boolean {
     activeEl.isContentEditable
   )
 }
+
+export { isWritingAssistTabActive } from '@/lib/writing-assist/tab-active'
+
+/** True when the given annotation text label textarea already has focus. */
+export function isAnnotationTextFieldFocused(annotationId: string): boolean {
+  const activeEl = document.activeElement as HTMLElement | null
+  if (!activeEl || activeEl.tagName !== 'TEXTAREA') return false
+  return activeEl.dataset.annotationId === annotationId
+}
+
+/** Blur the focused field so `onBlur` handlers commit (annotation text / sticky). */
+export function commitBookOverlayTypingTarget(): boolean {
+  const activeEl = document.activeElement as HTMLElement | null
+  if (!activeEl || !isBookOverlayKeyboardTypingTarget()) return false
+  activeEl.blur()
+  return true
+}

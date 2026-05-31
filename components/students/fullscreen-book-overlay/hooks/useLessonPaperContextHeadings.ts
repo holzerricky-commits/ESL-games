@@ -4,6 +4,8 @@ import { ensureStudentClassLessonNotebookPageSpanSection } from '@/lib/students/
 
 interface UseLessonPaperContextHeadingsArgs {
   isLessonPaperOpen: boolean
+  /** When false, page turns do not inject headings into the notebook stream (Phase 2). */
+  lessonPaperAutoAppendHeadingsEnabled: boolean
   activeClassSessionId: string | null
   lessonPaperPrimarySectionId: string | null
   studentId: string
@@ -57,6 +59,7 @@ export function useLessonPaperContextHeadings(args: UseLessonPaperContextHeading
       title: string,
       pageSpanKey: string,
       insertionMode: 'append' | 'prependBeforeFirstHeading' = 'append',
+      options?: { scrollIntoView?: boolean },
     ) => {
       if (!contextKey.trim()) return
       const marker = `data-notebook-context="${contextKey}"`
@@ -69,7 +72,10 @@ export function useLessonPaperContextHeadings(args: UseLessonPaperContextHeading
       }
       const headingTitle = title.trim() || pageSpanKey
       const pageLabel = pageSpanKey.replace(/^p/i, '')
-      const headingHtml = `<p><br/></p><p><br/></p><div ${marker} data-notebook-marker="${markerId}" style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:6px 0 12px 0;padding:0 0 6px 0;border-bottom:1px dashed rgba(74,59,42,0.22);"><h3 style="margin:0;font-size:1.55rem;line-height:1.2;font-weight:700;letter-spacing:0.01em;color:rgba(72,92,139,0.72);">${headingTitle}</h3><span style="font-size:0.86rem;line-height:1.2;font-weight:600;letter-spacing:0.03em;color:rgba(74,59,42,0.58);white-space:nowrap;">${pageLabel}</span></div><p><br/></p>`
+      const safePageSpan = pageSpanKey.replace(/"/g, '')
+      const safeSessionKey = (args.activeClassSessionId ?? '').replace(/"/g, '')
+      const sessionAttr = safeSessionKey ? ` data-session-key="${safeSessionKey}"` : ''
+      const headingHtml = `<p><br/></p><p><br/></p><div ${marker} data-notebook-marker="${markerId}" data-page-span="${safePageSpan}"${sessionAttr} style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:6px 0 12px 0;padding:0 0 6px 0;border-bottom:1px dashed rgba(74,59,42,0.22);"><h3 style="margin:0;font-size:1.55rem;line-height:1.2;font-weight:700;letter-spacing:0.01em;color:rgba(72,92,139,0.72);">${headingTitle}</h3><span style="font-size:0.86rem;line-height:1.2;font-weight:600;letter-spacing:0.03em;color:rgba(74,59,42,0.58);white-space:nowrap;">${pageLabel}</span></div><p><br/></p>`
       const firstMarkerIndex = currentHtml.search(/data-notebook-context="part::/i)
       const nextHtml =
         insertionMode === 'prependBeforeFirstHeading' && firstMarkerIndex >= 0
@@ -83,13 +89,16 @@ export function useLessonPaperContextHeadings(args: UseLessonPaperContextHeading
       args.setLessonPaperEditVersion((v) => v + 1)
       if (editor) editor.innerHTML = nextHtml
       args.setLessonPaperSaveState((prev) => (prev === 'saving' ? prev : 'idle'))
-      scrollLessonPaperHeadingIntoFocus(markerId)
+      if (options?.scrollIntoView !== false) {
+        scrollLessonPaperHeadingIntoFocus(markerId)
+      }
       args.scheduleLessonPaperEditorFocus(false)
     },
     [args, scrollLessonPaperHeadingIntoFocus],
   )
 
   useEffect(() => {
+    if (!args.lessonPaperAutoAppendHeadingsEnabled) return
     if (!args.isLessonPaperOpen) return
     if (!args.activeClassSessionId || !args.lessonPaperPrimarySectionId) return
     const title = (args.vocabReaderPartTitle ?? args.currentNotebookPageSpanKey).trim() || args.currentNotebookPageSpanKey

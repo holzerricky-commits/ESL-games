@@ -5,6 +5,7 @@ import {
   readStudentAnnotationToolPrefs,
   removeStudentAnnotationToolPrefs,
   resolveAnnotationToolPrefsFromStorage,
+  resolvePenAutoGroupConnectedFromStorage,
   resolveMarkerToolPrefsFromStorage,
   resolvePenToolPrefsFromStorage,
   resolveShapeToolPrefsFromStorage,
@@ -81,15 +82,15 @@ describe('student-annotation-tool-prefs', () => {
     mockLocalStorage()
 
     patchStudentAnnotationToolPrefs('stu-a', {
-      textColor: '#1d4ed8',
+      textColor: '#2563eb',
       stickyFillColor: '#fce7f3',
     })
 
     expect(readStudentAnnotationToolPrefs('stu-a')).toMatchObject({
-      textColor: '#1d4ed8',
+      textColor: '#3b82f6',
       stickyFillColor: '#fce7f3',
     })
-    expect(resolveTextToolPrefsFromStorage('stu-a').textColor).toBe('#1d4ed8')
+    expect(resolveTextToolPrefsFromStorage('stu-a').textColor).toBe('#3b82f6')
     expect(resolveStickyToolPrefsFromStorage('stu-a').stickyFillColor).toBe('#fce7f3')
   })
 
@@ -97,14 +98,14 @@ describe('student-annotation-tool-prefs', () => {
     mockLocalStorage()
 
     patchStudentAnnotationToolPrefs('stu-a', { textSwatchId: 'solid-blue' })
-    expect(resolveTextToolPrefsFromStorage('stu-a').textColor).toBe('#1d4ed8')
+    expect(resolveTextToolPrefsFromStorage('stu-a').textColor).toBe('#3b82f6')
   })
 
   it('migrates text and shape stroke from pen when missing', () => {
     mockLocalStorage()
 
     patchStudentAnnotationToolPrefs('stu-a', { penSwatchId: 'solid-green' })
-    expect(resolveTextToolPrefsFromStorage('stu-a').textColor).toBe('#15803d')
+    expect(resolveTextToolPrefsFromStorage('stu-a').textColor).toBe('#22c55e')
     expect(resolveShapeToolPrefsFromStorage('stu-a').shapeStrokeSwatchId).toBe('solid-green')
   })
 
@@ -116,6 +117,39 @@ describe('student-annotation-tool-prefs', () => {
     expect(pen.penSwatchId).toBe('solid-black')
   })
 
+  it('stores per-tool thickness steps independently', () => {
+    mockLocalStorage()
+
+    patchStudentAnnotationToolPrefs('stu-a', {
+      markerThicknessStep: 2,
+      shapeThicknessStep: 5,
+    })
+
+    const prefs = resolveAnnotationToolPrefsFromStorage('stu-a')
+    expect(prefs.markerThicknessStep).toBe(2)
+    expect(prefs.shapeThicknessStep).toBe(5)
+  })
+
+  it('migrates legacy shared marker thickness to shape and sticky when dedicated step missing', () => {
+    mockLocalStorage()
+
+    patchStudentAnnotationToolPrefs('stu-a', { markerThicknessStep: 4 })
+
+    const prefs = resolveAnnotationToolPrefsFromStorage('stu-a')
+    expect(prefs.markerThicknessStep).toBe(4)
+    expect(prefs.shapeThicknessStep).toBe(4)
+    expect(prefs.stickyThicknessStep).toBe(4)
+    expect(prefs.stampThicknessStep).toBe(4)
+  })
+
+  it('migrates legacy pen thickness to text when text step missing', () => {
+    mockLocalStorage()
+
+    patchStudentAnnotationToolPrefs('stu-a', { penThicknessStep: 6 })
+
+    expect(resolveAnnotationToolPrefsFromStorage('stu-a').textThicknessStep).toBe(6)
+  })
+
   it('round-trips all tool prefs via resolveAnnotationToolPrefsFromStorage', () => {
     mockLocalStorage()
 
@@ -123,6 +157,7 @@ describe('student-annotation-tool-prefs', () => {
       annotationMode: 'marker',
       penSwatchId: 'fx-lava',
       penThicknessStep: 6,
+      shapeThicknessStep: 2,
       eraserPixelThicknessStep: 1,
       eraserLineThicknessStep: 5,
       stampVariant: 'star',
@@ -132,22 +167,23 @@ describe('student-annotation-tool-prefs', () => {
       shapeLineDashStyle: 'dotted',
       shapeStrokeEnabled: false,
       shapeFillMode: 'solid',
-      shapeFillColor: '#facc15',
+      shapeFillColor: '#ff9800',
     })
 
     const prefs = resolveAnnotationToolPrefsFromStorage('stu-a')
     expect(prefs.annotationMode).toBe('marker')
     expect(prefs.penSwatchId).toBe('fx-lava')
     expect(prefs.penThicknessStep).toBe(6)
+    expect(prefs.shapeThicknessStep).toBe(2)
     expect(prefs.eraserPixelThicknessStep).toBe(1)
     expect(prefs.eraserLineThicknessStep).toBe(5)
     expect(prefs.stampVariant).toBe('star')
     expect(prefs.textVisualStyle).toBe('filled')
-    expect(prefs.textFillColor).toBe('#fef9c3')
+    expect(prefs.textFillColor).toBe('#fef08a')
     expect(prefs.shapeLineDashStyle).toBe('dotted')
     expect(prefs.shapeStrokeEnabled).toBe(false)
     expect(prefs.shapeFillMode).toBe('solid')
-    expect(prefs.shapeFillColor).toBe('#facc15')
+    expect(prefs.shapeFillColor).toBe('#ff9800')
   })
 
   it('detects when default toolbar state would clobber stored prefs', () => {
@@ -178,15 +214,22 @@ describe('student-annotation-tool-prefs', () => {
       annotationMode: 'pen',
       eyedropperVariant: 'smart',
       penSwatchId: 'fx-galaxy',
+      penStrokeProfile: 'effects',
       penColorSource: 'swatch',
       penCustomHex: '#6366f1',
       penThicknessStep: 4,
       penLineDashStyle: 'solid',
-      markerColor: '#facc15',
+      markerColor: '#ffeb3b',
       markerColorSource: 'swatch',
-      markerCustomHex: '#facc15',
+      markerCustomHex: '#ffeb3b',
       markerThicknessStep: 3,
       markerLineDashStyle: 'solid',
+      markerStraightStroke: true,
+      penAutoGroupConnected: false,
+      shapeThicknessStep: 2,
+      textThicknessStep: 4,
+      stickyThicknessStep: 1,
+      stampThicknessStep: 5,
       eraserPixelThicknessStep: 3,
       eraserLineThicknessStep: 3,
       stampVariant: 'check',
@@ -198,19 +241,40 @@ describe('student-annotation-tool-prefs', () => {
       shapeLineDashStyle: 'solid',
       shapeStrokeEnabled: true,
       shapeFillMode: 'none',
-      shapeFillColor: '#facc15',
+      shapeFillColor: '#ff9800',
       stickyFillColor: '#fef3c7',
     })
     expect(patch.penSwatchId).toBe('fx-galaxy')
     expect(patch.annotationMode).toBe('pen')
     expect(patch.eyedropperVariant).toBe('smart')
+    expect(patch.penAutoGroupConnected).toBe(false)
+  })
+
+  it('penAutoGroupConnected defaults to true when omitted', () => {
+    mockLocalStorage()
+    expect(resolvePenAutoGroupConnectedFromStorage('stu-a')).toBe(true)
+    expect(resolveAnnotationToolPrefsFromStorage('stu-a').penAutoGroupConnected).toBe(true)
+  })
+
+  it('migrates legacy connectStrokesOnSelect into penAutoGroupConnected', () => {
+    mockLocalStorage()
+    patchStudentAnnotationToolPrefs('stu-a', { connectStrokesOnSelect: false } as never)
+    expect(resolvePenAutoGroupConnectedFromStorage('stu-a')).toBe(false)
+    expect(readStudentAnnotationToolPrefs('stu-a').penAutoGroupConnected).toBe(false)
+  })
+
+  it('persists penAutoGroupConnected false', () => {
+    mockLocalStorage()
+    patchStudentAnnotationToolPrefs('stu-a', { penAutoGroupConnected: false })
+    expect(resolvePenAutoGroupConnectedFromStorage('stu-a')).toBe(false)
+    expect(readStudentAnnotationToolPrefs('stu-a').penAutoGroupConnected).toBe(false)
   })
 
   it('persists eyedropper variant', () => {
     mockLocalStorage()
     patchStudentAnnotationToolPrefs('stu-a', { eyedropperVariant: 'smart' })
     expect(resolveAnnotationToolPrefsFromStorage('stu-a').eyedropperVariant).toBe('smart')
-    patchStudentAnnotationToolPrefs('stu-a', { eyedropperVariant: 'not-valid' })
+    patchStudentAnnotationToolPrefs('stu-a', { eyedropperVariant: 'not-valid' as 'smart' })
     expect(resolveAnnotationToolPrefsFromStorage('stu-a').eyedropperVariant).toBe('smart')
   })
 

@@ -4,6 +4,7 @@ import { Suspense, useState, type ReactNode } from 'react'
 import { AppSidebar } from '@/components/app-sidebar'
 import { AppTopbar } from '@/components/app-topbar'
 import { ClassUpcomingReminder } from '@/components/class-upcoming-reminder'
+import { LocalStudentDataHydrator } from '@/components/local-student-data-hydrator'
 
 interface AppShellProps {
   children: ReactNode
@@ -24,6 +25,7 @@ export function AppShell({ children }: AppShellProps) {
           <div className="mx-auto w-full max-w-7xl">{children}</div>
         </main>
       </div>
+      <LocalStudentDataHydrator />
       <Suspense fallback={null}>
         <ClassUpcomingReminder />
       </Suspense>

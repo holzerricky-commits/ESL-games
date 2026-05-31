@@ -1,8 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import { CalendarDays, ChevronDown, Clock3, Play, Sparkles, Zap } from 'lucide-react'
 import { ClassPrepVocabEditor } from '@/components/students/class-prep-vocab-editor'
 import { Button } from '@/components/ui/button'
@@ -18,6 +19,7 @@ import {
 import { getVisiblePdfPages } from '@/lib/books/page-range'
 import { getPdfTotalPages } from '@/lib/books/pdf-thumbnail-cache'
 import type { BookLibraryPayload } from '@/lib/books/types'
+import { ensureStudentRecordsHydrated } from '@/lib/local-data/student-records-client'
 import {
   buildStudentClassPrepContext,
   getStudentSectionOptions,
@@ -28,6 +30,7 @@ import {
   updateStudentClassSelectedSection,
   updateStudentClassPrepSummary,
   startStudentClassSession,
+  STUDENT_LOCAL_DATA_CHANGED_EVENT,
   getNextClassResumeHeadline,
   getLastStoppedCarryLine,
   dismissPostClassRecapPrompt,
@@ -144,6 +147,27 @@ export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps
 
   const [statusBusyId, setStatusBusyId] = useState<string | null>(null)
   const [startBusySessionId, setStartBusySessionId] = useState<string | null>(null)
+
+  const refreshClassData = useCallback(() => {
+    onUpdated()
+  }, [onUpdated])
+
+  useEffect(() => {
+    const onFocus = () => refreshClassData()
+    const onStudentDataChanged = (event: Event) => {
+      const detail = (event as CustomEvent<{ studentId?: string }>).detail
+      if (!detail?.studentId || detail.studentId === liveStudent.id) refreshClassData()
+    }
+    window.addEventListener('focus', onFocus)
+    window.addEventListener(STUDENT_LOCAL_DATA_CHANGED_EVENT, onStudentDataChanged)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') onFocus()
+    })
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener(STUDENT_LOCAL_DATA_CHANGED_EVENT, onStudentDataChanged)
+    }
+  }, [refreshClassData, liveStudent.id])
   const [aiBusyId, setAiBusyId] = useState<string | null>(null)
   const [openOutcomeFor, setOpenOutcomeFor] = useState<string | null>(null)
   const [openPrepFor, setOpenPrepFor] = useState<string | null>(null)
@@ -522,21 +546,44 @@ export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps
     }
   }
 
-  function goToClassMap(sessionId: string) {
-    const row = sessions.find((s) => s.id === sessionId)
-    if (!row) return
-    if (row.status === 'completed' || row.status === 'cancelled') return
-    if (row.status !== 'in_progress') {
-      setStartBusySessionId(sessionId)
-      const started = startStudentClassSession(liveStudent.id, sessionId)
-      setStartBusySessionId(null)
-      if (!started.ok) {
-        setError(started.error)
+  async function goToClassMap(sessionId: string) {
+    setStartBusySessionId(sessionId)
+    try {
+      await ensureStudentRecordsHydrated()
+
+      const profile = getStudentProfileView(liveStudent.id)
+      const row = profile?.scheduledClasses.find((s) => s.id === sessionId)
+      if (!row) {
+        const msg = 'Class not found. Refresh the page and try again.'
+        setError(msg)
+        toast.error(msg)
         return
       }
-      onUpdated()
+      if (row.status === 'completed' || row.status === 'cancelled') {
+        const msg = 'This class is already finished. Refresh to see your next class.'
+        setError(msg)
+        toast.error(msg)
+        refreshClassData()
+        return
+      }
+
+      if (row.status !== 'in_progress') {
+        const started = startStudentClassSession(liveStudent.id, sessionId)
+        if (!started.ok) {
+          setError(started.error)
+          toast.error(started.error)
+          return
+        }
+        refreshClassData()
+      }
+      router.push(`/students/${liveStudent.id}/map?classSession=${encodeURIComponent(sessionId)}`)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Could not start class.'
+      setError(msg)
+      toast.error(msg)
+    } finally {
+      setStartBusySessionId(null)
     }
-    router.push(`/students/${liveStudent.id}/map?classSession=${encodeURIComponent(sessionId)}`)
   }
 
   function renderClassPrepDialogBody(session: StudentClassSessionView) {
@@ -992,7 +1039,7 @@ export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps
                       type="button"
                       variant="secondary"
                       className="min-h-[50px] min-w-[120px] flex-1 gap-1.5"
-                      onClick={() => goToClassMap(spotlightSession.id)}
+                      onClick={() => void goToClassMap(spotlightSession.id)}
                       disabled={
                         startBusySessionId === spotlightSession.id ||
                         spotlightSession.status === 'completed' ||

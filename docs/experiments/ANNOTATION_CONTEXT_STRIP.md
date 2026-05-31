@@ -19,21 +19,29 @@ Two branches from `main` explore where pen/marker/shape/eraser color and thickne
 ## V2 — top options bar (this branch)
 
 - **Component:** `components/students/annotation-top-options-bar.tsx`
-- **Layout:** Horizontal bar at `top-12 left-14 right-14`, centered, same frosted surface as the annotation rail
-- **Wiring:** `FullscreenBookOverlayView` renders the bar beside `TopOverlayControls`; `AnnotationRail` keeps a single-column tool stack with `useContextStrip` on the toolbar (slimmer popovers, no rail strip)
-- **Visibility:** Shown for pen, marker, shape, and eraser modes; hidden when `suppressChrome`, page list, or whiteboard is open
-- **Popovers:** Same slimming as V1 — color and thickness on the top bar; dash, spectrum, and shape advanced options stay in popovers
+- **Primitives:** `annotation-top-strip-color-cluster.tsx`, `annotation-top-strip-palette-dropdown.tsx`, `annotation-top-strip-controls.tsx` (`TopStripCycleChip` and tool chips), `annotation-top-strip-stamp-cluster.tsx`
+- **Layout:** Centered **peninsula** flush with viewport top (`top-0`, `w-max`, `rounded-b-xl` only, `h-10`). **Active color** (or stamp preview) + up to **4 recents** + chevron (opens top dropdown, not left-rail popover); cycle chips for enums; fixed **9rem** thickness slot; trailing **pin grip** (`z-[65]`). Page list / whiteboard at `top-14` (`z-[60]`)
+- **Recents:** `sessionStorage` via `lib/books/annotation-strip-recents.ts` (pen, marker, shape stroke, text, sticky); updated when picking colors
+- **Animation:** Clip wrapper at top edge; strip slides in/out with `translate-y` (not a floating island)
+- **Auto-hide:** After ~3s idle, strip slides up; hover top edge (`h-3` peek zone) or **1px hairline** when hidden to reveal; pin grip persists preference in `localStorage` (`esl-top-options-bar-pinned`); palette dropdown open keeps bar visible
+- **Wiring:** `FullscreenBookOverlayView` renders the bar at overlay root; close button at `right-3 top-14`; `AnnotationRail` uses `useContextStrip` — rail buttons **activate tool only** (no duplicate color/thickness popovers)
+- **Class timer:** `ClassSessionMapTimer` at `right-3 top-3`, `elevated` when book overlay is open so it stays visible
+- **Top bar tools:** pen, marker, shapes (kind + fill + stroke/fill colors), eraser (mode + thickness), stamp, text, sticky, callout (stroke color), eyedropper (variant chip)
+- **Excluded:** laser — toolbar button only, no top bar
+- **Eyedropper rail:** click activates; long-press / right-click still opens variant picker on the rail (advanced entry)
 
 ## Shared rules (both experiments)
 
 - Tool icons keep the active color dot on the button
-- Custom spectrum and advanced shape fill/stroke stay in popovers
-- Stamp, text, laser, eyedropper, etc. have no context bar
+- Custom spectrum lives in the top dropdown (`variant="strip"`) when using V2
 
 ## Manual test (V2)
 
-1. Open book overlay → select **Pen** → top bar shows ink swatches + thickness; pen popover has dash + custom color only
-2. **Marker** / **shape** / **eraser** → bar updates; **stamp** → no bar
-3. Open page list or whiteboard → bar hides
-4. Capture hide chrome → bar respects `suppressChrome`
-5. Left rail stays narrow (no side strip); popovers open toward the book without clipping under the top bar
+1. Each drawing tool above → peninsula appears; idle ~3s → hides; top edge hover → reveals; pin works
+2. Chevron opens dropdown **down from top bar** (not left rail)
+3. Switching tools closes palette dropdown and resets idle timer
+4. Left rail: pen/marker/shapes/stamp/text/sticky/eraser = activate only; eyedropper keeps long-press menu
+5. Laser → no top bar
+6. Shapes: kind chip + fill chip + stroke/fill colors coherent on canvas
+7. Text: plain vs filled — fill swatches in dropdown only when filled
+8. Page list / whiteboard → bar hidden

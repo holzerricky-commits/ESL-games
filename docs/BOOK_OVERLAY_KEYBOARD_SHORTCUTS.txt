@@ -3,7 +3,17 @@ BOOK OVERLAY — KEYBOARD SHORTCUTS
 
 Active while the fullscreen book reader is open. Shortcuts are ignored when you
 are typing in a text field, editing a sticky note, or using the lesson notebook
-in typing mode. On Mac, use Command where Windows shows Ctrl.
+in typing mode — except:
+
+  Esc            Commit the current label and leave the field (press again for
+                 panels / close reader)
+  Alt+shortcut   Commit the field and run that tool shortcut (e.g. Alt+P pen).
+                 (Ctrl is left to the browser while typing.)
+
+  Text tool: click empty page to commit the current label and start a new one
+  at that spot (then tool shortcuts like P for pen work again).
+
+On Mac, use Command where Windows shows Ctrl.
 
 
 TOOLS (annotation toolbox)
@@ -34,7 +44,8 @@ TOOLS (annotation toolbox)
   highlighter, and eraser.
 
   Pen / highlighter / shape / eraser color and thickness appear in the top
-  options bar under the page controls (experiment).
+  options bar (center). The bar auto-hides after a few seconds; move the mouse
+  to the top edge to show it again, or pin it from the bar (experiment).
 
 
 THICKNESS (current tool)

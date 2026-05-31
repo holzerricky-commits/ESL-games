@@ -176,12 +176,9 @@ describe('pen-barrel-button', () => {
     )
   })
 
-  it('maps pen/marker/laser + barrel to eraser-line without changing stored mode', () => {
+  it('maps pen/marker + barrel to eraser-line without changing stored mode', () => {
     expect(effectiveStrokeToolForPointer('pen', penEvent({ buttons: 1 | 0x20 }))).toBe('eraser-line')
     expect(effectiveStrokeToolForPointer('marker', penEvent({ buttons: 1 | 0x2 }))).toBe(
-      'eraser-line',
-    )
-    expect(effectiveStrokeToolForPointer('laser', penEvent({ buttons: 1 | 0x20 }))).toBe(
       'eraser-line',
     )
   })
@@ -191,7 +188,7 @@ describe('pen-barrel-button', () => {
     expect(effectiveStrokeToolForPointer('pen', penEvent({ button: -1, buttons: 32 }))).toBe('pen')
     expect(effectiveStrokeToolForPointer('marker', penEvent({ buttons: 1 }))).toBe('marker')
     expect(effectiveStrokeToolForPointer('eraser', penEvent({ buttons: 1 | 0x20 }))).toBe('eraser')
-    expect(effectiveStrokeToolForPointer('laser', penEvent({ buttons: 1 }))).toBe(null)
+    expect(effectiveStrokeToolForPointer('select', penEvent({ buttons: 1 }))).toBe(null)
   })
 
   it('uses global side-button tracker when OS sends separate button events', () => {

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { ensureStudentRecordsHydrated } from '@/lib/local-data/student-records-client'
 import { getTodaysClassSessionsForTeacher, startStudentClassSession, type TodaysClassSessionRow } from '@/lib/students/selectors'
 
 const WINDOW_MS = 20 * 60 * 1000
@@ -74,17 +75,25 @@ export function ClassUpcomingReminder() {
     setTick((n) => n + 1)
   }, [])
 
-  const openClass = useCallback((row: TodaysClassSessionRow) => {
-    const { studentId, session } = row
-    if (session.status !== 'in_progress') {
-      const started = startStudentClassSession(studentId, session.id)
-      if (!started.ok) {
-        toast.error(started.error)
-        return
+  const openClass = useCallback(
+    async (row: TodaysClassSessionRow) => {
+      const { studentId, session } = row
+      try {
+        await ensureStudentRecordsHydrated()
+        if (session.status !== 'in_progress') {
+          const started = startStudentClassSession(studentId, session.id)
+          if (!started.ok) {
+            toast.error(started.error)
+            return
+          }
+        }
+        router.push(`/students/${studentId}/map?classSession=${encodeURIComponent(session.id)}`)
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Could not open class.')
       }
-    }
-    router.push(`/students/${studentId}/map?classSession=${encodeURIComponent(session.id)}`)
-  }, [router])
+    },
+    [router],
+  )
 
   if (visible.length === 0) return null
 
@@ -121,7 +130,7 @@ export function ClassUpcomingReminder() {
               <p className="truncate text-sm font-semibold text-foreground">{row.studentName}</p>
               <p className="truncate text-xs text-muted-foreground">{row.session.title}</p>
               <div className="mt-2 flex flex-wrap gap-2">
-                <Button type="button" size="sm" className="h-8 bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => openClass(row)}>
+                <Button type="button" size="sm" className="h-8 bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => void openClass(row)}>
                   Open
                 </Button>
                 <Button asChild variant="outline" size="sm" className="h-8">
