@@ -7,6 +7,7 @@ import {
   settleLayout,
   uploadStudentWorkBlob,
 } from '@/lib/books/book-capture'
+import type { BookAnnotationInteractionMode } from '@/lib/books/annotation-storage'
 import { mapPdfPageToDisplayLabel, type PageNumberingMode } from '@/lib/books/page-numbering'
 import { requestSpreadSessionFlush } from '@/lib/books/spread-session-events'
 import { appendStudentClassLessonNotebookWhiteboardCapture } from '@/lib/students/selectors'
@@ -40,8 +41,8 @@ interface UseWhiteboardNotebookCaptureArgs {
   currentTocPartKey: string
   currentTocPartTitle: string
   wbCaptureRootRef: React.MutableRefObject<HTMLDivElement | null>
-  annotationMode: string
-  setAnnotationMode: (mode: string) => void
+  annotationMode: BookAnnotationInteractionMode
+  setAnnotationMode: (mode: BookAnnotationInteractionMode) => void
   isLessonPaperOpen: boolean
   setIsLessonPaperOpen: (open: boolean) => void
   applyNotebookHtml: (html: string, docUpdatedAt: string) => void

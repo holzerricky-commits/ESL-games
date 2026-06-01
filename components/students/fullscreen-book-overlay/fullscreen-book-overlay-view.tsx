@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { InteractiveVocabReaderShelf } from '@/components/books/interactive-vocab-reader-shelf'
 import { Button } from '@/components/ui/button'
@@ -29,6 +29,8 @@ import { buildLessonVocabulary } from '@/lib/writing-assist/build-lesson-vocabul
 import { LessonCoachConnectDialog } from '@/components/lesson-coach/lesson-coach-connect-dialog'
 import { LessonCoachSyncProvider } from '@/lib/lesson-coach/lesson-coach-sync-context'
 import { requestSpreadSessionFlush } from '@/lib/books/spread-session-events'
+import { flushPendingUnitPageSave } from '@/lib/books/progress'
+import { shouldShowSpreadLoadingHold } from '@/lib/books/spread-drawable-ready'
 
 export function FullscreenBookOverlayView({
   vm,
@@ -38,6 +40,7 @@ export function FullscreenBookOverlayView({
   onClose: () => void
 }) {
   const closeOverlay = () => {
+    flushPendingUnitPageSave()
     requestSpreadSessionFlush()
     onClose()
   }
@@ -63,7 +66,7 @@ export function FullscreenBookOverlayView({
     eraserLineThicknessStep,
     eraserPixelThicknessStep,
     error,
-    firstSpreadPaintSession,
+    spreadReportEpoch,
     getActiveAnnotationRef,
     goToAdjacentPage,
     goToPage,
@@ -93,6 +96,10 @@ export function FullscreenBookOverlayView({
     applyWhiteboardSlotSide,
     registerWhiteboardSlotMotion,
     userPresented,
+    confirmSpreadSlotPixels,
+    spreadTurnGridRef,
+    turnSlide,
+    handleTurnSlideComplete,
     open,
     jpegQuality,
     lessonPaperBreadcrumb,
@@ -127,7 +134,6 @@ export function FullscreenBookOverlayView({
     notebookReturnPage,
     lessonPaperHtml,
     onLessonPaperPaste,
-    onFirstSpreadPaintReady,
     onPdfPageLoadSuccess,
     onRightAnnotationCaps,
     onSpreadOverlayCaps,
@@ -248,7 +254,8 @@ export function FullscreenBookOverlayView({
     spreadStrokeOverlayRef,
     layoutSpreadPageWidth,
     spreadRightPage,
-    spreadFirstPaintReady,
+    spreadDrawableReady,
+    onSpreadSlotsPixelsReady,
     stampScale,
     stampVariant,
     stampQuestionColor,
@@ -346,27 +353,50 @@ export function FullscreenBookOverlayView({
     [selectedBook, selectedUnit, interactiveVocabPack],
   )
 
-  const showViewportPaintHold = useMemo(
+  /** After first drawable spread, skip full-viewport hold on routine page turns (R1). */
+  const [spreadHasBeenDrawable, setSpreadHasBeenDrawable] = useState(false)
+  useEffect(() => {
+    if (spreadDrawableReady) setSpreadHasBeenDrawable(true)
+  }, [spreadDrawableReady])
+  useEffect(() => {
+    if (!open) setSpreadHasBeenDrawable(false)
+  }, [open])
+
+  const showSpreadLoadingHold = useMemo(
     () =>
-      open &&
-      isVisible &&
-      userPresented &&
-      readerPresentationReady &&
-      hasCurriculumOrHistory &&
-      hasResolvedUnit &&
-      !error &&
-      !spreadFirstPaintReady,
+      shouldShowSpreadLoadingHold({
+        userPresented,
+        open,
+        overlayVisible: isVisible,
+        readerPresentationReady,
+        hasCurriculumOrHistory,
+        hasResolvedUnit,
+        error,
+        spreadDrawableReady,
+        spreadHasBeenDrawable,
+      }),
     [
+      spreadHasBeenDrawable,
+      userPresented,
       open,
       isVisible,
-      userPresented,
       readerPresentationReady,
       hasCurriculumOrHistory,
       hasResolvedUnit,
       error,
-      spreadFirstPaintReady,
+      spreadDrawableReady,
     ],
   )
+
+  /** Keep stage visible after first successful open — do not hide on routine turns (R1 fix). */
+  const bookStageEnterVisible =
+    isVisible && (!userPresented || spreadDrawableReady || spreadHasBeenDrawable)
+  const prevBookStageEnterVisibleRef = useRef(false)
+  const bookStageEnterInstant =
+    bookStageEnterVisible && !prevBookStageEnterVisibleRef.current
+  useEffect(() => {
+    prevBookStageEnterVisibleRef.current = bookStageEnterVisible
+  }, [bookStageEnterVisible])
 
   return (
     <WritingAssistProvider
@@ -377,7 +407,11 @@ export function FullscreenBookOverlayView({
     <div
       className={cn(
         'absolute inset-0 z-50 p-0 transition-opacity duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]',
-        isVisible ? 'opacity-100' : 'opacity-0',
+        userPresented
+          ? isVisible
+            ? 'opacity-100'
+            : 'opacity-0'
+          : 'opacity-[0.001]',
         (!open || !isVisible || !userPresented) && 'pointer-events-none',
       )}
       aria-hidden={!open || !userPresented}
@@ -630,8 +664,9 @@ export function FullscreenBookOverlayView({
         <div
           ref={bookStageRef}
           className={cn(
-            'relative z-10 transition-all duration-[650ms] ease-[cubic-bezier(0.4,0,0.2,1)] will-change-transform motion-reduce:transition-none',
-            isVisible ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0',
+            'relative z-10 ease-[cubic-bezier(0.4,0,0.2,1)] will-change-transform motion-reduce:transition-none',
+            bookStageEnterInstant ? 'transition-none' : 'transition-all duration-[650ms]',
+            bookStageEnterVisible ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0',
             lessonPaperLayoutActive && !isLessonPaperOverlayMode && 'w-full min-w-0 max-w-full',
           )}
           style={{
@@ -751,13 +786,19 @@ export function FullscreenBookOverlayView({
             pdfExporting={pdfExporting}
             pdfProgressLabel={pdfProgressLabel}
             numPages={numPages}
-            viewportPaintHold={showViewportPaintHold}
-            firstSpreadPaintSession={firstSpreadPaintSession}
-            onFirstSpreadPaintReady={onFirstSpreadPaintReady}
+            visiblePages={visiblePages}
+            readerBounds={unitPageBounds}
+            showSpreadLoadingHold={showSpreadLoadingHold}
+            spreadReportEpoch={spreadReportEpoch}
+            onSpreadSlotsPixelsReady={onSpreadSlotsPixelsReady}
+            confirmSpreadSlotPixels={confirmSpreadSlotPixels}
             spreadStrokeOverlayRef={spreadStrokeOverlayRef}
             onSpreadOverlayCaps={onSpreadOverlayCaps}
             spreadStrokeCaptureEnabled={spreadStrokeCaptureEnabled}
             onEyedropperPick={onEyedropperPick}
+            spreadTurnGridRef={spreadTurnGridRef}
+            turnSlide={turnSlide}
+            onTurnSlideComplete={handleTurnSlideComplete}
           />
         </div>
 

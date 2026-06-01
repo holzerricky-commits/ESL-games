@@ -15,19 +15,19 @@
 import { clampPdfPage, clampPdfPageToVisible, type UnitPageBounds } from '@/lib/books/page-range'
 
 /**
- * Visible-list slots *before* the clamped anchor (≈ two two-page spreads when every PDF page is visible).
- * Tune with Phase C2 queue / memory profiling.
+ * Visible-list slots *before* the clamped anchor (~5 two-page spreads when every PDF page is visible).
+ * Phase 1 stable pages: ±10 slots.
  */
-export const READER_PREFETCH_VISIBLE_SLOTS_BEFORE = 4
+export const READER_PREFETCH_VISIBLE_SLOTS_BEFORE = 10
 
-/** Visible-list slots *after* the clamped anchor (forward page-turn bias can increase this later). */
-export const READER_PREFETCH_VISIBLE_SLOTS_AFTER = 4
+/** Visible-list slots *after* the clamped anchor (forward page-turn bias). */
+export const READER_PREFETCH_VISIBLE_SLOTS_AFTER = 10
 
 /**
  * Upper bound on distinct prefetch bitmap entries (e.g. `(unitId, pdfPage, widthBucket)`) for LRU
  * eviction in Phase C2/C4 — width buckets are 32px quanta (`readerPrefetchWidthBucket` in prefetch queue).
  */
-export const READER_PREFETCH_BITMAP_CACHE_MAX_ENTRIES = 24
+export const READER_PREFETCH_BITMAP_CACHE_MAX_ENTRIES = 48
 
 export interface ReaderPrefetchWindowArgs {
   /** Current spread anchor (typically left page in two-up mode). */

@@ -11,6 +11,7 @@ import {
   useState,
   type CSSProperties,
 } from 'react'
+import { useBrowserZoomRepaintRevision } from '@/components/students/fullscreen-book-overlay/hooks/useBrowserZoomRepaintRevision'
 import {
   clearAnnotationCanvas,
   drawStrokePath,
@@ -646,6 +647,7 @@ export const BookPageAnnotationLayer = forwardRef<BookPageAnnotationHandle, Book
     const [erasePreviewEpoch, setErasePreviewEpoch] = useState(0)
     const erasePreviewDeadKeyRef = useRef<string | null>(null)
     const incrementalDraftStateRef = useRef<IncrementalDraftState | null>(null)
+    const zoomRepaintRevision = useBrowserZoomRepaintRevision()
 
     const onCapabilitiesChangeRef = useRef(onCapabilitiesChange)
     onCapabilitiesChangeRef.current = onCapabilitiesChange
@@ -1130,6 +1132,7 @@ export const BookPageAnnotationLayer = forwardRef<BookPageAnnotationHandle, Book
       selectedIds,
       selectDragLive,
       selectScaleLiveBounds,
+      zoomRepaintRevision,
     ])
 
     const moveSelectedBy = useCallback(

@@ -2518,13 +2518,13 @@ export function appendStudentClassLessonNotebookWhiteboardCapture(
   let updated = false
   const conflictSnapshots: { latestHtml: string; latestUpdatedAt: string }[] = []
 
-  const nextSessions = (student.scheduledClasses ?? []).map((sessionRow) => {
+  const nextSessions: StudentClassSession[] = (student.scheduledClasses ?? []).map((sessionRow) => {
     if (sessionRow.id !== classId) return sessionRow
     found = true
     const nb = sessionRow.lessonNotebookSession
     if (!nb?.sections?.length) return sessionRow
 
-    const sections = nb.sections.map((sectionRow) => {
+    const sections: LessonNotebookSection[] = nb.sections.map((sectionRow) => {
       if (sectionRow.sectionId !== targetSectionId) return sectionRow
       const existingDocIndex = sectionRow.entries.findIndex(
         (entry) => entry.layer === 'doc' && entry.payload?.kind === 'doc_richtext',
@@ -2576,7 +2576,7 @@ export function appendStudentClassLessonNotebookWhiteboardCapture(
                   kind: 'merge_note',
                   message: 'Whiteboard capture skipped due to notebook save conflict.',
                 },
-              },
+              } satisfies LessonNotebookEntry,
             ],
           }
         }
@@ -2603,7 +2603,7 @@ export function appendStudentClassLessonNotebookWhiteboardCapture(
             payload: { kind: 'doc_richtext', html: nextHtml },
             createdAt: nowIso,
             updatedAt: nowIso,
-          },
+          } satisfies LessonNotebookEntry,
           captureEntry,
         ],
       }

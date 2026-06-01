@@ -9,6 +9,7 @@ import {
   useMemo,
   useRef,
 } from 'react'
+import { useBrowserZoomRepaintRevision } from '@/components/students/fullscreen-book-overlay/hooks/useBrowserZoomRepaintRevision'
 import type { CSSProperties, MutableRefObject } from 'react'
 import type {
   AnnotationCommand,
@@ -325,6 +326,7 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
     const captureRef = useRef<HTMLDivElement | null>(null)
     const draftInkCanvasRef = useRef<HTMLCanvasElement | null>(null)
     const draftMarkerCanvasRef = useRef<HTMLCanvasElement | null>(null)
+    const zoomRepaintRevision = useBrowserZoomRepaintRevision()
 
     const gestureRef = useRef<'stroke' | 'two' | null>(null)
     const straightStrokeAxisRef = useRef<StraightStrokeAxis | null>(null)
@@ -448,7 +450,14 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
       if (!inkEl || !markerEl || !(spreadOverlayWidthPx > 0) || !(spreadOverlayHeightPx > 0)) return
       syncSpreadDraftCanvasSize(inkEl)
       syncSpreadDraftCanvasSize(markerEl)
-    }, [spreadOverlayWidthPx, spreadOverlayHeightPx, annotationMode, captureEnabled, syncSpreadDraftCanvasSize])
+      paintSpreadLiveStrokeDraft(
+        inkEl,
+        markerEl,
+        draftStrokeRef.current,
+        spreadOverlayWidthPx,
+        spreadOverlayHeightPx,
+      )
+    }, [spreadOverlayWidthPx, spreadOverlayHeightPx, annotationMode, captureEnabled, syncSpreadDraftCanvasSize, zoomRepaintRevision])
 
     useEffect(() => {
       const el = captureRef.current
@@ -693,6 +702,9 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
           /* live draft is pushed to left/right page refs from pointer handlers */
         },
         setLiveStrokeDraft: () => {
+          /* live draft is pushed to left/right page refs from pointer handlers */
+        },
+        setLiveTwoPointDraft: () => {
           /* live draft is pushed to left/right page refs from pointer handlers */
         },
       }),

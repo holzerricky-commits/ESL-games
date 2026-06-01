@@ -26,7 +26,7 @@ interface UseFullscreenOverlayPanelsArgs {
 
 export function useFullscreenOverlayPanels({
   open,
-  presentationReady,
+  presentationReady: _presentationReady,
   userPresented,
   setIsMounted,
   setIsVisible,
@@ -49,7 +49,8 @@ export function useFullscreenOverlayPanels({
 
     if (open) {
       setIsMounted(true)
-      if (presentationReady && userPresented) {
+      if (userPresented) {
+        // Map click-to-open: reveal shell immediately; spreadDrawableReady gates pixels.
         timeoutId = setTimeout(() => setIsVisible(true), 16)
       } else {
         setIsVisible(false)
@@ -62,7 +63,7 @@ export function useFullscreenOverlayPanels({
     return () => {
       if (timeoutId) clearTimeout(timeoutId)
     }
-  }, [open, presentationReady, userPresented, setIsMounted, setIsVisible])
+  }, [open, userPresented, setIsMounted, setIsVisible])
 
   useEffect(() => {
     if (!open) {

@@ -412,23 +412,23 @@ export function useAnnotationController({
     return leftAnnRef
   }
 
-  const spreadSelectProxyRef = useRef<{
-    current: {
-      getSelectedIds?: () => string[]
-      setSelectedIds?: (ids: string[]) => void
-      selectAll?: () => void
-      deleteSelected?: () => boolean
-      copySelected?: () => boolean
-      pasteFromClipboard?: () => boolean
-      groupSelected?: () => boolean
-      ungroupSelected?: () => boolean
-      toggleGroupSelected?: () => boolean
-      removeFromGroupSelected?: () => boolean
-      deselectAll?: () => void
-      duplicateSelected?: () => boolean
-      selectNextInStack?: (direction: 1 | -1) => void
-    } | null
-  }>({ current: null })
+  type SpreadSelectProxyHandle = {
+    getSelectedIds?: () => string[]
+    setSelectedIds?: (ids: string[]) => void
+    selectAll?: () => void
+    deleteSelected?: () => boolean
+    copySelected?: () => boolean
+    pasteFromClipboard?: () => boolean
+    groupSelected?: () => boolean
+    ungroupSelected?: () => boolean
+    toggleGroupSelected?: () => boolean
+    removeFromGroupSelected?: () => boolean
+    deselectAll?: () => void
+    duplicateSelected?: () => boolean
+    selectNextInStack?: (direction: 1 | -1) => void
+  }
+
+  const spreadSelectProxyRef = useRef<SpreadSelectProxyHandle | null>(null)
 
   const syncSpreadSelectionFromActive = () => {
     const activeRef =

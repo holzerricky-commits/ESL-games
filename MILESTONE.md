@@ -60,7 +60,7 @@ Defer **perfect PDF/LLM extraction**, **full monster/boss combat**, and **studen
 
 ### Still on the roadmap
 
-Phase 1 preview items above (bookmark paths, **Open book**, session log) are **checked**. Next slice is **Phase 2** (interactive vocab) or ad-hoc polish—nothing listed here as a blocker.
+Phase 1 preview items above (bookmark paths, **Open book**, session log) are **checked**. **Phase 2 interactive vocab v0** has a shippable slice (one demo section + reader shelf UI). Next slice is **more vocab packs / Phase 3 reading checks** or ad-hoc polish—nothing listed here as a blocker.
 
 ---
 
@@ -68,10 +68,12 @@ Phase 1 preview items above (bookmark paths, **Open book**, session log) are **c
 
 **Phase 2 — Interactive vocab v0 (suggested tasks)**
 
-1. Pick **one** book + **one** vocab spread (manual region: page range or coordinates later).
-2. Data: list of **headwords** + optional rich fields (definition, examples, synonyms…); start with **text only**; add audio/video URLs when stable.
-3. UI: **word list** on or beside the page; tap word → **one** panel (drawer or modal) with definition + examples + obvious **Back to book**.
-4. Wire **no** or **soft** link to student vocab bank until Phase 4.
+1. Pick **one** book + **one** vocab spread (manual region: page range or coordinates later). — **Done:** Journeys G3 U3 “Vocabulary in Context” demo pack in `lib/books/interactive-vocab.ts`.
+2. Data: list of **headwords** + optional rich fields (definition, examples, synonyms…); start with **text only**; add audio/video URLs when stable. — **Done** for demo pack; saved part-context words override via `/api/context/get`.
+3. UI: **word list** on or beside the page; tap word → **one** panel (drawer or modal) with definition + examples + obvious **Back to book**. — **Done:** `InteractiveVocabReaderShelf` in fullscreen reader + library reader.
+4. Wire **no** or **soft** link to student vocab bank until Phase 4. — **Not wired** (as planned).
+
+**Next for Phase 2:** add more `INTERACTIVE_VOCAB_PACKS` rows as you teach new sections; optional region highlight on page.
 
 **Phase 3 — Reading checks v0**
 

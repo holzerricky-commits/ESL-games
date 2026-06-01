@@ -81,3 +81,24 @@ export function computeSpreadFitScale(
   const scaleH = containerH / pageCanvasHeightPx
   return Math.min(1, scaleW, scaleH)
 }
+
+/** Matches `BOOK_OVERLAY_VIEWPORT_MARGIN_Y` (3.5rem) on the fullscreen book overlay. */
+const BOOK_OVERLAY_VIEWPORT_MARGIN_REM = 3.5
+const DEFAULT_HEURISTIC_PAGE_ASPECT = 1 / 1.414
+
+/**
+ * Estimate per-page spread width before `pageAreaRef` measures (map prefetch + overlay cold start).
+ * Uses the same formula as `computeSpreadPageWidth` / `useBookViewportLayout`.
+ */
+export function heuristicBookOverlaySpreadPageWidthPx(
+  pageAspectRatio = DEFAULT_HEURISTIC_PAGE_ASPECT,
+): number {
+  if (typeof window === 'undefined' || !Number.isFinite(window.innerWidth)) return 360
+  const rem =
+    typeof document !== 'undefined'
+      ? parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+      : 16
+  const marginY = BOOK_OVERLAY_VIEWPORT_MARGIN_REM * rem
+  const contentH = Math.max(1, window.innerHeight - 2 * marginY)
+  return computeSpreadPageWidth(window.innerWidth, contentH, pageAspectRatio)
+}

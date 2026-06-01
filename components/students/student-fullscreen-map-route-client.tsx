@@ -8,12 +8,18 @@ import { FullscreenBookOverlay } from '@/components/students/fullscreen-book-ove
 import { StudentMapTab } from '@/components/students/tabs/student-map-tab'
 import { ensureReactPdfWorker } from '@/lib/books/ensure-react-pdf-worker'
 import { fetchBooksLibraryCached } from '@/lib/books/fetch-books-library-cached'
+import { isMapAnchorSpreadCacheReady } from '@/lib/books/map-anchor-spread-context'
 import { warmMapInitialBookSpreadPrefetch } from '@/lib/books/map-initial-book-spread-warmup'
+import { subscribePageRenderCache } from '@/lib/books/page-render-cache'
 import {
   ensureStudentRecordsHydrated,
   STUDENT_RECORDS_HYDRATED_EVENT,
 } from '@/lib/local-data/student-records-client'
+import { isBookOverlayKeyboardTypingTarget } from '@/lib/books/book-overlay-keyboard-guards'
 import { getStudentProfileView } from '@/lib/students/selectors'
+
+/** Opens the spell book from the fullscreen map (outside AppShell — no sidebar conflict). */
+const MAP_SPELL_BOOK_SHORTCUT_KEY = 'b'
 
 interface StudentFullscreenMapRouteClientProps {
   studentId: string
@@ -29,48 +35,111 @@ export function StudentFullscreenMapRouteClient({
 }: StudentFullscreenMapRouteClientProps) {
   const [isHydrated, setIsHydrated] = useState(false)
   const [recordsReady, setRecordsReady] = useState(false)
-  /** Arms PDF + reader work off-screen; map shows loading until first spread is painted. */
-  const [bookOpenArmed, setBookOpenArmed] = useState(false)
-  /** When true with `bookOpenArmed`, the book shell is visible (locked with first paint). */
+  /** Mounts overlay off-screen on map enter so PDF + first spread render before the user opens the book. */
+  const [bookWarmArmed, setBookWarmArmed] = useState(false)
+  /** First spread drawable while warming (prefetch + slot pixels). */
+  const [bookPagesReady, setBookPagesReady] = useState(false)
+  /** User clicked open before pages were drawable — show HUD spinner until ready. */
+  const [bookOpenAttempted, setBookOpenAttempted] = useState(false)
+  /** User chose to reveal the warmed book overlay. */
   const [bookOpenPresented, setBookOpenPresented] = useState(false)
 
-  const mapBookChromeOpen = bookOpenArmed && bookOpenPresented
+  const mapBookChromeOpen = bookOpenPresented
+
+  /** Arm hidden reader warm-up as soon as the map shell is ready for this student. */
+  useEffect(() => {
+    if (!isHydrated || !recordsReady) return
+    const student = getStudentProfileView(studentId)
+    if (!student) return
+    setBookWarmArmed(true)
+    setBookPagesReady(false)
+    setBookOpenAttempted(false)
+    setBookOpenPresented(false)
+  }, [isHydrated, recordsReady, studentId])
 
   const handleOpenBook = useCallback(() => {
-    setBookOpenArmed(true)
-    setBookOpenPresented(false)
-  }, [])
+    if (bookOpenPresented) return
+    if (bookPagesReady) {
+      setBookOpenPresented(true)
+      return
+    }
+    setBookOpenAttempted(true)
+  }, [bookPagesReady, bookOpenPresented])
 
   const handleBookReadyToPresent = useCallback(() => {
+    setBookPagesReady(true)
+  }, [])
+
+  /** After a pending HUD click, open the book once pages are drawable. */
+  useEffect(() => {
+    if (!bookOpenAttempted || !bookPagesReady || bookOpenPresented) return
     setBookOpenPresented(true)
+    setBookOpenAttempted(false)
+  }, [bookOpenAttempted, bookPagesReady, bookOpenPresented])
+
+  const handleBookPaintInvalidated = useCallback(() => {
+    setBookPagesReady(false)
   }, [])
 
   const handleBookOpenPaintTimeout = useCallback(() => {
-    toast.error('The book is taking too long to open. Please try again.')
-    setBookOpenArmed(false)
+    toast.error('The book is taking too long to load. Retrying…')
+    setBookPagesReady(false)
+    setBookOpenAttempted(false)
     setBookOpenPresented(false)
+    setBookWarmArmed(false)
+    window.requestAnimationFrame(() => setBookWarmArmed(true))
   }, [])
 
   const handleBookClose = useCallback(() => {
-    setBookOpenArmed(false)
     setBookOpenPresented(false)
+    setBookOpenAttempted(false)
   }, [])
 
   useEffect(() => {
-    if (!bookOpenArmed || bookOpenPresented) return
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key !== 'Escape') return
-      e.preventDefault()
-      setBookOpenArmed(false)
-      setBookOpenPresented(false)
+      if (e.defaultPrevented) return
+      if (isBookOverlayKeyboardTypingTarget()) return
+
+      const mod = e.ctrlKey || e.metaKey || e.altKey
+      const keyLower = e.key.length === 1 ? e.key.toLowerCase() : e.key
+
+      if (keyLower === 'escape' && bookOpenPresented) {
+        e.preventDefault()
+        setBookOpenPresented(false)
+        return
+      }
+
+      if (!mod && keyLower === MAP_SPELL_BOOK_SHORTCUT_KEY && !bookOpenPresented) {
+        e.preventDefault()
+        handleOpenBook()
+      }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [bookOpenArmed, bookOpenPresented])
+  }, [bookOpenPresented, handleOpenBook])
 
   useEffect(() => {
     setIsHydrated(true)
   }, [])
+
+  /** Start books + PDF worker as soon as the client mounts — do not wait for student records. */
+  useEffect(() => {
+    if (!isHydrated) return
+    void fetchBooksLibraryCached().catch(() => {})
+    void ensureReactPdfWorker().catch(() => {})
+  }, [isHydrated])
+
+  /** Mark spell book ready when anchor spread is cached (even before the user opens). */
+  useEffect(() => {
+    if (!bookWarmArmed || bookPagesReady) return
+    const tick = () => {
+      if (isMapAnchorSpreadCacheReady()) {
+        setBookPagesReady(true)
+      }
+    }
+    tick()
+    return subscribePageRenderCache(tick)
+  }, [bookWarmArmed, bookPagesReady])
 
   /** Fullscreen map is outside AppShell — load student records from disk before lookup (same as Students list). */
   useEffect(() => {
@@ -179,7 +248,7 @@ export function StudentFullscreenMapRouteClient({
         exitHref={`/students/${student.id}`}
         onOpenBook={handleOpenBook}
         isBookOverlayOpen={mapBookChromeOpen}
-        isBookOpeningPending={bookOpenArmed && !bookOpenPresented}
+        isBookOpeningPending={bookOpenAttempted && !bookPagesReady}
       />
       <FullscreenBookOverlay
         key={student.id}
@@ -189,9 +258,10 @@ export function StudentFullscreenMapRouteClient({
         assignedUnitRefs={student.assignedUnitRefs}
         curriculumHistory={student.curriculumHistory}
         studentName={student.name}
-        open={bookOpenArmed}
+        open={bookWarmArmed}
         presented={bookOpenPresented}
         onBookReadyToPresent={handleBookReadyToPresent}
+        onBookPaintInvalidated={handleBookPaintInvalidated}
         onBookOpenPaintTimeout={handleBookOpenPaintTimeout}
         onClose={handleBookClose}
       />

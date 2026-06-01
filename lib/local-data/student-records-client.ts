@@ -185,7 +185,10 @@ export async function hydrateStudentRecordsFromDisk(): Promise<boolean> {
       let migrated = false
 
       if (students.length === 0 && lsStudents.length > 0) {
-        students = lsStudents
+        students = lsStudents.map((student) => ({
+          ...student,
+          avatarUrl: resolveStudentAvatarUrl(student.id, student.avatarUrl),
+        }))
         await persistStudentsToDisk(students)
         try {
           localStorage.removeItem(STUDENTS_LS_KEY)

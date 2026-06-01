@@ -1,6 +1,7 @@
 'use client'
 
 import { useLayoutEffect, useRef, useState } from 'react'
+import { useBrowserZoomRepaintRevision } from '@/components/students/fullscreen-book-overlay/hooks/useBrowserZoomRepaintRevision'
 import type { AnnotationCommand } from '@/lib/books/annotation-command-types'
 import { applyAnnotationCanvasDpr, clearAnnotationCanvas, drawAnnotationCommand, isMarkerStrokeCommand } from '@/lib/books/annotation-draw'
 import { applySelectionChange, selectionChangeModeFromPointerKeys } from '@/lib/books/annotation-selection-ops'
@@ -47,6 +48,7 @@ export function BookSpreadSessionLayer({
 }: BookSpreadSessionLayerProps) {
   const inkRef = useRef<HTMLCanvasElement | null>(null)
   const markerRef = useRef<HTMLCanvasElement | null>(null)
+  const zoomRepaintRevision = useBrowserZoomRepaintRevision()
   const dragAnchorRef = useRef<[number, number] | null>(null)
   const marqueeAnchorRef = useRef<[number, number] | null>(null)
   const marqueeSelModeRef = useRef<ReturnType<typeof selectionChangeModeFromPointerKeys>>('replace')
@@ -82,7 +84,7 @@ export function BookSpreadSessionLayer({
         drawAnnotationCommand(inkCtx, cmd, widthPx, heightPx)
       }
     }
-  }, [commands, heightPx, widthPx])
+  }, [commands, heightPx, widthPx, zoomRepaintRevision])
 
   const toNorm = (el: HTMLDivElement, clientX: number, clientY: number): [number, number] | null => {
     const r = el.getBoundingClientRect()

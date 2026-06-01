@@ -8,7 +8,7 @@ interface FantasyHUDProps {
   exitHref: string
   onOpenBook?: () => void
   isBookOverlayOpen?: boolean
-  /** Book session armed but not yet shown — show inline loading on the spell book control. */
+  /** User clicked open but spread not drawable yet — show inline loading on the spell book control. */
   isBookOpeningPending?: boolean
 }
 
@@ -86,10 +86,11 @@ export function FantasyHUD({
 
             <button
               type="button"
-              aria-label={isBookOpeningPending ? 'Opening spell book' : 'Open spell book'}
+              aria-label={isBookOpeningPending ? 'Loading spell book' : 'Open spell book (B)'}
               aria-busy={isBookOpeningPending}
               disabled={isBookOpeningPending}
               onClick={onOpenBook}
+              title={isBookOpeningPending ? undefined : 'Open spell book (B) · Esc to close'}
               className="group pointer-events-auto absolute bottom-[6%] left-1/2 flex h-[70px] -translate-x-1/2 items-end justify-center transition-transform duration-300 ease-out hover:scale-[1.04] active:scale-[0.97] disabled:pointer-events-none disabled:hover:scale-100 disabled:active:scale-100 disabled:opacity-90 sm:h-[82px] md:h-[96px]"
             >
               <span className="relative inline-flex h-full w-auto -translate-y-[6px] items-end">

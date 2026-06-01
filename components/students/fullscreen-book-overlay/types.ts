@@ -29,8 +29,10 @@ export interface FullscreenBookOverlayProps {
    * `onBookReadyToPresent` runs (first spread painted). Use with map-side loading. Defaults to `true`.
    */
   presented?: boolean
-  /** Fired once when the first spread is ready to show; parent should set `presented` to `true`. */
+  /** Fired once when the first spread is painted off-screen; parent should enable the open control (not auto-present). */
   onBookReadyToPresent?: () => void
+  /** Fired when spread layout width changes and paint must be re-validated; parent should disable the open control. */
+  onBookPaintInvalidated?: () => void
   /** Fired if first-spread paint exceeds the wait cap while `presented` is still false; parent should disarm `open`. */
   onBookOpenPaintTimeout?: () => void
 }

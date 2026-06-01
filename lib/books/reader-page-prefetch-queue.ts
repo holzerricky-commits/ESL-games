@@ -1,12 +1,14 @@
 /**
- * Phase C2 — Off-thread style PDF page raster prefetch for the fullscreen reader.
+ * PageRenderCache (Phase 1 stable pages) — PDF page raster LRU for the fullscreen reader.
  *
  * Renders neighbour pages at reader width (bucketed) into `ImageBitmap`s using the same
  * `loadCachedPdfDocument` + PDF.js worker path as thumbnails (`pdf-thumbnail-cache.ts`).
  * Concurrency and idle scheduling keep the map / main thread responsive.
  *
- * Phase C3: `BookCanvasStage` may paint `getReaderPrefetchedImageBitmap` until `react-pdf` fires
- * `onLoadSuccess`, then hands off to `PdfPage` for annotations + consistency.
+ * Phase 1: `CachedPageCanvas` paints cache hits as the primary display; `react-pdf` loads
+ * off-screen for handoff and annotation alignment (`getReaderPrefetchedImageBitmap`).
+ *
+ * Public aliases: `lib/books/page-render-cache.ts`.
  *
  * @see `lib/books/reader-prefetch-window.ts` — which PDF indices to queue
  */
@@ -31,7 +33,9 @@ export function readerPrefetchWidthBucket(widthPx: number): number {
  */
 export function invalidateReaderPrefetchStaleWidthBucketsForUnit(unitId: string, widthPx: number): void {
   const keepBucket = readerPrefetchWidthBucket(widthPx)
+  const keepLowBucket = readerPrefetchLowResWidthBucket(widthPx)
   const prefix = `${unitId}|`
+  const lowPrefix = `${LOW_RES_KEY_PREFIX}${unitId}|`
   let changed = false
   for (const key of [...bitmapCache.keys()]) {
     if (!key.startsWith(prefix)) continue
@@ -42,6 +46,15 @@ export function invalidateReaderPrefetchStaleWidthBucketsForUnit(unitId: string,
     bitmapCache.delete(key)
     changed = true
   }
+  for (const key of [...lowResBitmapCache.keys()]) {
+    if (!key.startsWith(lowPrefix)) continue
+    const parts = key.split('|')
+    const bucketPart = parts[3]
+    if (bucketPart === String(keepLowBucket)) continue
+    lowResBitmapCache.get(key)?.close()
+    lowResBitmapCache.delete(key)
+    changed = true
+  }
   if (changed) notifyReaderPrefetchCache()
 }
 
@@ -50,12 +63,27 @@ function storageKey(unitId: string, pageNumber: number, widthBucket: number): st
 }
 
 let queueRunning = 0
-const MAX_CONCURRENT_READER_PREFETCH = 2
+const MAX_CONCURRENT_READER_PREFETCH = 3
+/** R2.4 — higher burst for P0 immediate full-res (idle + thumbnails stay at 3 / 2). */
+export const MAX_CONCURRENT_READER_PREFETCH_IMMEDIATE = 5
 const pendingRuns: Array<() => void> = []
+
+let immediateQueueRunning = 0
+const pendingImmediateRuns: Array<() => void> = []
 
 function pumpReaderPrefetchQueue() {
   while (queueRunning < MAX_CONCURRENT_READER_PREFETCH && pendingRuns.length > 0) {
     const run = pendingRuns.shift()!
+    run()
+  }
+}
+
+function pumpReaderPrefetchImmediateQueue() {
+  while (
+    immediateQueueRunning < MAX_CONCURRENT_READER_PREFETCH_IMMEDIATE &&
+    pendingImmediateRuns.length > 0
+  ) {
+    const run = pendingImmediateRuns.shift()!
     run()
   }
 }
@@ -76,9 +104,44 @@ function enqueueReaderPrefetchWork<T>(fn: () => Promise<T>): Promise<T> {
   })
 }
 
+function enqueueReaderPrefetchImmediateWork<T>(fn: () => Promise<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    pendingImmediateRuns.push(() => {
+      immediateQueueRunning++
+      fn()
+        .then(resolve)
+        .catch(reject)
+        .finally(() => {
+          immediateQueueRunning--
+          pumpReaderPrefetchImmediateQueue()
+        })
+    })
+    pumpReaderPrefetchImmediateQueue()
+  })
+}
+
 const bitmapCache = new Map<string, ImageBitmap>()
+const lowResBitmapCache = new Map<string, ImageBitmap>()
+
+const LOW_RES_KEY_PREFIX = 'lr|'
+
+function lowResStorageKey(unitId: string, pageNumber: number, widthBucket: number): string {
+  return `${LOW_RES_KEY_PREFIX}${unitId}|${pageNumber}|${widthBucket}`
+}
+
+/** R2.6 — fast placeholder render width (~quarter of reader CSS width). */
+export function readerPrefetchLowResTargetWidth(widthPx: number): number {
+  if (!Number.isFinite(widthPx) || widthPx < 1) return 64
+  return Math.max(64, Math.round(widthPx / 4))
+}
+
+export function readerPrefetchLowResWidthBucket(widthPx: number): number {
+  const target = readerPrefetchLowResTargetWidth(widthPx)
+  return Math.max(64, Math.round(target / 16) * 16)
+}
 
 const prefetchListeners = new Set<() => void>()
+let prefetchCacheRevision = 0
 
 export function subscribeReaderPrefetchCache(listener: () => void): () => void {
   prefetchListeners.add(listener)
@@ -87,7 +150,13 @@ export function subscribeReaderPrefetchCache(listener: () => void): () => void {
   }
 }
 
+/** Monotonic counter for `useSyncExternalStore` — bumps when LRU entries are added or removed. */
+export function getReaderPrefetchCacheRevisionSnapshot(): number {
+  return prefetchCacheRevision
+}
+
 function notifyReaderPrefetchCache(): void {
+  prefetchCacheRevision++
   for (const listener of prefetchListeners) {
     try {
       listener()
@@ -121,12 +190,46 @@ function putBitmap(key: string, bmp: ImageBitmap) {
   notifyReaderPrefetchCache()
 }
 
+function touchLowResLru(key: string): ImageBitmap | undefined {
+  const bmp = lowResBitmapCache.get(key)
+  if (!bmp) return undefined
+  lowResBitmapCache.delete(key)
+  lowResBitmapCache.set(key, bmp)
+  return bmp
+}
+
+function putLowResBitmap(key: string, bmp: ImageBitmap) {
+  const existing = lowResBitmapCache.get(key)
+  if (existing && existing !== bmp) {
+    existing.close()
+    lowResBitmapCache.delete(key)
+  }
+  while (
+    lowResBitmapCache.size >= READER_PREFETCH_BITMAP_CACHE_MAX_ENTRIES &&
+    !lowResBitmapCache.has(key)
+  ) {
+    const first = lowResBitmapCache.keys().next().value as string | undefined
+    if (!first) break
+    lowResBitmapCache.get(first)?.close()
+    lowResBitmapCache.delete(first)
+  }
+  lowResBitmapCache.set(key, bmp)
+  notifyReaderPrefetchCache()
+}
+
 export function clearReaderPrefetchCacheForUnit(unitId: string): void {
   const prefix = `${unitId}|`
+  const lowPrefix = `${LOW_RES_KEY_PREFIX}${unitId}|`
   for (const key of [...bitmapCache.keys()]) {
     if (key.startsWith(prefix)) {
       bitmapCache.get(key)?.close()
       bitmapCache.delete(key)
+    }
+  }
+  for (const key of [...lowResBitmapCache.keys()]) {
+    if (key.startsWith(lowPrefix)) {
+      lowResBitmapCache.get(key)?.close()
+      lowResBitmapCache.delete(key)
     }
   }
   notifyReaderPrefetchCache()
@@ -141,6 +244,17 @@ export function getReaderPrefetchedImageBitmap(
   if (typeof window === 'undefined') return undefined
   const key = storageKey(unitId, pageNumber, readerPrefetchWidthBucket(widthPx))
   return touchLru(key)
+}
+
+/** R2.6 — peek/touch low-res placeholder bitmap (R3 display). */
+export function getReaderPrefetchedLowResBitmap(
+  unitId: string,
+  pageNumber: number,
+  widthPx: number,
+): ImageBitmap | undefined {
+  if (typeof window === 'undefined') return undefined
+  const key = lowResStorageKey(unitId, pageNumber, readerPrefetchLowResWidthBucket(widthPx))
+  return touchLowResLru(key)
 }
 
 async function renderPageToImageBitmap(
@@ -196,6 +310,85 @@ export function prefetchReaderPageBitmapIfMissing(args: {
   widthPx: number
 }): Promise<void> {
   return enqueueReaderPrefetchWork(() => prefetchReaderPageBitmapIfMissingInner(args))
+}
+
+function prefetchReaderPageBitmapIfMissingImmediate(args: {
+  fileUrl: string
+  unitId: string
+  pageNumber: number
+  widthPx: number
+}): Promise<void> {
+  return enqueueReaderPrefetchImmediateWork(() => prefetchReaderPageBitmapIfMissingInner(args))
+}
+
+async function prefetchReaderPageLowResBitmapIfMissingInner(args: {
+  fileUrl: string
+  unitId: string
+  pageNumber: number
+  widthPx: number
+}): Promise<void> {
+  const { fileUrl, unitId, pageNumber, widthPx } = args
+  if (typeof window === 'undefined') return
+  const targetWidth = readerPrefetchLowResTargetWidth(widthPx)
+  const bucket = readerPrefetchLowResWidthBucket(widthPx)
+  const key = lowResStorageKey(unitId, pageNumber, bucket)
+  if (lowResBitmapCache.has(key)) {
+    touchLowResLru(key)
+    return
+  }
+  const bmp = await renderPageToImageBitmap(fileUrl, pageNumber, targetWidth)
+  putLowResBitmap(key, bmp)
+}
+
+function prefetchReaderPageLowResBitmapIfMissingImmediate(args: {
+  fileUrl: string
+  unitId: string
+  pageNumber: number
+  widthPx: number
+}): Promise<void> {
+  return enqueueReaderPrefetchImmediateWork(() => prefetchReaderPageLowResBitmapIfMissingInner(args))
+}
+
+export interface QueueReaderPrefetchPagesArgs {
+  fileUrl: string
+  unitId: string
+  pages: number[]
+  widthPx: number
+  /** If provided, skip starting or continuing when this returns false (e.g. overlay closed). */
+  shouldProceed?: () => boolean
+}
+
+/** E3 / R2 — Prefetch without idle delay (P0 immediate window). */
+export function queueReaderPrefetchPagesImmediate(args: QueueReaderPrefetchPagesArgs): void {
+  const { fileUrl, unitId, pages, widthPx, shouldProceed } = args
+  if (typeof window === 'undefined') return
+  if (!pages.length || !(widthPx > 0)) return
+  for (const pageNumber of pages) {
+    if (shouldProceed && !shouldProceed()) break
+    void prefetchReaderPageBitmapIfMissingImmediate({ fileUrl, unitId, pageNumber, widthPx }).catch(
+      () => {
+        /* single-page failures should not block the rest */
+      },
+    )
+  }
+}
+
+/** R2.6 — Low-res P0 placeholders (parallel with full-res immediate queue). */
+export function queueReaderPrefetchPagesLowRes(args: QueueReaderPrefetchPagesArgs): void {
+  const { fileUrl, unitId, pages, widthPx, shouldProceed } = args
+  if (typeof window === 'undefined') return
+  if (!pages.length || !(widthPx > 0)) return
+  for (const pageNumber of pages) {
+    if (shouldProceed && !shouldProceed()) break
+    void prefetchReaderPageLowResBitmapIfMissingImmediate({
+      fileUrl,
+      unitId,
+      pageNumber,
+      widthPx,
+    }).catch(() => {
+      /* single-page failures should not block the rest */
+    })
+  }
 }
 
 export interface QueueReaderPrefetchWindowIdleArgs {
