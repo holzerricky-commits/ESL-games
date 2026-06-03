@@ -188,6 +188,16 @@ function getProceduralInkTile(patternId: ProceduralBrushPatternId): HTMLCanvasEl
   return tile
 }
 
+/** Warm procedural tiles not overridden by manifest PNGs (sync; avoids first-stroke hitch). */
+export function warmProceduralPenInkTiles(): void {
+  if (typeof document === 'undefined') return
+  for (const id of PROCEDURAL_BRUSH_PATTERN_IDS) {
+    if (!isAssetBrushPattern(id)) {
+      getProceduralInkTile(id)
+    }
+  }
+}
+
 function resolveInkTile(inkStyle: PenInkStyle): HTMLCanvasElement | null {
   if (inkStyle === 'solid') return null
   if (isAssetBrushPattern(inkStyle)) {

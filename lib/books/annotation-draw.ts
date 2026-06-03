@@ -91,6 +91,8 @@ function traceStrokePoints(
 
 export type DrawStrokePathOptions = {
   pagePatternOrigin?: PenInkPatternOrigin
+  /** One pen pass only (live draft). Committed replay omits this for full profile quality. */
+  livePaintFast?: boolean
 }
 
 export function drawStrokePath(
@@ -156,6 +158,9 @@ export function drawStrokePath(
 
   const outlinePx = PEN_LINE_WIDTH * scale
   const profileStyle = penProfileDrawStyle(cmd.penStrokeProfile)
+  const liveFast = options?.livePaintFast === true
+  const softPasses = liveFast ? [] : (profileStyle.softPasses ?? [])
+  const mainAlpha = liveFast ? 1 : profileStyle.alpha
   const inkOrigin = resolvePenInkPatternOrigin(pagePatternOrigin, cmd)
   const inkColor = cmd.color ?? DEFAULT_PEN_COLOR
 
@@ -172,10 +177,10 @@ export function drawStrokePath(
     ctx.setLineDash([])
   }
 
-  for (const pass of profileStyle.softPasses ?? []) {
+  for (const pass of softPasses) {
     drawPenPass(outlinePx * pass.widthFactor, pass.alpha)
   }
-  drawPenPass(outlinePx, profileStyle.alpha)
+  drawPenPass(outlinePx, mainAlpha)
 
   ctx.globalCompositeOperation = 'source-over'
   ctx.globalAlpha = 1

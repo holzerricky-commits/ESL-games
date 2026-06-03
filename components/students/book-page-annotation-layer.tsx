@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MutableRefObject,
 } from 'react'
 import { useBrowserZoomRepaintRevision } from '@/components/students/fullscreen-book-overlay/hooks/useBrowserZoomRepaintRevision'
 import {
@@ -19,11 +20,18 @@ import {
   applyAnnotationCanvasDpr,
   replayInkSlice,
   replayMarkerSlice,
+  type DrawStrokePathOptions,
 } from '@/lib/books/annotation-draw'
+import { penStrokeUsesRichLivePaint } from '@/lib/books/annotation-live-pen-paint'
 import {
   buildAnnotationRenderSlices,
   draftOverlayZIndex,
 } from '@/lib/books/annotation-render-slices'
+import {
+  isInkSessionDelegatedCanvasCommand,
+  pageLayerCanvasCommandsWhenSpreadInkDelegated,
+  pageLayerCanvasCommandsWhenWhiteboardInkDelegated,
+} from '@/lib/books/ink-session-page-layer'
 import {
   eraserLineTrailingForReplay,
   strokeToolSkipsCommittedReplayOnLivePaint,
@@ -56,6 +64,8 @@ import {
 } from '@/lib/books/annotation-command-types'
 import type { EyedropperVariant } from '@/lib/books/eyedropper-variant'
 import type { AnnotationStorageChannel, BookAnnotationInteractionMode } from '@/lib/books/annotation-storage'
+import { mergeWhiteboardLegacyWithSession } from '@/lib/books/whiteboard-session-persist'
+import type { WhiteboardSessionStore } from '@/lib/books/whiteboard-session-store'
 
 type TapMode = Extract<
   BookAnnotationInteractionMode,
@@ -80,6 +90,7 @@ import {
   type StraightStrokeAxis,
 } from '@/lib/books/stroke-straight-line'
 import { coalescedPointerEvents } from '@/lib/books/stroke-pointer-samples'
+import { ensureStrokeCommitPoints } from '@/lib/books/stroke-tap-dot'
 import { resolveAnnotationToolCursor } from '@/lib/books/annotation-tool-cursor'
 import {
   annotationIdsInMarquee,
@@ -458,6 +469,22 @@ function incrementalDraftSegmentPoints(
 }
 
 
+function liveStrokeDrawOptions(
+  draft: Pick<StrokeAnnotationCommand, 'tool' | 'penInkStyle' | 'penStrokeProfile'>,
+  base: DrawStrokePathOptions,
+): DrawStrokePathOptions {
+  if (
+    draft.tool !== 'pen' ||
+    penStrokeUsesRichLivePaint({
+      penInkStyle: draft.penInkStyle,
+      penStrokeProfile: draft.penStrokeProfile,
+    })
+  ) {
+    return base
+  }
+  return { ...base, livePaintFast: true }
+}
+
 function sizeAnnotationPageCanvas(el: HTMLCanvasElement, widthPx: number, heightPx: number): void {
   const dpr = window.devicePixelRatio || 1
   const nextW = Math.max(1, Math.floor(widthPx * dpr))
@@ -540,6 +567,16 @@ export interface BookPageAnnotationLayerProps {
   onCapabilitiesChange?: (caps: AnnotationCapabilities) => void
   /** Spread overlay owns pointer input for drawing tools (avoids overlap hit-test fights). */
   delegatePointerToSpread?: boolean
+  /** Whiteboard stroke overlay owns pen/marker pointer when session ink is enabled. */
+  delegatePointerToWhiteboardPen?: boolean
+  /** When true, pen/marker/shape canvas ink is shown on the spread session layer only. */
+  spreadInkDelegated?: boolean
+  /** When true, pen/marker canvas ink is shown on the whiteboard session layer only. */
+  whiteboardPenInkDelegated?: boolean
+  /** Alias for whiteboardPenInkDelegated (Phase 3+). */
+  whiteboardInkDelegated?: boolean
+  /** When session ink is delegated, merges pen/marker into legacy storage on each save. */
+  whiteboardSessionStoreRef?: MutableRefObject<WhiteboardSessionStore | null>
   /** Called after select-move commit on this page (spread uses it to mirror same-id move on sibling page). */
   onSelectionMoveCommitted?: (ids: string[], dx: number, dy: number) => void
 }
@@ -592,6 +629,11 @@ export const BookPageAnnotationLayer = forwardRef<BookPageAnnotationHandle, Book
       onEyedropperPick,
       onCapabilitiesChange,
       delegatePointerToSpread = false,
+      delegatePointerToWhiteboardPen = false,
+      spreadInkDelegated = false,
+      whiteboardPenInkDelegated = false,
+      whiteboardInkDelegated = false,
+      whiteboardSessionStoreRef,
       onSelectionMoveCommitted,
     },
     ref,
@@ -664,6 +706,20 @@ export const BookPageAnnotationLayer = forwardRef<BookPageAnnotationHandle, Book
 
     commandsRef.current = commands
 
+    const canvasPaintCommands = useMemo(() => {
+      if (spreadInkDelegated) {
+        return pageLayerCanvasCommandsWhenSpreadInkDelegated(commands, true)
+      }
+      if (whiteboardInkDelegated || whiteboardPenInkDelegated) {
+        return pageLayerCanvasCommandsWhenWhiteboardInkDelegated(commands, true)
+      }
+      return [...commands]
+    }, [commands, spreadInkDelegated, whiteboardInkDelegated, whiteboardPenInkDelegated])
+
+    /** Phase 5: canvas ink commits only on session layer when delegated (no full page replay). */
+    const sessionOwnsCanvasInk =
+      spreadInkDelegated || whiteboardInkDelegated || whiteboardPenInkDelegated
+
     const pushUndoSnapshot = useCallback(() => {
       snapshotUndoRef.current.push(cloneCommandStack(commandsRef.current))
       snapshotRedoRef.current = []
@@ -706,14 +762,35 @@ export const BookPageAnnotationLayer = forwardRef<BookPageAnnotationHandle, Book
     const persist = useCallback(
       (next: AnnotationCommand[]) => {
         commandsRef.current = next
+        let toSave = next
+        if (
+          whiteboardInkDelegated &&
+          whiteboardSessionStoreRef?.current &&
+          resolvedStoragePageKey
+        ) {
+          toSave = mergeWhiteboardLegacyWithSession(
+            next,
+            whiteboardSessionStoreRef.current.getState().doc.commands,
+          )
+        }
         if (resolvedStoragePageKey) {
-          setAnnotationsForStorageKey(studentId, bookId, unitId, resolvedStoragePageKey, next)
+          setAnnotationsForStorageKey(studentId, bookId, unitId, resolvedStoragePageKey, toSave)
         } else {
-          setAnnotationsForPage(studentId, bookId, unitId, pageNumber, next, storageChannel)
+          setAnnotationsForPage(studentId, bookId, unitId, pageNumber, toSave, storageChannel)
         }
         emitCapabilities()
       },
-      [studentId, bookId, unitId, pageNumber, storageChannel, resolvedStoragePageKey, emitCapabilities],
+      [
+        studentId,
+        bookId,
+        unitId,
+        pageNumber,
+        storageChannel,
+        resolvedStoragePageKey,
+        emitCapabilities,
+        whiteboardInkDelegated,
+        whiteboardSessionStoreRef,
+      ],
     )
 
     const patchCommand = useCallback(
@@ -762,12 +839,12 @@ export const BookPageAnnotationLayer = forwardRef<BookPageAnnotationHandle, Book
         if (replayCommitted) {
           const painted = stack
             ? translateAnnotationCommands(
-                commandsRef.current,
+                canvasPaintCommands,
                 new Set(selectMoveIdsRef.current),
                 stack.dx,
                 stack.dy,
               )
-            : commandsRef.current
+            : canvasPaintCommands
           const dead = computeEraserLineDeadIndices(painted, trailing)
           const slices = buildAnnotationRenderSlices(painted, dead)
 
@@ -811,7 +888,13 @@ export const BookPageAnnotationLayer = forwardRef<BookPageAnnotationHandle, Book
               const ctx = active.draft.tool === 'marker' ? draftMarkerCtx : draftInkCtx
               applyAnnotationCanvasDpr(ctx)
               const segPoints = incrementalDraftSegmentPoints(active.draft.points, prevIncremental.pointsLength)
-              drawStrokePath(ctx, { ...active.draft, points: segPoints }, widthPx, heightPx, strokeDrawOptions)
+              drawStrokePath(
+                ctx,
+                { ...active.draft, points: segPoints },
+                widthPx,
+                heightPx,
+                liveStrokeDrawOptions(active.draft, strokeDrawOptions),
+              )
             } else {
               clearAnnotationCanvas(draftInkCtx)
               clearAnnotationCanvas(draftMarkerCtx)
@@ -819,7 +902,13 @@ export const BookPageAnnotationLayer = forwardRef<BookPageAnnotationHandle, Book
               applyAnnotationCanvasDpr(draftMarkerCtx)
               if (active) {
                 const ctx = active.draft.tool === 'marker' ? draftMarkerCtx : draftInkCtx
-                drawStrokePath(ctx, active.draft, widthPx, heightPx, strokeDrawOptions)
+                drawStrokePath(
+                  ctx,
+                  active.draft,
+                  widthPx,
+                  heightPx,
+                  liveStrokeDrawOptions(active.draft, strokeDrawOptions),
+                )
               }
               if (twoDraft) {
                 drawTwoPointPreview(draftInkCtx, twoDraft, widthPx, heightPx, {
@@ -846,8 +935,10 @@ export const BookPageAnnotationLayer = forwardRef<BookPageAnnotationHandle, Book
         }
       },
       [
+        canvasPaintCommands,
         widthPx,
         heightPx,
+        penInkPatternOrigin,
         shapeColor,
         shapeStrokeWidthScale,
         shapeLineDashStyle,
@@ -903,6 +994,7 @@ export const BookPageAnnotationLayer = forwardRef<BookPageAnnotationHandle, Book
           persist([])
         },
         appendCommand: (cmd: AnnotationCommand) => {
+          if (sessionOwnsCanvasInk && isInkSessionDelegatedCanvasCommand(cmd)) return
           redoStackRef.current = []
           let next = [...commandsRef.current, cmd]
           if (penAutoGroupConnected && cmd.kind === 'stroke' && cmd.tool === 'pen') {
@@ -1603,10 +1695,13 @@ export const BookPageAnnotationLayer = forwardRef<BookPageAnnotationHandle, Book
     }
 
     function commitDraftStroke(draft: StrokeAnnotationCommand): void {
-      if (draft.points.length < 2) return
-      let next = [...commandsRef.current, draft]
-      if (draft.tool === 'pen') {
-        next = applyPenAutoGroupAfterAppend(next, draft.id)
+      if (sessionOwnsCanvasInk) return
+      const commitPoints = ensureStrokeCommitPoints(draft.points)
+      if (commitPoints.length < 2) return
+      const cmd: StrokeAnnotationCommand = { ...draft, points: commitPoints }
+      let next = [...commandsRef.current, cmd]
+      if (cmd.tool === 'pen') {
+        next = applyPenAutoGroupAfterAppend(next, cmd.id)
       }
       setCommands(next)
       persist(next)
@@ -1648,6 +1743,7 @@ export const BookPageAnnotationLayer = forwardRef<BookPageAnnotationHandle, Book
       const strokeTool = effectiveStrokeToolForPointer(mode, e)
 
       if (strokeTool) {
+        if (sessionOwnsCanvasInk) return
         setAnnotationGestureActive(true)
         gestureRef.current = 'stroke'
         straightStrokeAxisRef.current = null
@@ -1662,6 +1758,7 @@ export const BookPageAnnotationLayer = forwardRef<BookPageAnnotationHandle, Book
       }
 
       if (isTwoPointTool) {
+        if (sessionOwnsCanvasInk) return
         setAnnotationGestureActive(true)
         gestureRef.current = 'two'
         redoStackRef.current = []
@@ -1763,6 +1860,7 @@ export const BookPageAnnotationLayer = forwardRef<BookPageAnnotationHandle, Book
     }
 
     function commitTwoPoint(): void {
+      if (sessionOwnsCanvasInk) return
       const td = twoDraftRef.current
       twoDraftRef.current = null
       if (!td) return
@@ -1881,10 +1979,8 @@ export const BookPageAnnotationLayer = forwardRef<BookPageAnnotationHandle, Book
       }
       straightStrokeAxisRef.current = null
       draftStrokeRef.current = null
-      if (draft && draft.points.length >= 2) {
-        const next = [...commandsRef.current, draft]
-        setCommands(next)
-        persist(next)
+      if (draft && draft.points.length >= 1) {
+        commitDraftStroke(draft)
       }
 
       if (gesture === 'two' && twoDraftRef.current) {
@@ -2152,7 +2248,10 @@ export const BookPageAnnotationLayer = forwardRef<BookPageAnnotationHandle, Book
     const pointerOverlayZ = draftZ + 2
     /** Let stickies / text fields receive clicks when editing; text tool uses overlay hit-testing. */
     const pointerEventsOnOverlay =
-      !delegatePointerToSpread && mode !== 'sticky' && !(isSelect && editingId != null)
+      !delegatePointerToSpread &&
+      !delegatePointerToWhiteboardPen &&
+      mode !== 'sticky' &&
+      !(isSelect && editingId != null)
 
     let inkSliceIdx = 0
     let markerSliceIdx = 0

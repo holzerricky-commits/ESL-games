@@ -28,6 +28,7 @@ import { useWhiteboardNotebookCapture } from './useWhiteboardNotebookCapture'
 import { useWhiteboardOnBookUnitChange } from './useWhiteboardOnBookUnitChange'
 import { useWhiteboardPlacement } from './useWhiteboardPlacement'
 import { useInfiniteWhiteboardRunway } from './useInfiniteWhiteboardRunway'
+import { useWhiteboardInkSession } from './useWhiteboardInkSession'
 import type { WhiteboardToolbarLaunchApi } from './useWhiteboardToolbarLaunch'
 import { resolveWhiteboardStorageKey } from '@/lib/books/whiteboard-storage'
 import { usePdfUnitCacheOnChange } from './usePdfUnitCacheOnChange'
@@ -37,7 +38,7 @@ import { useLessonPaperNotebookCanvasScroll } from './useLessonPaperNotebookCanv
 import { usePageJumpUiSync } from './usePageJumpUiSync'
 import { useBookPageAlignmentModel } from './useBookPageAlignmentModel'
 import { useCurrentPageCaptureEl } from './useCurrentPageCaptureEl'
-import { preloadAllManifestBrushPatterns } from '@/lib/books/brush-pattern-loader'
+import { preloadAllEffectPenResources } from '@/lib/books/effect-pen-preload'
 import { getFileAlignment, getUnitReaderBounds } from '@/lib/books/page-range'
 import {
   clearReaderPrefetchCacheForUnit,
@@ -54,11 +55,14 @@ import {
 } from '@/lib/books/reader-spread-prefetch-ready'
 import { isSpreadDrawableReady } from '@/lib/books/spread-drawable-ready'
 import { getMapAnchorSpreadContext, setMapAnchorSpreadContext } from '@/lib/books/map-anchor-spread-context'
-import { spreadResizeScaleEnabled, spreadSlideEnabled } from '@/lib/books/feature-flags'
+import { spreadResizeScaleEnabled, spreadSlideEnabled, whiteboardInkSessionEnabled } from '@/lib/books/feature-flags'
 import { resolveSpreadAnchorPages } from '@/lib/books/reader-spread-navigation'
 import type { SpreadTurnSlidePayload } from './useSpreadTurnSlide'
 import { getStudentClassSessionById } from '@/lib/students/selectors'
 import { heuristicBookOverlaySpreadPageWidthPx } from '@/lib/books/spread-viewport-layout'
+import type { SpreadSessionStore } from '@/lib/books/spread-session-store'
+import { requestWhiteboardSessionFlush } from '@/lib/books/whiteboard-session-events'
+import type { WhiteboardSessionStore } from '@/lib/books/whiteboard-session-store'
 import type { FullscreenBookOverlayProps } from '../types'
 
 /** A4-style portrait default until PDF viewport is primed (see B3). */
@@ -94,7 +98,7 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
 
   useEffect(() => {
     if (!open) return
-    preloadAllManifestBrushPatterns()
+    preloadAllEffectPenResources()
   }, [open])
 
   const ANIMATION_MS = 650
@@ -511,6 +515,9 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     vocabReaderHit,
   })
 
+  const spreadSessionStoreRef = useRef<SpreadSessionStore | null>(null)
+  const whiteboardSessionStoreRef = useRef<WhiteboardSessionStore | null>(null)
+
   const {
     annotationMode,
     setAnnotationMode,
@@ -593,6 +600,9 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     rightAnnRef,
     wbAnnRef,
     spreadStrokeOverlayRef,
+    wbStrokeOverlayRef,
+    whiteboardStrokeCaptureEnabled,
+    onWhiteboardOverlayCaps,
     strokeWidthScale,
     eraserLineStrokeWidthScale,
     penStrokeWidthScale,
@@ -621,6 +631,8 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     spreadRightPage,
     overlayOpen: open,
     isLessonPaperOpen,
+    spreadSessionStoreRef,
+    whiteboardSessionStoreRef,
   })
 
   const onEyedropperPick = useEyedropperPick({
@@ -1037,6 +1049,28 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     enabled: isWhiteboardOpen,
   })
 
+  const {
+    whiteboardSessionDoc,
+    flushWhiteboardSessionToLegacy,
+    appendWhiteboardSessionCommand,
+    whiteboardSessionUndo,
+    whiteboardSessionRedo,
+    whiteboardSessionClear,
+  } = useWhiteboardInkSession({
+    enabled:
+      whiteboardInkSessionEnabled &&
+      open &&
+      !!selectedBookId &&
+      !!selectedUnitId &&
+      !!whiteboardStorageKey,
+    studentId,
+    bookId: selectedBookId,
+    unitId: selectedUnitId,
+    storagePageKey: whiteboardStorageKey,
+    whiteboardSessionStoreRef,
+    onOverlayCaps: onWhiteboardOverlayCaps,
+  })
+
   useWhiteboardOnBookUnitChange({
     selectedBookId,
     selectedUnitId,
@@ -1058,10 +1092,9 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
   }, [])
 
   const openWhiteboard = useCallback(() => {
-    openWhiteboardWithDefaultPlacement()
     setIsWhiteboardMinimized(false)
     setIsWhiteboardOpen(true)
-  }, [openWhiteboardWithDefaultPlacement])
+  }, [])
 
   const toolbarLaunchApiRef = useRef<WhiteboardToolbarLaunchApi | null>(null)
 
@@ -1088,13 +1121,15 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
   }, [expandWhiteboard])
 
   const launchCloseWhiteboard = useCallback(() => {
+    flushWhiteboardSessionToLegacy()
+    requestWhiteboardSessionFlush()
     const api = toolbarLaunchApiRef.current
     if (api) {
       api.playExit(() => setIsWhiteboardOpen(false))
       return
     }
     setIsWhiteboardOpen(false)
-  }, [])
+  }, [flushWhiteboardSessionToLegacy])
 
   const launchMinimizeWhiteboard = useCallback(() => {
     const api = toolbarLaunchApiRef.current
@@ -1618,6 +1653,16 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     spreadPageWidth,
     spreadStrokeCaptureEnabled,
     spreadStrokeOverlayRef,
+    spreadSessionStoreRef,
+    wbStrokeOverlayRef,
+    whiteboardStrokeCaptureEnabled,
+    whiteboardSessionStoreRef,
+    whiteboardSessionDoc,
+    appendWhiteboardSessionCommand,
+    whiteboardSessionUndo,
+    whiteboardSessionRedo,
+    whiteboardSessionClear,
+    onWhiteboardOverlayCaps,
     layoutSpreadPageWidth,
     spreadRightPage,
     stampScale,

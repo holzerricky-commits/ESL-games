@@ -10,6 +10,7 @@ import {
 import type { BookAnnotationInteractionMode } from '@/lib/books/annotation-storage'
 import { mapPdfPageToDisplayLabel, type PageNumberingMode } from '@/lib/books/page-numbering'
 import { requestSpreadSessionFlush } from '@/lib/books/spread-session-events'
+import { requestWhiteboardSessionFlush } from '@/lib/books/whiteboard-session-events'
 import { appendStudentClassLessonNotebookWhiteboardCapture } from '@/lib/students/selectors'
 import type { BookLibraryPayload } from '@/lib/books/types'
 
@@ -92,6 +93,7 @@ export function useWhiteboardNotebookCapture(args: UseWhiteboardNotebookCaptureA
     }
 
     requestSpreadSessionFlush()
+    requestWhiteboardSessionFlush()
     setWhiteboardCaptureBusy(true)
     const prevSelect = args.annotationMode === 'select'
     if (prevSelect) args.setAnnotationMode('pen')

@@ -29,18 +29,39 @@ import {
   applyAnnotationCanvasDpr,
   clearAnnotationCanvas,
   drawStrokePath,
+  type DrawStrokePathOptions,
 } from '@/lib/books/annotation-draw'
+import { penStrokeUsesRichLivePaint } from '@/lib/books/annotation-live-pen-paint'
+import { subscribeBrushPatternTileLoads } from '@/lib/books/brush-pattern-loader'
+import { isEffectPenInkStyle } from '@/lib/books/pen-ink'
+import {
+  canIncrementallyAppendStrokeDraft,
+  incrementalStrokeDraftSegmentPoints,
+  type IncrementalStrokeDraftState,
+} from '@/lib/books/incremental-stroke-draft-paint'
+import {
+  spreadLiveStrokeIncrementalPaintEnabled,
+  spreadLiveStrokeRafCoalesceEnabled,
+  whiteboardViewportLiveStrokeIncrementalPaintEnabled,
+} from '@/lib/books/spread-live-draw-config'
+import { createRafCoalescer } from '@/lib/books/raf-coalesce'
 import { attachPenInkPatternPhase } from '@/lib/books/pen-ink'
 import { clientToSpreadNorm } from '@/lib/books/spread-canvas-coords'
 import {
+  clientToWhiteboardDocumentNorm,
+  projectStrokeDraftForWhiteboardViewport,
+  type WhiteboardViewportInkConfig,
+} from '@/lib/books/whiteboard-viewport-ink'
+import {
   seamClientX,
   splitClientPolylineToPageNormalizedChains,
-  splitSpreadNormPolylineViaClientRects,
+  splitSpreadNormPolylineToPageNormalizedChains,
   type SpreadInkLayout,
 } from '@/lib/books/spread-stroke-split'
 import type {
   AnnotationCapabilities,
   BookPageAnnotationHandle,
+  LiveEraserLineDraft,
 } from '@/components/students/book-page-annotation-layer'
 import { cn } from '@/lib/utils'
 import {
@@ -56,6 +77,7 @@ import {
   type StraightStrokeAxis,
 } from '@/lib/books/stroke-straight-line'
 import { coalescedPointerEvents } from '@/lib/books/stroke-pointer-samples'
+import { ensureStrokeCommitPoints } from '@/lib/books/stroke-tap-dot'
 import type { StrokeTool } from '@/lib/books/annotation-command-types'
 
 function newAnnotationId(): string {
@@ -136,26 +158,89 @@ function clearSpreadCanvas(canvas: HTMLCanvasElement): void {
   clearAnnotationCanvas(ctx)
 }
 
+function spreadLiveStrokeDrawOptions(draft: StrokeAnnotationCommand): DrawStrokePathOptions {
+  const base: DrawStrokePathOptions = { pagePatternOrigin: { x: 0, y: 0 } }
+  if (
+    draft.tool !== 'pen' ||
+    penStrokeUsesRichLivePaint({
+      penInkStyle: draft.penInkStyle,
+      penStrokeProfile: draft.penStrokeProfile,
+    })
+  ) {
+    return base
+  }
+  return { ...base, livePaintFast: true }
+}
+
 function paintSpreadLiveStrokeDraft(
   draftInkCanvas: HTMLCanvasElement | null,
   draftMarkerCanvas: HTMLCanvasElement | null,
   draft: StrokeAnnotationCommand | null,
   spreadOverlayWidthPx: number,
-  spreadOverlayHeightPx: number,
+  spreadCanvasHeightPx: number,
+  incrementalRef: MutableRefObject<IncrementalStrokeDraftState | null>,
+  viewportInk?: WhiteboardViewportInkConfig | null,
 ): void {
   if (!draftInkCanvas || !draftMarkerCanvas) return
   const inkCtx = draftInkCanvas.getContext('2d', { alpha: true })
   const markerCtx = draftMarkerCanvas.getContext('2d', { alpha: true })
   if (!inkCtx || !markerCtx) return
-  clearAnnotationCanvas(inkCtx)
-  clearAnnotationCanvas(markerCtx)
-  applyAnnotationCanvasDpr(inkCtx)
-  applyAnnotationCanvasDpr(markerCtx)
-  if (!draft || draft.points.length < 1 || draft.tool === 'eraser-line') return
+
+  if (!draft || draft.points.length < 1 || draft.tool === 'eraser-line') {
+    incrementalRef.current = null
+    clearAnnotationCanvas(inkCtx)
+    clearAnnotationCanvas(markerCtx)
+    return
+  }
+
+  const draftForPaint = viewportInk
+    ? projectStrokeDraftForWhiteboardViewport(draft, viewportInk)
+    : draft
+  if (!draftForPaint) {
+    incrementalRef.current = null
+    clearAnnotationCanvas(inkCtx)
+    clearAnnotationCanvas(markerCtx)
+    return
+  }
+
+  const drawOptions = spreadLiveStrokeDrawOptions(draft)
+  const prev = incrementalRef.current
+  const incrementalLiveEnabled =
+    spreadLiveStrokeIncrementalPaintEnabled ||
+    (viewportInk != null && whiteboardViewportLiveStrokeIncrementalPaintEnabled)
+  const canAppend =
+    incrementalLiveEnabled && canIncrementallyAppendStrokeDraft(prev, draftForPaint)
+
+  if (!canAppend) {
+    clearAnnotationCanvas(inkCtx)
+    clearAnnotationCanvas(markerCtx)
+    applyAnnotationCanvasDpr(inkCtx)
+    applyAnnotationCanvasDpr(markerCtx)
+    const ctx = draft.tool === 'marker' ? markerCtx : inkCtx
+    drawStrokePath(ctx, draftForPaint, spreadOverlayWidthPx, spreadCanvasHeightPx, drawOptions)
+    if (draft.tool === 'pen' || draft.tool === 'marker') {
+      incrementalRef.current = { tool: draft.tool, pointsLength: draftForPaint.points.length }
+    } else {
+      incrementalRef.current = null
+    }
+    return
+  }
+
   const ctx = draft.tool === 'marker' ? markerCtx : inkCtx
-  drawStrokePath(ctx, draft, spreadOverlayWidthPx, spreadOverlayHeightPx, {
-    pagePatternOrigin: { x: 0, y: 0 },
-  })
+  applyAnnotationCanvasDpr(ctx)
+  const segmentPoints = incrementalStrokeDraftSegmentPoints(draftForPaint.points, prev!.pointsLength)
+  drawStrokePath(
+    ctx,
+    { ...draftForPaint, points: segmentPoints },
+    spreadOverlayWidthPx,
+    spreadCanvasHeightPx,
+    drawOptions,
+  )
+  if (draft.tool === 'pen' || draft.tool === 'marker') {
+    incrementalRef.current = { tool: draft.tool, pointsLength: draftForPaint.points.length }
+  } else {
+    incrementalRef.current = null
+  }
 }
 
 function clearLiveEraserDraftsBothPages(
@@ -218,15 +303,25 @@ function pushLiveEraserDraftsForSpread(
 function pushLiveStrokeDraftsForSpread(
   draft: StrokeAnnotationCommand,
   spreadOverlayWidthPx: number,
-  spreadOverlayHeightPx: number,
+  spreadCanvasHeightPx: number,
   draftInkCanvas: HTMLCanvasElement | null,
   draftMarkerCanvas: HTMLCanvasElement | null,
+  incrementalRef: MutableRefObject<IncrementalStrokeDraftState | null>,
   leftAnnRef: MutableRefObject<BookPageAnnotationHandle | null>,
   rightAnnRef: MutableRefObject<BookPageAnnotationHandle | null>,
+  viewportInk?: WhiteboardViewportInkConfig | null,
 ): void {
   if (draft.tool === 'eraser-line' || draft.points.length < 1) {
     clearLiveStrokeDraftsBothPages(leftAnnRef, rightAnnRef)
-    paintSpreadLiveStrokeDraft(draftInkCanvas, draftMarkerCanvas, null, spreadOverlayWidthPx, spreadOverlayHeightPx)
+    paintSpreadLiveStrokeDraft(
+      draftInkCanvas,
+      draftMarkerCanvas,
+      null,
+      spreadOverlayWidthPx,
+      spreadCanvasHeightPx,
+      incrementalRef,
+      viewportInk,
+    )
     return
   }
   clearLiveStrokeDraftsBothPages(leftAnnRef, rightAnnRef)
@@ -235,7 +330,9 @@ function pushLiveStrokeDraftsForSpread(
     draftMarkerCanvas,
     draft,
     spreadOverlayWidthPx,
-    spreadOverlayHeightPx,
+    spreadCanvasHeightPx,
+    incrementalRef,
+    viewportInk,
   )
 }
 
@@ -264,6 +361,7 @@ export interface BookSpreadStrokeOverlayProps {
   shapeFillColor?: string
   pageNumberLeft: number
   pageNumberRight: number
+  annotationTargetPage: number
   setAnnotationTargetPage: (page: number) => void
   onCapabilitiesChange: (caps: AnnotationCapabilities) => void
   /** When false, overlay is visually present but does not capture pointer events (non-stroke tools use page layers). */
@@ -271,6 +369,10 @@ export interface BookSpreadStrokeOverlayProps {
   /** Logical spread width/height (cluster width = 2–page − one overlap). */
   spreadOverlayWidthPx: number
   spreadOverlayHeightPx: number
+  /** Physical capture/draft canvas height (whiteboard viewport). Defaults to spreadOverlayHeightPx. */
+  spreadCanvasHeightPx?: number
+  /** Whiteboard: map pointer on viewport canvas into document-normalized storage. */
+  whiteboardViewportInk?: WhiteboardViewportInkConfig
   spreadPageWidthPx: number
   /** Logical X offset of each page slot within the spread (for ink pattern + commit split). */
   leftPenInkPatternOriginXPx: number
@@ -279,8 +381,13 @@ export interface BookSpreadStrokeOverlayProps {
   spreadSeamNormX: number
   /** Phase 3: spread edits mutate session mirror only (no immediate page commits). */
   spreadSessionMode?: boolean
-  /** Phase 2 bridge: sync spread-session commands after spread overlay mutations. */
-  onSpreadSessionSyncCommands?: (commands: AnnotationCommand[]) => void
+  /** Phase 2: append one committed command to the spread session store. */
+  onSpreadSessionAppendCommand?: (cmd: AnnotationCommand) => void
+  spreadSessionUndo?: () => boolean
+  spreadSessionRedo?: () => boolean
+  spreadSessionClear?: () => void
+  /** Live eraser-line preview on spread session layer (spread-normalized points). */
+  onSpreadEraserLineDraftChange?: (draft: LiveEraserLineDraft | null) => void
 }
 
 export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, BookSpreadStrokeOverlayProps>(
@@ -309,17 +416,24 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
       shapeFillColor = '#eab308',
       pageNumberLeft,
       pageNumberRight,
+      annotationTargetPage,
       setAnnotationTargetPage,
       onCapabilitiesChange,
       captureEnabled,
       spreadOverlayWidthPx,
       spreadOverlayHeightPx,
+      spreadCanvasHeightPx: spreadCanvasHeightPxProp,
+      whiteboardViewportInk,
       spreadPageWidthPx,
       leftPenInkPatternOriginXPx,
       rightPenInkPatternOriginXPx,
       spreadSeamNormX,
       spreadSessionMode = false,
-      onSpreadSessionSyncCommands,
+      onSpreadSessionAppendCommand,
+      spreadSessionUndo,
+      spreadSessionRedo,
+      spreadSessionClear,
+      onSpreadEraserLineDraftChange,
     },
     ref,
   ) {
@@ -327,12 +441,56 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
     const draftInkCanvasRef = useRef<HTMLCanvasElement | null>(null)
     const draftMarkerCanvasRef = useRef<HTMLCanvasElement | null>(null)
     const zoomRepaintRevision = useBrowserZoomRepaintRevision()
+    const spreadCanvasHeightPx = spreadCanvasHeightPxProp ?? spreadOverlayHeightPx
+
+    const clientToInkNorm = useCallback(
+      (
+        canvasRect: Pick<DOMRectReadOnly, 'left' | 'top' | 'width' | 'height'>,
+        clientX: number,
+        clientY: number,
+      ): [number, number] => {
+        if (whiteboardViewportInk) {
+          return clientToWhiteboardDocumentNorm(whiteboardViewportInk, canvasRect, clientX, clientY)
+        }
+        return clientToSpreadNorm(canvasRect, clientX, clientY)
+      },
+      [whiteboardViewportInk],
+    )
 
     const gestureRef = useRef<'stroke' | 'two' | null>(null)
     const straightStrokeAxisRef = useRef<StraightStrokeAxis | null>(null)
     const draftStrokeRef = useRef<StrokeAnnotationCommand | null>(null)
+    const spreadIncrementalDraftRef = useRef<IncrementalStrokeDraftState | null>(null)
+    const liveStrokePaintCoalescerRef = useRef<ReturnType<typeof createRafCoalescer> | null>(null)
     const twoDraftRef = useRef<TwoPointDraft | null>(null)
     const pointsClientRef = useRef<[number, number][]>([])
+    const deferClearDraftRafRef = useRef<number | null>(null)
+
+    const cancelDeferredClearSpreadDraft = useCallback(() => {
+      if (deferClearDraftRafRef.current != null) {
+        cancelAnimationFrame(deferClearDraftRafRef.current)
+        deferClearDraftRafRef.current = null
+      }
+    }, [])
+
+    const clearSpreadLiveDraftCanvasesRef = useRef<() => void>(() => {})
+
+    const scheduleDeferredClearSpreadDraft = useCallback(() => {
+      cancelDeferredClearSpreadDraft()
+      let frames = 0
+      const tick = () => {
+        frames += 1
+        if (frames < 2) {
+          deferClearDraftRafRef.current = requestAnimationFrame(tick)
+          return
+        }
+        deferClearDraftRafRef.current = null
+        clearSpreadLiveDraftCanvasesRef.current()
+      }
+      deferClearDraftRafRef.current = requestAnimationFrame(tick)
+    }, [cancelDeferredClearSpreadDraft])
+
+    useEffect(() => () => cancelDeferredClearSpreadDraft(), [cancelDeferredClearSpreadDraft])
 
     const shapeCommitOptions = useMemo<ShapeCommitOptions>(
       () => ({
@@ -355,8 +513,6 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
 
     const undoStackRef = useRef<SpreadGestureEntry[]>([])
     const redoStackRef = useRef<SpreadGestureEntry[]>([])
-    const sessionMirrorCommandsRef = useRef<AnnotationCommand[]>([])
-    const sessionMirrorRedoRef = useRef<AnnotationCommand[]>([])
 
     const onCapabilitiesChangeRef = useRef(onCapabilitiesChange)
     onCapabilitiesChangeRef.current = onCapabilitiesChange
@@ -377,21 +533,18 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
     }
 
     const emitCapabilities = useCallback(() => {
+      if (spreadSessionMode) return
       onCapabilitiesChangeRef.current?.({
         canUndo: undoStackRef.current.length > 0,
         canRedo: redoStackRef.current.length > 0,
       })
-    }, [])
-
-    const syncSpreadSessionMirror = useCallback(() => {
-      onSpreadSessionSyncCommands?.([...sessionMirrorCommandsRef.current])
-    }, [onSpreadSessionSyncCommands])
+    }, [spreadSessionMode])
 
     useEffect(() => {
       queueMicrotask(emitCapabilities)
     }, [emitCapabilities])
 
-    const syncLiveSpreadStroke = useCallback(() => {
+    const repaintLiveSpreadStroke = useCallback(() => {
       const draft = draftStrokeRef.current
       if (!draft) {
         clearLiveStrokeDraftsBothPages(leftAnnRef, rightAnnRef)
@@ -400,20 +553,56 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
           draftMarkerCanvasRef.current,
           null,
           spreadOverlayWidthPx,
-          spreadOverlayHeightPx,
+          spreadCanvasHeightPx,
+          spreadIncrementalDraftRef,
+          whiteboardViewportInk,
         )
         return
       }
       pushLiveStrokeDraftsForSpread(
         draft,
         spreadOverlayWidthPx,
-        spreadOverlayHeightPx,
+        spreadCanvasHeightPx,
         draftInkCanvasRef.current,
         draftMarkerCanvasRef.current,
+        spreadIncrementalDraftRef,
         leftAnnRef,
         rightAnnRef,
+        whiteboardViewportInk,
       )
-    }, [leftAnnRef, rightAnnRef, spreadOverlayHeightPx, spreadOverlayWidthPx])
+    }, [leftAnnRef, rightAnnRef, spreadCanvasHeightPx, spreadOverlayWidthPx, whiteboardViewportInk])
+
+    const syncLiveSpreadStroke = repaintLiveSpreadStroke
+
+    useEffect(() => {
+      if (!spreadLiveStrokeRafCoalesceEnabled) {
+        liveStrokePaintCoalescerRef.current = null
+        return
+      }
+      const coalescer = createRafCoalescer(repaintLiveSpreadStroke)
+      liveStrokePaintCoalescerRef.current = coalescer
+      return () => coalescer.cancel()
+    }, [repaintLiveSpreadStroke])
+
+    const scheduleLiveSpreadStrokePaint = useCallback(() => {
+      if (spreadLiveStrokeRafCoalesceEnabled && liveStrokePaintCoalescerRef.current) {
+        liveStrokePaintCoalescerRef.current.schedule()
+        return
+      }
+      repaintLiveSpreadStroke()
+    }, [repaintLiveSpreadStroke])
+
+    const flushLiveSpreadStrokePaint = useCallback(() => {
+      if (spreadLiveStrokeRafCoalesceEnabled && liveStrokePaintCoalescerRef.current) {
+        liveStrokePaintCoalescerRef.current.flush()
+        return
+      }
+      repaintLiveSpreadStroke()
+    }, [repaintLiveSpreadStroke])
+
+    const cancelLiveSpreadStrokePaint = useCallback(() => {
+      liveStrokePaintCoalescerRef.current?.cancel()
+    }, [])
 
     useEffect(() => {
       if (gestureRef.current === 'stroke' && draftStrokeRef.current) {
@@ -428,36 +617,62 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
       spreadSeamNormX,
     ])
 
+    useEffect(
+      () =>
+        subscribeBrushPatternTileLoads(() => {
+          const draft = draftStrokeRef.current
+          if (
+            draft?.tool === 'pen' &&
+            isEffectPenInkStyle(draft.penInkStyle) &&
+            draft.points.length >= 1
+          ) {
+            syncLiveSpreadStroke()
+          }
+        }),
+      [syncLiveSpreadStroke],
+    )
+
     const syncSpreadDraftCanvasSize = useCallback(
       (el: HTMLCanvasElement) => {
         const dpr = window.devicePixelRatio || 1
         const nextW = Math.max(1, Math.floor(spreadOverlayWidthPx * dpr))
-        const nextH = Math.max(1, Math.floor(spreadOverlayHeightPx * dpr))
+        const nextH = Math.max(1, Math.floor(spreadCanvasHeightPx * dpr))
         el.style.width = `${spreadOverlayWidthPx}px`
-        el.style.height = `${spreadOverlayHeightPx}px`
+        el.style.height = `${spreadCanvasHeightPx}px`
         if (el.width !== nextW || el.height !== nextH) {
           el.width = nextW
           el.height = nextH
         }
         clearSpreadCanvas(el)
       },
-      [spreadOverlayHeightPx, spreadOverlayWidthPx],
+      [spreadCanvasHeightPx, spreadOverlayWidthPx],
     )
 
     useLayoutEffect(() => {
       const inkEl = draftInkCanvasRef.current
       const markerEl = draftMarkerCanvasRef.current
-      if (!inkEl || !markerEl || !(spreadOverlayWidthPx > 0) || !(spreadOverlayHeightPx > 0)) return
+      if (!inkEl || !markerEl || !(spreadOverlayWidthPx > 0) || !(spreadCanvasHeightPx > 0)) return
       syncSpreadDraftCanvasSize(inkEl)
       syncSpreadDraftCanvasSize(markerEl)
+      spreadIncrementalDraftRef.current = null
       paintSpreadLiveStrokeDraft(
         inkEl,
         markerEl,
         draftStrokeRef.current,
         spreadOverlayWidthPx,
-        spreadOverlayHeightPx,
+        spreadCanvasHeightPx,
+        spreadIncrementalDraftRef,
+        whiteboardViewportInk,
       )
-    }, [spreadOverlayWidthPx, spreadOverlayHeightPx, annotationMode, captureEnabled, syncSpreadDraftCanvasSize, zoomRepaintRevision])
+    }, [
+      spreadOverlayWidthPx,
+      spreadCanvasHeightPx,
+      annotationMode,
+      captureEnabled,
+      syncSpreadDraftCanvasSize,
+      zoomRepaintRevision,
+      whiteboardViewportInk,
+    ])
 
     useEffect(() => {
       const el = captureRef.current
@@ -472,25 +687,34 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
     const commitStrokeFromClientPoints = useCallback(() => {
       pointsClientRef.current = []
       const draft = draftStrokeRef.current
-      if (!draft || draft.points.length < 2) return
+      if (!draft || draft.points.length < 1) return
 
-      const overlayEl = captureRef.current
-      const leftEl = leftPageCaptureRef.current
-      const rightEl = rightPageCaptureRef.current
-      if (!overlayEl || !leftEl || !rightEl) return
+      const commitPoints = ensureStrokeCommitPoints(draft.points)
+      if (commitPoints.length < 2) return
+
+      const layout = spreadInkLayoutRef.current
+      if (!(layout.spreadOverlayWidthPx > 0) || !(layout.spreadPageWidthPx > 0)) return
 
       clearLiveStrokeDraftsBothPages(leftAnnRef, rightAnnRef)
 
-      const { leftNorm, rightNorm } = splitSpreadNormPolylineViaClientRects(
-        draft.points,
-        overlayEl.getBoundingClientRect(),
-        leftEl.getBoundingClientRect(),
-        rightEl.getBoundingClientRect(),
-      )
+      const gestureId = newAnnotationId()
+      const sessionCmd: StrokeAnnotationCommand = {
+        kind: 'stroke',
+        id: gestureId,
+        tool: draft.tool,
+        points: commitPoints.map((p) => [p[0], p[1]] as [number, number]),
+        ...strokeInkFieldsFromDraft(draft),
+      }
 
+      if (spreadSessionMode) {
+        onSpreadSessionAppendCommand?.(sessionCmd)
+        return
+      }
+
+      // Legacy: split to per-page storage and replay on each page layer.
+      const { leftNorm, rightNorm } = splitSpreadNormPolylineToPageNormalizedChains(commitPoints, layout)
       const leftCmds: StrokeAnnotationCommand[] = []
       const rightCmds: StrokeAnnotationCommand[] = []
-      const gestureId = newAnnotationId()
 
       for (const chain of leftNorm) {
         if (chain.length < 2) continue
@@ -502,7 +726,7 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
           ...strokeInkFieldsFromDraft(draft),
         }
         leftCmds.push(cmd)
-        if (!spreadSessionMode) leftAnnRef.current?.appendCommand(cmd)
+        leftAnnRef.current?.appendCommand(cmd)
       }
       for (const chain of rightNorm) {
         if (chain.length < 2) continue
@@ -514,20 +738,10 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
           ...strokeInkFieldsFromDraft(draft),
         }
         rightCmds.push(cmd)
-        if (!spreadSessionMode) rightAnnRef.current?.appendCommand(cmd)
+        rightAnnRef.current?.appendCommand(cmd)
       }
 
       if (leftCmds.length > 0 || rightCmds.length > 0) {
-        const sessionCmd: AnnotationCommand = {
-          kind: 'stroke',
-          id: gestureId,
-          tool: draft.tool,
-          points: draft.points.map((p) => [p[0], p[1]] as [number, number]),
-          ...strokeInkFieldsFromDraft(draft),
-        } satisfies StrokeAnnotationCommand
-        sessionMirrorCommandsRef.current.push(sessionCmd)
-        sessionMirrorRedoRef.current = []
-        syncSpreadSessionMirror()
         undoStackRef.current.push({
           kind: 'stroke',
           left: leftCmds.map(cloneStroke),
@@ -536,14 +750,7 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
         redoStackRef.current = []
         emitCapabilities()
       }
-    }, [
-      emitCapabilities,
-      leftAnnRef,
-      leftPageCaptureRef,
-      spreadSessionMode,
-      rightAnnRef,
-      rightPageCaptureRef,
-    ])
+    }, [emitCapabilities, leftAnnRef, onSpreadSessionAppendCommand, spreadSessionMode, rightAnnRef])
 
     const commitTwoPointFromSpread = useCallback(() => {
       const td = twoDraftRef.current
@@ -551,24 +758,6 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
       if (!td) return
 
       clearLiveTwoPointDraftsBothPages(leftAnnRef, rightAnnRef)
-
-      const overlayEl = captureRef.current
-      const leftEl = leftPageCaptureRef.current
-      const rightEl = rightPageCaptureRef.current
-      if (!overlayEl || !leftEl || !rightEl) return
-
-      const { left, right } = splitTwoPointShapeCommandsViaClientRects(
-        td.kind,
-        td.anchor,
-        td.current,
-        overlayEl.getBoundingClientRect(),
-        leftEl.getBoundingClientRect(),
-        rightEl.getBoundingClientRect(),
-        shapeCommitOptions,
-      )
-
-      if (left && !spreadSessionMode) leftAnnRef.current?.appendCommand(left)
-      if (right && !spreadSessionMode) rightAnnRef.current?.appendCommand(right)
 
       let sessionCmd: AnnotationCommand | null = null
       if (td.kind === 'line' || td.kind === 'arrow') {
@@ -619,11 +808,30 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
           }
         }
       }
-      if (sessionCmd) {
-        sessionMirrorCommandsRef.current.push(sessionCmd)
-        sessionMirrorRedoRef.current = []
-        syncSpreadSessionMirror()
+      if (!sessionCmd) return
+
+      if (spreadSessionMode) {
+        onSpreadSessionAppendCommand?.(sessionCmd)
+        return
       }
+
+      const overlayEl = captureRef.current
+      const leftEl = leftPageCaptureRef.current
+      const rightEl = rightPageCaptureRef.current
+      if (!overlayEl || !leftEl || !rightEl) return
+
+      const { left, right } = splitTwoPointShapeCommandsViaClientRects(
+        td.kind,
+        td.anchor,
+        td.current,
+        overlayEl.getBoundingClientRect(),
+        leftEl.getBoundingClientRect(),
+        rightEl.getBoundingClientRect(),
+        shapeCommitOptions,
+      )
+
+      if (left) leftAnnRef.current?.appendCommand(left)
+      if (right) rightAnnRef.current?.appendCommand(right)
 
       if (left || right) {
         undoStackRef.current.push({ kind: 'shape', left, right })
@@ -634,7 +842,7 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
       emitCapabilities,
       leftAnnRef,
       leftPageCaptureRef,
-      syncSpreadSessionMirror,
+      onSpreadSessionAppendCommand,
       rightAnnRef,
       rightPageCaptureRef,
       shapeCommitOptions,
@@ -645,51 +853,48 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
       ref,
       () => ({
         undo: () => {
+          if (spreadSessionMode) {
+            spreadSessionUndo?.()
+            return
+          }
           const g = undoStackRef.current.pop()
           if (!g) return
-          if (!spreadSessionMode) {
-            if (g.kind === 'stroke') {
-              for (const cmd of g.left) leftAnnRef.current?.removeCommandById(cmd.id)
-              for (const cmd of g.right) rightAnnRef.current?.removeCommandById(cmd.id)
-            } else {
-              if (g.left) leftAnnRef.current?.removeCommandById(g.left.id)
-              if (g.right) rightAnnRef.current?.removeCommandById(g.right.id)
-            }
+          if (g.kind === 'stroke') {
+            for (const cmd of g.left) leftAnnRef.current?.removeCommandById(cmd.id)
+            for (const cmd of g.right) rightAnnRef.current?.removeCommandById(cmd.id)
+          } else if (g.kind === 'shape') {
+            if (g.left) leftAnnRef.current?.removeCommandById(g.left.id)
+            if (g.right) rightAnnRef.current?.removeCommandById(g.right.id)
           }
-          const mirror = sessionMirrorCommandsRef.current.pop()
-          if (mirror) sessionMirrorRedoRef.current.push(mirror)
-          syncSpreadSessionMirror()
           redoStackRef.current.push(g)
           emitCapabilities()
         },
         redo: () => {
+          if (spreadSessionMode) {
+            spreadSessionRedo?.()
+            return
+          }
           const g = redoStackRef.current.pop()
           if (!g) return
-          if (!spreadSessionMode) {
-            if (g.kind === 'stroke') {
-              for (const cmd of g.left) leftAnnRef.current?.appendCommand(cmd)
-              for (const cmd of g.right) rightAnnRef.current?.appendCommand(cmd)
-            } else {
-              if (g.left) leftAnnRef.current?.appendCommand(g.left)
-              if (g.right) rightAnnRef.current?.appendCommand(g.right)
-            }
+          if (g.kind === 'stroke') {
+            for (const cmd of g.left) leftAnnRef.current?.appendCommand(cmd)
+            for (const cmd of g.right) rightAnnRef.current?.appendCommand(cmd)
+          } else if (g.kind === 'shape') {
+            if (g.left) leftAnnRef.current?.appendCommand(g.left)
+            if (g.right) rightAnnRef.current?.appendCommand(g.right)
           }
-          const mirror = sessionMirrorRedoRef.current.pop()
-          if (mirror) sessionMirrorCommandsRef.current.push(mirror)
-          syncSpreadSessionMirror()
           undoStackRef.current.push(g)
           emitCapabilities()
         },
         clear: () => {
+          if (spreadSessionMode) {
+            spreadSessionClear?.()
+            return
+          }
           undoStackRef.current = []
           redoStackRef.current = []
-          sessionMirrorCommandsRef.current = []
-          sessionMirrorRedoRef.current = []
-          syncSpreadSessionMirror()
-          if (!spreadSessionMode) {
-            leftAnnRef.current?.clear()
-            rightAnnRef.current?.clear()
-          }
+          leftAnnRef.current?.clear()
+          rightAnnRef.current?.clear()
           emitCapabilities()
         },
         appendCommand: () => {
@@ -708,7 +913,15 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
           /* live draft is pushed to left/right page refs from pointer handlers */
         },
       }),
-      [emitCapabilities, leftAnnRef, rightAnnRef, spreadSessionMode, syncSpreadSessionMirror],
+      [
+        emitCapabilities,
+        leftAnnRef,
+        rightAnnRef,
+        spreadSessionClear,
+        spreadSessionMode,
+        spreadSessionRedo,
+        spreadSessionUndo,
+      ],
     )
 
     const strokeWidthForTool = useCallback(
@@ -754,13 +967,29 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
     function pushLiveDraftForStroke(draft: StrokeAnnotationCommand): void {
       if (draft.tool === 'eraser-line') {
         clearLiveStrokeDraftsBothPages(leftAnnRef, rightAnnRef)
+        spreadIncrementalDraftRef.current = null
         paintSpreadLiveStrokeDraft(
           draftInkCanvasRef.current,
           draftMarkerCanvasRef.current,
           null,
           spreadOverlayWidthPx,
-          spreadOverlayHeightPx,
+          spreadCanvasHeightPx,
+          spreadIncrementalDraftRef,
+          whiteboardViewportInk,
         )
+        if (spreadSessionMode) {
+          const pts = draft.points
+          onSpreadEraserLineDraftChange?.(
+            pts.length >= 2
+              ? {
+                  tool: 'eraser-line',
+                  points: pts.map((p) => [p[0], p[1]] as [number, number]),
+                  widthScale: draft.widthScale,
+                }
+              : null,
+          )
+          return
+        }
         const leftEl = leftPageCaptureRef.current
         const rightEl = rightPageCaptureRef.current
         if (leftEl && rightEl && pointsClientRef.current.length >= 1) {
@@ -785,9 +1014,12 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
         draftMarkerCanvasRef.current,
         null,
         spreadOverlayWidthPx,
-        spreadOverlayHeightPx,
+        spreadCanvasHeightPx,
+        spreadIncrementalDraftRef,
+        whiteboardViewportInk,
       )
     }
+    clearSpreadLiveDraftCanvasesRef.current = clearSpreadLiveDraftCanvases
 
     function commitCurrentDraftIfReady(): void {
       if (draftStrokeRef.current && draftStrokeRef.current.points.length >= 2) {
@@ -797,6 +1029,7 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
 
     function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
       if (!captureEnabled || !isAnnotationPointerDownAccepted(e)) return
+      cancelDeferredClearSpreadDraft()
       if (e.pointerType === 'touch') e.preventDefault()
       const strokeTool = effectiveStrokeToolForPointer(annotationMode, e)
       const canvasRect = e.currentTarget.getBoundingClientRect()
@@ -805,7 +1038,10 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
       const rightEl = rightPageCaptureRef.current
       if (leftEl && rightEl) {
         const seam = seamClientX(leftEl.getBoundingClientRect(), rightEl.getBoundingClientRect())
-        setAnnotationTargetPage(e.clientX < seam ? pageNumberLeft : pageNumberRight)
+        const targetPage = e.clientX < seam ? pageNumberLeft : pageNumberRight
+        if (targetPage !== annotationTargetPage) {
+          setAnnotationTargetPage(targetPage)
+        }
       }
 
       if (strokeTool) {
@@ -815,11 +1051,12 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
         clearLiveStrokeDraftsBothPages(leftAnnRef, rightAnnRef)
         clearLiveTwoPointDraftsBothPages(leftAnnRef, rightAnnRef)
         clearSpreadLiveDraftCanvases()
-        const p0 = clientToSpreadNorm(canvasRect, e.clientX, e.clientY)
+        onSpreadEraserLineDraftChange?.(null)
+        const p0 = clientToInkNorm(canvasRect, e.clientX, e.clientY)
         draftStrokeRef.current = makeStrokeDraft(strokeTool, p0, [e.clientX, e.clientY])
         e.preventDefault()
         e.currentTarget.setPointerCapture(e.pointerId)
-        pushLiveDraftForStroke(draftStrokeRef.current)
+        flushLiveSpreadStrokePaint()
         return
       }
 
@@ -827,7 +1064,7 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
         gestureRef.current = 'two'
         clearLiveEraserDraftsBothPages(leftAnnRef, rightAnnRef)
         clearLiveStrokeDraftsBothPages(leftAnnRef, rightAnnRef)
-        const p0 = clientToSpreadNorm(canvasRect, e.clientX, e.clientY)
+        const p0 = clientToInkNorm(canvasRect, e.clientX, e.clientY)
         twoDraftRef.current = { kind: annotationMode, anchor: p0, current: p0 }
         e.preventDefault()
         e.currentTarget.setPointerCapture(e.pointerId)
@@ -844,7 +1081,7 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
       if (gestureRef.current === 'two') {
         const td = twoDraftRef.current
         if (!td) return
-        const p = clientToSpreadNorm(canvasRect, e.clientX, e.clientY)
+        const p = clientToInkNorm(canvasRect, e.clientX, e.clientY)
         td.current = p
         pushLiveTwoPointDraftsForSpread(td, spreadInkLayoutRef.current, leftAnnRef, rightAnnRef)
         return
@@ -854,18 +1091,19 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
       const draft = draftStrokeRef.current
       if (!draft) return
 
-      const p = clientToSpreadNorm(canvasRect, e.clientX, e.clientY)
+      const p = clientToInkNorm(canvasRect, e.clientX, e.clientY)
       const nextTool = effectiveStrokeToolForPointer(annotationMode, e)
       if (nextTool !== draft.tool) {
         commitCurrentDraftIfReady()
         straightStrokeAxisRef.current = null
         if (nextTool) {
           draftStrokeRef.current = makeStrokeDraft(nextTool, p, [e.clientX, e.clientY])
-          pushLiveDraftForStroke(draftStrokeRef.current)
+          flushLiveSpreadStrokePaint()
         } else {
           draftStrokeRef.current = null
           gestureRef.current = null
           pointsClientRef.current = []
+          cancelLiveSpreadStrokePaint()
           clearLiveEraserDraftsBothPages(leftAnnRef, rightAnnRef)
           clearLiveStrokeDraftsBothPages(leftAnnRef, rightAnnRef)
           clearSpreadLiveDraftCanvases()
@@ -875,7 +1113,7 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
 
       const samples: [number, number][] = []
       for (const ev of coalescedPointerEvents(e.nativeEvent)) {
-        samples.push(clientToSpreadNorm(canvasRect, ev.clientX, ev.clientY))
+        samples.push(clientToInkNorm(canvasRect, ev.clientX, ev.clientY))
         pointsClientRef.current.push([ev.clientX, ev.clientY])
       }
       if (samples.length === 0) return
@@ -886,7 +1124,7 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
         straightStrokeAxis: straightStrokeAxisRef.current,
       })
 
-      pushLiveDraftForStroke(draft)
+      scheduleLiveSpreadStrokePaint()
     }
 
     function onPointerUp(e: React.PointerEvent<HTMLDivElement>) {
@@ -900,7 +1138,7 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
         const td = twoDraftRef.current
         if (td) {
           const canvasRect = e.currentTarget.getBoundingClientRect()
-          td.current = clientToSpreadNorm(canvasRect, e.clientX, e.clientY)
+          td.current = clientToInkNorm(canvasRect, e.clientX, e.clientY)
         }
         commitTwoPointFromSpread()
         clearSpreadLiveDraftCanvases()
@@ -910,7 +1148,7 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
       const draft = draftStrokeRef.current
       if (gesture === 'stroke' && draft) {
         const canvasRect = e.currentTarget.getBoundingClientRect()
-        const p = clientToSpreadNorm(canvasRect, e.clientX, e.clientY)
+        const p = clientToInkNorm(canvasRect, e.clientX, e.clientY)
         finalizeStrokeDraftEndPoint(draft, p, {
           shiftKey: e.shiftKey,
           markerStraightStrokeEnabled: markerStraightStroke,
@@ -920,14 +1158,20 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
       }
       straightStrokeAxisRef.current = null
 
-      if (gesture === 'stroke' && draft && draft.points.length >= 2) {
+      flushLiveSpreadStrokePaint()
+      if (gesture === 'stroke' && draft && draft.points.length >= 1) {
         commitStrokeFromClientPoints()
       }
       draftStrokeRef.current = null
       pointsClientRef.current = []
       clearLiveEraserDraftsBothPages(leftAnnRef, rightAnnRef)
       clearLiveStrokeDraftsBothPages(leftAnnRef, rightAnnRef)
-      clearSpreadLiveDraftCanvases()
+      if (spreadSessionMode) {
+        scheduleDeferredClearSpreadDraft()
+      } else {
+        clearSpreadLiveDraftCanvases()
+      }
+      onSpreadEraserLineDraftChange?.(null)
     }
 
     function onPointerCancel(e: React.PointerEvent<HTMLDivElement>) {
@@ -939,10 +1183,12 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
       draftStrokeRef.current = null
       twoDraftRef.current = null
       pointsClientRef.current = []
+      cancelLiveSpreadStrokePaint()
       clearLiveEraserDraftsBothPages(leftAnnRef, rightAnnRef)
       clearLiveStrokeDraftsBothPages(leftAnnRef, rightAnnRef)
       clearLiveTwoPointDraftsBothPages(leftAnnRef, rightAnnRef)
       clearSpreadLiveDraftCanvases()
+      onSpreadEraserLineDraftChange?.(null)
     }
 
     const overlayCursor = useMemo(() => {

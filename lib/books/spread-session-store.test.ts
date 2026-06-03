@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMemorySpreadSessionStorage, loadSpreadSession } from '@/lib/books/spread-session-storage'
 import { createSpreadSessionStore } from '@/lib/books/spread-session-store'
 import type { SpreadSessionKey } from '@/lib/books/spread-session-types'
@@ -13,6 +13,65 @@ const key: SpreadSessionKey = {
 }
 
 describe('spread-session-store', () => {
+  it('debounced autosave resets on each append', () => {
+    vi.useFakeTimers()
+    const storage = createMemorySpreadSessionStorage()
+    const store = createSpreadSessionStore(key, { storage, autosaveMs: 3000 })
+    store.appendCommand({
+      kind: 'line',
+      id: 'l1',
+      a: [0.1, 0.1],
+      b: [0.2, 0.2],
+      color: '#111827',
+    })
+    vi.advanceTimersByTime(2000)
+    store.appendCommand({
+      kind: 'line',
+      id: 'l2',
+      a: [0.3, 0.3],
+      b: [0.4, 0.4],
+      color: '#111827',
+    })
+    vi.advanceTimersByTime(2000)
+    expect(loadSpreadSession(key, storage).commands).toHaveLength(0)
+    vi.advanceTimersByTime(1000)
+    expect(loadSpreadSession(key, storage).commands).toHaveLength(2)
+    vi.useRealTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('appendCommand extends list and undo removes only that command', () => {
+    const storage = createMemorySpreadSessionStorage()
+    const store = createSpreadSessionStore(key, { storage, autosaveMs: 60_000 })
+    const line1 = { kind: 'line' as const, id: 'l1', a: [0.1, 0.1] as [number, number], b: [0.2, 0.2] as [number, number], color: '#111827' }
+    const line2 = { kind: 'line' as const, id: 'l2', a: [0.3, 0.3] as [number, number], b: [0.4, 0.4] as [number, number], color: '#111827' }
+    store.appendCommand(line1)
+    store.appendCommand(line2)
+    expect(store.getState().doc.commands).toHaveLength(2)
+    expect(store.getState().canUndo).toBe(true)
+    store.undo()
+    expect(store.getState().doc.commands).toEqual([line1])
+    expect(store.redo()).toBe(true)
+    expect(store.getState().doc.commands).toHaveLength(2)
+  })
+
+  it('syncCommands updates doc without undo history', () => {
+    const storage = createMemorySpreadSessionStorage()
+    const store = createSpreadSessionStore(key, { storage, autosaveMs: 60_000 })
+    store.setCommands([{ kind: 'line', id: 'l1', a: [0.1, 0.1], b: [0.5, 0.5], color: '#111827' }])
+    store.syncCommands([
+      { kind: 'line', id: 'l1', a: [0.1, 0.1], b: [0.5, 0.5], color: '#111827' },
+      { kind: 'line', id: 'l2', a: [0.2, 0.2], b: [0.6, 0.6], color: '#111827' },
+    ])
+    expect(store.getState().doc.commands).toHaveLength(2)
+    expect(store.getState().canUndo).toBe(true)
+    store.undo()
+    expect(store.getState().doc.commands).toHaveLength(0)
+  })
+
   it('setCommands updates revision and undo stack', () => {
     const storage = createMemorySpreadSessionStorage()
     let t = 1_700_000_000_000

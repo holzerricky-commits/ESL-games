@@ -1,5 +1,10 @@
-/** Phase 2: render read-only spread session overlay for parity checks. */
-export const spreadSessionEditingEnabled = false
+/** Phase 1 spread ink: one annotation layer per two-page spread (`docs/SPREAD_INK_PHASED_PLAN.md`). */
+export const spreadSessionEditingEnabled = true
+
+/**
+ * Whiteboard fast session ink (shipped Phase 5). Set `false` to restore legacy board canvas path.
+ */
+export const whiteboardInkSessionEnabled = true
 
 /** Phase 2 stable pages: mount a sliding window of page views instead of remounting slots on turn. */
 export const pageViewPoolEnabled = true

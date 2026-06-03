@@ -1,10 +1,13 @@
 ---
-description: Spread-mode effect pen — path and pattern must match live preview vs commit
+description: Spread-mode pen/marker ink — live preview, session commit, seam continuity
 globs:
   - components/students/book-spread-stroke-overlay.tsx
+  - components/students/book-spread-session-layer.tsx
   - components/students/fullscreen-book-overlay/sections/BookCanvasStage.tsx
   - lib/books/spread-stroke-split.ts
   - lib/books/spread-canvas-coords.ts
+  - lib/books/ink-session-*.ts
+  - lib/books/spread-session-*.ts
   - lib/books/pen-ink.ts
   - lib/books/annotation-draw.ts
 alwaysApply: false
@@ -12,7 +15,13 @@ alwaysApply: false
 
 # Spread pen ink (do not regress)
 
-Two-page spread pen strokes: live preview on `BookSpreadStrokeOverlay`, persistence on each `BookPageAnnotationLayer`.
+Two-page spread when `spreadSessionEditingEnabled` (`lib/books/feature-flags.ts`):
+
+- **Live draft:** `BookSpreadStrokeOverlay` (z-30) — spread-normalized points while dragging.
+- **Committed ink:** `BookSpreadSessionLayer` (z-24) + `bookSpreadSessionV1` store — one command list per spread.
+- **Page layers:** text, sticky, stamp, callout only on canvas; pen/marker/shapes delegated via `ink-session-page-layer` helpers.
+
+See `docs/SPREAD_INK_PHASED_PLAN.md`.
 
 ## Invariants
 
@@ -20,38 +29,38 @@ Two-page spread pen strokes: live preview on `BookSpreadStrokeOverlay`, persiste
 
 Cluster width = **`spreadPageWidth * 2 - spreadSidePullPx`** (one overlap), NOT `* 2 - spreadSidePullPx * 2`.
 
-Must match:
+Must match `spreadOverlayWidthPx`. Inline-flex pages + right `marginLeft: -pull` — not 2-col grid with cropped left edge.
 
-- `SpreadPageCluster` / `BookCanvasStage` cluster `width`
-- `spreadOverlayWidthPx`
+### 2. Live preview coordinates
 
-Layout: **inline-flex**, both pages **full width** (`shrink-0`), right page `marginLeft: -pull` only — do **not** use a 2-col grid with `overflow-hidden` + `justify-end` on the left column (that crops the outer left edge when overlap increases).
+- Accumulate **`draft.points`** in spread-normalized space (`clientToSpreadNorm` on spread capture).
+- **Live pen/marker/eraser:** full polyline on spread overlay draft canvases (continuous seam).
+- **Session mode:** do **not** split live pen/marker to per-page drafts. `eraser-line` live preview goes to spread session layer when session is on.
 
-Extra `spreadSidePullPx` in the grid made overlay norm coords wrong → stroke drew offset from the cursor while drawing.
+### 3. Commit coordinates (session mode)
 
-### 2. Live preview coordinates (single pipeline)
-
-- Accumulate **`draft.points`** in spread-normalized space (`clientToSpreadNorm` on the spread capture canvas).
-- **Live pen/marker/eraser preview**: draw the full spread-normalized polyline on the spread overlay draft canvases (ink + marker layers) so the seam stays continuous while drawing. **Commit** still uses `splitSpreadNormPolylineToPageNormalizedChains` → per-page storage.
-- Spread overlay also handles pointer capture for all spread stroke tools.
-- **Do not** preview pen/marker by splitting to per-page live drafts (overlap z-order breaks the seam). `eraser-line` still uses client-space split on page layers.
-
-### 3. Commit coordinates
-
-- Split **`draft.points`** via `splitSpreadNormPolylineToPageNormalizedChains` (same polyline as live preview).
-- **Do not** commit from `clientPts` + `splitClientPolylineToPageNormalizedChains` for pen/marker (pattern jump on release).
+- **One** spread-normalized command per gesture via `onSpreadSessionAppendCommand` / `appendCommand`.
+- **Do not** split pen/marker to left/right page layers on lift when session is on.
+- Legacy (flag off): split via `splitSpreadNormPolylineToPageNormalizedChains` → per-page storage.
 
 ### 4. Pattern space
 
-- Live spread canvas: pattern phase only (spread-global `draft.points`).
-- Committed page strokes: `penInkPatternOriginXPx + phase` per page; points from spread→page mapping in `spread-stroke-split.ts`.
+- Live spread canvas: pattern phase from spread-global `draft.points`.
+- Committed spread strokes: spread-normalized; effect pens use spread layout origins where needed.
 
 ### 5. Eraser-line
 
-- May use client-space split + page live drafts; separate path.
+- Spread session: trailing draft on session layer; dead indices for committed replay.
+- Legacy: client-space split on page layers.
+
+### 6. Performance (Phase 6 — do not reintroduce)
+
+- **Keep** incremental committed paint (`canIncrementallyAppendSpreadSessionCommands`) on lift.
+- **Do not** add runtime command-count caps that force full `replayAllSlices` during normal teaching.
+- Perf budget = manual test script (20 quick pen letters); park heavy optimizations in `PARKING_LOT.md`.
 
 ## Quick check
 
-- Rainbow/galaxy/solid on spread: stroke under cursor while drawing; no jump on release; pattern unchanged on release.
+- Rainbow/galaxy/solid on spread: stroke under cursor while drawing; no jump on release; no growing pause on quick letters.
 
 See `docs/BRUSH_PATTERNS_PHASES.md`.

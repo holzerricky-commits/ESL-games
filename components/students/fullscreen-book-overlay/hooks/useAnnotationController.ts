@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
+import { annotationTargetPageIfChanged } from '@/lib/books/annotation-target-page'
 import {
   type AnnotationColorSource,
   isValidCustomHex,
@@ -34,6 +35,10 @@ import {
 } from '@/lib/books/student-annotation-tool-prefs'
 import type { PenInkStyle } from '@/lib/books/pen-ink'
 import {
+  preloadActiveEffectPenInk,
+  preloadEffectPenProfileSwatches,
+} from '@/lib/books/effect-pen-preload'
+import {
   coercePenSwatchIdForProfile,
   DEFAULT_PEN_STROKE_PROFILE,
   penProfileWidthScaleMultiplier,
@@ -49,6 +54,14 @@ import type {
 import type { AnnotationCapabilities, BookPageAnnotationHandle } from '@/components/students/book-page-annotation-layer'
 import { ANNOTATION_TEXT_FONT_NORM_STEPS } from '@/components/students/fullscreen-book-overlay/constants'
 import { useCtrlTemporarySelect } from '@/components/students/fullscreen-book-overlay/hooks/useCtrlTemporarySelect'
+import {
+  createInkSessionSelectProxy,
+  createSpreadSessionSelectProxy,
+  type InkSessionSelectProxyHandle,
+} from '@/lib/books/ink-session-select-proxy'
+import { whiteboardInkSessionEnabled } from '@/lib/books/feature-flags'
+import type { SpreadSessionStore } from '@/lib/books/spread-session-store'
+import type { WhiteboardSessionStore } from '@/lib/books/whiteboard-session-store'
 
 interface UseAnnotationControllerArgs {
   studentId: string
@@ -59,6 +72,8 @@ interface UseAnnotationControllerArgs {
   spreadRightPage: number | null
   overlayOpen: boolean
   isLessonPaperOpen: boolean
+  spreadSessionStoreRef?: MutableRefObject<SpreadSessionStore | null>
+  whiteboardSessionStoreRef?: MutableRefObject<WhiteboardSessionStore | null>
 }
 
 export function useAnnotationController({
@@ -70,6 +85,8 @@ export function useAnnotationController({
   spreadRightPage,
   overlayOpen,
   isLessonPaperOpen,
+  spreadSessionStoreRef,
+  whiteboardSessionStoreRef,
 }: UseAnnotationControllerArgs) {
   const [wbCaps, setWbCaps] = useState<AnnotationCapabilities>({ canUndo: false, canRedo: false })
   const [annotationMode, setAnnotationMode] = useState<BookAnnotationInteractionMode>('pen')
@@ -98,6 +115,16 @@ export function useAnnotationController({
     penSwatch,
     penColorSource,
   )
+
+  useEffect(() => {
+    preloadActiveEffectPenInk(penInkStyle)
+  }, [penInkStyle])
+
+  useEffect(() => {
+    if (penStrokeProfile === 'effects') {
+      preloadEffectPenProfileSwatches()
+    }
+  }, [penStrokeProfile])
   const shapeColor = useMemo(() => getPenSwatch(shapeStrokeSwatchId).color, [shapeStrokeSwatchId])
   const [markerColor, setMarkerColor] = useState<string>(ANNOTATION_MARKER_SWATCHES[0])
   const [markerColorSource, setMarkerColorSource] = useState<AnnotationColorSource>('swatch')
@@ -125,14 +152,22 @@ export function useAnnotationController({
   const [shapeFillMode, setShapeFillMode] = useState<ShapeFillMode>('none')
   const [shapeFillColor, setShapeFillColor] = useState<string>(ANNOTATION_MARKER_SWATCHES[0])
   const [eyedropperVariant, setEyedropperVariant] = useState<EyedropperVariant>(DEFAULT_EYEDROPPER_VARIANT)
-  const [annotationTargetPage, setAnnotationTargetPage] = useState(pageNumber)
+  const [annotationTargetPage, setAnnotationTargetPageState] = useState(pageNumber)
+  const setAnnotationTargetPage = useCallback((next: number) => {
+    setAnnotationTargetPageState((prev) => annotationTargetPageIfChanged(prev, next))
+  }, [])
   const [annCapsByPage, setAnnCapsByPage] = useState<Record<number, AnnotationCapabilities>>({})
   const [isAnnotationRailVisible, setIsAnnotationRailVisible] = useState(true)
   const leftAnnRef = useRef<BookPageAnnotationHandle>(null)
   const rightAnnRef = useRef<BookPageAnnotationHandle>(null)
   const wbAnnRef = useRef<BookPageAnnotationHandle>(null)
   const spreadStrokeOverlayRef = useRef<BookPageAnnotationHandle>(null)
+  const wbStrokeOverlayRef = useRef<BookPageAnnotationHandle>(null)
   const [spreadOverlayCaps, setSpreadOverlayCaps] = useState<AnnotationCapabilities>({
+    canUndo: false,
+    canRedo: false,
+  })
+  const [wbOverlayCaps, setWbOverlayCaps] = useState<AnnotationCapabilities>({
     canUndo: false,
     canRedo: false,
   })
@@ -361,7 +396,31 @@ export function useAnnotationController({
 
   useEffect(() => {
     setAnnotationTargetPage(pageNumber)
-  }, [pageNumber, isSinglePageMode])
+  }, [pageNumber, isSinglePageMode, setAnnotationTargetPage])
+
+  const whiteboardDrawingInteractionActive = useMemo(() => {
+    if (!whiteboardInkSessionEnabled || !isWhiteboardOpen) return false
+    const mode = effectiveAnnotationMode
+    return (
+      mode !== 'select' &&
+      mode !== 'text' &&
+      mode !== 'sticky' &&
+      mode !== 'stamp' &&
+      mode !== 'callout' &&
+      mode !== 'eyedropper'
+    )
+  }, [effectiveAnnotationMode, isWhiteboardOpen])
+
+  const whiteboardSessionInkActive =
+    whiteboardInkSessionEnabled && isWhiteboardOpen && Boolean(whiteboardSessionStoreRef)
+
+  const whiteboardSessionSelectReady = () => whiteboardSessionInkActive
+
+  const whiteboardSessionToolbarActive =
+    whiteboardSessionInkActive &&
+    (whiteboardDrawingInteractionActive || effectiveAnnotationMode === 'select')
+
+  const whiteboardStrokeCaptureEnabled = whiteboardDrawingInteractionActive
 
   const spreadDrawingInteractionActive = useMemo(() => {
     if (
@@ -389,11 +448,27 @@ export function useAnnotationController({
     spreadRightPage,
   ])
 
+  const spreadSessionInkActive =
+    Boolean(spreadSessionStoreRef) &&
+    !isSinglePageMode &&
+    showSpreadRight &&
+    spreadRightPage != null &&
+    !isWhiteboardOpen
+
+  const spreadSessionSelectReady = () =>
+    spreadSessionInkActive && spreadSessionStoreRef?.current != null
+
+  const spreadSessionToolbarActive =
+    spreadSessionInkActive &&
+    (spreadDrawingInteractionActive || effectiveAnnotationMode === 'select')
+
   const activeAnnotationPage = isSinglePageMode ? pageNumber : annotationTargetPage
   const activeAnnCaps = annCapsByPage[activeAnnotationPage] ?? { canUndo: false, canRedo: false }
   const toolbarCaps = isWhiteboardOpen
-    ? wbCaps
-    : spreadDrawingInteractionActive
+    ? whiteboardSessionToolbarActive
+      ? wbOverlayCaps
+      : wbCaps
+    : spreadSessionToolbarActive || spreadDrawingInteractionActive
       ? spreadOverlayCaps
       : activeAnnCaps
   const onWhiteboardCaps = useCallback((caps: AnnotationCapabilities) => {
@@ -404,15 +479,47 @@ export function useAnnotationController({
     setSpreadOverlayCaps(caps)
   }, [])
 
+  const onWhiteboardOverlayCaps = useCallback((caps: AnnotationCapabilities) => {
+    setWbOverlayCaps(caps)
+  }, [])
+
+  const spreadSessionSelectProxyRef = useRef<InkSessionSelectProxyHandle | null>(null)
+  spreadSessionSelectProxyRef.current = createSpreadSessionSelectProxy(
+    () => spreadSessionStoreRef?.current ?? null,
+  )
+
+  const whiteboardSessionSelectProxyRef = useRef<InkSessionSelectProxyHandle | null>(null)
+  whiteboardSessionSelectProxyRef.current = createInkSessionSelectProxy(
+    () => whiteboardSessionStoreRef?.current ?? null,
+  )
+
   function getActiveAnnotationRef() {
-    if (isWhiteboardOpen) return wbAnnRef
+    if (isWhiteboardOpen) {
+      if (whiteboardDrawingInteractionActive) return wbStrokeOverlayRef
+      if (whiteboardSessionSelectReady() && effectiveAnnotationMode === 'select') {
+        return whiteboardSessionSelectProxyRef
+      }
+      return wbAnnRef
+    }
     if (isSinglePageMode) return leftAnnRef
     if (spreadDrawingInteractionActive) return spreadStrokeOverlayRef
+    if (spreadSessionSelectReady() && effectiveAnnotationMode === 'select') {
+      return spreadSessionSelectProxyRef
+    }
     if (spreadRightPage != null && annotationTargetPage === spreadRightPage) return rightAnnRef
     return leftAnnRef
   }
 
-  type SpreadSelectProxyHandle = {
+  const syncSpreadSelectionFromActive = () => {
+    const activeRef =
+      spreadRightPage != null && annotationTargetPage === spreadRightPage ? rightAnnRef : leftAnnRef
+    const ids = activeRef.current?.getSelectedIds?.() ?? []
+    leftAnnRef.current?.setSelectedIds?.(ids)
+    rightAnnRef.current?.setSelectedIds?.(ids)
+    return ids
+  }
+
+  const legacySpreadSelectProxyRef = useRef<{
     getSelectedIds?: () => string[]
     setSelectedIds?: (ids: string[]) => void
     selectAll?: () => void
@@ -426,20 +533,9 @@ export function useAnnotationController({
     deselectAll?: () => void
     duplicateSelected?: () => boolean
     selectNextInStack?: (direction: 1 | -1) => void
-  }
+  } | null>(null)
 
-  const spreadSelectProxyRef = useRef<SpreadSelectProxyHandle | null>(null)
-
-  const syncSpreadSelectionFromActive = () => {
-    const activeRef =
-      spreadRightPage != null && annotationTargetPage === spreadRightPage ? rightAnnRef : leftAnnRef
-    const ids = activeRef.current?.getSelectedIds?.() ?? []
-    leftAnnRef.current?.setSelectedIds?.(ids)
-    rightAnnRef.current?.setSelectedIds?.(ids)
-    return ids
-  }
-
-  spreadSelectProxyRef.current = {
+  legacySpreadSelectProxyRef.current = {
     getSelectedIds: () => {
       const synced = syncSpreadSelectionFromActive()
       if (synced.length > 0) return synced
@@ -522,10 +618,15 @@ export function useAnnotationController({
   }
 
   const getPageAnnotationRef = useCallback(() => {
-    if (isWhiteboardOpen) return wbAnnRef
+    if (isWhiteboardOpen) {
+      if (effectiveAnnotationMode === 'select' && whiteboardSessionSelectReady()) {
+        return whiteboardSessionSelectProxyRef
+      }
+      return wbAnnRef
+    }
     if (isSinglePageMode) return leftAnnRef
     if (spreadRightPage != null && effectiveAnnotationMode === 'select') {
-      return spreadSelectProxyRef
+      return spreadSessionSelectReady() ? spreadSessionSelectProxyRef : legacySpreadSelectProxyRef
     }
     if (spreadRightPage != null && annotationTargetPage === spreadRightPage) return rightAnnRef
     return leftAnnRef
@@ -535,6 +636,7 @@ export function useAnnotationController({
     spreadRightPage,
     annotationTargetPage,
     effectiveAnnotationMode,
+    spreadSessionInkActive,
   ])
 
   const selectAllOnActivePage = useCallback(() => {
@@ -596,7 +698,9 @@ export function useAnnotationController({
     strokeLineDashStyleForInk,
     annotationTargetPage, setAnnotationTargetPage,
     isAnnotationRailVisible, setIsAnnotationRailVisible,
-    leftAnnRef, rightAnnRef, wbAnnRef, spreadStrokeOverlayRef,
+    leftAnnRef, rightAnnRef, wbAnnRef, spreadStrokeOverlayRef,     wbStrokeOverlayRef,
+    whiteboardStrokeCaptureEnabled,
+    whiteboardDrawingInteractionActive,
     strokeWidthScale,
     eraserLineStrokeWidthScale,
     penStrokeWidthScale,
@@ -609,6 +713,7 @@ export function useAnnotationController({
     toolbarCaps,
     spreadStrokeCaptureEnabled: spreadDrawingInteractionActive,
     onSpreadOverlayCaps,
+    onWhiteboardOverlayCaps,
     onLeftAnnotationCaps, onRightAnnotationCaps, onWhiteboardCaps,
     getActiveAnnotationRef,
     getPageAnnotationRef,

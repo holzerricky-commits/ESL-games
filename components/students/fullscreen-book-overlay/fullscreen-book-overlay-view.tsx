@@ -29,6 +29,7 @@ import { buildLessonVocabulary } from '@/lib/writing-assist/build-lesson-vocabul
 import { LessonCoachConnectDialog } from '@/components/lesson-coach/lesson-coach-connect-dialog'
 import { LessonCoachSyncProvider } from '@/lib/lesson-coach/lesson-coach-sync-context'
 import { requestSpreadSessionFlush } from '@/lib/books/spread-session-events'
+import { requestWhiteboardSessionFlush } from '@/lib/books/whiteboard-session-events'
 import { flushPendingUnitPageSave } from '@/lib/books/progress'
 import { shouldShowSpreadLoadingHold } from '@/lib/books/spread-drawable-ready'
 
@@ -42,6 +43,7 @@ export function FullscreenBookOverlayView({
   const closeOverlay = () => {
     flushPendingUnitPageSave()
     requestSpreadSessionFlush()
+    requestWhiteboardSessionFlush()
     onClose()
   }
 
@@ -252,6 +254,16 @@ export function FullscreenBookOverlayView({
     spreadPageWidth,
     spreadStrokeCaptureEnabled,
     spreadStrokeOverlayRef,
+    spreadSessionStoreRef,
+    wbStrokeOverlayRef,
+    whiteboardStrokeCaptureEnabled,
+    whiteboardSessionStoreRef,
+    whiteboardSessionDoc,
+    appendWhiteboardSessionCommand,
+    whiteboardSessionUndo,
+    whiteboardSessionRedo,
+    whiteboardSessionClear,
+    onWhiteboardOverlayCaps,
     layoutSpreadPageWidth,
     spreadRightPage,
     spreadDrawableReady,
@@ -763,6 +775,7 @@ export function FullscreenBookOverlayView({
             textVisualStyle={textVisualStyle}
             textFillColor={textFillColor}
             stickyFontSizeNorm={stickyFontSizeNorm}
+            annotationTargetPage={annotationTargetPage}
             setAnnotationTargetPage={setAnnotationTargetPage}
             onLeftAnnotationCaps={onLeftAnnotationCaps}
             leftAnnRef={leftAnnRef}
@@ -795,6 +808,16 @@ export function FullscreenBookOverlayView({
             spreadStrokeOverlayRef={spreadStrokeOverlayRef}
             onSpreadOverlayCaps={onSpreadOverlayCaps}
             spreadStrokeCaptureEnabled={spreadStrokeCaptureEnabled}
+            spreadSessionStoreRef={spreadSessionStoreRef}
+            wbStrokeOverlayRef={wbStrokeOverlayRef}
+            whiteboardStrokeCaptureEnabled={whiteboardStrokeCaptureEnabled}
+            whiteboardSessionStoreRef={whiteboardSessionStoreRef}
+            whiteboardSessionDoc={whiteboardSessionDoc}
+            appendWhiteboardSessionCommand={appendWhiteboardSessionCommand}
+            whiteboardSessionUndo={whiteboardSessionUndo}
+            whiteboardSessionRedo={whiteboardSessionRedo}
+            whiteboardSessionClear={whiteboardSessionClear}
+            onWhiteboardOverlayCaps={onWhiteboardOverlayCaps}
             onEyedropperPick={onEyedropperPick}
             spreadTurnGridRef={spreadTurnGridRef}
             turnSlide={turnSlide}

@@ -69,6 +69,16 @@ describe('stroke-straight-line', () => {
     ])
   })
 
+  it('finalizeStrokeDraftEndPoint ignores finger-lift jitter near the last point', () => {
+    const draft = { tool: 'pen' as const, points: [[0.1, 0.2], [0.5, 0.6]] as [number, number][] }
+    finalizeStrokeDraftEndPoint(draft, [0.500001, 0.600001], {
+      shiftKey: false,
+      markerStraightStrokeEnabled: false,
+      straightStrokeAxis: null,
+    })
+    expect(draft.points[1]).toEqual([0.5, 0.6])
+  })
+
   it('extendStrokeDraftFromMove appends all coalesced freehand samples', () => {
     const draft = { tool: 'pen' as const, points: [[0.1, 0.2]] as [number, number][] }
     extendStrokeDraftFromMove(draft, [

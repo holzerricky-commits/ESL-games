@@ -3,10 +3,15 @@
 import Link from 'next/link'
 import { Loader2 } from 'lucide-react'
 import type { ComponentType, CSSProperties, MutableRefObject, RefObject } from 'react'
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { BookCaptureRegionOverlay } from '@/components/students/book-capture-region-overlay'
-import { BookPageAnnotationLayer, type AnnotationCapabilities, type BookPageAnnotationHandle } from '@/components/students/book-page-annotation-layer'
+import {
+  BookPageAnnotationLayer,
+  type AnnotationCapabilities,
+  type BookPageAnnotationHandle,
+  type LiveEraserLineDraft,
+} from '@/components/students/book-page-annotation-layer'
 import { BookSpreadStrokeOverlay } from '@/components/students/book-spread-stroke-overlay'
 import { BookSpreadSessionLayer } from '@/components/students/book-spread-session-layer'
 import type { AnnotationLineDashStyle, ShapeFillMode } from '@/lib/books/annotation-command-types'
@@ -18,7 +23,7 @@ import { ReaderPageSlot } from '@/components/students/fullscreen-book-overlay/se
 import { SpreadStage } from '@/components/students/fullscreen-book-overlay/sections/SpreadStage'
 import type { SpreadTurnSlidePayload } from '@/components/students/fullscreen-book-overlay/hooks/useSpreadTurnSlide'
 import type { PageViewPoolRenderContext } from '@/components/students/fullscreen-book-overlay/sections/PageViewPool'
-import { preloadAllManifestBrushPatterns } from '@/lib/books/brush-pattern-loader'
+import { preloadAllEffectPenResources } from '@/lib/books/effect-pen-preload'
 import { DEFAULT_TEXT_FILL_COLOR } from '@/lib/books/annotation-palettes'
 import { spreadSidePullPx } from '@/lib/books/spread-gutter'
 import { SpreadPageCluster } from '@/components/books/spread-page-cluster'
@@ -28,9 +33,13 @@ import { spreadSessionEditingEnabled, pageViewPoolEnabled } from '@/lib/books/fe
 import type { UnitPageBounds } from '@/lib/books/page-range'
 import { createSpreadSessionStore } from '@/lib/books/spread-session-store'
 import type { SpreadSessionDocument } from '@/lib/books/spread-session-types'
-import { hydrateSpreadSessionFromOwnerPages, projectSpreadSessionToOwnerPages } from '@/lib/books/spread-session-commit'
-import { getAnnotationsForPage, setAnnotationsForPage } from '@/lib/books/annotation-storage'
+import { hydrateSpreadSessionFromOwnerPages } from '@/lib/books/spread-session-commit'
+import { getAnnotationsForPage } from '@/lib/books/annotation-storage'
 import { SPREAD_SESSION_FLUSH_EVENT } from '@/lib/books/spread-session-events'
+import { INK_SESSION_AUTOSAVE_MS } from '@/lib/books/ink-session-persist-config'
+import { flushSpreadSessionDocumentToPageStorage } from '@/lib/books/spread-session-persist'
+import type { SpreadInkLayout } from '@/lib/books/spread-stroke-split'
+import { useSpreadSessionPersistGuards } from '@/components/students/fullscreen-book-overlay/hooks/useSpreadSessionPersistGuards'
 import { isBookOverlayKeyboardTypingTarget } from '@/lib/books/book-overlay-keyboard-guards'
 import { cn } from '@/lib/utils'
 import { InfiniteWhiteboardPanel } from '@/components/students/fullscreen-book-overlay/sections/InfiniteWhiteboardPanel'
@@ -105,6 +114,7 @@ interface BookCanvasStageProps {
   textVisualStyle?: 'plain' | 'filled'
   textFillColor?: string
   stickyFontSizeNorm: number
+  annotationTargetPage: number
   setAnnotationTargetPage: (page: number) => void
   onLeftAnnotationCaps: (caps: AnnotationCapabilities) => void
   leftAnnRef: MutableRefObject<BookPageAnnotationHandle | null>
@@ -154,6 +164,16 @@ interface BookCanvasStageProps {
   spreadTurnGridRef?: MutableRefObject<HTMLDivElement | null>
   turnSlide?: SpreadTurnSlidePayload | null
   onTurnSlideComplete?: () => void
+  spreadSessionStoreRef?: MutableRefObject<ReturnType<typeof createSpreadSessionStore> | null>
+  wbStrokeOverlayRef?: MutableRefObject<BookPageAnnotationHandle | null>
+  whiteboardStrokeCaptureEnabled?: boolean
+  whiteboardSessionStoreRef?: MutableRefObject<import('@/lib/books/whiteboard-session-store').WhiteboardSessionStore | null>
+  whiteboardSessionDoc?: import('@/lib/books/whiteboard-session-types').WhiteboardSessionDocument | null
+  appendWhiteboardSessionCommand?: (cmd: import('@/lib/books/annotation-command-types').AnnotationCommand) => void
+  whiteboardSessionUndo?: () => boolean
+  whiteboardSessionRedo?: () => boolean
+  whiteboardSessionClear?: () => void
+  onWhiteboardOverlayCaps?: (caps: AnnotationCapabilities) => void
 }
 
 export function BookCanvasStage({
@@ -220,6 +240,7 @@ export function BookCanvasStage({
   textVisualStyle = 'plain',
   textFillColor = DEFAULT_TEXT_FILL_COLOR,
   stickyFontSizeNorm,
+  annotationTargetPage,
   setAnnotationTargetPage,
   onLeftAnnotationCaps,
   leftAnnRef,
@@ -256,9 +277,18 @@ export function BookCanvasStage({
   spreadTurnGridRef,
   turnSlide = null,
   onTurnSlideComplete,
+  spreadSessionStoreRef: spreadSessionStoreRefProp,
+  wbStrokeOverlayRef,
+  whiteboardStrokeCaptureEnabled = false,
+  whiteboardSessionStoreRef,
+  whiteboardSessionDoc = null,
+  appendWhiteboardSessionCommand,
+  whiteboardSessionUndo,
+  whiteboardSessionRedo,
+  whiteboardSessionClear,
+  onWhiteboardOverlayCaps,
 }: BookCanvasStageProps) {
-  const isDevBuild = process.env.NODE_ENV !== 'production'
-  const [spreadSessionModeEnabled, setSpreadSessionModeEnabled] = useState(spreadSessionEditingEnabled)
+  const spreadSessionModeEnabled = spreadSessionEditingEnabled
   const shapeColorResolved = shapeColor ?? '#111827'
 
   const eyedropperForPage = useCallback(
@@ -366,6 +396,15 @@ export function BookCanvasStage({
         slotSide={whiteboardSlotSide}
         fullscreenWidthPx={spreadOverlayWidthPx}
         wbAnnRef={wbAnnRef}
+        wbStrokeOverlayRef={wbStrokeOverlayRef}
+        whiteboardSessionStoreRef={whiteboardSessionStoreRef}
+        whiteboardSessionDoc={whiteboardSessionDoc}
+        appendWhiteboardSessionCommand={appendWhiteboardSessionCommand}
+        whiteboardSessionUndo={whiteboardSessionUndo}
+        whiteboardSessionRedo={whiteboardSessionRedo}
+        whiteboardSessionClear={whiteboardSessionClear}
+        wbStrokeCaptureEnabled={whiteboardStrokeCaptureEnabled}
+        onWhiteboardOverlayCaps={onWhiteboardOverlayCaps}
         captureRootRef={wbCaptureRootRef}
         onCapabilitiesChange={onWhiteboardCaps}
         onExtendRunway={extendWhiteboardRunway}
@@ -420,11 +459,39 @@ export function BookCanvasStage({
   const [leftPenInkPatternOriginXPx, setLeftPenInkPatternOriginXPx] = useState(0)
   const [rightPenInkPatternOriginXPx, setRightPenInkPatternOriginXPx] = useState(0)
   const [spreadSeamNormX, setSpreadSeamNormX] = useState(0.5)
-  const spreadSessionStoreRef = useRef<ReturnType<typeof createSpreadSessionStore> | null>(null)
+  const localSpreadSessionStoreRef = useRef<ReturnType<typeof createSpreadSessionStore> | null>(null)
+  const spreadSessionStoreRef = spreadSessionStoreRefProp ?? localSpreadSessionStoreRef
+  const [spreadEraserLineDraft, setSpreadEraserLineDraft] = useState<LiveEraserLineDraft | null>(null)
   const [spreadSessionDoc, setSpreadSessionDoc] = useState<SpreadSessionDocument | null>(null)
   const spreadSessionDocRef = useRef<SpreadSessionDocument | null>(null)
   const [spreadSessionSelectedIds, setSpreadSessionSelectedIds] = useState<string[]>([])
   const spreadSessionKeyRef = useRef<{ leftPage: number; rightPage: number } | null>(null)
+  const spreadInkLayoutRef = useRef<SpreadInkLayout>({
+    spreadOverlayWidthPx: 0,
+    spreadPageWidthPx: 0,
+    leftPageOriginXPx: 0,
+    rightPageOriginXPx: 0,
+    seamNormX: 0.5,
+  })
+  spreadInkLayoutRef.current = {
+    spreadOverlayWidthPx,
+    spreadPageWidthPx: spreadPageWidth,
+    leftPageOriginXPx: leftPenInkPatternOriginXPx,
+    rightPageOriginXPx: rightPenInkPatternOriginXPx,
+    seamNormX: spreadSeamNormX,
+  }
+
+  const spreadSessionActive = useMemo(
+    () =>
+      Boolean(
+        spreadSessionModeEnabled &&
+          !isSinglePageMode &&
+          selectedBookId &&
+          selectedUnitId &&
+          spreadRightPage != null,
+      ),
+    [isSinglePageMode, selectedBookId, selectedUnitId, spreadRightPage, spreadSessionModeEnabled],
+  )
 
   const measurePenInkPatternOrigins = useCallback(() => {
     const spread = spreadGridRef.current?.getBoundingClientRect()
@@ -468,42 +535,32 @@ export function BookCanvasStage({
     pageNumber,
   ])
 
-  const flushSpreadSessionToPageStorage = useCallback((overridePages?: { leftPage: number; rightPage: number }) => {
-    const store = spreadSessionStoreRef.current
-    const doc = spreadSessionDocRef.current
-    const pages = overridePages ?? (spreadRightPage != null ? { leftPage: pageNumber, rightPage: spreadRightPage } : null)
-    if (!store || !doc || !selectedBookId || !selectedUnitId || !pages) return
-    const layout = {
-      spreadOverlayWidthPx,
-      spreadPageWidthPx: spreadPageWidth,
-      leftPageOriginXPx: leftPenInkPatternOriginXPx,
-      rightPageOriginXPx: rightPenInkPatternOriginXPx,
-      seamNormX: spreadSeamNormX,
-    }
-    const projected = projectSpreadSessionToOwnerPages(doc.commands, layout)
-    if (doc.commands.length === 0) {
-      setAnnotationsForPage(studentId, selectedBookId, selectedUnitId, pages.leftPage, [], 'pdf')
-      setAnnotationsForPage(studentId, selectedBookId, selectedUnitId, pages.rightPage, [], 'pdf')
-      store.markClean()
-      store.checkpointNow()
-      return
-    }
-    setAnnotationsForPage(studentId, selectedBookId, selectedUnitId, pages.leftPage, projected.left, 'pdf')
-    setAnnotationsForPage(studentId, selectedBookId, selectedUnitId, pages.rightPage, projected.right, 'pdf')
-    store.markClean()
-    store.checkpointNow()
-  }, [
-    leftPenInkPatternOriginXPx,
-    pageNumber,
-    rightPenInkPatternOriginXPx,
-    selectedBookId,
-    selectedUnitId,
-    spreadOverlayWidthPx,
-    spreadPageWidth,
-    spreadRightPage,
-    spreadSeamNormX,
-    studentId,
-  ])
+  const flushSpreadSessionToPageStorage = useCallback(
+    (overridePages?: { leftPage: number; rightPage: number }) => {
+      const store = spreadSessionStoreRef.current
+      const doc = spreadSessionDocRef.current
+      const pages =
+        overridePages ??
+        spreadSessionKeyRef.current ??
+        (spreadRightPage != null ? { leftPage: pageNumber, rightPage: spreadRightPage } : null)
+      if (!doc || !selectedBookId || !selectedUnitId || !pages) return
+      flushSpreadSessionDocumentToPageStorage({
+        doc,
+        key: pages,
+        layout: spreadInkLayoutRef.current,
+        studentId,
+        bookId: selectedBookId,
+        unitId: selectedUnitId,
+      })
+      store?.markClean()
+      store?.checkpointNow()
+    },
+    [pageNumber, selectedBookId, selectedUnitId, spreadRightPage, studentId],
+  )
+
+  const checkpointSpreadSession = useCallback(() => {
+    spreadSessionStoreRef.current?.checkpointNow()
+  }, [])
 
   useEffect(() => {
     const onFlush = () => flushSpreadSessionToPageStorage()
@@ -511,27 +568,21 @@ export function BookCanvasStage({
     return () => window.removeEventListener(SPREAD_SESSION_FLUSH_EVENT, onFlush)
   }, [flushSpreadSessionToPageStorage])
 
+  useSpreadSessionPersistGuards({
+    enabled: spreadSessionActive,
+    checkpointSpreadSession,
+    flushSpreadSessionToPages: flushSpreadSessionToPageStorage,
+  })
+
   useEffect(() => {
-    const shouldUseSession =
-      spreadSessionModeEnabled &&
-      !isSinglePageMode &&
-      selectedBookId &&
-      selectedUnitId &&
-      spreadRightPage != null
-    const prev = spreadSessionKeyRef.current
-    const next = shouldUseSession ? { leftPage: pageNumber, rightPage: spreadRightPage } : null
-    if (prev && (!next || prev.leftPage !== next.leftPage || prev.rightPage !== next.rightPage)) {
-      flushSpreadSessionToPageStorage(prev)
-    }
-    if (!shouldUseSession) {
-      spreadSessionStoreRef.current?.destroy()
-      spreadSessionStoreRef.current = null
-      spreadSessionKeyRef.current = null
+    if (!spreadSessionActive || !selectedBookId || !selectedUnitId || spreadRightPage == null) {
       setSpreadSessionDoc(null)
       spreadSessionDocRef.current = null
       setSpreadSessionSelectedIds([])
+      spreadSessionKeyRef.current = null
       return
     }
+
     const store = createSpreadSessionStore(
       {
         studentId,
@@ -540,21 +591,26 @@ export function BookCanvasStage({
         leftPage: pageNumber,
         rightPage: spreadRightPage,
       },
-      { autosaveMs: 3000 },
+      { autosaveMs: INK_SESSION_AUTOSAVE_MS },
     )
     spreadSessionStoreRef.current = store
     spreadSessionKeyRef.current = { leftPage: pageNumber, rightPage: spreadRightPage }
-    const layout = {
-      spreadOverlayWidthPx,
-      spreadPageWidthPx: spreadPageWidth,
-      leftPageOriginXPx: leftPenInkPatternOriginXPx,
-      rightPageOriginXPx: rightPenInkPatternOriginXPx,
-      seamNormX: spreadSeamNormX,
+
+    const layout = spreadInkLayoutRef.current
+    const initialCommands = store.getState().doc.commands
+    let commands = initialCommands
+    if (initialCommands.length === 0) {
+      const leftStored = getAnnotationsForPage(studentId, selectedBookId, selectedUnitId, pageNumber, 'pdf')
+      const rightStored = getAnnotationsForPage(
+        studentId,
+        selectedBookId,
+        selectedUnitId,
+        spreadRightPage,
+        'pdf',
+      )
+      commands = hydrateSpreadSessionFromOwnerPages(leftStored, rightStored, layout)
     }
-    const leftStored = getAnnotationsForPage(studentId, selectedBookId, selectedUnitId, pageNumber, 'pdf')
-    const rightStored = getAnnotationsForPage(studentId, selectedBookId, selectedUnitId, spreadRightPage, 'pdf')
-    const hydrated = hydrateSpreadSessionFromOwnerPages(leftStored, rightStored, layout)
-    store.setCommands(hydrated)
+    store.syncCommands(commands)
     store.markClean()
     store.checkpointNow()
     const initialState = store.getState()
@@ -565,33 +621,62 @@ export function BookCanvasStage({
       setSpreadSessionDoc(state.doc)
       spreadSessionDocRef.current = state.doc
       setSpreadSessionSelectedIds(state.selectedIds)
+      onSpreadOverlayCaps({
+        canUndo: state.canUndo,
+        canRedo: state.canRedo,
+      })
     })
     return () => {
       unsub()
+      const doc = spreadSessionDocRef.current
+      const pages = spreadSessionKeyRef.current
+      if (doc && pages) {
+        store.checkpointNow()
+        flushSpreadSessionDocumentToPageStorage({
+          doc,
+          key: pages,
+          layout: spreadInkLayoutRef.current,
+          studentId,
+          bookId: selectedBookId,
+          unitId: selectedUnitId,
+        })
+      }
       store.destroy()
       if (spreadSessionStoreRef.current === store) spreadSessionStoreRef.current = null
       spreadSessionDocRef.current = null
+      spreadSessionKeyRef.current = null
+      setSpreadEraserLineDraft(null)
     }
   }, [
-    flushSpreadSessionToPageStorage,
-    isSinglePageMode,
-    leftPenInkPatternOriginXPx,
+    onSpreadOverlayCaps,
     pageNumber,
-    rightPenInkPatternOriginXPx,
     selectedBookId,
     selectedUnitId,
-    spreadOverlayWidthPx,
-    spreadPageWidth,
     spreadRightPage,
-    spreadSeamNormX,
-    spreadSessionModeEnabled,
+    spreadSessionActive,
+    spreadSessionStoreRef,
     studentId,
   ])
 
-  const syncSpreadSessionCommands = useCallback((commands: AnnotationCommand[]) => {
-    if (!spreadSessionModeEnabled) return
-    spreadSessionStoreRef.current?.setCommands(commands)
-  }, [spreadSessionModeEnabled])
+  const appendSpreadSessionCommand = useCallback((cmd: AnnotationCommand) => {
+    spreadSessionStoreRef.current?.appendCommand(cmd)
+  }, [])
+
+  const spreadSessionUndo = useCallback(() => spreadSessionStoreRef.current?.undo() ?? false, [])
+
+  const spreadSessionRedo = useCallback(() => spreadSessionStoreRef.current?.redo() ?? false, [])
+
+  const spreadSessionClear = useCallback(() => {
+    spreadSessionStoreRef.current?.clearCommands()
+  }, [])
+
+  const spreadInkDelegated =
+    spreadSessionModeEnabled &&
+    !isSinglePageMode &&
+    !whiteboardActive &&
+    spreadRightPage != null &&
+    selectedBookId != null &&
+    selectedUnitId != null
 
   const setSpreadSessionSelected = useCallback((ids: string[]) => {
     if (!spreadSessionModeEnabled) return
@@ -602,72 +687,6 @@ export function BookCanvasStage({
     if (!spreadSessionModeEnabled) return
     spreadSessionStoreRef.current?.moveSelectedBy(dx, dy)
   }, [spreadSessionModeEnabled])
-
-  useEffect(() => {
-    if (!spreadSessionModeEnabled) return
-    if (isSinglePageMode || whiteboardActive || spreadRightPage == null) return
-    if (annotationMode !== 'select') return
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (isBookOverlayKeyboardTypingTarget()) return
-      const key = e.key
-      const keyLower = key.toLowerCase()
-      const mod = e.metaKey || e.ctrlKey
-
-      if (mod && !e.shiftKey && keyLower === 'a') {
-        e.preventDefault()
-        spreadSessionStoreRef.current?.selectAll()
-        return
-      }
-
-      if (mod && !e.shiftKey && keyLower === 'd') {
-        if (spreadSessionStoreRef.current?.duplicateSelected()) {
-          e.preventDefault()
-        }
-        return
-      }
-
-      if (mod && !e.shiftKey && keyLower === 'c') {
-        if (spreadSessionStoreRef.current?.copySelected()) {
-          e.preventDefault()
-        }
-        return
-      }
-
-      if (mod && !e.shiftKey && keyLower === 'v') {
-        if (spreadSessionStoreRef.current?.pasteFromClipboard()) {
-          e.preventDefault()
-        }
-        return
-      }
-
-      if (mod && keyLower === 'g') {
-        const ok = e.shiftKey
-          ? spreadSessionStoreRef.current?.removeFromGroupSelected()
-          : spreadSessionStoreRef.current?.toggleGroupSelected()
-        if (ok) {
-          e.preventDefault()
-        }
-        return
-      }
-
-      if (key === 'Tab' && !mod && !e.altKey) {
-        if (spreadSessionStoreRef.current?.selectNextInStack(e.shiftKey ? -1 : 1)) {
-          e.preventDefault()
-        }
-        return
-      }
-
-      if (!mod && !e.altKey && (key === 'Delete' || key === 'Backspace')) {
-        if (spreadSessionStoreRef.current?.deleteSelected()) {
-          e.preventDefault()
-        }
-      }
-    }
-
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [annotationMode, isSinglePageMode, whiteboardActive, spreadRightPage, spreadSessionModeEnabled])
 
   const mirrorLeftSelectionMoveToRight = useCallback((ids: string[], dx: number, dy: number) => {
     if (spreadSessionModeEnabled && spreadSessionStoreRef.current) {
@@ -735,6 +754,7 @@ export function BookCanvasStage({
           onEyedropperPick={eyedropperForPage(poolPage)}
           onCapabilitiesChange={isLeft ? onLeftAnnotationCaps : isRight ? onRightAnnotationCaps : undefined}
           delegatePointerToSpread={!isSinglePageMode && spreadStrokeCaptureEnabled}
+          spreadInkDelegated={spreadInkDelegated}
           onSelectionMoveCommitted={
             isLeft ? mirrorLeftSelectionMoveToRight : isRight ? mirrorRightSelectionMoveToLeft : undefined
           }
@@ -743,6 +763,7 @@ export function BookCanvasStage({
     },
     [
       annotationMode,
+      spreadInkDelegated,
       eyedropperForPage,
       eyedropperVariant,
       eraserLineStrokeWidthScale,
@@ -801,7 +822,7 @@ export function BookCanvasStage({
 
   useEffect(() => {
     if (!selectedBookId) return
-    preloadAllManifestBrushPatterns()
+    preloadAllEffectPenResources()
   }, [selectedBookId])
 
   const onDocumentLoadSuccessRef = useRef(onDocumentLoadSuccess)
@@ -855,35 +876,16 @@ export function BookCanvasStage({
 
   const spreadStageOverlays = (
     <>
-      {whiteboardInSlot ? (
-        <div
-          ref={whiteboardPanelAnchorRef}
-          className={cn(
-            'pointer-events-none absolute z-20 overflow-visible',
-            whiteboardPanelObscured && 'invisible opacity-0',
-          )}
-          style={{
-            left: boardSlotLeftPx + WHITEBOARD_SLOT_INSET_PX,
-            top: WHITEBOARD_SLOT_INSET_PX,
-            width: whiteboardSlotPanelWidthPx,
-            height: whiteboardSlotPanelHeightPx,
-          }}
-        >
-          <div
-            className={cn(
-              'pointer-events-auto h-full w-full',
-              whiteboardPanelObscured && 'pointer-events-none',
-            )}
-          >
-            {renderWhiteboardPanel()}
-          </div>
-        </div>
-      ) : null}
-      {whiteboardMinimizedVisible ? (
-        <WhiteboardCollapsedTab
-          slotSide={whiteboardSlotSide}
-          onExpand={onExpandWhiteboard}
-          suppressChrome={suppressChrome}
+      {spreadSessionModeEnabled && showSpreadRightPage && spreadRightPage != null && spreadSessionDoc ? (
+        <BookSpreadSessionLayer
+          widthPx={spreadOverlayWidthPx}
+          heightPx={spreadOverlayHeightPx}
+          commands={spreadSessionDoc.commands}
+          trailingEraserLineDraft={spreadEraserLineDraft}
+          selectEnabled={annotationMode === 'select'}
+          selectedIds={spreadSessionSelectedIds}
+          onSelectedIdsChange={setSpreadSessionSelected}
+          onMoveSelectedBy={moveSpreadSessionSelected}
         />
       ) : null}
       {!whiteboardActive &&
@@ -916,6 +918,7 @@ export function BookCanvasStage({
           shapeFillColor={shapeFillColor}
           pageNumberLeft={pageNumber}
           pageNumberRight={spreadRightPage}
+          annotationTargetPage={annotationTargetPage}
           setAnnotationTargetPage={setAnnotationTargetPage}
           onCapabilitiesChange={onSpreadOverlayCaps}
           captureEnabled={spreadStrokeCaptureEnabled}
@@ -926,33 +929,43 @@ export function BookCanvasStage({
           rightPenInkPatternOriginXPx={rightPenInkPatternOriginXPx}
           spreadSeamNormX={spreadSeamNormX}
           spreadSessionMode={spreadSessionModeEnabled}
-          onSpreadSessionSyncCommands={syncSpreadSessionCommands}
+          onSpreadSessionAppendCommand={appendSpreadSessionCommand}
+          spreadSessionUndo={spreadSessionUndo}
+          spreadSessionRedo={spreadSessionRedo}
+          spreadSessionClear={spreadSessionClear}
+          onSpreadEraserLineDraftChange={setSpreadEraserLineDraft}
         />
       ) : null}
-      {spreadSessionModeEnabled && showSpreadRightPage && spreadRightPage != null && spreadSessionDoc ? (
-        <BookSpreadSessionLayer
-          widthPx={spreadOverlayWidthPx}
-          heightPx={spreadOverlayHeightPx}
-          commands={spreadSessionDoc.commands}
-          selectEnabled={annotationMode === 'select'}
-          selectedIds={spreadSessionSelectedIds}
-          onSelectedIdsChange={setSpreadSessionSelected}
-          onMoveSelectedBy={moveSpreadSessionSelected}
-        />
-      ) : null}
-      {spreadSessionModeEnabled && spreadSessionDoc ? (
-        <div className="pointer-events-none absolute right-2 top-2 z-[40] rounded bg-black/70 px-2 py-1 text-[11px] text-white">
-          {`spread-session rev:${spreadSessionDoc.meta.revision} dirty:${spreadSessionDoc.meta.dirty ? 'yes' : 'no'} cmds:${spreadSessionDoc.commands.length} sel:${spreadSessionSelectedIds.length}`}
+      {whiteboardInSlot ? (
+        <div
+          ref={whiteboardPanelAnchorRef}
+          className={cn(
+            'pointer-events-none absolute isolate z-[32] overflow-visible',
+            whiteboardPanelObscured && 'invisible opacity-0',
+          )}
+          style={{
+            left: boardSlotLeftPx + WHITEBOARD_SLOT_INSET_PX,
+            top: WHITEBOARD_SLOT_INSET_PX,
+            width: whiteboardSlotPanelWidthPx,
+            height: whiteboardSlotPanelHeightPx,
+          }}
+        >
+          <div
+            className={cn(
+              'pointer-events-auto h-full w-full',
+              whiteboardPanelObscured && 'pointer-events-none',
+            )}
+          >
+            {renderWhiteboardPanel()}
+          </div>
         </div>
       ) : null}
-      {isDevBuild ? (
-        <button
-          type="button"
-          className="pointer-events-auto absolute left-2 top-2 z-[41] rounded border border-white/30 bg-black/65 px-2 py-1 text-[11px] text-white"
-          onClick={() => setSpreadSessionModeEnabled((v) => !v)}
-        >
-          {spreadSessionModeEnabled ? 'session: on' : 'session: off'}
-        </button>
+      {whiteboardMinimizedVisible ? (
+        <WhiteboardCollapsedTab
+          slotSide={whiteboardSlotSide}
+          onExpand={onExpandWhiteboard}
+          suppressChrome={suppressChrome}
+        />
       ) : null}
     </>
   )
@@ -1106,6 +1119,7 @@ export function BookCanvasStage({
                           onPointerSessionStart={() => setAnnotationTargetPage(pageNumber)}
                           onEyedropperPick={eyedropperForPage(pageNumber)}
                           onCapabilitiesChange={onLeftAnnotationCaps}
+                          spreadInkDelegated={spreadInkDelegated}
                         />
                       ) : null}
                     </ReaderPageSlot>
@@ -1213,6 +1227,7 @@ export function BookCanvasStage({
                               onEyedropperPick={eyedropperForPage(pageNumber)}
                               onCapabilitiesChange={onLeftAnnotationCaps}
                               delegatePointerToSpread={spreadStrokeCaptureEnabled}
+                              spreadInkDelegated={spreadInkDelegated}
                               onSelectionMoveCommitted={mirrorLeftSelectionMoveToRight}
                             />
                           ) : null}
@@ -1295,6 +1310,7 @@ export function BookCanvasStage({
                                 }
                                 onCapabilitiesChange={onRightAnnotationCaps}
                                 delegatePointerToSpread={spreadStrokeCaptureEnabled}
+                                spreadInkDelegated={spreadInkDelegated}
                                 onSelectionMoveCommitted={mirrorRightSelectionMoveToLeft}
                               />
                             ) : null}
@@ -1316,35 +1332,19 @@ export function BookCanvasStage({
                         <div aria-hidden style={{ width: spreadPageWidth, height: pageCanvasHeightPx }} />
                       )}
                 >
-                    {whiteboardInSlot ? (
-                      <div
-                        ref={whiteboardPanelAnchorRef}
-                        className={cn(
-                          'pointer-events-none absolute z-20 overflow-visible',
-                          whiteboardPanelObscured && 'invisible opacity-0',
-                        )}
-                        style={{
-                          left: boardSlotLeftPx + WHITEBOARD_SLOT_INSET_PX,
-                          top: WHITEBOARD_SLOT_INSET_PX,
-                          width: whiteboardSlotPanelWidthPx,
-                          height: whiteboardSlotPanelHeightPx,
-                        }}
-                      >
-                        <div
-                          className={cn(
-                            'pointer-events-auto h-full w-full',
-                            whiteboardPanelObscured && 'pointer-events-none',
-                          )}
-                        >
-                          {renderWhiteboardPanel()}
-                        </div>
-                      </div>
-                    ) : null}
-                    {whiteboardMinimizedVisible ? (
-                      <WhiteboardCollapsedTab
-                        slotSide={whiteboardSlotSide}
-                        onExpand={onExpandWhiteboard}
-                        suppressChrome={suppressChrome}
+                    {spreadSessionModeEnabled &&
+                    showSpreadRightPage &&
+                    spreadRightPage != null &&
+                    spreadSessionDoc ? (
+                      <BookSpreadSessionLayer
+                        widthPx={spreadOverlayWidthPx}
+                        heightPx={spreadOverlayHeightPx}
+                        commands={spreadSessionDoc.commands}
+                        trailingEraserLineDraft={spreadEraserLineDraft}
+                        selectEnabled={annotationMode === 'select'}
+                        selectedIds={spreadSessionSelectedIds}
+                        onSelectedIdsChange={setSpreadSessionSelected}
+                        onMoveSelectedBy={moveSpreadSessionSelected}
                       />
                     ) : null}
                     {!whiteboardActive &&
@@ -1377,6 +1377,7 @@ export function BookCanvasStage({
                         shapeFillColor={shapeFillColor}
                         pageNumberLeft={pageNumber}
                         pageNumberRight={spreadRightPage}
+                        annotationTargetPage={annotationTargetPage}
                         setAnnotationTargetPage={setAnnotationTargetPage}
                         onCapabilitiesChange={onSpreadOverlayCaps}
                         captureEnabled={spreadStrokeCaptureEnabled}
@@ -1387,36 +1388,43 @@ export function BookCanvasStage({
                         rightPenInkPatternOriginXPx={rightPenInkPatternOriginXPx}
                         spreadSeamNormX={spreadSeamNormX}
                         spreadSessionMode={spreadSessionModeEnabled}
-                        onSpreadSessionSyncCommands={syncSpreadSessionCommands}
+                        onSpreadSessionAppendCommand={appendSpreadSessionCommand}
+                        spreadSessionUndo={spreadSessionUndo}
+                        spreadSessionRedo={spreadSessionRedo}
+                        spreadSessionClear={spreadSessionClear}
+                        onSpreadEraserLineDraftChange={setSpreadEraserLineDraft}
                       />
                     ) : null}
-                    {spreadSessionModeEnabled &&
-                    showSpreadRightPage &&
-                    spreadRightPage != null &&
-                    spreadSessionDoc ? (
-                      <BookSpreadSessionLayer
-                        widthPx={spreadOverlayWidthPx}
-                        heightPx={spreadOverlayHeightPx}
-                        commands={spreadSessionDoc.commands}
-                        selectEnabled={annotationMode === 'select'}
-                        selectedIds={spreadSessionSelectedIds}
-                        onSelectedIdsChange={setSpreadSessionSelected}
-                        onMoveSelectedBy={moveSpreadSessionSelected}
-                      />
-                    ) : null}
-                    {spreadSessionModeEnabled && spreadSessionDoc ? (
-                      <div className="pointer-events-none absolute right-2 top-2 z-[40] rounded bg-black/70 px-2 py-1 text-[11px] text-white">
-                        {`spread-session rev:${spreadSessionDoc.meta.revision} dirty:${spreadSessionDoc.meta.dirty ? 'yes' : 'no'} cmds:${spreadSessionDoc.commands.length} sel:${spreadSessionSelectedIds.length}`}
+                    {whiteboardInSlot ? (
+                      <div
+                        ref={whiteboardPanelAnchorRef}
+                        className={cn(
+                          'pointer-events-none absolute isolate z-[32] overflow-visible',
+                          whiteboardPanelObscured && 'invisible opacity-0',
+                        )}
+                        style={{
+                          left: boardSlotLeftPx + WHITEBOARD_SLOT_INSET_PX,
+                          top: WHITEBOARD_SLOT_INSET_PX,
+                          width: whiteboardSlotPanelWidthPx,
+                          height: whiteboardSlotPanelHeightPx,
+                        }}
+                      >
+                        <div
+                          className={cn(
+                            'pointer-events-auto h-full w-full',
+                            whiteboardPanelObscured && 'pointer-events-none',
+                          )}
+                        >
+                          {renderWhiteboardPanel()}
+                        </div>
                       </div>
                     ) : null}
-                    {isDevBuild ? (
-                      <button
-                        type="button"
-                        className="pointer-events-auto absolute left-2 top-2 z-[41] rounded border border-white/30 bg-black/65 px-2 py-1 text-[11px] text-white"
-                        onClick={() => setSpreadSessionModeEnabled((v) => !v)}
-                      >
-                        {spreadSessionModeEnabled ? 'session: on' : 'session: off'}
-                      </button>
+                    {whiteboardMinimizedVisible ? (
+                      <WhiteboardCollapsedTab
+                        slotSide={whiteboardSlotSide}
+                        onExpand={onExpandWhiteboard}
+                        suppressChrome={suppressChrome}
+                      />
                     ) : null}
                 </SpreadPageCluster>
               )}

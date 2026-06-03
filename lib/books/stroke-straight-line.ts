@@ -1,6 +1,7 @@
 import type { StrokeTool } from '@/lib/books/annotation-command-types'
 import type { PenInkStyle } from '@/lib/books/pen-ink'
 import { appendNormPointsIfMoved } from '@/lib/books/stroke-pointer-samples'
+import { STROKE_TAP_MAX_DIST_SQ } from '@/lib/books/stroke-tap-dot'
 
 export type StraightStrokeTool = Extract<StrokeTool, 'pen' | 'marker'>
 
@@ -130,7 +131,13 @@ export function finalizeStrokeDraftEndPoint(
   if (draft.points.length === 1) {
     draft.points.push(end)
   } else {
-    draft.points[draft.points.length - 1] = end
+    const last = draft.points[draft.points.length - 1]!
+    const dx = end[0] - last[0]
+    const dy = end[1] - last[1]
+    // Ignore finger-lift jitter on release so committed ink matches the last live frame.
+    if (dx * dx + dy * dy >= STROKE_TAP_MAX_DIST_SQ) {
+      draft.points[draft.points.length - 1] = end
+    }
   }
   return opts.straightStrokeAxis
 }

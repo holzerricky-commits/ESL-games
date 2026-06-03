@@ -1,9 +1,20 @@
 'use client'
 
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useBrowserZoomRepaintRevision } from '@/components/students/fullscreen-book-overlay/hooks/useBrowserZoomRepaintRevision'
+import type { LiveEraserLineDraft } from '@/components/students/book-page-annotation-layer'
 import type { AnnotationCommand } from '@/lib/books/annotation-command-types'
-import { applyAnnotationCanvasDpr, clearAnnotationCanvas, drawAnnotationCommand, isMarkerStrokeCommand } from '@/lib/books/annotation-draw'
+import { eraserLineTrailingForReplay } from '@/lib/books/annotation-live-paint'
+import { computeEraserLineDeadIndices } from '@/lib/books/annotation-geometry'
+import {
+  applyAnnotationCanvasDpr,
+  clearAnnotationCanvas,
+  drawAnnotationCommand,
+  isMarkerStrokeCommand,
+  replayInkSlice,
+  replayMarkerSlice,
+} from '@/lib/books/annotation-draw'
+import { buildAnnotationRenderSlices } from '@/lib/books/annotation-render-slices'
 import { applySelectionChange, selectionChangeModeFromPointerKeys } from '@/lib/books/annotation-selection-ops'
 import {
   annotationIdsInMarquee,
@@ -13,82 +24,178 @@ import {
   resolveMarqueeSelectMode,
   type NormRect,
 } from '@/lib/books/annotation-select'
+import { canIncrementallyAppendSpreadSessionCommands } from '@/lib/books/spread-session-incremental-paint'
+import {
+  clientToWhiteboardDocumentNorm,
+  projectCommandsForWhiteboardViewport,
+  type WhiteboardViewportInkConfig,
+} from '@/lib/books/whiteboard-viewport-ink'
 import { cn } from '@/lib/utils'
 
 type BookSpreadSessionLayerProps = {
   widthPx: number
   heightPx: number
   commands: AnnotationCommand[]
+  /** When set, `commands` are document-space; layer paints the visible viewport band only. */
+  viewportInk?: WhiteboardViewportInkConfig
+  trailingEraserLineDraft?: LiveEraserLineDraft | null
   selectEnabled?: boolean
   selectedIds?: string[]
   onSelectedIdsChange?: (ids: string[]) => void
   onMoveSelectedBy?: (dx: number, dy: number) => void
 }
 
-function sizeCanvas(el: HTMLCanvasElement, widthPx: number, heightPx: number): void {
+function sizeCanvas(el: HTMLCanvasElement, widthPx: number, heightPx: number): boolean {
   const dpr = window.devicePixelRatio || 1
   const nextW = Math.max(1, Math.floor(widthPx * dpr))
   const nextH = Math.max(1, Math.floor(heightPx * dpr))
-  if (el.width !== nextW || el.height !== nextH) {
+  const resized = el.width !== nextW || el.height !== nextH
+  if (resized) {
     el.width = nextW
     el.height = nextH
   }
   el.style.width = `${widthPx}px`
   el.style.height = `${heightPx}px`
+  return resized
 }
 
 export function BookSpreadSessionLayer({
   widthPx,
   heightPx,
   commands,
+  viewportInk,
+  trailingEraserLineDraft = null,
   selectEnabled = false,
   selectedIds = [],
   onSelectedIdsChange,
   onMoveSelectedBy,
 }: BookSpreadSessionLayerProps) {
-  const inkRef = useRef<HTMLCanvasElement | null>(null)
-  const markerRef = useRef<HTMLCanvasElement | null>(null)
+  const paintCommands = useMemo(
+    () => (viewportInk ? projectCommandsForWhiteboardViewport(commands, viewportInk) : commands),
+    [commands, viewportInk],
+  )
+  const inkSliceRefs = useRef<(HTMLCanvasElement | null)[]>([])
+  const markerSliceRefs = useRef<(HTMLCanvasElement | null)[]>([])
   const zoomRepaintRevision = useBrowserZoomRepaintRevision()
+  const paintedCommandsRef = useRef<readonly AnnotationCommand[]>([])
+  const paintedDeadKeyRef = useRef('')
   const dragAnchorRef = useRef<[number, number] | null>(null)
   const marqueeAnchorRef = useRef<[number, number] | null>(null)
   const marqueeSelModeRef = useRef<ReturnType<typeof selectionChangeModeFromPointerKeys>>('replace')
   const marqueeRectRef = useRef<NormRect | null>(null)
   const [marqueeRect, setMarqueeRect] = useState<NormRect | null>(null)
+
+  const trailingEraser = useMemo(
+    () => eraserLineTrailingForReplay(null, trailingEraserLineDraft),
+    [trailingEraserLineDraft],
+  )
+  const deadIndices = useMemo(
+    () => computeEraserLineDeadIndices(paintCommands, trailingEraser),
+    [paintCommands, trailingEraser],
+  )
+  const deadKey = useMemo(() => [...deadIndices].sort((a, b) => a - b).join(','), [deadIndices])
+
   const selectionRects = selectedIds
     .map((id) => {
-      const cmd = commands.find((c) => c.id === id)
+      const idx = paintCommands.findIndex((c) => c.id === id)
+      if (idx >= 0 && deadIndices.has(idx)) return null
+      const cmd = paintCommands[idx]
       return cmd ? getAnnotationBounds(cmd, widthPx, heightPx) : null
     })
     .filter((r): r is { x: number; y: number; w: number; h: number } => !!r && r.w > 0 && r.h > 0)
 
   useLayoutEffect(() => {
-    const inkEl = inkRef.current
-    const markerEl = markerRef.current
-    if (!inkEl || !markerEl || !(widthPx > 0) || !(heightPx > 0)) return
-    sizeCanvas(inkEl, widthPx, heightPx)
-    sizeCanvas(markerEl, widthPx, heightPx)
+    if (!(widthPx > 0) || !(heightPx > 0)) return
 
-    const inkCtx = inkEl.getContext('2d', { alpha: true })
-    const markerCtx = markerEl.getContext('2d', { alpha: true })
-    if (!inkCtx || !markerCtx) return
+    const slices = buildAnnotationRenderSlices(paintCommands, deadIndices)
+    const inkCount = slices.filter((s) => s.kind === 'ink').length
+    const markerCount = slices.filter((s) => s.kind === 'marker').length
 
-    clearAnnotationCanvas(inkCtx)
-    clearAnnotationCanvas(markerCtx)
-    applyAnnotationCanvasDpr(inkCtx)
-    applyAnnotationCanvasDpr(markerCtx)
+    while (inkSliceRefs.current.length < inkCount) inkSliceRefs.current.push(null)
+    while (markerSliceRefs.current.length < markerCount) markerSliceRefs.current.push(null)
+    inkSliceRefs.current.length = inkCount
+    markerSliceRefs.current.length = markerCount
 
-    for (const cmd of commands) {
-      if (isMarkerStrokeCommand(cmd)) {
-        drawAnnotationCommand(markerCtx, cmd, widthPx, heightPx)
+    let canvasResized = false
+    for (const el of inkSliceRefs.current) {
+      if (el) canvasResized = sizeCanvas(el, widthPx, heightPx) || canvasResized
+    }
+    for (const el of markerSliceRefs.current) {
+      if (el) canvasResized = sizeCanvas(el, widthPx, heightPx) || canvasResized
+    }
+
+    const prev = paintedCommandsRef.current
+    const prevDeadKey = paintedDeadKeyRef.current
+    const canAppend =
+      !canvasResized &&
+      deadIndices.size === 0 &&
+      deadKey === prevDeadKey &&
+      canIncrementallyAppendSpreadSessionCommands(prev, paintCommands)
+
+    if (canAppend) {
+      const cmd = paintCommands[paintCommands.length - 1]!
+      const lastSlice = slices[slices.length - 1]
+      if (lastSlice?.kind === 'marker' && isMarkerStrokeCommand(cmd) && lastSlice.indices[0] === paintCommands.length - 1) {
+        const markerIdx = markerCount - 1
+        const el = markerSliceRefs.current[markerIdx]
+        const ctx = el?.getContext('2d', { alpha: true })
+        if (ctx) {
+          applyAnnotationCanvasDpr(ctx)
+          drawAnnotationCommand(ctx, cmd, widthPx, heightPx)
+        }
+      } else if (lastSlice?.kind === 'ink' && !isMarkerStrokeCommand(cmd)) {
+        const inkIdx = inkCount - 1
+        const el = inkSliceRefs.current[inkIdx]
+        const ctx = el?.getContext('2d', { alpha: true })
+        if (ctx) {
+          applyAnnotationCanvasDpr(ctx)
+          drawAnnotationCommand(ctx, cmd, widthPx, heightPx)
+        }
       } else {
-        drawAnnotationCommand(inkCtx, cmd, widthPx, heightPx)
+        replayAllSlices()
+      }
+    } else {
+      replayAllSlices()
+    }
+
+    function replayAllSlices(): void {
+      let inkIdx = 0
+      let markerIdx = 0
+      for (const slice of slices) {
+        if (slice.kind === 'ink') {
+          const el = inkSliceRefs.current[inkIdx++]
+          const inkCtx = el?.getContext('2d', { alpha: true })
+          if (!inkCtx) continue
+          replayInkSlice(inkCtx, paintCommands, slice.indices, widthPx, heightPx)
+        } else if (slice.kind === 'marker') {
+          const el = markerSliceRefs.current[markerIdx++]
+          const markerCtx = el?.getContext('2d', { alpha: true })
+          if (!markerCtx) continue
+          replayMarkerSlice(markerCtx, paintCommands, slice.indices, widthPx, heightPx)
+        }
+      }
+      for (let i = inkIdx; i < inkSliceRefs.current.length; i++) {
+        const el = inkSliceRefs.current[i]
+        const ctx = el?.getContext('2d', { alpha: true })
+        if (ctx) clearAnnotationCanvas(ctx)
+      }
+      for (let i = markerIdx; i < markerSliceRefs.current.length; i++) {
+        const el = markerSliceRefs.current[i]
+        const ctx = el?.getContext('2d', { alpha: true })
+        if (ctx) clearAnnotationCanvas(ctx)
       }
     }
-  }, [commands, heightPx, widthPx, zoomRepaintRevision])
+
+    paintedCommandsRef.current = paintCommands
+    paintedDeadKeyRef.current = deadKey
+  }, [paintCommands, deadIndices, deadKey, heightPx, widthPx, zoomRepaintRevision])
 
   const toNorm = (el: HTMLDivElement, clientX: number, clientY: number): [number, number] | null => {
     const r = el.getBoundingClientRect()
     if (!(r.width > 0) || !(r.height > 0)) return null
+    if (viewportInk) {
+      return clientToWhiteboardDocumentNorm(viewportInk, r, clientX, clientY)
+    }
     const nx = (clientX - r.left) / r.width
     const ny = (clientY - r.top) / r.height
     return [Math.max(0, Math.min(1, nx)), Math.max(0, Math.min(1, ny))]
@@ -98,7 +205,7 @@ export function BookSpreadSessionLayer({
     if (!selectEnabled) return
     const p = toNorm(e.currentTarget, e.clientX, e.clientY)
     if (!p) return
-    const idx = hitTestAnnotationIndex(commands, p[0], p[1], widthPx, heightPx, new Set())
+    const idx = hitTestAnnotationIndex(commands, p[0], p[1], widthPx, heightPx, deadIndices)
     if (idx == null) {
       marqueeAnchorRef.current = p
       marqueeSelModeRef.current = selectionChangeModeFromPointerKeys(e)
@@ -157,7 +264,7 @@ export function BookSpreadSessionLayer({
       const rect = p ? normalizeMarqueeRect(marqueeAnchor, p) : marqueeRectRef.current
       if (rect && rect.w * rect.h >= 0.00004) {
         const mode = p ? resolveMarqueeSelectMode(marqueeAnchor, p, 'follow-drag') : 'crossing'
-        const hits = annotationIdsInMarquee(commands, rect, widthPx, heightPx, mode)
+        const hits = annotationIdsInMarquee(commands, rect, widthPx, heightPx, mode, deadIndices)
         onSelectedIdsChange?.(applySelectionChange(selectedIds, hits, marqueeSelModeRef.current))
       } else if (marqueeSelModeRef.current === 'replace') {
         onSelectedIdsChange?.([])
@@ -169,6 +276,10 @@ export function BookSpreadSessionLayer({
     dragAnchorRef.current = null
   }
 
+  const renderSlices = buildAnnotationRenderSlices(commands, deadIndices)
+  let inkIdx = 0
+  let markerIdx = 0
+
   return (
     <div
       className={cn('absolute inset-0 z-[24]', selectEnabled ? 'pointer-events-auto' : 'pointer-events-none')}
@@ -178,12 +289,34 @@ export function BookSpreadSessionLayer({
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
     >
-      <canvas ref={inkRef} className={cn('pointer-events-none absolute inset-0')} />
-      <canvas
-        ref={markerRef}
-        className={cn('pointer-events-none absolute inset-0')}
-        style={{ mixBlendMode: 'multiply' }}
-      />
+      {renderSlices.map((slice) => {
+        if (slice.kind === 'ink') {
+          const idx = inkIdx++
+          return (
+            <canvas
+              key={`spread-ink-${slice.zIndex}`}
+              ref={(el) => {
+                inkSliceRefs.current[idx] = el
+              }}
+              className="pointer-events-none absolute inset-0"
+            />
+          )
+        }
+        if (slice.kind === 'marker') {
+          const idx = markerIdx++
+          return (
+            <canvas
+              key={`spread-marker-${slice.zIndex}`}
+              ref={(el) => {
+                markerSliceRefs.current[idx] = el
+              }}
+              className="pointer-events-none absolute inset-0"
+              style={{ mixBlendMode: 'multiply' }}
+            />
+          )
+        }
+        return null
+      })}
       {selectionRects.map((r, i) => (
         <div
           key={`spread-sel-${i}`}

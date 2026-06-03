@@ -60,7 +60,7 @@ Defer **perfect PDF/LLM extraction**, **full monster/boss combat**, and **studen
 
 ### Still on the roadmap
 
-Phase 1 preview items above (bookmark paths, **Open book**, session log) are **checked**. **Phase 2 interactive vocab v0** has a shippable slice (one demo section + reader shelf UI). Next slice is **more vocab packs / Phase 3 reading checks** or ad-hoc polish—nothing listed here as a blocker.
+Phase 1 preview items above (bookmark paths, **Open book**, session log) are **checked**. **Two-page spread ink** (Phases 1–6 in `docs/SPREAD_INK_PHASED_PLAN.md`) is v1-shippable; further pen speed / marker canvas tuning is parking-lot only. **Phase 2 interactive vocab v0** has a shippable slice (one demo section + reader shelf UI). Next slice is **more vocab packs / Phase 3 reading checks** or ad-hoc polish—nothing listed here as a blocker.
 
 ---
 
