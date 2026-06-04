@@ -11,6 +11,9 @@ import { fetchBooksLibraryCached } from '@/lib/books/fetch-books-library-cached'
 import { isMapAnchorSpreadCacheReady } from '@/lib/books/map-anchor-spread-context'
 import { warmMapInitialBookSpreadPrefetch } from '@/lib/books/map-initial-book-spread-warmup'
 import { subscribePageRenderCache } from '@/lib/books/page-render-cache'
+import { flushPendingUnitPageSave } from '@/lib/books/progress'
+import { requestSpreadSessionFlush } from '@/lib/books/spread-session-events'
+import { requestWhiteboardSessionFlush } from '@/lib/books/whiteboard-session-events'
 import {
   ensureStudentRecordsHydrated,
   STUDENT_RECORDS_HYDRATED_EVENT,
@@ -91,6 +94,9 @@ export function StudentFullscreenMapRouteClient({
   }, [])
 
   const handleBookClose = useCallback(() => {
+    flushPendingUnitPageSave()
+    requestSpreadSessionFlush()
+    requestWhiteboardSessionFlush()
     setBookOpenPresented(false)
     setBookOpenAttempted(false)
   }, [])
