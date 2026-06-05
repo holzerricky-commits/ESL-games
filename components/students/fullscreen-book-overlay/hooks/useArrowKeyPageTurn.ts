@@ -1,19 +1,21 @@
 import { useEffect } from 'react'
-import { isBookOverlayKeyboardTypingTarget } from '@/lib/books/book-overlay-keyboard-guards'
+import { isBookOverlayKeyboardTypingTarget, shouldHandleBookOverlayKeyboard } from '@/lib/books/book-overlay-keyboard-guards'
 
 interface UseArrowKeyPageTurnArgs {
   open: boolean
+  userPresented: boolean
   isLessonPaperOpen: boolean
   goToAdjacentPage: (direction: -1 | 1) => void
 }
 
 export function useArrowKeyPageTurn({
   open,
+  userPresented,
   isLessonPaperOpen,
   goToAdjacentPage,
 }: UseArrowKeyPageTurnArgs) {
   useEffect(() => {
-    if (!open || isLessonPaperOpen) return
+    if (!shouldHandleBookOverlayKeyboard(open, userPresented) || isLessonPaperOpen) return
 
     function onArrowPageTurn(e: KeyboardEvent) {
       if (e.defaultPrevented) return
@@ -33,5 +35,5 @@ export function useArrowKeyPageTurn({
 
     window.addEventListener('keydown', onArrowPageTurn)
     return () => window.removeEventListener('keydown', onArrowPageTurn)
-  }, [open, isLessonPaperOpen, goToAdjacentPage])
+  }, [open, userPresented, isLessonPaperOpen, goToAdjacentPage])
 }

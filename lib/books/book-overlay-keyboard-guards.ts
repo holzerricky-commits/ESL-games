@@ -10,6 +10,10 @@ export function isBookOverlayKeyboardTypingTarget(): boolean {
   )
 }
 
+export function shouldHandleBookOverlayKeyboard(open: boolean, userPresented: boolean): boolean {
+  return open && userPresented
+}
+
 export { isWritingAssistTabActive } from '@/lib/writing-assist/tab-active'
 
 /** True when the given annotation text label textarea already has focus. */
