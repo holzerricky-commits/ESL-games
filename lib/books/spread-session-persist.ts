@@ -1,4 +1,5 @@
-import { setAnnotationsForPage } from '@/lib/books/annotation-storage'
+import { getAnnotationsForPage, setAnnotationsForPage } from '@/lib/books/annotation-storage'
+import { pageLayerCanvasCommandsWhenSpreadInkDelegated } from '@/lib/books/ink-session-page-layer'
 import { projectSpreadSessionToOwnerPages } from '@/lib/books/spread-session-commit'
 import { saveSpreadSessionCheckpoint, type SpreadSessionStorageAdapter } from '@/lib/books/spread-session-storage'
 import type { SpreadSessionDocument, SpreadSessionKey } from '@/lib/books/spread-session-types'
@@ -34,12 +35,15 @@ export function flushSpreadSessionDocumentToPageStorage({
   unitId,
 }: FlushSpreadSessionToPagesParams): void {
   const pages = { leftPage: key.leftPage, rightPage: key.rightPage }
-  if (doc.commands.length === 0) {
-    setAnnotationsForPage(studentId, bookId, unitId, pages.leftPage, [], 'pdf')
-    setAnnotationsForPage(studentId, bookId, unitId, pages.rightPage, [], 'pdf')
-    return
-  }
+  const leftPageLayer = pageLayerCanvasCommandsWhenSpreadInkDelegated(
+    getAnnotationsForPage(studentId, bookId, unitId, pages.leftPage, 'pdf'),
+    true,
+  )
+  const rightPageLayer = pageLayerCanvasCommandsWhenSpreadInkDelegated(
+    getAnnotationsForPage(studentId, bookId, unitId, pages.rightPage, 'pdf'),
+    true,
+  )
   const projected = projectSpreadSessionToOwnerPages(doc.commands, layout)
-  setAnnotationsForPage(studentId, bookId, unitId, pages.leftPage, projected.left, 'pdf')
-  setAnnotationsForPage(studentId, bookId, unitId, pages.rightPage, projected.right, 'pdf')
+  setAnnotationsForPage(studentId, bookId, unitId, pages.leftPage, [...leftPageLayer, ...projected.left], 'pdf')
+  setAnnotationsForPage(studentId, bookId, unitId, pages.rightPage, [...rightPageLayer, ...projected.right], 'pdf')
 }
