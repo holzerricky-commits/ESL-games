@@ -33,8 +33,15 @@ function mockLocalStorage() {
     configurable: true,
     value: {
       getItem: (k: string) => storage.get(k) ?? null,
-      setItem: (k: string, v: string) => storage.set(k, v),
+      setItem: (k: string, v: string) => {
+        storage.set(k, String(v))
+      },
       removeItem: (k: string) => storage.delete(k),
+      clear: () => storage.clear(),
+      key: (i: number) => [...storage.keys()][i] ?? null,
+      get length() {
+        return storage.size
+      },
     },
   })
 }
