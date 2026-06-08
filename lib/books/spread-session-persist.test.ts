@@ -1,12 +1,50 @@
 import { describe, expect, it } from 'vitest'
-import { createMemorySpreadSessionStorage } from '@/lib/books/spread-session-storage'
-import { loadSpreadSession } from '@/lib/books/spread-session-storage'
+import type { AnnotationCommand } from '@/lib/books/annotation-command-types'
+import { createMemorySpreadSessionStorage, loadSpreadSession } from '@/lib/books/spread-session-storage'
 import {
   checkpointSpreadSessionDocument,
   flushSpreadSessionDocumentToPageStorage,
+  mergeSpreadPageLayerWithSession,
 } from '@/lib/books/spread-session-persist'
 import { createEmptySpreadSession, spreadSessionDocId } from '@/lib/books/spread-session-types'
 import { projectSpreadSessionToOwnerPages } from '@/lib/books/spread-session-commit'
+
+const sticky: AnnotationCommand = {
+  kind: 'sticky',
+  id: 'sticky-1',
+  x: 0.1,
+  y: 0.1,
+  w: 0.2,
+  h: 0.1,
+  text: 'Remember this word',
+  color: '#facc15',
+}
+
+const existingStroke: AnnotationCommand = {
+  kind: 'stroke',
+  id: 'old-stroke',
+  tool: 'pen',
+  points: [[0.1, 0.1], [0.2, 0.2]],
+}
+
+const sessionStroke: AnnotationCommand = {
+  kind: 'stroke',
+  id: 'session-stroke',
+  tool: 'pen',
+  points: [[0.3, 0.3], [0.4, 0.4]],
+}
+
+describe('spread-session-persist', () => {
+  it('keeps page-layer notes when a spread with no session ink is flushed', () => {
+    expect(mergeSpreadPageLayerWithSession([sticky], []).map((command) => command.id)).toEqual(['sticky-1'])
+  })
+
+  it('replaces delegated spread ink without deleting page-layer notes', () => {
+    expect(
+      mergeSpreadPageLayerWithSession([sticky, existingStroke], [sessionStroke]).map((command) => command.id),
+    ).toEqual(['sticky-1', 'session-stroke'])
+  })
+})
 
 const key = {
   studentId: 's1',
