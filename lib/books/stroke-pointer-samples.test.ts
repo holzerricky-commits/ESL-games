@@ -15,4 +15,14 @@ describe('stroke-pointer-samples', () => {
       [0.25, 0.35],
     ])
   })
+
+  it('blends new samples when smoothBlend is set', () => {
+    const points: [number, number][] = [
+      [0, 0],
+      [0.2, 0.2],
+    ]
+    appendNormPointsIfMoved(points, [[0.4, 0.4]], undefined, 0.5)
+    expect(points[2]![0]).toBeCloseTo(0.3, 5)
+    expect(points[2]![1]).toBeCloseTo(0.3, 5)
+  })
 })

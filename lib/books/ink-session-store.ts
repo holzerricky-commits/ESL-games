@@ -42,6 +42,8 @@ export type InkSessionStore<TDoc extends InkSessionDocument = InkSessionDocument
   redo: () => boolean
   checkpointNow: () => void
   markClean: () => void
+  /** Replace the full document (e.g. lesson-board page switch). Does not record undo. */
+  replaceDoc: (doc: TDoc) => void
   destroy: () => void
 }
 
@@ -333,6 +335,20 @@ export function createInkSessionStore<TDoc extends InkSessionDocument>(
           updatedAt: now(),
         },
       }
+      emit()
+    },
+    replaceDoc: (nextDoc) => {
+      doc = {
+        ...nextDoc,
+        meta: {
+          ...nextDoc.meta,
+          revision: nextDoc.meta.revision + 1,
+          dirty: true,
+          updatedAt: now(),
+        },
+      }
+      selectedIds = selectedIds.filter((id) => doc.commands.some((c) => c.id === id))
+      scheduleAutosave()
       emit()
     },
     destroy: () => {

@@ -5,9 +5,10 @@
 export const spreadLiveStrokeIncrementalPaintEnabled = false
 
 /**
- * Whiteboard viewport ink: incremental live segments (short letters) over full redraw each move.
+ * Whiteboard live ink: full redraw each move (same as spread) for smooth quadratic joins.
+ * rAF coalesce keeps quick letters responsive.
  */
-export const whiteboardViewportLiveStrokeIncrementalPaintEnabled = true
+export const whiteboardViewportLiveStrokeIncrementalPaintEnabled = false
 
 /** Batch spread live repaints to one per animation frame while dragging. */
 export const spreadLiveStrokeRafCoalesceEnabled = true

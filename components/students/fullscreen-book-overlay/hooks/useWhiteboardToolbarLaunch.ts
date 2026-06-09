@@ -75,11 +75,20 @@ export function useWhiteboardToolbarLaunch({ surfaceStyle }: UseWhiteboardToolba
   )
 
   const onFlightComplete = useCallback(() => {
-    if (flight?.mode === 'exit' && pendingExitRef.current) {
-      pendingExitRef.current()
-      pendingExitRef.current = null
+    const mode = flight?.mode
+    const finish = () => {
+      if (mode === 'exit' && pendingExitRef.current) {
+        pendingExitRef.current()
+        pendingExitRef.current = null
+      }
+      clearFlight()
     }
-    clearFlight()
+    // Let the real panel layout ink once before we hide the flight clone (enter only).
+    if (mode === 'enter') {
+      requestAnimationFrame(() => requestAnimationFrame(finish))
+      return
+    }
+    finish()
   }, [clearFlight, flight?.mode])
 
   return {

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef } from 'react'
 import type { AnnotationStrokeThicknessStep } from '@/lib/books/annotation-storage'
-import { ANNOTATION_PEN_THICKNESS_PREVIEW_DOTS } from '@/lib/books/annotation-storage'
+import { ANNOTATION_FINE_INK_THICKNESS_PREVIEW_DOTS } from '@/lib/books/annotation-storage'
 import { cn } from '@/lib/utils'
 import { popoverSectionLabelClass } from '@/components/students/annotation-popover-controls'
 
@@ -10,10 +10,9 @@ const THICKNESS_STEP_MAX = 6
 const SLIDER_THUMB_PX = 14
 const SLIDER_THUMB_PX_COMPACT = 10
 
-/** Default marker / eraser preview dot sizes (matches legacy ThicknessRow). */
-export const ANNOTATION_DEFAULT_THICKNESS_PREVIEW_DOTS = [0, 1, 2, 3, 4, 5, 6].map(
-  (i) => 4 + i * 1.75,
-) as readonly number[]
+/** Neutral preview fill — diameter equals on-canvas line width (no border). */
+const PREVIEW_DOT_CLASS = 'shrink-0 rounded-full bg-white/60'
+const PREVIEW_DOT_ACTIVE_CLASS = 'shrink-0 rounded-full bg-white/85'
 
 function sliderStepLeft(step: number, thumbPx: number): string {
   const thumbInset = thumbPx / 2
@@ -33,12 +32,29 @@ function clientXToThicknessStep(
   return Math.round(ratio * THICKNESS_STEP_MAX) as AnnotationStrokeThicknessStep
 }
 
-/** Click/drag rail to jump steps; preview dots below are direct size targets. */
+function ThicknessPreviewDot({
+  diameterPx,
+  active = false,
+  className,
+}: {
+  diameterPx: number
+  active?: boolean
+  className?: string
+}) {
+  return (
+    <span
+      className={cn(active ? PREVIEW_DOT_ACTIVE_CLASS : PREVIEW_DOT_CLASS, className)}
+      style={{ width: diameterPx, height: diameterPx }}
+    />
+  )
+}
+
+/** Click/drag rail to jump steps; preview dots match on-canvas line width in px. */
 export function ThicknessSliderRow({
   value,
   onChange,
   idPrefix,
-  previewDots = ANNOTATION_PEN_THICKNESS_PREVIEW_DOTS,
+  previewDots = ANNOTATION_FINE_INK_THICKNESS_PREVIEW_DOTS,
   ariaLabel = 'Thickness',
   compact = false,
 }: {
@@ -53,6 +69,7 @@ export function ThicknessSliderRow({
   const draggingRef = useRef(false)
   const thumbPx = compact ? SLIDER_THUMB_PX_COMPACT : SLIDER_THUMB_PX
   const maxDotPx = previewDots[THICKNESS_STEP_MAX] ?? previewDots[previewDots.length - 1] ?? 14
+  const currentDotPx = previewDots[value] ?? previewDots[0] ?? 8
 
   const updateFromClientX = useCallback(
     (clientX: number) => {
@@ -124,7 +141,21 @@ export function ThicknessSliderRow({
   )
 
   if (compact) {
-    return <div className="flex min-w-0 flex-1 items-center">{rail}</div>
+    return (
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <div
+          className="flex shrink-0 items-center justify-center"
+          style={{ width: maxDotPx, height: maxDotPx }}
+          aria-hidden
+        >
+          <ThicknessPreviewDot
+            diameterPx={currentDotPx}
+            className="transition-[width,height] duration-100 ease-out"
+          />
+        </div>
+        {rail}
+      </div>
+    )
   }
 
   return (
@@ -147,13 +178,7 @@ export function ThicknessSliderRow({
               className="absolute bottom-0 z-[1] flex h-10 w-10 -translate-x-1/2 items-end justify-center rounded-md"
               style={{ left: sliderStepLeft(step, thumbPx) }}
             >
-              <span
-                className={cn(
-                  'shrink-0 rounded-full transition-colors',
-                  active ? 'bg-amber-200 ring-2 ring-amber-400/70' : 'bg-[#9c8b7a]/75',
-                )}
-                style={{ width: dotPx, height: dotPx }}
-              />
+              <ThicknessPreviewDot diameterPx={dotPx} active={active} />
             </button>
           )
         })}

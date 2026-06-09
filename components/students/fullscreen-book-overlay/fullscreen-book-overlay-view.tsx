@@ -83,6 +83,7 @@ export function FullscreenBookOverlayView({
     isLessonPaperOverlayMode,
     isLessonPaperSplitView,
     isPageListOpen,
+    pageListRailTab,
     isSinglePageMode,
     isVisible,
     isWhiteboardOpen,
@@ -93,10 +94,15 @@ export function FullscreenBookOverlayView({
     openWhiteboard,
     registerWhiteboardToolbarLaunch,
     swapWhiteboardSlotSide,
-    toggleWhiteboardFullscreen,
     setWhiteboardSlotSide,
     applyWhiteboardSlotSide,
     registerWhiteboardSlotMotion,
+    whiteboardLayoutMode,
+    whiteboardFloatRect,
+    floatWhiteboard,
+    dockWhiteboardToSlot,
+    forceDockWhiteboard,
+    commitWhiteboardFloatRect,
     userPresented,
     confirmSpreadSlotPixels,
     spreadTurnGridRef,
@@ -191,6 +197,8 @@ export function FullscreenBookOverlayView({
     setShapeFillMode,
     shapeFillColor,
     setShapeFillColor,
+    shapeRoundedCorners,
+    setShapeRoundedCorners,
     eyedropperVariant,
     setEyedropperVariant,
     printedJumpBounds,
@@ -215,6 +223,8 @@ export function FullscreenBookOverlayView({
     lessonPaperSaveState,
     notebookEditable,
     setIsPageListOpen,
+    togglePageListRail,
+    setPageListRailTab,
     setIsWhiteboardOpen,
     setJpegQuality,
     setLessonPaperViewMode,
@@ -239,9 +249,9 @@ export function FullscreenBookOverlayView({
     pickTextFillColor,
     setTextFillColor,
     setTextVisualStyle,
+    setTextFontId,
     setWatermarkEnabled,
     whiteboardStorageKey,
-    whiteboardLayoutMode,
     whiteboardSlotSide,
     whiteboardContentHeightPx,
     extendWhiteboardRunway,
@@ -263,6 +273,10 @@ export function FullscreenBookOverlayView({
     whiteboardSessionUndo,
     whiteboardSessionRedo,
     whiteboardSessionClear,
+    selectLessonBoardPage,
+    createLessonBoardPage,
+    renameLessonBoardPage,
+    lessonBoardActivePageRowRef,
     onWhiteboardOverlayCaps,
     layoutSpreadPageWidth,
     spreadRightPage,
@@ -286,6 +300,7 @@ export function FullscreenBookOverlayView({
     studentName,
     suppressChrome,
     textFontSizeNorm,
+    textFontId,
     textFillColor,
     textVisualStyle,
     toolbarCaps,
@@ -457,10 +472,18 @@ export function FullscreenBookOverlayView({
         activePageRowRef={activePageRowRef}
         goToPage={goToPage}
         setIsPageListOpen={setIsPageListOpen}
+        isWhiteboardOpen={isWhiteboardSessionOpen}
+        pageListRailTab={pageListRailTab}
+        setPageListRailTab={setPageListRailTab}
+        whiteboardSessionDoc={whiteboardSessionDoc}
+        onSelectLessonBoardPage={selectLessonBoardPage}
+        onNewLessonBoardPage={createLessonBoardPage}
+        onRenameLessonBoardPage={renameLessonBoardPage}
+        lessonBoardActivePageRowRef={lessonBoardActivePageRowRef}
       />
       <BookOverlayLeftChrome
         isPageListOpen={isPageListOpen}
-        setIsPageListOpen={setIsPageListOpen}
+        onTogglePageList={togglePageListRail}
         hasResolvedUnit={hasResolvedUnit}
         numPages={numPages}
         selectedBookId={selectedBookId}
@@ -530,6 +553,8 @@ export function FullscreenBookOverlayView({
         setShapeFillMode={setShapeFillMode}
         shapeFillColor={shapeFillColor}
         setShapeFillColor={setShapeFillColor}
+        shapeRoundedCorners={shapeRoundedCorners}
+        setShapeRoundedCorners={setShapeRoundedCorners}
         eyedropperVariant={eyedropperVariant}
         setEyedropperVariant={setEyedropperVariant}
         pdfReady={pdfReady}
@@ -612,6 +637,8 @@ export function FullscreenBookOverlayView({
         setShapeThicknessStep={setShapeThicknessStep}
         textThicknessStep={textThicknessStep}
         setTextThicknessStep={setTextThicknessStep}
+        textFontId={textFontId}
+        setTextFontId={setTextFontId}
         stickyThicknessStep={stickyThicknessStep}
         setStickyThicknessStep={setStickyThicknessStep}
         stampThicknessStep={stampThicknessStep}
@@ -640,6 +667,8 @@ export function FullscreenBookOverlayView({
         setShapeFillMode={setShapeFillMode}
         shapeFillColor={shapeFillColor}
         setShapeFillColor={setShapeFillColor}
+        shapeRoundedCorners={shapeRoundedCorners}
+        setShapeRoundedCorners={setShapeRoundedCorners}
         textColor={textColor}
         pickTextColor={pickTextColor}
         textVisualStyle={textVisualStyle}
@@ -733,7 +762,6 @@ export function FullscreenBookOverlayView({
             whiteboardPanelObscured={whiteboardLaunch.panelObscured}
             suppressChrome={suppressChrome}
             swapWhiteboardSlotSide={swapWhiteboardSlotSide}
-            toggleWhiteboardFullscreen={toggleWhiteboardFullscreen}
             setWhiteboardSlotSide={setWhiteboardSlotSide}
             applyWhiteboardSlotSide={applyWhiteboardSlotSide}
             registerWhiteboardSlotMotion={registerWhiteboardSlotMotion}
@@ -771,7 +799,9 @@ export function FullscreenBookOverlayView({
             shapeStrokeEnabled={shapeStrokeEnabled}
             shapeFillMode={shapeFillMode}
             shapeFillColor={shapeFillColor}
+            shapeRoundedCorners={shapeRoundedCorners}
             textFontSizeNorm={textFontSizeNorm}
+            textFontId={textFontId}
             textVisualStyle={textVisualStyle}
             textFillColor={textFillColor}
             stickyFontSizeNorm={stickyFontSizeNorm}
@@ -787,10 +817,16 @@ export function FullscreenBookOverlayView({
             wbCaptureRootRef={wbCaptureRootRef}
             WHITEBOARD_NOTEBOOK_SURFACE={WHITEBOARD_NOTEBOOK_SURFACE}
             whiteboardStorageKey={whiteboardStorageKey}
-            whiteboardLayoutMode={whiteboardLayoutMode}
             whiteboardSlotSide={whiteboardSlotSide}
+            whiteboardLayoutMode={whiteboardLayoutMode}
+            whiteboardFloatRect={whiteboardFloatRect}
+            floatWhiteboard={floatWhiteboard}
+            dockWhiteboardToSlot={dockWhiteboardToSlot}
+            forceDockWhiteboard={forceDockWhiteboard}
+            commitWhiteboardFloatRect={commitWhiteboardFloatRect}
             whiteboardContentHeightPx={whiteboardContentHeightPx}
             extendWhiteboardRunway={extendWhiteboardRunway}
+            createLessonBoardPage={createLessonBoardPage}
             wbAnnRef={wbAnnRef}
             onWhiteboardCaps={onWhiteboardCaps}
             regionSelectOpen={regionSelectOpen}

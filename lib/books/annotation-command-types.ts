@@ -1,3 +1,4 @@
+import type { AnnotationTextFontId } from '@/lib/books/annotation-text-fonts'
 import type { PenInkStyle } from '@/lib/books/pen-ink'
 import type { PenStrokeProfile } from '@/lib/books/pen-stroke-profile'
 
@@ -34,7 +35,7 @@ export interface StrokeAnnotationCommand {
   color?: string
   /** Pen effect ink (rainbow, galaxy, metallics, etc.); omit for solid/marker. */
   penInkStyle?: PenInkStyle
-  /** Pen / brush / pencil / fine-liner / effects (defaults to pen). */
+  /** Pen / brush / effects; legacy strokes may still store pencil / fine-liner. */
   penStrokeProfile?: PenStrokeProfile
   /** Per-stroke pattern shift (px); retracing the same path gets different colors. */
   penInkPatternPhaseX?: number
@@ -45,6 +46,17 @@ export interface StrokeAnnotationCommand {
   markerDecoratedEdge?: boolean
   /** Explicit figure group; pen/marker only. Omitted = ungrouped. */
   figureGroupId?: string
+  /** Pen only: wall-clock ms when the stroke was committed (auto-group idle window). */
+  committedAtMs?: number
+  /** Pen only: when true, new pen strokes will not auto-join this figure group. */
+  figureAutoJoinClosed?: boolean
+  /**
+   * Unrotated selection/draw frame (set on first rotate). Points stay in place;
+   * `rotationDeg` spins ink and the selection box around this box center.
+   */
+  rotationBounds?: { x: number; y: number; w: number; h: number }
+  /** Clockwise degrees around `rotationBounds` center. Pen/marker only. */
+  rotationDeg?: number
 }
 
 export interface LineAnnotationCommand {
@@ -74,6 +86,10 @@ export interface RectAnnotationCommand {
   strokeVisible?: boolean
   /** Default: legacy = fill when fillColor+fillAlpha present. If false, skip fill even if colors set. */
   fillVisible?: boolean
+  /** Clockwise rotation in degrees around the box center. */
+  rotationDeg?: number
+  /** Default on; explicit false draws sharp 90° corners. */
+  roundedCorners?: boolean
 }
 
 export interface EllipseAnnotationCommand {
@@ -90,6 +106,8 @@ export interface EllipseAnnotationCommand {
   lineDashStyle?: AnnotationLineDashStyle
   strokeVisible?: boolean
   fillVisible?: boolean
+  rotationDeg?: number
+  roundedCorners?: boolean
 }
 
 export interface TriangleAnnotationCommand {
@@ -106,6 +124,8 @@ export interface TriangleAnnotationCommand {
   lineDashStyle?: AnnotationLineDashStyle
   strokeVisible?: boolean
   fillVisible?: boolean
+  rotationDeg?: number
+  roundedCorners?: boolean
 }
 
 export interface ArrowAnnotationCommand {
@@ -154,6 +174,8 @@ export interface TextAnnotationCommand {
   yAnchor?: TextAnnotationYAnchor
   text: string
   fontSizeNorm: number
+  /** Handwriting font preset; omitted on legacy annotations. */
+  fontId?: AnnotationTextFontId
   color: string
   maxWidthNorm?: number
   visualStyle?: TextAnnotationVisualStyle
@@ -170,6 +192,8 @@ export interface StickyAnnotationCommand {
   h: number
   text: string
   fontSizeNorm: number
+  /** Handwriting font preset; omitted on legacy annotations. */
+  fontId?: AnnotationTextFontId
   /** Note background (#RRGGBB). */
   fillColor?: string
 }

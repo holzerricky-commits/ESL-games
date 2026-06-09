@@ -15,23 +15,29 @@ import {
   TopStripFillModeChip,
   TopStripLineStyleChip,
   TopStripShapeLineStyleChip,
+  TopStripShapeRoundedCornersChip,
   TopStripMarqueeRuleChip,
   TopStripPenAutoGroupChip,
   TopStripMarkerDecoratedEdgeChip,
   TopStripStraightStrokeChip,
+  TopStripTextFontChip,
   TopStripTextStyleChip,
 } from '@/components/students/annotation-top-strip-controls'
+import { ThicknessSliderRow } from '@/components/students/annotation-thickness-slider-row'
 import {
-  ANNOTATION_DEFAULT_THICKNESS_PREVIEW_DOTS,
-  ThicknessSliderRow,
-} from '@/components/students/annotation-thickness-slider-row'
-import { ANNOTATION_PEN_THICKNESS_PREVIEW_DOTS } from '@/lib/books/annotation-storage'
+  ANNOTATION_ERASER_THICKNESS_PREVIEW_DOTS,
+  ANNOTATION_FINE_INK_THICKNESS_PREVIEW_DOTS,
+  ANNOTATION_MARKER_THICKNESS_PREVIEW_DOTS,
+  buildFineInkThicknessPreviewDots,
+} from '@/lib/books/annotation-storage'
 import { TopStripColorCluster } from '@/components/students/annotation-top-strip-color-cluster'
 import { CoachDictationTopStripChip } from '@/components/lesson-coach/coach-dictation-top-strip-chip'
 import { useTopOptionsBarChrome } from '@/components/students/fullscreen-book-overlay/hooks/useTopOptionsBarChrome'
+import type { AnnotationTextFontId } from '@/lib/books/annotation-text-fonts'
 import { cn } from '@/lib/utils'
 import {
   filterPenSwatchesForProfile,
+  penProfileWidthScaleMultiplier,
   type PenStrokeProfile,
 } from '@/lib/books/pen-stroke-profile'
 
@@ -63,6 +69,8 @@ export interface AnnotationTopOptionsBarProps {
   setShapeThicknessStep: (s: AnnotationStrokeThicknessStep) => void
   textThicknessStep: AnnotationStrokeThicknessStep
   setTextThicknessStep: (s: AnnotationStrokeThicknessStep) => void
+  textFontId: AnnotationTextFontId
+  setTextFontId: (id: AnnotationTextFontId) => void
   stickyThicknessStep: AnnotationStrokeThicknessStep
   setStickyThicknessStep: (s: AnnotationStrokeThicknessStep) => void
   stampThicknessStep: AnnotationStrokeThicknessStep
@@ -91,6 +99,8 @@ export interface AnnotationTopOptionsBarProps {
   setShapeFillMode: (v: ShapeFillMode) => void
   shapeFillColor: string
   setShapeFillColor: (c: string) => void
+  shapeRoundedCorners: boolean
+  setShapeRoundedCorners: (v: boolean) => void
   textColor: string
   pickTextColor: (hex: string) => void
   textVisualStyle: TextAnnotationVisualStyle
@@ -104,7 +114,7 @@ export interface AnnotationTopOptionsBarProps {
 const PENINSULA_SURFACE =
   'border-x border-b border-t-0 border-white/10 rounded-b-xl bg-black/24 text-white/65 shadow-[0_6px_18px_rgba(0,0,0,0.18)] backdrop-blur-[1.5px]'
 
-const THICKNESS_SLOT_CLASS = 'w-[9rem] shrink-0'
+const THICKNESS_SLOT_CLASS = 'w-[12rem] shrink-0'
 const FILLED_SHAPE_MODES = new Set<string>(['rect', 'ellipse', 'triangle'])
 
 function StripPinAffordance({ pinned, onToggle }: { pinned: boolean; onToggle: () => void }) {
@@ -153,6 +163,8 @@ export function AnnotationTopOptionsBar(props: AnnotationTopOptionsBarProps) {
     setShapeThicknessStep,
     textThicknessStep,
     setTextThicknessStep,
+    textFontId,
+    setTextFontId,
     stickyThicknessStep,
     setStickyThicknessStep,
     stampThicknessStep,
@@ -179,6 +191,8 @@ export function AnnotationTopOptionsBar(props: AnnotationTopOptionsBarProps) {
     setShapeFillMode,
     shapeFillColor,
     setShapeFillColor,
+    shapeRoundedCorners,
+    setShapeRoundedCorners,
     textColor,
     pickTextColor,
     textVisualStyle,
@@ -210,6 +224,11 @@ export function AnnotationTopOptionsBar(props: AnnotationTopOptionsBarProps) {
     isSelect
   const chromeEligible = hasResolvedUnit && !suppressChrome && !chromePanelsOpen && hasToolContent
   const isFilledShape = FILLED_SHAPE_MODES.has(annotationMode)
+
+  const penThicknessPreviewDots = useMemo(
+    () => buildFineInkThicknessPreviewDots(penProfileWidthScaleMultiplier(penStrokeProfile)),
+    [penStrokeProfile],
+  )
 
   const {
     pinned,
@@ -515,6 +534,14 @@ export function AnnotationTopOptionsBar(props: AnnotationTopOptionsBarProps) {
                         }}
                         idPrefix="top-shape"
                       />
+                      <TopStripShapeRoundedCornersChip
+                        active={shapeRoundedCorners}
+                        onChange={(v) => {
+                          setShapeRoundedCorners(v)
+                          bumpActivity()
+                        }}
+                        idPrefix="top-shape"
+                      />
                     </>
                   ) : (
                     <TopStripLineStyleChip
@@ -536,6 +563,16 @@ export function AnnotationTopOptionsBar(props: AnnotationTopOptionsBarProps) {
                     bumpActivity()
                   }}
                   idPrefix="top-eraser"
+                />
+              ) : null}
+              {isText || isSticky ? (
+                <TopStripTextFontChip
+                  value={textFontId}
+                  onChange={(id) => {
+                    setTextFontId(id)
+                    bumpActivity()
+                  }}
+                  idPrefix={isText ? 'top-text' : 'top-sticky'}
                 />
               ) : null}
               {isText ? (
@@ -562,6 +599,7 @@ export function AnnotationTopOptionsBar(props: AnnotationTopOptionsBarProps) {
                     bumpActivity()
                   }}
                   idPrefix="top-pen"
+                  previewDots={penThicknessPreviewDots}
                   ariaLabel="Pen thickness"
                   compact
                 />
@@ -574,7 +612,7 @@ export function AnnotationTopOptionsBar(props: AnnotationTopOptionsBarProps) {
                     bumpActivity()
                   }}
                   idPrefix="top-marker"
-                  previewDots={ANNOTATION_DEFAULT_THICKNESS_PREVIEW_DOTS}
+                  previewDots={ANNOTATION_MARKER_THICKNESS_PREVIEW_DOTS}
                   ariaLabel="Highlighter thickness"
                   compact
                 />
@@ -587,7 +625,7 @@ export function AnnotationTopOptionsBar(props: AnnotationTopOptionsBarProps) {
                     bumpActivity()
                   }}
                   idPrefix="top-shape"
-                  previewDots={ANNOTATION_DEFAULT_THICKNESS_PREVIEW_DOTS}
+                  previewDots={ANNOTATION_FINE_INK_THICKNESS_PREVIEW_DOTS}
                   ariaLabel="Shape stroke width"
                   compact
                 />
@@ -600,7 +638,7 @@ export function AnnotationTopOptionsBar(props: AnnotationTopOptionsBarProps) {
                     bumpActivity()
                   }}
                   idPrefix="top-stamp"
-                  previewDots={ANNOTATION_DEFAULT_THICKNESS_PREVIEW_DOTS}
+                  previewDots={ANNOTATION_MARKER_THICKNESS_PREVIEW_DOTS}
                   ariaLabel="Stamp size"
                   compact
                 />
@@ -613,7 +651,6 @@ export function AnnotationTopOptionsBar(props: AnnotationTopOptionsBarProps) {
                     bumpActivity()
                   }}
                   idPrefix="top-text"
-                  previewDots={ANNOTATION_PEN_THICKNESS_PREVIEW_DOTS}
                   ariaLabel="Text size"
                   compact
                 />
@@ -626,7 +663,6 @@ export function AnnotationTopOptionsBar(props: AnnotationTopOptionsBarProps) {
                     bumpActivity()
                   }}
                   idPrefix="top-sticky"
-                  previewDots={ANNOTATION_DEFAULT_THICKNESS_PREVIEW_DOTS}
                   ariaLabel="Note text size"
                   compact
                 />
@@ -639,7 +675,7 @@ export function AnnotationTopOptionsBar(props: AnnotationTopOptionsBarProps) {
                     bumpActivity()
                   }}
                   idPrefix="top-eraser"
-                  previewDots={ANNOTATION_DEFAULT_THICKNESS_PREVIEW_DOTS}
+                  previewDots={ANNOTATION_ERASER_THICKNESS_PREVIEW_DOTS}
                   ariaLabel="Eraser thickness"
                   compact
                 />

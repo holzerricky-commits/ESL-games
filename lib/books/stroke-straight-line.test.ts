@@ -29,6 +29,12 @@ describe('stroke-straight-line', () => {
     ).toBe(false)
   })
 
+  it('enables straight pen when paused with pointer still down', () => {
+    expect(
+      shouldUseStraightStrokeLine({ tool: 'pen', shiftKey: false, straightFromHold: true }),
+    ).toBe(true)
+  })
+
   it('resolves axis from initial displacement', () => {
     expect(resolveStraightStrokeAxis(0.5, 0.1)).toBe('horizontal')
     expect(resolveStraightStrokeAxis(0.1, 0.5)).toBe('vertical')
@@ -89,11 +95,20 @@ describe('stroke-straight-line', () => {
       markerStraightStrokeEnabled: false,
       straightStrokeAxis: null,
     })
-    expect(draft.points).toEqual([
-      [0.1, 0.2],
-      [0.15, 0.22],
-      [0.3, 0.4],
-    ])
+    expect(draft.points[0]).toEqual([0.1, 0.2])
+    expect(draft.points[1]).toEqual([0.15, 0.22])
+    expect(draft.points[2]![0]).toBeCloseTo(0.237, 3)
+    expect(draft.points[2]![1]).toBeCloseTo(0.3244, 3)
+  })
+
+  it('does not smooth marker sample points', () => {
+    const draft = { tool: 'marker' as const, points: [[0.1, 0.2]] as [number, number][] }
+    extendStrokeDraftFromMove(draft, [[0.3, 0.4]], {
+      shiftKey: false,
+      markerStraightStrokeEnabled: false,
+      straightStrokeAxis: null,
+    })
+    expect(draft.points[1]).toEqual([0.3, 0.4])
   })
 
   it('finalizeStrokeDraftEndPoint snaps straight marker to release position', () => {
@@ -102,6 +117,20 @@ describe('stroke-straight-line', () => {
       shiftKey: false,
       markerStraightStrokeEnabled: true,
       straightStrokeAxis: 'horizontal',
+    })
+    expect(draft.points).toEqual([
+      [0.1, 0.2],
+      [0.9, 0.2],
+    ])
+  })
+
+  it('extendStrokeDraftFromMove snaps freehand to straight after hold pause', () => {
+    const draft = { tool: 'pen' as const, points: [[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]] as [number, number][] }
+    extendStrokeDraftFromMove(draft, [[0.9, 0.25]], {
+      shiftKey: false,
+      straightFromHold: true,
+      markerStraightStrokeEnabled: false,
+      straightStrokeAxis: null,
     })
     expect(draft.points).toEqual([
       [0.1, 0.2],

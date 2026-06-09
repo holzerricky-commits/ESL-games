@@ -2,6 +2,8 @@
 
 Last updated: 2026-05-28
 
+> **Superseded for product direction (2026-06-03):** Session board structure, pages, orientation, TOC, and layout are defined in **`LESSON_BOARD_PRODUCT.md`**. Step-by-step implementation starts at **`LESSON_BOARD_PHASED_PLAN.md`**. This file remains a record of what was built (slot layout, runway scroll, session ink) and historical task checklists.
+
 ## Product summary (locked for V1)
 
 **One session board per live class** — ink does not change when the book page turns.

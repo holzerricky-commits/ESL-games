@@ -24,8 +24,8 @@ export function LessonPaperDockTab({ isOpen, onToggle, panelId }: LessonPaperDoc
       onClick={onToggle}
       aria-expanded={isOpen}
       aria-controls={panelId}
-      aria-label={isOpen ? 'Close lesson notebook' : 'Open lesson notebook'}
-      title={isOpen ? 'Close lesson notebook' : 'Open lesson notebook'}
+      aria-label={isOpen ? 'Close class log' : 'Open class log'}
+      title={isOpen ? 'Close class log' : 'Open class log'}
       className={cn(
         LESSON_NOTEBOOK_HANDLE_LAYOUT,
         'my-auto self-center border border-[#c4b8a4]/55 border-r-0 bg-[#fbf9f5]/95 text-[#3d2918] shadow-[-2px_0_10px_rgba(0,0,0,0.08)] transition-colors duration-200 hover:bg-[#f5efe4] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c4b8a4]/70',

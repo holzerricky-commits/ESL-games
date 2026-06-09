@@ -31,6 +31,10 @@ import { getSharedScreenHighlightIssues } from '@/lib/lesson-coach/issue-reveal'
 import { useCoachTextFieldAssist } from '@/lib/lesson-coach/use-coach-text-field-assist'
 import { useLessonCoachSyncData } from '@/lib/lesson-coach/lesson-coach-sync-context'
 import { WritingAssistGhostHintBar } from '@/components/writing-assist/writing-assist-ghost-hint'
+import {
+  annotationTextFontFamily,
+  type AnnotationTextFontId,
+} from '@/lib/books/annotation-text-fonts'
 
 function useDictationChromeForField(coachField: 'label' | 'whiteboard', localText: string) {
   const { activeField, session } = useLessonCoachSyncData()
@@ -290,6 +294,7 @@ function FilledTextUnifiedEditor({
   overlayWidthPx,
   fillHex,
   fontSize,
+  fontFamily,
   color,
   autoFocus,
   onAutoFocusConsumed,
@@ -306,6 +311,7 @@ function FilledTextUnifiedEditor({
   overlayWidthPx: number
   fillHex: string
   fontSize: number
+  fontFamily: string
   color: string
   autoFocus: boolean
   onAutoFocusConsumed?: () => void
@@ -372,6 +378,7 @@ function FilledTextUnifiedEditor({
   const chrome = useDictationChromeForField(coachField, text)
   const showEditCursor = !readOnly
   const mirrorStyle: CSSProperties = {
+    fontFamily,
     fontSize,
     color,
     minHeight: fontSize,
@@ -449,6 +456,7 @@ function FilledTextUnifiedEditor({
           readOnly ? 'pointer-events-none cursor-default' : 'cursor-text',
         )}
         style={{
+          fontFamily,
           fontSize,
           color,
           minHeight: fontSize,
@@ -473,6 +481,7 @@ function EditableBlock({
   cmd,
   heightPx,
   overlayWidthPx,
+  defaultTextFontId,
   autoFocus,
   onAutoFocusConsumedRef,
   onPatch,
@@ -488,6 +497,7 @@ function EditableBlock({
   cmd: TextSticky
   heightPx: number
   overlayWidthPx: number
+  defaultTextFontId: AnnotationTextFontId
   autoFocus: boolean
   onAutoFocusConsumedRef: MutableRefObject<(() => void) | undefined>
   onPatch: (partial: Partial<TextAnnotationCommand | StickyAnnotationCommand>) => void
@@ -578,6 +588,7 @@ function EditableBlock({
   const leftPct = cmd.x * 100
   const topPct = cmd.y * 100
   const fs = Math.max(10, Math.round(cmd.fontSizeNorm * heightPx))
+  const fontFamily = annotationTextFontFamily(cmd.fontId ?? defaultTextFontId)
 
   const blurText = useCallback(() => {
     const trimmed = local.trim()
@@ -703,6 +714,7 @@ function EditableBlock({
             overlayWidthPx={overlayWidthPx}
             fillHex={fillHex}
             fontSize={fs}
+            fontFamily={fontFamily}
             color={cmd.color}
             autoFocus={autoFocus && canEdit}
             onAutoFocusConsumed={() => onAutoFocusConsumedRef.current?.()}
@@ -719,6 +731,7 @@ function EditableBlock({
               issues={chrome.issues}
               mirrorHighlight={chrome.showMirror}
               mirrorStyle={{
+                fontFamily,
                 fontSize: fs,
                 color: cmd.color,
                 minHeight: fs,
@@ -764,6 +777,7 @@ function EditableBlock({
                   textToolEditHint && 'cursor-text',
                 )}
                 style={{
+                  fontFamily,
                   fontSize: fs,
                   color: cmd.color,
                   minHeight: fs,
@@ -853,6 +867,7 @@ function EditableBlock({
         rows={1}
         className="box-border w-full resize-none overflow-hidden bg-transparent pl-2 pr-7 pt-1.5 pb-1.5 text-[#1a1512] outline-none focus-visible:ring-2 focus-visible:ring-amber-600/35 focus-visible:ring-inset"
         style={{
+          fontFamily,
           fontSize: fs,
           lineHeight: 1.3,
           minHeight: textareaMinPx,
@@ -868,6 +883,7 @@ function EditableBlock({
 export interface BookPageAnnotationDomLayerProps {
   widthPx: number
   heightPx: number
+  defaultTextFontId: AnnotationTextFontId
   /** Stack order within the annotation layer (matches command paint index). */
   zIndex?: number
   /** Raised while a block is editable so it sits above the pointer overlay. */
@@ -889,6 +905,7 @@ export interface BookPageAnnotationDomLayerProps {
 export function BookPageAnnotationDomLayer({
   widthPx,
   heightPx,
+  defaultTextFontId,
   zIndex = 5,
   editingZIndex,
   commands,
@@ -927,6 +944,7 @@ export function BookPageAnnotationDomLayer({
           cmd={cmd}
           heightPx={heightPx}
           overlayWidthPx={widthPx}
+          defaultTextFontId={defaultTextFontId}
           autoFocus={textToolActive && !selectMode && focusNewId != null && cmd.id === focusNewId}
           onAutoFocusConsumedRef={consumedRef}
           onPatch={(partial) => onUpdateCommand(cmd.id, partial)}

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   clientToWhiteboardDocumentNorm,
+  clientToWhiteboardDocumentNormFromContent,
+  clientToWhiteboardDocumentNormFromScrollport,
+  isWhiteboardDocumentScrollPaint,
   projectCommandsForWhiteboardViewport,
 } from '@/lib/books/whiteboard-viewport-ink'
 
@@ -11,11 +14,54 @@ const config = {
 }
 
 describe('whiteboard-viewport-ink', () => {
-  it('clientToWhiteboardDocumentNorm maps viewport pointer into document space', () => {
-    const rect = { left: 0, top: 100, width: 400, height: 800 }
-    const [, ny] = clientToWhiteboardDocumentNorm(config, rect, 200, 500)
-    // mid viewport Y → scrollTop + 0.5*viewport = 400+400 = 800px → 800/2400
+  it('clientToWhiteboardDocumentNorm maps viewport pointer into document space when scrollable', () => {
+    const rect = { left: 0, top: -400, width: 400, height: 2400 }
+    const [, ny] = clientToWhiteboardDocumentNorm(config, rect, 200, 400)
     expect(ny).toBeCloseTo(800 / 2400, 5)
+  })
+
+  it('clientToWhiteboardDocumentNorm maps directly on fixed-height canvas', () => {
+    const fixed = { contentHeightPx: 620, viewportHeightPx: 850, scrollTopPx: 0 }
+    const rect = { left: 0, top: 115, width: 1100, height: 620 }
+    const [, midY] = clientToWhiteboardDocumentNorm(fixed, rect, 550, 115 + 310)
+    const [, bottomY] = clientToWhiteboardDocumentNorm(fixed, rect, 550, 115 + 620)
+    expect(midY).toBeCloseTo(0.5, 5)
+    expect(bottomY).toBeCloseTo(1, 5)
+  })
+
+  it('clientToWhiteboardDocumentNormFromContent tracks scrolled content without scrollTop state', () => {
+    const content = { left: 0, top: -400, width: 400, height: 2400 }
+    const [, ny] = clientToWhiteboardDocumentNormFromContent(config, content, 200, 400)
+    expect(ny).toBeCloseTo(800 / 2400, 5)
+  })
+
+  it('clientToWhiteboardDocumentNormFromScrollport maps through scrollTop', () => {
+    const scrollport = { left: 10, top: 50, width: 400 }
+    const [, ny] = clientToWhiteboardDocumentNormFromScrollport(config, scrollport, 210, 450)
+    expect(ny).toBeCloseTo(800 / 2400, 5)
+  })
+
+  it('uses display-sized config for shrunk floating board', () => {
+    const shrunk = {
+      contentHeightPx: 1200,
+      viewportHeightPx: 400,
+      scrollTopPx: 200,
+    }
+    const content = { left: 0, top: -200, width: 200, height: 1200 }
+    const [, ny] = clientToWhiteboardDocumentNormFromContent(shrunk, content, 100, 100)
+    expect(ny).toBeCloseTo(300 / 1200, 5)
+  })
+
+  it('clientToWhiteboardDocumentNormFromContent uses measured content height for Y', () => {
+    const content = { left: 0, top: 0, width: 400, height: 2500 }
+    const tallConfig = { ...config, contentHeightPx: 2400 }
+    const [, ny] = clientToWhiteboardDocumentNormFromContent(tallConfig, content, 200, 1250)
+    expect(ny).toBeCloseTo(0.5, 5)
+  })
+
+  it('isWhiteboardDocumentScrollPaint treats tall canvases as document scroll paint', () => {
+    const tallCanvas = config.viewportHeightPx + 100
+    expect(isWhiteboardDocumentScrollPaint(config, tallCanvas)).toBe(true)
   })
 
   it('projectCommandsForWhiteboardViewport shifts stroke into viewport norm space', () => {

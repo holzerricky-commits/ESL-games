@@ -55,14 +55,16 @@ import {
 } from '@/components/students/annotation-popover-controls'
 import { StraightHVStrokeIcon } from '@/components/students/annotation-popover-controls'
 import { TopStripStraightStrokeChip } from '@/components/students/annotation-top-strip-controls'
-import {
-  ANNOTATION_DEFAULT_THICKNESS_PREVIEW_DOTS,
-  ThicknessSliderRow,
-} from '@/components/students/annotation-thickness-slider-row'
+import { ThicknessSliderRow } from '@/components/students/annotation-thickness-slider-row'
 import { SpectrumColorPicker } from '@/components/students/annotation-spectrum-picker'
 import { ColorSwatchRow, PenSwatchRow } from '@/components/students/annotation-swatch-picker'
 import type { AnnotationColorSource } from '@/lib/books/annotation-custom-color'
-import { ANNOTATION_PEN_THICKNESS_PREVIEW_DOTS } from '@/lib/books/annotation-storage'
+import {
+  ANNOTATION_ERASER_THICKNESS_PREVIEW_DOTS,
+  ANNOTATION_FINE_INK_THICKNESS_PREVIEW_DOTS,
+  ANNOTATION_MARKER_THICKNESS_PREVIEW_DOTS,
+  buildFineInkThicknessPreviewDots,
+} from '@/lib/books/annotation-storage'
 import type { AnnotationStrokeThicknessStep, BookAnnotationInteractionMode } from '@/lib/books/annotation-storage'
 import type {
   AnnotationLineDashStyle,
@@ -81,6 +83,7 @@ import {
 } from '@/lib/books/eyedropper-variant'
 import {
   filterPenSwatchesForProfile,
+  penProfileWidthScaleMultiplier,
   PEN_STROKE_PROFILE_LABEL,
   PEN_STROKE_PROFILES,
   type PenStrokeProfile,
@@ -399,10 +402,6 @@ function penProfileLucideIcon(profile: PenStrokeProfile) {
   switch (profile) {
     case 'brush':
       return Paintbrush
-    case 'pencil':
-      return Pencil
-    case 'fine-liner':
-      return PenLine
     case 'effects':
       return Sparkles
     default:
@@ -571,6 +570,10 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
   const penSwatch = useMemo(() => getPenSwatch(penSwatchId), [penSwatchId])
   const penSwatchesForProfile = useMemo(
     () => filterPenSwatchesForProfile(penStrokeProfile),
+    [penStrokeProfile],
+  )
+  const penThicknessPreviewDots = useMemo(
+    () => buildFineInkThicknessPreviewDots(penProfileWidthScaleMultiplier(penStrokeProfile)),
     [penStrokeProfile],
   )
   const shapeStrokeSwatch = useMemo(() => getPenSwatch(shapeStrokeSwatchId), [shapeStrokeSwatchId])
@@ -762,6 +765,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                 value={penThicknessStep}
                 onChange={setPenThicknessStep}
                 idPrefix="pen"
+                previewDots={penThicknessPreviewDots}
                 ariaLabel="Pen thickness"
               />
               <LineDashStyleIconRow value={penLineDashStyle} onChange={setPenLineDashStyle} idPrefix="pen" />
@@ -952,7 +956,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                 value={markerThicknessStep}
                 onChange={setMarkerThicknessStep}
                 idPrefix="marker"
-                previewDots={ANNOTATION_DEFAULT_THICKNESS_PREVIEW_DOTS}
+                previewDots={ANNOTATION_MARKER_THICKNESS_PREVIEW_DOTS}
                 ariaLabel="Highlighter thickness"
               />
               <div className="flex flex-wrap items-center gap-2">
@@ -1126,7 +1130,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                 value={shapeThicknessStep}
                 onChange={setShapeThicknessStep}
                 idPrefix="shape"
-                previewDots={ANNOTATION_DEFAULT_THICKNESS_PREVIEW_DOTS}
+                previewDots={ANNOTATION_FINE_INK_THICKNESS_PREVIEW_DOTS}
                 ariaLabel="Shape stroke width"
               />
             ) : null}
@@ -1225,7 +1229,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                 value={stampThicknessStep}
                 onChange={setStampThicknessStep}
                 idPrefix="stamp"
-                previewDots={ANNOTATION_DEFAULT_THICKNESS_PREVIEW_DOTS}
+                previewDots={ANNOTATION_MARKER_THICKNESS_PREVIEW_DOTS}
                 ariaLabel="Stamp size"
               />
             ) : null}
@@ -1378,7 +1382,6 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
               value={textThicknessStep}
               onChange={setTextThicknessStep}
               idPrefix="text"
-              previewDots={ANNOTATION_PEN_THICKNESS_PREVIEW_DOTS}
               ariaLabel="Text size"
             />
           </div>
@@ -1440,7 +1443,6 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
               value={stickyThicknessStep}
               onChange={setStickyThicknessStep}
               idPrefix="sticky"
-              previewDots={ANNOTATION_DEFAULT_THICKNESS_PREVIEW_DOTS}
               ariaLabel="Note text size"
             />
           </div>
@@ -1582,7 +1584,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                   value={eraserPixelThicknessStep}
                   onChange={setEraserPixelThicknessStep}
                   idPrefix="eraser-pixel"
-                  previewDots={ANNOTATION_DEFAULT_THICKNESS_PREVIEW_DOTS}
+                  previewDots={ANNOTATION_ERASER_THICKNESS_PREVIEW_DOTS}
                   ariaLabel="Eraser thickness"
                 />
               ) : null}

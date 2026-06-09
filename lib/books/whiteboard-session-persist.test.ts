@@ -58,6 +58,8 @@ describe('whiteboard-session-persist', () => {
     checkpointWhiteboardSessionDocument(doc, storage)
     const loaded = loadWhiteboardSession(key, storage)
     expect(loaded.commands).toHaveLength(1)
+    expect(loaded.pages).toHaveLength(1)
+    expect(loaded.pages[0]?.commands).toHaveLength(1)
     expect(whiteboardSessionDocId(loaded.key)).toBe(whiteboardSessionDocId(key))
   })
 

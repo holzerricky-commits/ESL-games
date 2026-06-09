@@ -44,6 +44,8 @@ interface UseBookOverlayKeyboardShortcutsArgs {
   setIsAnnotationRailVisible: (v: boolean) => void
   isPageListOpen: boolean
   setIsPageListOpen: (v: boolean) => void
+  pageListRailTab: 'book' | 'board'
+  setPageListRailTab: (tab: 'book' | 'board') => void
   isWhiteboardOpen: boolean
   isWhiteboardSessionOpen: boolean
   isWhiteboardMinimized: boolean
@@ -51,7 +53,6 @@ interface UseBookOverlayKeyboardShortcutsArgs {
   launchOpenWhiteboard?: () => void
   launchExpandWhiteboard?: () => void
   launchCloseWhiteboard?: () => void
-  toggleWhiteboardFullscreen?: () => void
   setWhiteboardSlotSide?: (side: 'left' | 'right') => void
   pdfDialogOpen: boolean
   regionSelectOpen: boolean
@@ -127,6 +128,8 @@ export function useBookOverlayKeyboardShortcuts({
   setIsAnnotationRailVisible,
   isPageListOpen,
   setIsPageListOpen,
+  pageListRailTab,
+  setPageListRailTab,
   isWhiteboardOpen,
   isWhiteboardSessionOpen,
   isWhiteboardMinimized,
@@ -134,7 +137,6 @@ export function useBookOverlayKeyboardShortcuts({
   launchOpenWhiteboard,
   launchExpandWhiteboard,
   launchCloseWhiteboard,
-  toggleWhiteboardFullscreen,
   setWhiteboardSlotSide,
   pdfDialogOpen,
   regionSelectOpen,
@@ -453,8 +455,13 @@ export function useBookOverlayKeyboardShortcuts({
 
       if (keyLower === 'l') {
         e.preventDefault()
-        setIsPageListOpen(!isPageListOpen)
-        if (!isPageListOpen) setIsWhiteboardOpen(false)
+        if (!isPageListOpen) {
+          setIsPageListOpen(true)
+          if (isWhiteboardOpen) setPageListRailTab('board')
+          else setPageListRailTab('book')
+        } else {
+          setIsPageListOpen(false)
+        }
         return
       }
 
@@ -468,12 +475,6 @@ export function useBookOverlayKeyboardShortcuts({
         } else {
           launchCloseWhiteboard?.()
         }
-        return
-      }
-
-      if (isWhiteboardOpen && keyLower === 'f' && !mod && !e.altKey) {
-        e.preventDefault()
-        toggleWhiteboardFullscreen?.()
         return
       }
 
@@ -595,6 +596,8 @@ export function useBookOverlayKeyboardShortcuts({
     setIsAnnotationRailVisible,
     isPageListOpen,
     setIsPageListOpen,
+    pageListRailTab,
+    setPageListRailTab,
     isWhiteboardOpen,
     isWhiteboardSessionOpen,
     isWhiteboardMinimized,
@@ -602,7 +605,6 @@ export function useBookOverlayKeyboardShortcuts({
     launchOpenWhiteboard,
     launchExpandWhiteboard,
     launchCloseWhiteboard,
-    toggleWhiteboardFullscreen,
     setWhiteboardSlotSide,
     pdfDialogOpen,
     regionSelectOpen,

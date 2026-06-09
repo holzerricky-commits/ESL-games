@@ -62,6 +62,10 @@ Defer **perfect PDF/LLM extraction**, **full monster/boss combat**, and **studen
 
 Phase 1 preview items above (bookmark paths, **Open book**, session log) are **checked**. **Two-page spread ink** (Phases 1–6 in `docs/SPREAD_INK_PHASED_PLAN.md`) is v1-shippable; further pen speed / marker canvas tuning is parking-lot only. **Phase 2 interactive vocab v0** has a shippable slice (one demo section + reader shelf UI). Next slice is **more vocab packs / Phase 3 reading checks** or ad-hoc polish—nothing listed here as a blocker.
 
+**Lesson board (session notebook pages):** Product locked in `docs/LESSON_BOARD_PRODUCT.md`. Implement **phase by phase** per `docs/LESSON_BOARD_PHASED_PLAN.md` (test after each phase before continuing). Replaces infinite-scroll-as-product and spread-width fullscreen.
+
+**Lesson Hub + multi-book (Wonders Workshop/Literature):** Product locked in `docs/LESSON_HUB_AND_MULTI_BOOK_PRODUCT.md`. **Deferred** until Phase 2–3 interactivity ships; includes static reader backdrop (no dimmed map), Focus/Dock/Park sources, hub carousel, class-start streak. Teach with book + board **now** per “ready for classes” levels in that doc.
+
 ---
 
 ## Phase 2–3 breakdown (when you start interactive book)
@@ -94,6 +98,8 @@ Phase 1 preview items above (bookmark paths, **Open book**, session log) are **c
 ---
 
 ## Last updated
+
+2026-06-08 — **Lesson Hub + multi-book:** decisions captured in `docs/LESSON_HUB_AND_MULTI_BOOK_PRODUCT.md`; build after Phase 2–3; static backdrop replaces dimmed map when implemented.
 
 2026-05-02 — **Session log:** `sessionNote` on class sessions + End class + Past classes UI; `updateStudentClassSessionNote`; Phase‑1 roadmap session-note line checked.
 

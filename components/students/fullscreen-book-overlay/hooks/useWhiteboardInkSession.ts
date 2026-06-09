@@ -3,11 +3,17 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react'
 import { useWhiteboardSessionPersistGuards } from '@/components/students/fullscreen-book-overlay/hooks/useWhiteboardSessionPersistGuards'
 import type { AnnotationCommand } from '@/lib/books/annotation-command-types'
-import { getAnnotationsForStorageKey } from '@/lib/books/annotation-storage'
+import {
+  getAnnotationsForStorageKey,
+  setAnnotationsForStorageKey,
+} from '@/lib/books/annotation-storage'
+import { legacyStorageCommandsWithoutDelegatedInk } from '@/lib/books/whiteboard-session-hydrate'
+import { lessonBoardPageStorageKey } from '@/lib/books/lesson-board-session-ops'
 import { WHITEBOARD_SESSION_FLUSH_EVENT } from '@/lib/books/whiteboard-session-events'
 import {
   flushWhiteboardSessionDocumentToLegacyStorage,
-  resolveWhiteboardSessionCommandsOnMount,
+  lessonBoardSessionInkChanged,
+  mergeLegacyInkIntoLessonBoardSession,
 } from '@/lib/books/whiteboard-session-persist'
 import { INK_SESSION_AUTOSAVE_MS } from '@/lib/books/ink-session-persist-config'
 import type { WhiteboardSessionDocument } from '@/lib/books/whiteboard-session-types'
@@ -22,6 +28,8 @@ export type UseWhiteboardInkSessionArgs = {
   bookId: string | null
   unitId: string | null
   storagePageKey: string | null
+  /** Class + local keys tried on reload so ink is not lost when session id differs. */
+  storagePageKeyCandidates?: readonly string[]
   whiteboardSessionStoreRef: MutableRefObject<WhiteboardSessionStore | null>
   onOverlayCaps?: (caps: { canUndo: boolean; canRedo: boolean }) => void
 }
@@ -32,6 +40,7 @@ export function useWhiteboardInkSession({
   bookId,
   unitId,
   storagePageKey,
+  storagePageKeyCandidates,
   whiteboardSessionStoreRef,
   onOverlayCaps,
 }: UseWhiteboardInkSessionArgs) {
@@ -89,14 +98,38 @@ export function useWhiteboardInkSession({
 
     sessionKeyRef.current = trimmedKey
     const sessionKey = { studentId, bookId, unitId, storagePageKey: trimmedKey }
-    const store = createWhiteboardSessionStore(sessionKey, { autosaveMs: INK_SESSION_AUTOSAVE_MS })
+    const candidates =
+      storagePageKeyCandidates?.length
+        ? storagePageKeyCandidates
+        : [trimmedKey]
+    const store = createWhiteboardSessionStore(sessionKey, {
+      autosaveMs: INK_SESSION_AUTOSAVE_MS,
+      storageKeyCandidates: candidates,
+    })
     whiteboardSessionStoreRef.current = store
 
     const legacy = getAnnotationsForStorageKey(studentId, bookId, unitId, trimmedKey)
-    const commands = resolveWhiteboardSessionCommandsOnMount(store.getState().doc.commands, legacy)
-    store.syncCommands(commands)
+    const docBeforeMerge = store.getState().doc
+    const mergedDoc = mergeLegacyInkIntoLessonBoardSession(docBeforeMerge, legacy)
+    store.replaceDoc(mergedDoc)
     store.markClean()
-    store.checkpointNow()
+    if (lessonBoardSessionInkChanged(docBeforeMerge, mergedDoc)) {
+      store.checkpointNow()
+    }
+
+    const docAfterInk = store.getState().doc
+    const firstPage = docAfterInk.pages[0]
+    if (firstPage) {
+      const pageKey = lessonBoardPageStorageKey(trimmedKey, firstPage.id)
+      if (pageKey !== trimmedKey) {
+        const legacyPageLayer = getAnnotationsForStorageKey(studentId, bookId, unitId, trimmedKey)
+        const pageLayer = getAnnotationsForStorageKey(studentId, bookId, unitId, pageKey)
+        const legacyDom = legacyStorageCommandsWithoutDelegatedInk(legacyPageLayer)
+        if (legacyDom.length > 0 && pageLayer.length === 0) {
+          setAnnotationsForStorageKey(studentId, bookId, unitId, pageKey, legacyDom)
+        }
+      }
+    }
 
     const initialState = store.getState()
     setWhiteboardSessionDoc(initialState.doc)
@@ -141,6 +174,7 @@ export function useWhiteboardInkSession({
     enabled,
     onOverlayCaps,
     storagePageKey,
+    storagePageKeyCandidates,
     studentId,
     unitId,
     whiteboardSessionStoreRef,
@@ -167,6 +201,49 @@ export function useWhiteboardInkSession({
     whiteboardSessionStoreRef.current?.clearCommands()
   }, [whiteboardSessionStoreRef])
 
+  const appendLessonBoardPage = useCallback(
+    (options?: {
+      orientation?: import('@/lib/books/lesson-board-types').LessonBoardPageOrientation
+      viewportHeightPx?: number
+      slotWidthPx?: number
+      spreadWidthPx?: number
+      bookPageHint?: number
+    }) => {
+      whiteboardSessionStoreRef.current?.appendLessonBoardPage(options)
+    },
+    [whiteboardSessionStoreRef],
+  )
+
+  const setActiveLessonBoardPage = useCallback(
+    (pageId: string) => whiteboardSessionStoreRef.current?.setActiveLessonBoardPage(pageId) ?? false,
+    [whiteboardSessionStoreRef],
+  )
+
+  const goToAdjacentLessonBoardPage = useCallback(
+    (delta: -1 | 1) => whiteboardSessionStoreRef.current?.goToAdjacentLessonBoardPage(delta) ?? false,
+    [whiteboardSessionStoreRef],
+  )
+
+  const setActiveLessonBoardContentHeightPx = useCallback(
+    (heightPx: number) => {
+      whiteboardSessionStoreRef.current?.setActiveLessonBoardContentHeightPx(heightPx)
+    },
+    [whiteboardSessionStoreRef],
+  )
+
+  const extendActiveLessonBoardRunway = useCallback(
+    (viewportHeightPx: number) => {
+      whiteboardSessionStoreRef.current?.extendActiveLessonBoardRunway(viewportHeightPx)
+    },
+    [whiteboardSessionStoreRef],
+  )
+
+  const setLessonBoardPageTitle = useCallback(
+    (pageId: string, title: string | undefined) =>
+      whiteboardSessionStoreRef.current?.setLessonBoardPageTitle(pageId, title) ?? false,
+    [whiteboardSessionStoreRef],
+  )
+
   return {
     whiteboardSessionDoc,
     flushWhiteboardSessionToLegacy,
@@ -174,5 +251,11 @@ export function useWhiteboardInkSession({
     whiteboardSessionUndo,
     whiteboardSessionRedo,
     whiteboardSessionClear,
+    appendLessonBoardPage,
+    setActiveLessonBoardPage,
+    goToAdjacentLessonBoardPage,
+    setActiveLessonBoardContentHeightPx,
+    extendActiveLessonBoardRunway,
+    setLessonBoardPageTitle,
   }
 }

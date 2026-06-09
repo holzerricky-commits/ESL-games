@@ -1,6 +1,9 @@
 import type { StrokeTool } from '@/lib/books/annotation-command-types'
 import type { PenInkStyle } from '@/lib/books/pen-ink'
-import { appendNormPointsIfMoved } from '@/lib/books/stroke-pointer-samples'
+import {
+  STROKE_FREEHAND_SMOOTH_BLEND,
+  appendNormPointsIfMoved,
+} from '@/lib/books/stroke-pointer-samples'
 import { STROKE_TAP_MAX_DIST_SQ } from '@/lib/books/stroke-tap-dot'
 
 export type StraightStrokeTool = Extract<StrokeTool, 'pen' | 'marker'>
@@ -14,16 +17,18 @@ export const STRAIGHT_STROKE_LOCK_MIN_DIST_SQ = 1e-8
 export function shouldUseStraightStrokeLine(args: {
   tool: StraightStrokeTool
   shiftKey: boolean
+  straightFromHold?: boolean
   markerStraightStrokeEnabled?: boolean
   penInkStyle?: PenInkStyle
 }): boolean {
+  const straightInput = args.shiftKey || !!args.straightFromHold
   if (args.tool === 'marker') {
-    return args.shiftKey || !!args.markerStraightStrokeEnabled
+    return straightInput || !!args.markerStraightStrokeEnabled
   }
   if (args.penInkStyle && args.penInkStyle !== 'solid') {
     return false
   }
-  return args.shiftKey
+  return straightInput
 }
 
 /** Pick horizontal vs vertical from displacement (nearest axis). */
@@ -67,6 +72,7 @@ export function extendStrokeDraftFromMove(
   samples: readonly [number, number][],
   opts: {
     shiftKey: boolean
+    straightFromHold?: boolean
     markerStraightStrokeEnabled: boolean
     penInkStyle?: PenInkStyle
     straightStrokeAxis: StraightStrokeAxis | null
@@ -81,6 +87,7 @@ export function extendStrokeDraftFromMove(
     shouldUseStraightStrokeLine({
       tool: draft.tool,
       shiftKey: opts.shiftKey,
+      straightFromHold: opts.straightFromHold,
       markerStraightStrokeEnabled: opts.markerStraightStrokeEnabled,
       penInkStyle: draft.tool === 'pen' ? opts.penInkStyle : undefined,
     })
@@ -93,7 +100,8 @@ export function extendStrokeDraftFromMove(
     return axis
   }
 
-  appendNormPointsIfMoved(draft.points, samples)
+  const smoothBlend = draft.tool === 'pen' ? STROKE_FREEHAND_SMOOTH_BLEND : 0
+  appendNormPointsIfMoved(draft.points, samples, undefined, smoothBlend)
   return opts.straightStrokeAxis
 }
 
@@ -103,6 +111,7 @@ export function finalizeStrokeDraftEndPoint(
   end: [number, number],
   opts: {
     shiftKey: boolean
+    straightFromHold?: boolean
     markerStraightStrokeEnabled: boolean
     penInkStyle?: PenInkStyle
     straightStrokeAxis: StraightStrokeAxis | null
@@ -115,6 +124,7 @@ export function finalizeStrokeDraftEndPoint(
       shouldUseStraightStrokeLine({
         tool: draft.tool,
         shiftKey: opts.shiftKey,
+        straightFromHold: opts.straightFromHold,
         markerStraightStrokeEnabled: opts.markerStraightStrokeEnabled,
         penInkStyle: draft.tool === 'pen' ? opts.penInkStyle : undefined,
       })

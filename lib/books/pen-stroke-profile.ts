@@ -7,23 +7,40 @@ import {
   migratePenSwatchId,
 } from '@/lib/books/annotation-palettes'
 
-/** Drawing tool family under the pen slot (Photoshop-style). */
-export const PEN_STROKE_PROFILES = ['pen', 'brush', 'pencil', 'fine-liner', 'effects'] as const
+/** Active pen types in toolbar / shortcuts. */
+export const PEN_STROKE_PROFILES = ['pen', 'brush', 'effects'] as const
 
-export type PenStrokeProfile = (typeof PEN_STROKE_PROFILES)[number]
+export type ActivePenStrokeProfile = (typeof PEN_STROKE_PROFILES)[number]
 
-export const DEFAULT_PEN_STROKE_PROFILE: PenStrokeProfile = 'pen'
+/** Retired profiles — still replay from saved strokes. */
+export const LEGACY_PEN_STROKE_PROFILES = ['pencil', 'fine-liner'] as const
 
-export const PEN_STROKE_PROFILE_LABEL: Record<PenStrokeProfile, string> = {
+export type LegacyPenStrokeProfile = (typeof LEGACY_PEN_STROKE_PROFILES)[number]
+
+export type PenStrokeProfile = ActivePenStrokeProfile | LegacyPenStrokeProfile
+
+export const DEFAULT_PEN_STROKE_PROFILE: ActivePenStrokeProfile = 'pen'
+
+export const PEN_STROKE_PROFILE_LABEL: Record<ActivePenStrokeProfile, string> = {
   pen: 'Pen',
   brush: 'Brush',
-  pencil: 'Pencil',
-  'fine-liner': 'Fine liner',
   effects: 'Effects',
 }
 
+const ALL_PEN_STROKE_PROFILES = [...PEN_STROKE_PROFILES, ...LEGACY_PEN_STROKE_PROFILES] as const
+
 export function isPenStrokeProfile(v: unknown): v is PenStrokeProfile {
+  return typeof v === 'string' && (ALL_PEN_STROKE_PROFILES as readonly string[]).includes(v)
+}
+
+export function isActivePenStrokeProfile(v: unknown): v is ActivePenStrokeProfile {
   return typeof v === 'string' && (PEN_STROKE_PROFILES as readonly string[]).includes(v)
+}
+
+/** Map retired toolbar choices to the default pen when hydrating prefs. */
+export function normalizeActivePenStrokeProfile(profile: PenStrokeProfile): ActivePenStrokeProfile {
+  if (isActivePenStrokeProfile(profile)) return profile
+  return DEFAULT_PEN_STROKE_PROFILE
 }
 
 export function penProfileUsesEffectInk(profile: PenStrokeProfile): boolean {

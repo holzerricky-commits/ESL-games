@@ -3,7 +3,9 @@ import {
   getAnnotationBounds,
   unionNormRects,
   type NormRect,
+  type OrientedSelectionFrame,
 } from '@/lib/books/annotation-select'
+import { degToRad, rotatePointAroundPivot } from '@/lib/books/annotation-rotation'
 import { SELECTION_HANDLE_HIT_RADIUS_PX } from '@/lib/books/annotation-selection-chrome'
 
 export type ScaleHandleId = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
@@ -65,9 +67,24 @@ export function scaleHandlePositions(bounds: NormRect): Record<ScaleHandleId, [n
   }
 }
 
-export function hitTestScaleHandle(
+export function orientedFrameHandlePositionsNorm(
+  frame: OrientedSelectionFrame,
+): Record<ScaleHandleId, [number, number]> {
+  const local = scaleHandlePositions(frame.rect)
+  const cx = frame.rect.x + frame.rect.w / 2
+  const cy = frame.rect.y + frame.rect.h / 2
+  const rad = degToRad(frame.rotationDeg)
+  if (Math.abs(rad) < 1e-6) return local
+  const out = { ...local }
+  for (const id of HANDLE_ORDER) {
+    out[id] = rotatePointAroundPivot(local[id]!, [cx, cy], rad)
+  }
+  return out
+}
+
+export function hitTestScaleHandleForFrame(
   p: [number, number],
-  bounds: NormRect,
+  frame: OrientedSelectionFrame,
   widthPx: number,
   heightPx: number,
   hitRadiusPx: number = SELECTION_HANDLE_HIT_RADIUS_PX,
@@ -76,7 +93,7 @@ export function hitTestScaleHandle(
   const px = p[0] * widthPx
   const py = p[1] * heightPx
   const r2 = hitRadiusPx * hitRadiusPx
-  const positions = scaleHandlePositions(bounds)
+  const positions = orientedFrameHandlePositionsNorm(frame)
   for (const id of HANDLE_ORDER) {
     const [hx, hy] = positions[id]!
     const dx = px - hx * widthPx
@@ -84,6 +101,22 @@ export function hitTestScaleHandle(
     if (dx * dx + dy * dy <= r2) return id
   }
   return null
+}
+
+export function hitTestScaleHandle(
+  p: [number, number],
+  bounds: NormRect,
+  widthPx: number,
+  heightPx: number,
+  hitRadiusPx: number = SELECTION_HANDLE_HIT_RADIUS_PX,
+): ScaleHandleId | null {
+  return hitTestScaleHandleForFrame(
+    p,
+    { rect: bounds, rotationDeg: 0 },
+    widthPx,
+    heightPx,
+    hitRadiusPx,
+  )
 }
 
 export function cursorForScaleHandle(handle: ScaleHandleId): string {
@@ -277,12 +310,33 @@ export function scaleAnnotationCommand(
   const thicknessScale = thicknessScaleFromBounds(startBounds, newBounds)
 
   switch (cmd.kind) {
-    case 'stroke':
+    case 'stroke': {
+      const p0 = cmd.rotationBounds
+        ? mapPointInBounds([cmd.rotationBounds.x, cmd.rotationBounds.y], startBounds, newBounds)
+        : null
+      const p1 = cmd.rotationBounds
+        ? mapPointInBounds(
+            [cmd.rotationBounds.x + cmd.rotationBounds.w, cmd.rotationBounds.y + cmd.rotationBounds.h],
+            startBounds,
+            newBounds,
+          )
+        : null
       return {
         ...cmd,
         points: cmd.points.map((p) => mapPointInBounds(p, startBounds, newBounds)),
         widthScale: (cmd.widthScale ?? 1) * thicknessScale,
+        ...(p0 && p1
+          ? {
+              rotationBounds: {
+                x: Math.min(p0[0], p1[0]),
+                y: Math.min(p0[1], p1[1]),
+                w: Math.max(MIN_BOUNDS_NORM, Math.abs(p1[0] - p0[0])),
+                h: Math.max(MIN_BOUNDS_NORM, Math.abs(p1[1] - p0[1])),
+              },
+            }
+          : {}),
       }
+    }
     case 'line':
       return {
         ...cmd,

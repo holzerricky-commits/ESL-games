@@ -11,6 +11,7 @@ import type {
   TriangleAnnotationCommand,
 } from '@/lib/books/annotation-command-types'
 import { shapeFillAlphaForMode } from '@/lib/books/annotation-command-types'
+import { roundedCornersFieldForCommit } from '@/lib/books/shape-rounded-corners'
 import {
   clientPointToPageNorm,
   seamClientX,
@@ -34,6 +35,8 @@ export type ShapeCommitOptions = {
   shapeStrokeEnabled: boolean
   shapeFillMode: ShapeFillMode
   shapeFillColor: string
+  /** Default true — sharp corners only when false. */
+  shapeRoundedCorners?: boolean
 }
 
 function clamp01(n: number): number {
@@ -204,6 +207,7 @@ function boxCommandFromPageRect(
     fillVisible: fillOn,
     lineDashStyle: options.shapeLineDashStyle,
     ...(fillOn && fillAlpha != null ? { fillColor: options.shapeFillColor, fillAlpha } : {}),
+    ...roundedCornersFieldForCommit(options.shapeRoundedCorners !== false),
   }
   if (kind === 'rect') return { kind: 'rect', ...base } satisfies RectAnnotationCommand
   if (kind === 'ellipse') return { kind: 'ellipse', ...base } satisfies EllipseAnnotationCommand

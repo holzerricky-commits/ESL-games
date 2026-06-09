@@ -7,7 +7,7 @@ type AnnotationRailProps = ComponentProps<typeof AnnotationRail>
 
 interface BookOverlayLeftChromeProps extends AnnotationRailProps {
   isPageListOpen: boolean
-  setIsPageListOpen: (open: boolean) => void
+  onTogglePageList: () => void
 }
 
 /** Page list launcher stacked above the annotation toolbox on the left edge. */
@@ -15,7 +15,7 @@ export function BookOverlayLeftChrome({
   suppressChrome,
   numPages,
   isPageListOpen,
-  setIsPageListOpen,
+  onTogglePageList,
   ...railProps
 }: BookOverlayLeftChromeProps) {
   if (!railProps.hasResolvedUnit || numPages == null || !railProps.selectedBookId) return null
@@ -30,7 +30,7 @@ export function BookOverlayLeftChrome({
       <BookOverlayPageListButton
         numPages={numPages}
         isPageListOpen={isPageListOpen}
-        onToggle={() => setIsPageListOpen(!isPageListOpen)}
+        onToggle={onTogglePageList}
       />
       <AnnotationRail suppressChrome={suppressChrome} numPages={numPages} {...railProps} />
     </div>

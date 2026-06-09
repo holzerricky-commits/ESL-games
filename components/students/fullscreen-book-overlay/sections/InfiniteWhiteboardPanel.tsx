@@ -2,8 +2,8 @@
 
 import type { AnnotationCommand } from '@/lib/books/annotation-command-types'
 import type { CSSProperties, MutableRefObject } from 'react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { LiveEraserLineDraft } from '@/components/students/book-page-annotation-layer'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { LiveEraserLineDraft, LiveStrokeDraft } from '@/components/students/book-page-annotation-layer'
 import { BookSpreadSessionLayer } from '@/components/students/book-spread-session-layer'
 import { BookSpreadStrokeOverlay } from '@/components/students/book-spread-stroke-overlay'
 import {
@@ -13,11 +13,26 @@ import {
 } from '@/components/students/book-page-annotation-layer'
 import type { BookPageAnnotationLayerProps } from '@/components/students/book-page-annotation-layer'
 import { whiteboardInkSessionEnabled } from '@/lib/books/feature-flags'
+import { lessonBoardAllowsRunwayGrowth, type LessonBoardPageOrientation } from '@/lib/books/lesson-board-types'
 import type { WhiteboardSessionDocument } from '@/lib/books/whiteboard-session-types'
 import type { WhiteboardSessionStore } from '@/lib/books/whiteboard-session-store'
+import {
+  lessonBoardActivePageSummary,
+  lessonBoardPageStorageKey,
+} from '@/lib/books/lesson-board-session-ops'
 import { WHITEBOARD_EYEDROPER_PAGE } from '@/lib/books/whiteboard-storage'
-import type { WhiteboardViewportInkConfig } from '@/lib/books/whiteboard-viewport-ink'
-import { isWhiteboardViewportInkActive } from '@/lib/books/whiteboard-viewport-ink'
+import {
+  buildWhiteboardViewportInkConfig,
+  resolveLessonBoardPaintHeightPx,
+} from '@/lib/books/lesson-board-ink-layout'
+import {
+  isWhiteboardViewportInkActive,
+  type WhiteboardViewportInkConfig,
+} from '@/lib/books/whiteboard-viewport-ink'
+import { appendCommandWithPenAutoGroup } from '@/lib/books/annotation-pen-auto-group'
+import { commitRotatedAnnotationCommands } from '@/lib/books/annotation-rotation'
+import { scaleAnnotationCommands } from '@/lib/books/annotation-scale'
+import type { NormRect } from '@/lib/books/annotation-select'
 import { cn } from '@/lib/utils'
 import {
   WHITEBOARD_HEADER_HEIGHT_PX,
@@ -60,7 +75,9 @@ type LayerProps = Pick<
   | 'shapeStrokeEnabled'
   | 'shapeFillMode'
   | 'shapeFillColor'
+  | 'shapeRoundedCorners'
   | 'textFontSizeNorm'
+  | 'textFontId'
   | 'textVisualStyle'
   | 'textFillColor'
   | 'stickyFillColor'
@@ -71,19 +88,33 @@ type LayerProps = Pick<
 
 export interface InfiniteWhiteboardPanelProps extends LayerProps {
   widthPx: number
+  /** Ink coordinate width; defaults to panel width when omitted. */
+  logicalCanvasWidthPx?: number
   viewportHeightPx: number
   contentHeightPx: number
   storagePageKey: string
   surfaceStyle: Pick<CSSProperties, 'backgroundColor' | 'backgroundImage' | 'backgroundSize'>
-  layoutMode: WhiteboardLayoutMode
   slotSide: WhiteboardSlotSide
+  layoutMode?: WhiteboardLayoutMode
+  /** Scaled content height for ink paint when floating. */
+  floatDisplayContentHeightPx?: number
+  onFloat?: () => void
+  onDock?: () => void
+  onFloatDragPointerDown?: (e: React.PointerEvent) => void
+  onFloatDragPointerMove?: (e: React.PointerEvent) => void
+  onFloatDragPointerUp?: (e: React.PointerEvent) => void
+  onFloatDragPointerCancel?: () => void
+  onFloatResizePointerDown?: (e: React.PointerEvent) => void
+  onFloatResizePointerMove?: (e: React.PointerEvent) => void
+  onFloatResizePointerUp?: (e: React.PointerEvent) => void
+  onFloatResizePointerCancel?: () => void
   setSlotSide: (side: WhiteboardSlotSide) => void
   slotTravelPx: number
   registerSlotMotion?: (api: WhiteboardSlotMotionApi | null) => void
-  toggleFullscreen: () => void
   onMinimize: () => void
   suppressChrome?: boolean
-  fullscreenWidthPx?: number
+  /** Hide header controls until open flight finishes (bar stays full height). */
+  deferHeaderChromeActions?: boolean
   wbAnnRef: MutableRefObject<BookPageAnnotationHandle | null>
   wbStrokeOverlayRef?: MutableRefObject<BookPageAnnotationHandle | null>
   whiteboardSessionStoreRef?: MutableRefObject<WhiteboardSessionStore | null>
@@ -98,24 +129,36 @@ export interface InfiniteWhiteboardPanelProps extends LayerProps {
   onCapabilitiesChange: (caps: AnnotationCapabilities) => void
   onEyedropperPick: (clientX: number, clientY: number) => void
   onExtendRunway?: () => void
+  onNewLessonBoardPage?: (orientation: LessonBoardPageOrientation) => void
   className?: string
 }
 
 export function InfiniteWhiteboardPanel({
   widthPx,
+  logicalCanvasWidthPx: logicalCanvasWidthPxProp,
   viewportHeightPx,
   contentHeightPx,
   storagePageKey,
   surfaceStyle,
-  layoutMode,
   slotSide,
+  layoutMode = 'slot',
+  floatDisplayContentHeightPx,
+  onFloat,
+  onDock,
+  onFloatDragPointerDown,
+  onFloatDragPointerMove,
+  onFloatDragPointerUp,
+  onFloatDragPointerCancel,
+  onFloatResizePointerDown,
+  onFloatResizePointerMove,
+  onFloatResizePointerUp,
+  onFloatResizePointerCancel,
   setSlotSide,
   slotTravelPx,
   registerSlotMotion,
-  toggleFullscreen,
   onMinimize,
   suppressChrome = false,
-  fullscreenWidthPx,
+  deferHeaderChromeActions = false,
   wbAnnRef,
   wbStrokeOverlayRef,
   whiteboardSessionStoreRef,
@@ -130,6 +173,7 @@ export function InfiniteWhiteboardPanel({
   onCapabilitiesChange,
   onEyedropperPick,
   onExtendRunway,
+  onNewLessonBoardPage,
   className,
   studentId,
   bookId,
@@ -139,16 +183,16 @@ export function InfiniteWhiteboardPanel({
   ...layerProps
 }: InfiniteWhiteboardPanelProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null)
-  const wbViewportInkRef = useRef<HTMLDivElement | null>(null)
+  const wbInkLayerRef = useRef<HTMLDivElement | null>(null)
   const wbContentCaptureRef = useRef<HTMLDivElement | null>(null)
   const [scrollTopPx, setScrollTopPx] = useState(0)
   const [wbEraserLineDraft, setWbEraserLineDraft] = useState<LiveEraserLineDraft | null>(null)
+  const [wbMarkerStrokeDraft, setWbMarkerStrokeDraft] = useState<LiveStrokeDraft | null>(null)
   const [wbSessionSelectedIds, setWbSessionSelectedIds] = useState<string[]>([])
 
   const setWbSessionSelected = useCallback(
     (ids: string[]) => {
       whiteboardSessionStoreRef?.current?.setSelectedIds(ids)
-      setWbSessionSelectedIds(ids)
     },
     [whiteboardSessionStoreRef],
   )
@@ -160,27 +204,153 @@ export function InfiniteWhiteboardPanel({
     [whiteboardSessionStoreRef],
   )
 
-  const panelWidthPx = layoutMode === 'fullscreen' && fullscreenWidthPx != null ? fullscreenWidthPx : widthPx
-  const slotDragEnabled = layoutMode === 'slot'
+  const scaleWbSessionSelected = useCallback(
+    (startBounds: NormRect, newBounds: NormRect) => {
+      const store = whiteboardSessionStoreRef?.current
+      if (!store) return
+      const ids = new Set(store.getState().selectedIds)
+      if (ids.size === 0) return
+      store.patchCommands((cmds) => scaleAnnotationCommands(cmds, ids, startBounds, newBounds))
+    },
+    [whiteboardSessionStoreRef],
+  )
+
+  const panelWidthPx = widthPx
   const canvasViewportHeightPx = viewportHeightPx - WHITEBOARD_HEADER_HEIGHT_PX
+  const isFloatingLayout = layoutMode === 'floating'
+  const paintWidthPx = panelWidthPx
+  const paintContentHeightPx =
+    isFloatingLayout && floatDisplayContentHeightPx != null
+      ? floatDisplayContentHeightPx
+      : contentHeightPx
 
   const whiteboardSessionActive = Boolean(whiteboardInkSessionEnabled && whiteboardSessionDoc)
+  const lessonBoardActivePageId = whiteboardSessionDoc?.activePageId ?? ''
+
+  useEffect(() => {
+    if (!whiteboardSessionActive) {
+      setWbSessionSelectedIds([])
+      return
+    }
+    const store = whiteboardSessionStoreRef?.current
+    if (!store) return
+    setWbSessionSelectedIds(store.getState().selectedIds)
+    return store.subscribe((state) => {
+      setWbSessionSelectedIds(state.selectedIds)
+    })
+  }, [
+    whiteboardSessionActive,
+    whiteboardSessionStoreRef,
+    lessonBoardActivePageId,
+    whiteboardSessionDoc?.meta.revision,
+  ])
+
+  const [measuredContentHeightPx, setMeasuredContentHeightPx] = useState<number | null>(null)
+
+  useLayoutEffect(() => {
+    setMeasuredContentHeightPx(null)
+  }, [lessonBoardActivePageId, paintContentHeightPx, paintWidthPx, layoutMode])
+
+  useLayoutEffect(() => {
+    const el = wbContentCaptureRef.current
+    if (!el) return
+    const measure = () => {
+      const next = el.offsetHeight
+      if (next > 0) setMeasuredContentHeightPx(next)
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [lessonBoardActivePageId, paintContentHeightPx, paintWidthPx, layoutMode])
+
+  const effectivePaintContentHeightPx = resolveLessonBoardPaintHeightPx(
+    paintContentHeightPx,
+    measuredContentHeightPx,
+  )
+
+  const rotateWbSessionSelected = useCallback(
+    (
+      pivot: [number, number],
+      deltaRad: number,
+      ids: string[],
+      previewBase?: readonly AnnotationCommand[] | null,
+    ) => {
+      const store = whiteboardSessionStoreRef?.current
+      if (!store || ids.length === 0 || Math.abs(deltaRad) < 1e-6) return
+      const layout = { widthPx: paintWidthPx, heightPx: effectivePaintContentHeightPx }
+      store.patchCommands((cmds) =>
+        commitRotatedAnnotationCommands(cmds, new Set(ids), pivot, deltaRad, layout, previewBase),
+      )
+    },
+    [effectivePaintContentHeightPx, paintWidthPx, whiteboardSessionStoreRef],
+  )
+
+  const penAutoGroupConnected = layerProps.penAutoGroupConnected !== false
+
+  const appendWhiteboardSessionCommandWithAutoGroup = useCallback(
+    (cmd: AnnotationCommand) => {
+      const store = whiteboardSessionStoreRef?.current
+      if (!store) return
+      if (penAutoGroupConnected && cmd.kind === 'stroke' && cmd.tool === 'pen') {
+        store.patchCommands((commands) =>
+          appendCommandWithPenAutoGroup(commands, cmd, {
+            penAutoGroupConnected: true,
+            widthPx: paintWidthPx,
+            heightPx: effectivePaintContentHeightPx,
+          }),
+        )
+        return
+      }
+      store.appendCommand(cmd)
+    },
+    [
+      effectivePaintContentHeightPx,
+      paintWidthPx,
+      penAutoGroupConnected,
+      whiteboardSessionStoreRef,
+    ],
+  )
+
+  const lessonBoardPageNav = whiteboardSessionDoc
+    ? lessonBoardActivePageSummary(whiteboardSessionDoc)
+    : { index: 0, total: 1, page: null }
+  const resolvedPageStorageKey = lessonBoardActivePageId
+    ? lessonBoardPageStorageKey(storagePageKey, lessonBoardActivePageId)
+    : storagePageKey
 
   const whiteboardInkDelegated = whiteboardSessionActive
 
+  const activePageOrientation = lessonBoardPageNav.page?.orientation ?? 'standard'
+  const slotDragEnabled = layoutMode === 'slot' && activePageOrientation !== 'wide'
+  const floatDragEnabled = layoutMode === 'floating' && activePageOrientation !== 'wide'
+  const handlePrevLessonBoardPage = useCallback(() => {
+    whiteboardSessionStoreRef?.current?.goToAdjacentLessonBoardPage(-1)
+  }, [whiteboardSessionStoreRef])
+
+  const handleNextLessonBoardPage = useCallback(() => {
+    whiteboardSessionStoreRef?.current?.goToAdjacentLessonBoardPage(1)
+  }, [whiteboardSessionStoreRef])
+
   const viewportInk: WhiteboardViewportInkConfig | undefined = useMemo(() => {
     if (!whiteboardSessionActive) return undefined
-    return {
-      contentHeightPx,
-      viewportHeightPx: canvasViewportHeightPx,
+    return buildWhiteboardViewportInkConfig(
+      effectivePaintContentHeightPx,
+      canvasViewportHeightPx,
       scrollTopPx,
-    }
-  }, [canvasViewportHeightPx, contentHeightPx, scrollTopPx, whiteboardSessionActive])
+    )
+  }, [
+    canvasViewportHeightPx,
+    effectivePaintContentHeightPx,
+    scrollTopPx,
+    whiteboardSessionActive,
+  ])
 
-  const useViewportInk =
-    whiteboardSessionActive &&
-    viewportInk != null &&
-    isWhiteboardViewportInkActive(viewportInk)
+  /** Session ink stack (spread overlay + session layer) — always on for lesson board pages. */
+  const useLessonBoardSessionInk = whiteboardSessionActive && viewportInk != null
+  const boardScrollable =
+    viewportInk != null && isWhiteboardViewportInkActive(viewportInk)
+  const wideFixedCanvas = activePageOrientation === 'wide'
 
   const {
     panelRef,
@@ -201,21 +371,29 @@ export function InfiniteWhiteboardPanel({
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
+    el.scrollTop = 0
+    setScrollTopPx(0)
+  }, [lessonBoardActivePageId])
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
     const onScroll = () => {
       setScrollTopPx(el.scrollTop)
-      if (onExtendRunway && el.scrollTop + el.clientHeight >= el.scrollHeight - canvasViewportHeightPx * 0.12) {
+      const scrollable = el.scrollHeight > el.clientHeight + 1
+      if (
+        onExtendRunway &&
+        lessonBoardAllowsRunwayGrowth(activePageOrientation) &&
+        scrollable &&
+        el.scrollTop + el.clientHeight >= el.scrollHeight - canvasViewportHeightPx * 0.12
+      ) {
         onExtendRunway()
       }
     }
     onScroll()
     el.addEventListener('scroll', onScroll, { passive: true })
     return () => el.removeEventListener('scroll', onScroll)
-  }, [canvasViewportHeightPx, onExtendRunway])
-
-  const handleClearBoard = () => {
-    whiteboardSessionClear?.()
-    wbAnnRef.current?.clear()
-  }
+  }, [activePageOrientation, canvasViewportHeightPx, lessonBoardActivePageId, onExtendRunway])
 
   return (
     <div
@@ -223,7 +401,7 @@ export function InfiniteWhiteboardPanel({
       className={cn(
         'group relative z-10 flex shrink-0 flex-col',
         WHITEBOARD_PANEL_CHROME,
-        layoutMode === 'slot' && 'isolate',
+        'isolate',
         className,
       )}
       style={{
@@ -236,16 +414,27 @@ export function InfiniteWhiteboardPanel({
     >
       <WhiteboardHeader
         suppressChrome={suppressChrome}
+        deferChromeActions={deferHeaderChromeActions}
         layoutMode={layoutMode}
+        onFloat={onFloat}
+        onDock={onDock}
         swapSlotSide={() => moveTo(slotSide === 'left' ? 'right' : 'left')}
-        toggleFullscreen={toggleFullscreen}
         onMinimize={onMinimize}
-        onClearBoard={handleClearBoard}
         slotDragEnabled={slotDragEnabled}
+        floatDragEnabled={floatDragEnabled}
         onSlotDragPointerDown={onSlotDragPointerDown}
         onSlotDragPointerMove={onSlotDragPointerMove}
         onSlotDragPointerUp={onSlotDragPointerUp}
         onSlotDragPointerCancel={onSlotDragPointerCancel}
+        onFloatDragPointerDown={onFloatDragPointerDown}
+        onFloatDragPointerMove={onFloatDragPointerMove}
+        onFloatDragPointerUp={onFloatDragPointerUp}
+        onFloatDragPointerCancel={onFloatDragPointerCancel}
+        lessonBoardPageIndex={lessonBoardPageNav.index}
+        lessonBoardPageCount={lessonBoardPageNav.total}
+        onNewLessonBoardPage={whiteboardSessionActive ? onNewLessonBoardPage : undefined}
+        onPrevLessonBoardPage={whiteboardSessionActive ? handlePrevLessonBoardPage : undefined}
+        onNextLessonBoardPage={whiteboardSessionActive ? handleNextLessonBoardPage : undefined}
       />
 
       <div
@@ -253,46 +442,62 @@ export function InfiniteWhiteboardPanel({
           scrollRef.current = node
           captureRootRef.current = node
         }}
-        className={cn('relative z-0 min-h-0 flex-1', SCROLLBAR_HIDDEN)}
-        style={{ height: canvasViewportHeightPx, ...surfaceStyle }}
+        className={cn(
+          'relative z-0 min-h-0 flex-1 overflow-x-hidden',
+          wideFixedCanvas || !boardScrollable ? 'overflow-y-hidden' : SCROLLBAR_HIDDEN,
+        )}
+        style={{
+          height: canvasViewportHeightPx,
+          backgroundColor: surfaceStyle.backgroundColor,
+        }}
       >
         <div
           ref={wbContentCaptureRef}
           className="relative"
           style={{
-            width: panelWidthPx,
-            height: contentHeightPx,
+            width: paintWidthPx,
+            minHeight: paintContentHeightPx,
+            height: paintContentHeightPx,
             ...surfaceStyle,
           }}
+          data-lesson-board-orientation={activePageOrientation}
         >
-          {useViewportInk && whiteboardSessionDoc ? (
+          {useLessonBoardSessionInk && whiteboardSessionDoc ? (
             <div
-              ref={wbViewportInkRef}
+              ref={wbInkLayerRef}
               className={cn(
-                'sticky top-0 z-[25]',
-                wbStrokeCaptureEnabled ? 'touch-none' : 'pointer-events-none',
+                'absolute inset-0',
+                mode === 'select' ? 'z-[36]' : 'z-[25]',
+                wbStrokeCaptureEnabled
+                  ? 'touch-none'
+                  : mode === 'select'
+                    ? 'pointer-events-auto'
+                    : 'pointer-events-none',
               )}
               style={{
-                width: panelWidthPx,
-                height: canvasViewportHeightPx,
                 touchAction: wbStrokeCaptureEnabled ? 'none' : undefined,
               }}
             >
               <BookSpreadSessionLayer
-                widthPx={panelWidthPx}
-                heightPx={canvasViewportHeightPx}
+                widthPx={paintWidthPx}
+                heightPx={effectivePaintContentHeightPx}
                 commands={whiteboardSessionDoc.commands}
                 viewportInk={viewportInk}
+                scrollportRef={scrollRef}
+                contentCaptureRef={wbContentCaptureRef}
                 trailingEraserLineDraft={wbEraserLineDraft}
+                trailingMarkerStrokeDraft={wbMarkerStrokeDraft}
                 selectEnabled={mode === 'select'}
                 selectedIds={wbSessionSelectedIds}
                 onSelectedIdsChange={setWbSessionSelected}
                 onMoveSelectedBy={moveWbSessionSelected}
+                onScaleSelectedBy={scaleWbSessionSelected}
+                onRotateSelectedBy={rotateWbSessionSelected}
               />
               <BookSpreadStrokeOverlay
                 ref={wbStrokeOverlayRef}
-                leftPageCaptureRef={wbViewportInkRef}
-                rightPageCaptureRef={wbViewportInkRef}
+                leftPageCaptureRef={wbInkLayerRef}
+                rightPageCaptureRef={wbInkLayerRef}
                 leftAnnRef={wbAnnRef}
                 rightAnnRef={wbAnnRef}
                 annotationMode={mode}
@@ -312,31 +517,44 @@ export function InfiniteWhiteboardPanel({
                 shapeStrokeEnabled={layerProps.shapeStrokeEnabled}
                 shapeFillMode={layerProps.shapeFillMode}
                 shapeFillColor={layerProps.shapeFillColor}
+                shapeRoundedCorners={layerProps.shapeRoundedCorners}
                 pageNumberLeft={WHITEBOARD_EYEDROPER_PAGE}
                 pageNumberRight={WHITEBOARD_EYEDROPER_PAGE}
                 annotationTargetPage={WHITEBOARD_EYEDROPER_PAGE}
                 setAnnotationTargetPage={() => {}}
                 onCapabilitiesChange={onWhiteboardOverlayCaps ?? onCapabilitiesChange}
                 captureEnabled={wbStrokeCaptureEnabled}
-                spreadOverlayWidthPx={panelWidthPx}
-                spreadOverlayHeightPx={contentHeightPx}
-                spreadCanvasHeightPx={canvasViewportHeightPx}
+                spreadOverlayWidthPx={paintWidthPx}
+                spreadOverlayHeightPx={effectivePaintContentHeightPx}
+                spreadCanvasHeightPx={effectivePaintContentHeightPx}
                 whiteboardViewportInk={viewportInk}
+                whiteboardScrollportRef={scrollRef}
+                whiteboardContentCaptureRef={wbContentCaptureRef}
                 spreadPageWidthPx={panelWidthPx}
                 leftPenInkPatternOriginXPx={0}
                 rightPenInkPatternOriginXPx={0}
                 spreadSeamNormX={1}
                 spreadSessionMode
-                onSpreadSessionAppendCommand={appendWhiteboardSessionCommand}
+                onSpreadSessionAppendCommand={appendWhiteboardSessionCommandWithAutoGroup}
                 spreadSessionUndo={whiteboardSessionUndo}
                 spreadSessionRedo={whiteboardSessionRedo}
                 spreadSessionClear={whiteboardSessionClear}
                 onSpreadEraserLineDraftChange={setWbEraserLineDraft}
+                onSpreadMarkerStrokeDraftChange={setWbMarkerStrokeDraft}
               />
             </div>
           ) : null}
-          <div className={useViewportInk ? 'absolute inset-0 z-[20]' : 'relative h-full w-full'}>
+          <div
+            className={
+              useLessonBoardSessionInk && whiteboardInkDelegated
+                ? 'pointer-events-none absolute inset-0 z-[32]'
+                : useLessonBoardSessionInk
+                  ? 'absolute inset-0 z-[20]'
+                  : 'relative h-full w-full'
+            }
+          >
             <BookPageAnnotationLayer
+              key={lessonBoardActivePageId || 'wb-page-default'}
               ref={wbAnnRef}
               {...layerProps}
               studentId={studentId}
@@ -346,9 +564,9 @@ export function InfiniteWhiteboardPanel({
               shapeColor={shapeColor}
               pageNumber={WHITEBOARD_EYEDROPER_PAGE}
               storageChannel="whiteboard"
-              storagePageKey={storagePageKey}
-              widthPx={panelWidthPx}
-              heightPx={contentHeightPx}
+              storagePageKey={resolvedPageStorageKey}
+              widthPx={paintWidthPx}
+              heightPx={effectivePaintContentHeightPx}
               delegatePointerToWhiteboardPen={wbStrokeCaptureEnabled}
               whiteboardInkDelegated={whiteboardInkDelegated}
               whiteboardSessionStoreRef={whiteboardSessionStoreRef}
@@ -358,6 +576,21 @@ export function InfiniteWhiteboardPanel({
           </div>
         </div>
       </div>
+      {layoutMode === 'floating' && floatDragEnabled ? (
+        <div
+          role="separator"
+          aria-label="Resize floating board"
+          title="Resize board"
+          className={cn(
+            'absolute bottom-0 right-0 z-30 h-4 w-4 cursor-nwse-resize touch-none',
+            'rounded-br-lg border-b-[3px] border-r-[3px] border-[#D1D5DB]',
+          )}
+          onPointerDown={onFloatResizePointerDown}
+          onPointerMove={onFloatResizePointerMove}
+          onPointerUp={onFloatResizePointerUp}
+          onPointerCancel={onFloatResizePointerCancel}
+        />
+      ) : null}
     </div>
   )
 }

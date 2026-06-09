@@ -2,27 +2,58 @@ import type { AnnotationCommand, AnnotationLineDashStyle, StrokeAnnotationComman
 import { drawDecoratedMarkerBand } from '@/lib/books/marker-edge-decoration'
 import { applyPenStrokeStyle, resolvePenInkPatternOrigin, type PenInkPatternOrigin } from '@/lib/books/pen-ink'
 import { penProfileDrawStyle } from '@/lib/books/pen-stroke-profile'
+import {
+  applyMarkerCanvasStrokeStyle,
+  drawMarkerStrokePath,
+} from '@/lib/books/marker-stroke-paint'
+import { strokeDotPairAt } from '@/lib/books/stroke-tap-dot'
+import { degToRad } from '@/lib/books/annotation-rotation'
+import type { StrokeAnnotationCommand as StrokeCmd } from '@/lib/books/annotation-command-types'
+import {
+  appendRoundRectPath,
+  appendRoundedTrianglePath,
+  shapeCornerRadiusPx,
+  shapeRoundedCornersEnabled,
+} from '@/lib/books/shape-rounded-corners'
+import { traceStrokePoints } from '@/lib/books/stroke-path-trace'
 
 export const PEN_LINE_WIDTH = 2.5
 const DEFAULT_PEN_COLOR = '#2a1d12'
 /** Highlighter stroke width in CSS px (before widthScale). */
 export const MARKER_LINE_WIDTH = 22
-const DEFAULT_MARKER_COLOR = '#facc15'
+const DEFAULT_MARKER_COLOR = '#ffeb3b'
 
 /**
  * Marker ink is drawn at full opacity on a dedicated canvas with CSS `mix-blend-mode: multiply`
  * so white paper picks up a saturated tint while black text stays dark underneath.
  */
 export function applyMarkerStrokeStyle(ctx: CanvasRenderingContext2D, color: string): void {
-  ctx.globalCompositeOperation = 'source-over'
-  ctx.globalAlpha = 1
-  ctx.strokeStyle = color
-  ctx.lineCap = 'round'
-  ctx.lineJoin = 'round'
+  applyMarkerCanvasStrokeStyle(ctx, color)
 }
 export const ERASER_LINE_WIDTH = 18
 
-const DEFAULT_SHAPE_STROKE_PX = 2.25
+/** Shape outlines use the same base width as pen ink. */
+const DEFAULT_SHAPE_STROKE_PX = PEN_LINE_WIDTH
+
+function withBoxShapeRotation(
+  ctx: CanvasRenderingContext2D,
+  cmd: { x: number; y: number; w: number; h: number; rotationDeg?: number },
+  widthPx: number,
+  heightPx: number,
+  draw: (w: number, h: number) => void,
+): void {
+  const w = cmd.w * widthPx
+  const h = cmd.h * heightPx
+  const cx = (cmd.x + cmd.w / 2) * widthPx
+  const cy = (cmd.y + cmd.h / 2) * heightPx
+  const rad = degToRad(cmd.rotationDeg ?? 0)
+  ctx.save()
+  ctx.translate(cx, cy)
+  if (Math.abs(rad) > 1e-6) ctx.rotate(rad)
+  ctx.translate(-w / 2, -h / 2)
+  draw(w, h)
+  ctx.restore()
+}
 
 function strokeWidthPx(cmdScale: number | undefined, base: number): number {
   const scale = cmdScale != null && Number.isFinite(cmdScale) ? cmdScale : 1
@@ -54,45 +85,39 @@ function drawStrokeCapDot(ctx: CanvasRenderingContext2D, x: number, y: number, l
   ctx.fill()
 }
 
-function traceStrokePoints(
-  ctx: CanvasRenderingContext2D,
-  tool: StrokeAnnotationCommand['tool'],
-  points: [number, number][],
-  sx: (nx: number) => number,
-  sy: (ny: number) => number,
-): void {
-  if (points.length === 1) {
-    // Highlighter needs two points for a stroke; a filled dot looks like a solid blob before multiply reads right.
-    if (tool !== 'marker') {
-      drawStrokeCapDot(ctx, sx(points[0]![0]), sy(points[0]![1]), ctx.lineWidth)
-    }
-    return
-  }
-  ctx.beginPath()
-  if (tool === 'pen' && points.length >= 3) {
-    ctx.moveTo(sx(points[0][0]), sy(points[0][1]))
-    for (let i = 1; i < points.length - 1; i++) {
-      const x = sx(points[i][0])
-      const y = sy(points[i][1])
-      const mx = (x + sx(points[i + 1][0])) / 2
-      const my = (y + sy(points[i + 1][1])) / 2
-      ctx.quadraticCurveTo(x, y, mx, my)
-    }
-    const last = points[points.length - 1]
-    ctx.lineTo(sx(last[0]), sy(last[1]))
-  } else {
-    ctx.moveTo(sx(points[0][0]), sy(points[0][1]))
-    for (let i = 1; i < points.length; i++) {
-      ctx.lineTo(sx(points[i][0]), sy(points[i][1]))
-    }
-  }
-  ctx.stroke()
-}
-
 export type DrawStrokePathOptions = {
   pagePatternOrigin?: PenInkPatternOrigin
   /** One pen pass only (live draft). Committed replay omits this for full profile quality. */
   livePaintFast?: boolean
+  /** Live marker preview: segment strokes so crossings darken while dragging. */
+  markerOverlapAccumulate?: boolean
+}
+
+function drawStrokePathWithRotation(
+  ctx: CanvasRenderingContext2D,
+  cmd: StrokeCmd,
+  widthPx: number,
+  heightPx: number,
+  options?: DrawStrokePathOptions,
+): void {
+  const bounds = cmd.rotationBounds
+  const deg = cmd.rotationDeg ?? 0
+  if (
+    bounds &&
+    Math.abs(deg) > 1e-6 &&
+    (cmd.tool === 'pen' || cmd.tool === 'marker')
+  ) {
+    const cx = (bounds.x + bounds.w / 2) * widthPx
+    const cy = (bounds.y + bounds.h / 2) * heightPx
+    ctx.save()
+    ctx.translate(cx, cy)
+    ctx.rotate(degToRad(deg))
+    ctx.translate(-cx, -cy)
+    drawStrokePath(ctx, cmd, widthPx, heightPx, options)
+    ctx.restore()
+    return
+  }
+  drawStrokePath(ctx, cmd, widthPx, heightPx, options)
 }
 
 export function drawStrokePath(
@@ -133,7 +158,9 @@ export function drawStrokePath(
     ctx.strokeStyle = '#000'
     ctx.fillStyle = '#000'
     ctx.lineWidth = ERASER_LINE_WIDTH * scale
-    traceStrokePoints(ctx, tool, points, sx, sy)
+    traceStrokePoints(ctx, tool, points, sx, sy, (x, y) =>
+      drawStrokeCapDot(ctx, x, y, ctx.lineWidth),
+    )
     ctx.globalCompositeOperation = 'source-over'
     ctx.globalAlpha = 1
     return
@@ -144,15 +171,21 @@ export function drawStrokePath(
     const markerLw = MARKER_LINE_WIDTH * scale
     const dashSolid = !cmd.lineDashStyle || cmd.lineDashStyle === 'solid'
     if (cmd.markerDecoratedEdge === true && dashSolid) {
-      drawDecoratedMarkerBand(ctx, points, markerColor, markerLw, widthPx, heightPx)
+      const bandPoints =
+        points.length === 1 ? (strokeDotPairAt(points[0]!) as [number, number][]) : points
+      drawDecoratedMarkerBand(ctx, bandPoints, markerColor, markerLw, widthPx, heightPx)
       return
     }
-    applyMarkerStrokeStyle(ctx, markerColor)
-    ctx.lineWidth = markerLw
-    applyAnnotationLineDash(ctx, cmd.lineDashStyle, markerLw)
-    ctx.fillStyle = markerColor
-    traceStrokePoints(ctx, tool, points, sx, sy)
-    ctx.setLineDash([])
+    drawMarkerStrokePath(
+      ctx,
+      points,
+      markerColor,
+      markerLw,
+      widthPx,
+      heightPx,
+      cmd.lineDashStyle,
+      { accumulateOverlap: options?.markerOverlapAccumulate },
+    )
     return
   }
 
@@ -173,7 +206,9 @@ export function drawStrokePath(
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
     ctx.fillStyle = ctx.strokeStyle
-    traceStrokePoints(ctx, 'pen', points, sx, sy)
+    traceStrokePoints(ctx, 'pen', points, sx, sy, (x, y) =>
+      drawStrokeCapDot(ctx, x, y, lineWidth),
+    )
     ctx.setLineDash([])
   }
 
@@ -338,7 +373,7 @@ export function drawAnnotationCommand(
   switch (cmd.kind) {
     case 'stroke': {
       if (cmd.tool !== 'eraser-line') {
-        drawStrokePath(ctx, cmd, widthPx, heightPx, options)
+        drawStrokePathWithRotation(ctx, cmd, widthPx, heightPx, options)
       }
       break
     }
@@ -361,118 +396,125 @@ export function drawAnnotationCommand(
       break
     }
     case 'rect': {
-      const x = cmd.x * widthPx
-      const y = cmd.y * heightPx
-      const w = cmd.w * widthPx
-      const h = cmd.h * heightPx
       const lw = strokeWidthPx(cmd.strokeWidthScale, DEFAULT_SHAPE_STROKE_PX)
       const legacyFill = cmd.fillColor != null && cmd.fillAlpha != null && cmd.fillAlpha > 0
       const showFill = cmd.fillVisible === false ? false : legacyFill
       const showStroke = cmd.strokeVisible !== false
-      ctx.save()
-      if (showFill && cmd.fillColor != null && cmd.fillAlpha != null && cmd.fillAlpha > 0) {
-        const a = cmd.fillAlpha
-        const hex = cmd.fillColor
-        const rr = parseInt(hex.slice(1, 3), 16)
-        const gg = parseInt(hex.slice(3, 5), 16)
-        const bb = parseInt(hex.slice(5, 7), 16)
-        ctx.fillStyle = `rgba(${rr},${gg},${bb},${a})`
-        ctx.fillRect(x, y, w, h)
-      }
-      if (showStroke) {
-        ctx.strokeStyle = cmd.strokeColor
-        ctx.lineWidth = lw
-        ctx.lineCap = 'butt'
-        applyAnnotationLineDash(ctx, cmd.lineDashStyle, lw)
-        ctx.strokeRect(x, y, w, h)
-        ctx.setLineDash([])
-      }
-      ctx.restore()
+      withBoxShapeRotation(ctx, cmd, widthPx, heightPx, (w, h) => {
+        const rounded = shapeRoundedCornersEnabled(cmd.roundedCorners)
+        const cornerR = rounded ? shapeCornerRadiusPx(w, h) : 0
+        const drawPath = () => {
+          if (rounded) appendRoundRectPath(ctx, 0, 0, w, h, cornerR)
+          else {
+            ctx.beginPath()
+            ctx.rect(0, 0, w, h)
+          }
+        }
+        if (showFill && cmd.fillColor != null && cmd.fillAlpha != null && cmd.fillAlpha > 0) {
+          const a = cmd.fillAlpha
+          const hex = cmd.fillColor
+          const rr = parseInt(hex.slice(1, 3), 16)
+          const gg = parseInt(hex.slice(3, 5), 16)
+          const bb = parseInt(hex.slice(5, 7), 16)
+          drawPath()
+          ctx.fillStyle = `rgba(${rr},${gg},${bb},${a})`
+          ctx.fill()
+        }
+        if (showStroke) {
+          drawPath()
+          ctx.strokeStyle = cmd.strokeColor
+          ctx.lineWidth = lw
+          ctx.lineCap = rounded ? 'round' : 'butt'
+          ctx.lineJoin = rounded ? 'round' : 'miter'
+          applyAnnotationLineDash(ctx, cmd.lineDashStyle, lw)
+          ctx.stroke()
+          ctx.setLineDash([])
+        }
+      })
       break
     }
     case 'ellipse': {
-      const x = cmd.x * widthPx
-      const y = cmd.y * heightPx
-      const w = Math.max(1, cmd.w * widthPx)
-      const h = Math.max(1, cmd.h * heightPx)
-      const cx = x + w / 2
-      const cy = y + h / 2
-      const rx = w / 2
-      const ry = h / 2
       const lw = strokeWidthPx(cmd.strokeWidthScale, DEFAULT_SHAPE_STROKE_PX)
       const legacyFill = cmd.fillColor != null && cmd.fillAlpha != null && cmd.fillAlpha > 0
       const showFill = cmd.fillVisible === false ? false : legacyFill
       const showStroke = cmd.strokeVisible !== false
-      ctx.save()
-      ctx.beginPath()
-      ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2)
-      if (showFill && cmd.fillColor != null && cmd.fillAlpha != null && cmd.fillAlpha > 0) {
-        const a = cmd.fillAlpha
-        const hex = cmd.fillColor
-        const rr = parseInt(hex.slice(1, 3), 16)
-        const gg = parseInt(hex.slice(3, 5), 16)
-        const bb = parseInt(hex.slice(5, 7), 16)
-        ctx.fillStyle = `rgba(${rr},${gg},${bb},${a})`
-        ctx.fill()
-      }
-      if (showStroke) {
-        ctx.beginPath()
-        ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2)
-        ctx.strokeStyle = cmd.strokeColor
-        ctx.lineWidth = lw
-        ctx.lineCap = 'round'
-        applyAnnotationLineDash(ctx, cmd.lineDashStyle, lw)
-        ctx.stroke()
+      withBoxShapeRotation(ctx, cmd, widthPx, heightPx, (w, h) => {
+        const rw = Math.max(1, w)
+        const rh = Math.max(1, h)
+        const rx = rw / 2
+        const ry = rh / 2
+        const cx = rw / 2
+        const cy = rh / 2
+        if (showFill && cmd.fillColor != null && cmd.fillAlpha != null && cmd.fillAlpha > 0) {
+          const a = cmd.fillAlpha
+          const hex = cmd.fillColor
+          const rr = parseInt(hex.slice(1, 3), 16)
+          const gg = parseInt(hex.slice(3, 5), 16)
+          const bb = parseInt(hex.slice(5, 7), 16)
+          ctx.beginPath()
+          ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2)
+          ctx.fillStyle = `rgba(${rr},${gg},${bb},${a})`
+          ctx.fill()
+        }
+        if (showStroke) {
+          ctx.beginPath()
+          ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2)
+          ctx.strokeStyle = cmd.strokeColor
+          ctx.lineWidth = lw
+          ctx.lineCap = 'round'
+          applyAnnotationLineDash(ctx, cmd.lineDashStyle, lw)
+          ctx.stroke()
+          ctx.setLineDash([])
+        }
         ctx.setLineDash([])
-      }
-      ctx.restore()
+      })
       break
     }
     case 'triangle': {
-      const x = cmd.x * widthPx
-      const y = cmd.y * heightPx
-      const w = cmd.w * widthPx
-      const h = cmd.h * heightPx
       const lw = strokeWidthPx(cmd.strokeWidthScale, DEFAULT_SHAPE_STROKE_PX)
       const legacyFill = cmd.fillColor != null && cmd.fillAlpha != null && cmd.fillAlpha > 0
       const showFill = cmd.fillVisible === false ? false : legacyFill
       const showStroke = cmd.strokeVisible !== false
-      const topX = x + w / 2
-      const topY = y
-      const blX = x
-      const blY = y + h
-      const brX = x + w
-      const brY = y + h
-      ctx.save()
-      ctx.beginPath()
-      ctx.moveTo(topX, topY)
-      ctx.lineTo(blX, blY)
-      ctx.lineTo(brX, brY)
-      ctx.closePath()
-      if (showFill && cmd.fillColor != null && cmd.fillAlpha != null && cmd.fillAlpha > 0) {
-        const a = cmd.fillAlpha
-        const hex = cmd.fillColor
-        const rr = parseInt(hex.slice(1, 3), 16)
-        const gg = parseInt(hex.slice(3, 5), 16)
-        const bb = parseInt(hex.slice(5, 7), 16)
-        ctx.fillStyle = `rgba(${rr},${gg},${bb},${a})`
-        ctx.fill()
-      }
-      if (showStroke) {
-        ctx.beginPath()
-        ctx.moveTo(topX, topY)
-        ctx.lineTo(blX, blY)
-        ctx.lineTo(brX, brY)
-        ctx.closePath()
-        ctx.strokeStyle = cmd.strokeColor
-        ctx.lineWidth = lw
-        ctx.lineCap = 'round'
-        ctx.lineJoin = 'round'
-        applyAnnotationLineDash(ctx, cmd.lineDashStyle, lw)
-        ctx.stroke()
+      withBoxShapeRotation(ctx, cmd, widthPx, heightPx, (w, h) => {
+        const topX = w / 2
+        const topY = 0
+        const blX = 0
+        const blY = h
+        const brX = w
+        const brY = h
+        const rounded = shapeRoundedCornersEnabled(cmd.roundedCorners)
+        const cornerR = rounded ? shapeCornerRadiusPx(w, h) : 0
+        const drawPath = () => {
+          if (rounded) appendRoundedTrianglePath(ctx, topX, topY, blX, blY, brX, brY, cornerR)
+          else {
+            ctx.beginPath()
+            ctx.moveTo(topX, topY)
+            ctx.lineTo(blX, blY)
+            ctx.lineTo(brX, brY)
+            ctx.closePath()
+          }
+        }
+        if (showFill && cmd.fillColor != null && cmd.fillAlpha != null && cmd.fillAlpha > 0) {
+          const a = cmd.fillAlpha
+          const hex = cmd.fillColor
+          const rr = parseInt(hex.slice(1, 3), 16)
+          const gg = parseInt(hex.slice(3, 5), 16)
+          const bb = parseInt(hex.slice(5, 7), 16)
+          drawPath()
+          ctx.fillStyle = `rgba(${rr},${gg},${bb},${a})`
+          ctx.fill()
+        }
+        if (showStroke) {
+          drawPath()
+          ctx.strokeStyle = cmd.strokeColor
+          ctx.lineWidth = lw
+          ctx.lineCap = 'round'
+          ctx.lineJoin = 'round'
+          applyAnnotationLineDash(ctx, cmd.lineDashStyle, lw)
+          ctx.stroke()
+        }
         ctx.setLineDash([])
-      }
-      ctx.restore()
+      })
       break
     }
     case 'arrow': {

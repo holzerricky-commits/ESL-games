@@ -1,6 +1,6 @@
 'use client'
 
-import { LayoutTemplate } from 'lucide-react'
+import { Presentation } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { WhiteboardSlotSide } from '../hooks/useWhiteboardPlacement'
 
@@ -31,7 +31,7 @@ export function WhiteboardCollapsedTab({
       style={{ width: 28, minHeight: 64 }}
       data-whiteboard-collapsed-tab={slotSide}
     >
-      <LayoutTemplate className="h-3.5 w-3.5 text-[#5c4030]/80" aria-hidden />
+      <Presentation className="h-3.5 w-3.5 text-[#5c4030]/80" strokeWidth={2} aria-hidden />
       <span className="text-[8px] font-semibold uppercase tracking-wide text-[#5c4030]/70 [writing-mode:vertical-rl] rotate-180">
         Board
       </span>

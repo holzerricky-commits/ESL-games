@@ -3,10 +3,16 @@
 import dynamic from 'next/dynamic'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { resolveSpreadGutterPullRatio } from '@/lib/books/spread-gutter'
+import { resolveSpreadGutterPullRatio, spreadSidePullPx } from '@/lib/books/spread-gutter'
 import type { BookLibraryPayload } from '@/lib/books/types'
 import { patchStudentWorkCaption } from '@/lib/books/book-capture'
-import { BOOK_OVERLAY_NOTEBOOK_UI_ENABLED, makeUnitFileUrl, WHITEBOARD_NOTEBOOK_SURFACE } from '../constants'
+import {
+  BOOK_OVERLAY_NOTEBOOK_UI_ENABLED,
+  makeUnitFileUrl,
+  WHITEBOARD_HEADER_HEIGHT_PX,
+  WHITEBOARD_NOTEBOOK_SURFACE,
+  WHITEBOARD_SLOT_INSET_PX,
+} from '../constants'
 import { useArrowKeyPageTurn } from './useArrowKeyPageTurn'
 import { useBookOverlayKeyboardShortcuts } from './useBookOverlayKeyboardShortcuts'
 import { useAnnotationController } from './useAnnotationController'
@@ -27,10 +33,24 @@ import { useLessonPaperNotebookNavigation } from './useLessonPaperNotebookNaviga
 import { useWhiteboardNotebookCapture } from './useWhiteboardNotebookCapture'
 import { useWhiteboardOnBookUnitChange } from './useWhiteboardOnBookUnitChange'
 import { useWhiteboardPlacement } from './useWhiteboardPlacement'
-import { useInfiniteWhiteboardRunway } from './useInfiniteWhiteboardRunway'
+import {
+  getLessonBoardActivePage,
+  lessonBoardLogicalWidthPx,
+  lessonBoardResolveContentHeightPx,
+  type LessonBoardPageOrientation,
+} from '@/lib/books/lesson-board-types'
+import {
+  lessonBoardRunwayViewportHeightPx,
+  lessonBoardWidePanelHeightPx,
+  lessonBoardWideSpreadWidthPx,
+} from '@/lib/books/lesson-board-ink-layout'
+import { useLessonBoardPageRunway } from './useLessonBoardPageRunway'
 import { useWhiteboardInkSession } from './useWhiteboardInkSession'
 import type { WhiteboardToolbarLaunchApi } from './useWhiteboardToolbarLaunch'
-import { resolveWhiteboardStorageKey } from '@/lib/books/whiteboard-storage'
+import {
+  listWhiteboardStorageKeyCandidates,
+  resolveWhiteboardStorageKey,
+} from '@/lib/books/whiteboard-storage'
 import { usePdfUnitCacheOnChange } from './usePdfUnitCacheOnChange'
 import { useInteractiveVocabPack } from './useInteractiveVocabPack'
 import { useBookReaderSpreadModel } from './useBookReaderSpreadModel'
@@ -123,6 +143,7 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
   /** Bumps so `BookCanvasStage` resets slot reporting when reopening, unit change, or width bucket. */
   const [spreadReportEpoch, setSpreadReportEpoch] = useState(0)
   const [isPageListOpen, setIsPageListOpen] = useState(false)
+  const [pageListRailTab, setPageListRailTab] = useState<'book' | 'board'>('book')
   const [isWhiteboardOpen, setIsWhiteboardOpen] = useState(false)
   const [isWhiteboardMinimized, setIsWhiteboardMinimized] = useState(false)
   const [translateDockOpen, setTranslateDockOpen] = useState(false)
@@ -169,6 +190,7 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
   const [pageAreaSize, setPageAreaSize] = useState({ w: 0, h: 0 })
   const pageAreaRef = useRef<HTMLDivElement | null>(null)
   const activePageRowRef = useRef<HTMLButtonElement | null>(null)
+  const lessonBoardActivePageRowRef = useRef<HTMLDivElement | null>(null)
   const [pageJumpDraft, setPageJumpDraft] = useState('1')
   const [pageJumpFocused, setPageJumpFocused] = useState(false)
   const [pageListScrollRoot, setPageListScrollRoot] = useState<HTMLDivElement | null>(null)
@@ -566,6 +588,8 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     setEraserLineThicknessStep,
     textVisualStyle,
     setTextVisualStyle,
+    textFontId,
+    setTextFontId,
     textFillColor,
     setTextFillColor,
     pickTextFillColor,
@@ -589,6 +613,8 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     setShapeFillMode,
     shapeFillColor,
     setShapeFillColor,
+    shapeRoundedCorners,
+    setShapeRoundedCorners,
     eyedropperVariant,
     setEyedropperVariant,
     strokeLineDashStyleForInk,
@@ -1025,14 +1051,27 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     })
   }, [activeClassSessionId, selectedBookId, selectedUnitId])
 
+  const whiteboardStorageKeyCandidates = useMemo(() => {
+    if (!selectedBookId || !selectedUnitId) return []
+    return listWhiteboardStorageKeyCandidates({
+      classSessionId: activeClassSessionId,
+      bookId: selectedBookId,
+      unitId: selectedUnitId,
+    })
+  }, [activeClassSessionId, selectedBookId, selectedUnitId])
+
   const {
-    whiteboardLayoutMode,
     whiteboardSlotSide,
+    whiteboardLayoutMode,
+    whiteboardFloatRect,
     setWhiteboardSlotSide,
     applyWhiteboardSlotSide,
     registerWhiteboardSlotMotion,
-    toggleWhiteboardFullscreen,
     swapWhiteboardSlotSide,
+    floatWhiteboard,
+    dockWhiteboardToSlot,
+    forceDockWhiteboard,
+    commitWhiteboardFloatRect,
     openWhiteboardWithDefaultPlacement,
     resetPlacementForUnitChange,
   } = useWhiteboardPlacement({
@@ -1044,11 +1083,6 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     annotationTargetPage,
   })
 
-  const { whiteboardContentHeightPx, extendWhiteboardRunway } = useInfiniteWhiteboardRunway({
-    viewportHeightPx: pageCanvasHeightPx,
-    enabled: isWhiteboardOpen,
-  })
-
   const {
     whiteboardSessionDoc,
     flushWhiteboardSessionToLegacy,
@@ -1056,6 +1090,10 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     whiteboardSessionUndo,
     whiteboardSessionRedo,
     whiteboardSessionClear,
+    setActiveLessonBoardContentHeightPx,
+    setActiveLessonBoardPage,
+    appendLessonBoardPage,
+    setLessonBoardPageTitle,
   } = useWhiteboardInkSession({
     enabled:
       whiteboardInkSessionEnabled &&
@@ -1067,9 +1105,65 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     bookId: selectedBookId,
     unitId: selectedUnitId,
     storagePageKey: whiteboardStorageKey,
+    storagePageKeyCandidates: whiteboardStorageKeyCandidates,
     whiteboardSessionStoreRef,
     onOverlayCaps: onWhiteboardOverlayCaps,
   })
+
+  const whiteboardSlotPanelHeightPx = Math.max(
+    1,
+    pageCanvasHeightPx - WHITEBOARD_SLOT_INSET_PX * 2,
+  )
+  const lessonBoardActivePage = whiteboardSessionDoc
+    ? getLessonBoardActivePage(whiteboardSessionDoc.pages, whiteboardSessionDoc.activePageId)
+    : null
+  const lessonBoardRunwayOrientation = lessonBoardActivePage?.orientation ?? 'standard'
+  const lessonBoardSpreadOverlayWidthPx = Math.max(
+    1,
+    Math.round(spreadPageWidth * 2 - spreadSidePullPx(spreadPageWidth, spreadGutterPullRatio)),
+  )
+  const lessonBoardSpreadWidthPx = lessonBoardWideSpreadWidthPx(
+    lessonBoardSpreadOverlayWidthPx,
+    WHITEBOARD_SLOT_INSET_PX,
+  )
+  const lessonBoardSlotWidthPx = Math.max(1, spreadPageWidth - WHITEBOARD_SLOT_INSET_PX * 2)
+  const lessonBoardActiveLogicalWidthPx = lessonBoardActivePage
+    ? lessonBoardLogicalWidthPx(lessonBoardActivePage, {
+        slotWidthPx: lessonBoardSlotWidthPx,
+        spreadWidthPx: lessonBoardSpreadWidthPx,
+      })
+    : lessonBoardSlotWidthPx
+  const widePanelHeightPx =
+    lessonBoardRunwayOrientation === 'wide'
+      ? lessonBoardWidePanelHeightPx(
+          lessonBoardResolveContentHeightPx(
+            'wide',
+            lessonBoardActiveLogicalWidthPx,
+            lessonBoardActivePage?.contentHeightPx ?? 0,
+          ),
+          WHITEBOARD_HEADER_HEIGHT_PX,
+        )
+      : undefined
+  const whiteboardCanvasViewportHeightPx = lessonBoardRunwayViewportHeightPx(
+    lessonBoardRunwayOrientation,
+    whiteboardSlotPanelHeightPx,
+    WHITEBOARD_HEADER_HEIGHT_PX,
+    widePanelHeightPx,
+  )
+
+  const { lessonBoardContentHeightPx, extendLessonBoardRunway } = useLessonBoardPageRunway({
+    enabled: isWhiteboardOpen && !!whiteboardSessionDoc,
+    viewportHeightPx: whiteboardCanvasViewportHeightPx,
+    logicalWidthPx: lessonBoardActiveLogicalWidthPx,
+    orientation: lessonBoardActivePage?.orientation ?? 'standard',
+    storedContentHeightPx: lessonBoardActivePage?.contentHeightPx ?? 0,
+    activePageId: whiteboardSessionDoc?.activePageId ?? '',
+    commands: whiteboardSessionDoc?.commands ?? [],
+    onPersistContentHeight: setActiveLessonBoardContentHeightPx,
+  })
+
+  const whiteboardContentHeightPx = lessonBoardContentHeightPx
+  const extendWhiteboardRunway = extendLessonBoardRunway
 
   useWhiteboardOnBookUnitChange({
     selectedBookId,
@@ -1090,6 +1184,46 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
   const expandWhiteboard = useCallback(() => {
     setIsWhiteboardMinimized(false)
   }, [])
+
+  const selectLessonBoardPage = useCallback(
+    (pageId: string) => {
+      setActiveLessonBoardPage(pageId)
+    },
+    [setActiveLessonBoardPage],
+  )
+
+  const createLessonBoardPage = useCallback(
+    (orientation: LessonBoardPageOrientation = 'standard') => {
+      appendLessonBoardPage({
+        orientation,
+        viewportHeightPx: whiteboardCanvasViewportHeightPx,
+        slotWidthPx: lessonBoardSlotWidthPx,
+        spreadWidthPx: lessonBoardSpreadWidthPx,
+      })
+    },
+    [
+      appendLessonBoardPage,
+      lessonBoardSlotWidthPx,
+      lessonBoardSpreadWidthPx,
+      whiteboardCanvasViewportHeightPx,
+    ],
+  )
+
+  const renameLessonBoardPage = useCallback(
+    (pageId: string, title: string | undefined) => {
+      setLessonBoardPageTitle(pageId, title)
+    },
+    [setLessonBoardPageTitle],
+  )
+
+  const togglePageListRail = useCallback(() => {
+    setIsPageListOpen((wasOpen) => {
+      if (!wasOpen) {
+        setPageListRailTab(isWhiteboardOpen ? 'board' : 'book')
+      }
+      return !wasOpen
+    })
+  }, [isWhiteboardOpen])
 
   const openWhiteboard = useCallback(() => {
     setIsWhiteboardMinimized(false)
@@ -1344,13 +1478,14 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     setIsAnnotationRailVisible,
     isPageListOpen,
     setIsPageListOpen,
+    pageListRailTab,
+    setPageListRailTab,
     isWhiteboardOpen: isWhiteboardOpen && !isWhiteboardMinimized,
     isWhiteboardSessionOpen: isWhiteboardOpen,
     setIsWhiteboardOpen,
     launchOpenWhiteboard,
     launchExpandWhiteboard,
     launchCloseWhiteboard,
-    toggleWhiteboardFullscreen,
     setWhiteboardSlotSide,
     isWhiteboardMinimized,
     pdfDialogOpen,
@@ -1497,6 +1632,7 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     isMounted,
     open,
     isPageListOpen,
+    pageListRailTab,
     isSinglePageMode,
     isVisible,
     isWhiteboardOpen: isWhiteboardOpen && !isWhiteboardMinimized,
@@ -1596,6 +1732,8 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     setShapeFillMode,
     shapeFillColor,
     setShapeFillColor,
+    shapeRoundedCorners,
+    setShapeRoundedCorners,
     eyedropperVariant,
     setEyedropperVariant,
     printedJumpBounds,
@@ -1622,6 +1760,8 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     notebookEditable,
     activeClassSessionId,
     setIsPageListOpen,
+    togglePageListRail,
+    setPageListRailTab,
     setIsWhiteboardOpen,
     setJpegQuality,
     setLessonPaperViewMode,
@@ -1643,6 +1783,7 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     setTextFillColor,
     pickTextFillColor,
     setTextVisualStyle,
+    setTextFontId,
     setWatermarkEnabled,
     openWhiteboardWithDefaultPlacement,
     shapeColor,
@@ -1662,6 +1803,10 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     whiteboardSessionUndo,
     whiteboardSessionRedo,
     whiteboardSessionClear,
+    selectLessonBoardPage,
+    createLessonBoardPage,
+    renameLessonBoardPage,
+    lessonBoardActivePageRowRef,
     onWhiteboardOverlayCaps,
     layoutSpreadPageWidth,
     spreadRightPage,
@@ -1682,6 +1827,7 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     studentName,
     suppressChrome,
     textFontSizeNorm,
+    textFontId,
     textFillColor,
     textVisualStyle,
     toolbarCaps,
@@ -1696,13 +1842,13 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     wbAnnRef,
     wbCaptureRootRef,
     whiteboardStorageKey,
-    whiteboardLayoutMode,
     whiteboardSlotSide,
+    whiteboardLayoutMode,
+    whiteboardFloatRect,
     setWhiteboardSlotSide,
     applyWhiteboardSlotSide,
     registerWhiteboardSlotMotion,
     registerWhiteboardToolbarLaunch,
-    toggleWhiteboardFullscreen,
     whiteboardContentHeightPx,
     extendWhiteboardRunway,
     isWhiteboardMinimized,
@@ -1710,6 +1856,10 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     expandWhiteboard,
     openWhiteboard,
     swapWhiteboardSlotSide,
+    floatWhiteboard,
+    dockWhiteboardToSlot,
+    forceDockWhiteboard,
+    commitWhiteboardFloatRect,
   }
 }
 

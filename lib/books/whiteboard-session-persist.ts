@@ -11,6 +11,10 @@ import {
   saveWhiteboardSessionCheckpoint,
   type WhiteboardSessionStorageAdapter,
 } from '@/lib/books/whiteboard-session-storage'
+import {
+  syncLessonBoardActivePageToCommands,
+  syncLessonBoardCommandsToActivePage,
+} from '@/lib/books/lesson-board-types'
 import type { WhiteboardSessionDocument } from '@/lib/books/whiteboard-session-types'
 
 export type FlushWhiteboardSessionToLegacyParams = {
@@ -66,4 +70,29 @@ export function resolveWhiteboardSessionCommandsOnMount(
   for (const cmd of fromLegacy) byId.set(cmd.id, cmd)
   for (const cmd of sessionCommands) byId.set(cmd.id, cmd)
   return [...byId.values()]
+}
+
+/** Merge legacy page-layer ink into the active lesson-board page (root + `pages[]`). */
+export function mergeLegacyInkIntoLessonBoardSession(
+  doc: WhiteboardSessionDocument,
+  legacyCommands: readonly AnnotationCommand[],
+): WhiteboardSessionDocument {
+  const synced = syncLessonBoardActivePageToCommands(doc)
+  const mergedCommands = resolveWhiteboardSessionCommandsOnMount(synced.commands, legacyCommands)
+  return syncLessonBoardCommandsToActivePage({ ...synced, commands: mergedCommands })
+}
+
+export function lessonBoardSessionInkChanged(
+  before: WhiteboardSessionDocument,
+  after: WhiteboardSessionDocument,
+): boolean {
+  if (before.pages.length !== after.pages.length) return true
+  if (before.activePageId !== after.activePageId) return true
+  if (before.commands.length !== after.commands.length) return true
+  for (let i = 0; i < before.pages.length; i++) {
+    if ((before.pages[i]?.commands.length ?? 0) !== (after.pages[i]?.commands.length ?? 0)) {
+      return true
+    }
+  }
+  return false
 }

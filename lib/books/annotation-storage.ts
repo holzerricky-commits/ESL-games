@@ -19,7 +19,9 @@ import type {
   StrokeTool,
   TextAnnotationCommand,
 } from '@/lib/books/annotation-command-types'
+import { isAnnotationTextFontId } from '@/lib/books/annotation-text-fonts'
 import { isPenInkStyle, PEN_INK_TILE_PX, type PenInkStyle } from '@/lib/books/pen-ink'
+import { normalizeDeg } from '@/lib/books/annotation-rotation'
 import { isPenStrokeProfile, type PenStrokeProfile } from '@/lib/books/pen-stroke-profile'
 
 export type BookAnnotationTool = 'pen' | 'marker' | 'eraser' | 'eraser-line'
@@ -39,43 +41,67 @@ export type BookAnnotationInteractionMode =
   | 'select'
   | 'eyedropper'
 
-/** Seven thickness steps (multiplier on base marker / eraser widths). */
+/** Seven thickness steps (multiplier on marker / eraser / stamp base widths). */
 export const ANNOTATION_STROKE_WIDTH_STEPS = [0.5, 0.66, 0.8, 1, 1.2, 1.42, 1.68] as const
 
-/** Pen level 1 — thin (unchanged). */
-const ANNOTATION_PEN_STROKE_MIN = 0.32
-/** Pen level 7 — very thick (unchanged). */
-const ANNOTATION_PEN_STROKE_MAX = 6.8
-/** Constant ratio between consecutive levels (geometric = perceptually even). */
-const ANNOTATION_PEN_STROKE_RATIO = (ANNOTATION_PEN_STROKE_MAX / ANNOTATION_PEN_STROKE_MIN) ** (1 / 6)
+/** Shared base line width for pen ink and shape outlines (CSS px). Keep in sync with `PEN_LINE_WIDTH`. */
+export const ANNOTATION_FINE_INK_LINE_BASE_PX = 2.5
+
+/** Must match `MARKER_LINE_WIDTH` in annotation-draw. */
+const MARKER_LINE_BASE_PX = 22
+/** Must match `ERASER_LINE_WIDTH` in annotation-draw. */
+const ERASER_LINE_BASE_PX = 18
+
+const FINE_INK_STROKE_MIN = 0.4
+const FINE_INK_STROKE_MAX = 4
+const FINE_INK_STROKE_RATIO = (FINE_INK_STROKE_MAX / FINE_INK_STROKE_MIN) ** (1 / 6)
 
 /**
- * Pen-only multipliers on base line width (2.5 CSS px). Levels 1 and 7 fixed; 2–6 fill a geometric progression.
+ * Pen + shapes share one multiplier table on {@link ANNOTATION_FINE_INK_LINE_BASE_PX}.
+ * Geometric steps ~1–10 px line width (perceptually even).
  */
-export const ANNOTATION_PEN_STROKE_WIDTH_STEPS = [
-  ANNOTATION_PEN_STROKE_MIN,
-  ANNOTATION_PEN_STROKE_MIN * ANNOTATION_PEN_STROKE_RATIO ** 1,
-  ANNOTATION_PEN_STROKE_MIN * ANNOTATION_PEN_STROKE_RATIO ** 2,
-  ANNOTATION_PEN_STROKE_MIN * ANNOTATION_PEN_STROKE_RATIO ** 3,
-  ANNOTATION_PEN_STROKE_MIN * ANNOTATION_PEN_STROKE_RATIO ** 4,
-  ANNOTATION_PEN_STROKE_MIN * ANNOTATION_PEN_STROKE_RATIO ** 5,
-  ANNOTATION_PEN_STROKE_MAX,
+export const ANNOTATION_FINE_INK_STROKE_WIDTH_STEPS = [
+  FINE_INK_STROKE_MIN,
+  FINE_INK_STROKE_MIN * FINE_INK_STROKE_RATIO ** 1,
+  FINE_INK_STROKE_MIN * FINE_INK_STROKE_RATIO ** 2,
+  FINE_INK_STROKE_MIN * FINE_INK_STROKE_RATIO ** 3,
+  FINE_INK_STROKE_MIN * FINE_INK_STROKE_RATIO ** 4,
+  FINE_INK_STROKE_MIN * FINE_INK_STROKE_RATIO ** 5,
+  FINE_INK_STROKE_MAX,
 ] as const
 
-/** Popover preview dot diameters (px); same geometric law between 3 and 19 as pen multipliers. */
-const ANNOTATION_PEN_PREVIEW_MIN = 3
-const ANNOTATION_PEN_PREVIEW_MAX = 19
-const ANNOTATION_PEN_PREVIEW_RATIO = (ANNOTATION_PEN_PREVIEW_MAX / ANNOTATION_PEN_PREVIEW_MIN) ** (1 / 6)
+/** @deprecated Use {@link ANNOTATION_FINE_INK_STROKE_WIDTH_STEPS}. */
+export const ANNOTATION_PEN_STROKE_WIDTH_STEPS = ANNOTATION_FINE_INK_STROKE_WIDTH_STEPS
 
-export const ANNOTATION_PEN_THICKNESS_PREVIEW_DOTS = [
-  ANNOTATION_PEN_PREVIEW_MIN,
-  ANNOTATION_PEN_PREVIEW_MIN * ANNOTATION_PEN_PREVIEW_RATIO ** 1,
-  ANNOTATION_PEN_PREVIEW_MIN * ANNOTATION_PEN_PREVIEW_RATIO ** 2,
-  ANNOTATION_PEN_PREVIEW_MIN * ANNOTATION_PEN_PREVIEW_RATIO ** 3,
-  ANNOTATION_PEN_PREVIEW_MIN * ANNOTATION_PEN_PREVIEW_RATIO ** 4,
-  ANNOTATION_PEN_PREVIEW_MIN * ANNOTATION_PEN_PREVIEW_RATIO ** 5,
-  ANNOTATION_PEN_PREVIEW_MAX,
-] as const
+export function fineInkLineWidthPx(widthScale: number): number {
+  return ANNOTATION_FINE_INK_LINE_BASE_PX * widthScale
+}
+
+function buildFineInkPreviewDots(profileWidthScale = 1): readonly number[] {
+  return ANNOTATION_FINE_INK_STROKE_WIDTH_STEPS.map(
+    (m) => fineInkLineWidthPx(m * profileWidthScale),
+  )
+}
+
+/** Preview dot diameter (px) = on-canvas line width for pen / shapes. */
+export const ANNOTATION_FINE_INK_THICKNESS_PREVIEW_DOTS = buildFineInkPreviewDots()
+
+/** @deprecated Use {@link ANNOTATION_FINE_INK_THICKNESS_PREVIEW_DOTS}. */
+export const ANNOTATION_PEN_THICKNESS_PREVIEW_DOTS = ANNOTATION_FINE_INK_THICKNESS_PREVIEW_DOTS
+
+export function buildFineInkThicknessPreviewDots(profileWidthScale = 1): readonly number[] {
+  return buildFineInkPreviewDots(profileWidthScale)
+}
+
+/** Preview dots for highlighter thickness (= `MARKER_LINE_WIDTH` × step). */
+export const ANNOTATION_MARKER_THICKNESS_PREVIEW_DOTS = ANNOTATION_STROKE_WIDTH_STEPS.map(
+  (m) => MARKER_LINE_BASE_PX * m,
+) as readonly number[]
+
+/** Preview dots for eraser thickness (= `ERASER_LINE_WIDTH` × step). */
+export const ANNOTATION_ERASER_THICKNESS_PREVIEW_DOTS = ANNOTATION_STROKE_WIDTH_STEPS.map(
+  (m) => ERASER_LINE_BASE_PX * m,
+) as readonly number[]
 
 export type AnnotationStrokeThicknessStep = 0 | 1 | 2 | 3 | 4 | 5 | 6
 
@@ -123,6 +149,25 @@ function isHexColor(s: string): boolean {
 
 function clamp01(n: number): number {
   return Math.max(0, Math.min(1, n))
+}
+
+function sanitizeNormRect(raw: unknown): { x: number; y: number; w: number; h: number } | null {
+  if (!raw || typeof raw !== 'object') return null
+  const rec = raw as Record<string, unknown>
+  const nums = ['x', 'y', 'w', 'h'] as const
+  const box: Record<string, number> = {}
+  for (const k of nums) {
+    const v = rec[k]
+    if (typeof v !== 'number' || !Number.isFinite(v)) return null
+    box[k] = clamp01(v)
+  }
+  if (box.w! <= 0 || box.h! <= 0) return null
+  return { x: box.x!, y: box.y!, w: box.w!, h: box.h! }
+}
+
+function sanitizeRotationDeg(raw: unknown): number | undefined {
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return undefined
+  return normalizeDeg(raw)
 }
 
 function sanitizePoints(raw: unknown): [number, number][] | null {
@@ -210,6 +255,10 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
       }
       const markerDecoratedEdge =
         tool === 'marker' && rec.markerDecoratedEdge === true ? true : undefined
+      const rotationBounds =
+        tool === 'pen' || tool === 'marker' ? sanitizeNormRect(rec.rotationBounds) : null
+      const rotationDeg =
+        tool === 'pen' || tool === 'marker' ? sanitizeRotationDeg(rec.rotationDeg) : undefined
       const cmd: StrokeAnnotationCommand = {
         kind: 'stroke',
         id,
@@ -224,6 +273,10 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
         ...(lineDashStyle ? { lineDashStyle } : {}),
         ...(markerDecoratedEdge ? { markerDecoratedEdge } : {}),
         ...(figureGroupId ? { figureGroupId } : {}),
+        ...(rotationBounds ? { rotationBounds } : {}),
+        ...(rotationDeg != null && (rotationDeg !== 0 || rotationBounds)
+          ? { rotationDeg }
+          : {}),
       }
       out.push(cmd)
       continue
@@ -286,6 +339,8 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
       if (rec.lineDashStyle === 'solid' || rec.lineDashStyle === 'dashed' || rec.lineDashStyle === 'dotted') {
         lineDash = rec.lineDashStyle
       }
+      const roundedCorners = rec.roundedCorners === false ? false : undefined
+      const rotationDeg = sanitizeRotationDeg(rec.rotationDeg)
       const base = {
         id,
         x: box.x,
@@ -299,6 +354,8 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
         ...(fillColor ? { fillColor } : {}),
         ...(fillAlpha != null ? { fillAlpha } : {}),
         ...(lineDash ? { lineDashStyle: lineDash } : {}),
+        ...(roundedCorners === false ? { roundedCorners: false as const } : {}),
+        ...(rotationDeg != null && rotationDeg !== 0 ? { rotationDeg } : {}),
       }
       if (kind === 'rect') {
         out.push({ kind: 'rect', ...base } satisfies RectAnnotationCommand)
@@ -410,6 +467,8 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
       if (rec.yAnchor === 'center' || rec.yAnchor === 'top') {
         yAnchor = rec.yAnchor
       }
+      let fontId: TextAnnotationCommand['fontId']
+      if (isAnnotationTextFontId(rec.fontId)) fontId = rec.fontId
       out.push({
         kind: 'text',
         id,
@@ -422,6 +481,7 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
         ...(visualStyle != null ? { visualStyle } : {}),
         ...(fillColor != null ? { fillColor } : {}),
         ...(yAnchor != null ? { yAnchor } : {}),
+        ...(fontId != null ? { fontId } : {}),
       } satisfies TextAnnotationCommand)
       continue
     }
@@ -450,6 +510,8 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
       if (typeof rec.fillColor === 'string' && isHexColor(rec.fillColor)) {
         fillColor = rec.fillColor
       }
+      let stickyFontId: StickyAnnotationCommand['fontId']
+      if (isAnnotationTextFontId(rec.fontId)) stickyFontId = rec.fontId
       out.push({
         kind: 'sticky',
         id,
@@ -460,6 +522,7 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
         text,
         fontSizeNorm,
         ...(fillColor != null ? { fillColor } : {}),
+        ...(stickyFontId != null ? { fontId: stickyFontId } : {}),
       } satisfies StickyAnnotationCommand)
       continue
     }

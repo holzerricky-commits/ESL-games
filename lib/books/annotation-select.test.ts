@@ -7,11 +7,13 @@ import {
   isFullFigureGroupSelected,
   marqueeSelectModeFromDrag,
   resolveMarqueeSelectMode,
+  selectionOutlineFramesForChrome,
   selectionOutlineRects,
   translateAnnotationCommand,
   unionNormRects,
 } from '@/lib/books/annotation-select'
 import type { AnnotationCommand } from '@/lib/books/annotation-command-types'
+import { sanitizeAnnotationCommands } from '@/lib/books/annotation-storage'
 
 describe('annotation-select', () => {
   it('returns no bounds or hit for trim-empty text labels', () => {
@@ -255,5 +257,58 @@ describe('annotation-select', () => {
     }
     const bounds = getAnnotationBounds(moved, 800, 600)
     expect(bounds).not.toBeNull()
+  })
+
+  it('selectionOutlineFramesForChrome applies live rotation to pen stroke outline', () => {
+    const cmd: AnnotationCommand = {
+      kind: 'stroke',
+      id: 's1',
+      tool: 'pen',
+      points: [
+        [0.4, 0.4],
+        [0.6, 0.4],
+      ],
+      color: '#000',
+      rotationBounds: { x: 0.38, y: 0.38, w: 0.24, h: 0.06 },
+    }
+    const startFrame = { rect: cmd.rotationBounds!, rotationDeg: 0 }
+    const frames = selectionOutlineFramesForChrome(
+      [cmd],
+      ['s1'],
+      800,
+      600,
+      'union',
+      undefined,
+      Math.PI / 4,
+      startFrame,
+    )
+    expect(frames).toHaveLength(1)
+    expect(frames[0]!.rotationDeg).toBeCloseTo(45, 3)
+    expect(frames[0]!.rect).toEqual(startFrame.rect)
+  })
+
+  it('sanitizeAnnotationCommands keeps pen stroke rotation fields', () => {
+    const raw = [
+      {
+        kind: 'stroke',
+        id: 's1',
+        tool: 'pen',
+        points: [
+          [0.4, 0.4],
+          [0.6, 0.4],
+        ],
+        color: '#112233',
+        rotationBounds: { x: 0.38, y: 0.38, w: 0.24, h: 0.06 },
+        rotationDeg: 45,
+      },
+    ]
+    const clean = sanitizeAnnotationCommands(raw)
+    expect(clean).toHaveLength(1)
+    const stroke = clean[0]!
+    expect(stroke.kind).toBe('stroke')
+    if (stroke.kind === 'stroke') {
+      expect(stroke.rotationBounds).toEqual({ x: 0.38, y: 0.38, w: 0.24, h: 0.06 })
+      expect(stroke.rotationDeg).toBeCloseTo(45, 3)
+    }
   })
 })

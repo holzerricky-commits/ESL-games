@@ -78,7 +78,8 @@ export function BookPageNavigation({
           inputMode="numeric"
           value={pageJumpDraft}
           onChange={(e) => setPageJumpDraft(e.target.value)}
-          onFocus={() => {
+          onFocus={(e) => {
+            const input = e.currentTarget
             setPageJumpFocused(true)
             setPageJumpDraft(
               mapPdfSpreadToDisplayLabel(
@@ -91,6 +92,10 @@ export function BookPageNavigation({
                 numberingMode,
               ),
             )
+            requestAnimationFrame(() => input.select())
+          }}
+          onClick={(e) => {
+            e.currentTarget.select()
           }}
           onBlur={() => {
             setPageJumpFocused(false)

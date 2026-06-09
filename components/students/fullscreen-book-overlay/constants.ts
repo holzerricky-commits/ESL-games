@@ -11,8 +11,8 @@ export const BOOK_OVERLAY_GLASS_CHROME =
   'border border-white/10 bg-black/24 text-white/65 shadow-[0_6px_18px_rgba(0,0,0,0.18)] backdrop-blur-[1.5px]'
 
 /**
- * Lesson paper + vocab notebook panels in the fullscreen book overlay.
- * Off for now; notebook code stays for a future behind-the-book experience.
+ * Legacy lesson-paper + vocab list panels (future class log). Not the lesson board / whiteboard.
+ * Keep off until class-log product is ready.
  */
 export const BOOK_OVERLAY_NOTEBOOK_UI_ENABLED = false
 

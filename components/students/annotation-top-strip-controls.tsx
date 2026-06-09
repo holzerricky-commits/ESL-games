@@ -1,7 +1,9 @@
 'use client'
 
 import type { ReactNode } from 'react'
+import { useState } from 'react'
 import {
+  ChevronDown,
   Eraser,
   GitBranch,
   Minus,
@@ -30,6 +32,12 @@ import {
 import { TOOLBAR_ICON_CLASS } from '@/components/students/annotation-toolbar-icon'
 import type { EyedropperVariant } from '@/lib/books/eyedropper-variant'
 import type { TextAnnotationVisualStyle } from '@/lib/books/annotation-command-types'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import {
+  ANNOTATION_TEXT_FONTS,
+  getAnnotationTextFont,
+  type AnnotationTextFontId,
+} from '@/lib/books/annotation-text-fonts'
 import { cn } from '@/lib/utils'
 
 const LINE_CYCLE: AnnotationLineDashStyle[] = ['solid', 'dashed', 'dotted']
@@ -98,6 +106,52 @@ export function TopStripLineStyleChip({
       onClick={() => onChange(nextLineStyle(value))}
     >
       <LineDashStyleIcon style={value} />
+    </button>
+  )
+}
+
+function ShapeRoundedCornersIcon({ rounded }: { rounded: boolean }) {
+  return (
+    <svg viewBox="0 0 16 16" className={iconCls} aria-hidden>
+      <rect
+        x="2.5"
+        y="2.5"
+        width="11"
+        height="11"
+        rx={rounded ? 3 : 0}
+        ry={rounded ? 3 : 0}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+      />
+    </svg>
+  )
+}
+
+export function TopStripShapeRoundedCornersChip({
+  active,
+  onChange,
+  idPrefix,
+}: {
+  active: boolean
+  onChange: (v: boolean) => void
+  idPrefix: string
+}) {
+  return (
+    <button
+      type="button"
+      id={`${idPrefix}-rounded-corners`}
+      className={cn(stripChipClass, active && 'bg-white/20 text-white ring-1 ring-amber-400/45')}
+      aria-pressed={active}
+      aria-label={
+        active
+          ? 'Rounded corners on. Click for sharp corners.'
+          : 'Sharp corners on. Click for rounded corners.'
+      }
+      title={active ? 'Rounded corners' : 'Sharp corners'}
+      onClick={() => onChange(!active)}
+    >
+      <ShapeRoundedCornersIcon rounded={active} />
     </button>
   )
 }
@@ -426,12 +480,12 @@ export function TopStripPenAutoGroupChip({
       aria-pressed={active}
       aria-label={
         active
-          ? 'Auto-group connected shapes on. New pen strokes join touching figures.'
+          ? 'Auto-group connected shapes on. Touching pen strokes join within 5 seconds; leaving pen locks the figure.'
           : 'Auto-group connected shapes off. Each pen stroke stays separate until grouped.'
       }
       title={
         active
-          ? 'Auto-group shapes (on) — connect touching pen strokes'
+          ? 'Auto-group shapes (on) — touching strokes within 5s; switch tools to finish'
           : 'Auto-group shapes (off)'
       }
       onClick={() => onChange(!active)}
@@ -476,5 +530,74 @@ export const TOP_STRIP_POPOVER_CLASS =
   'w-[min(20rem,calc(100vw-2rem))] rounded-b-xl border border-white/10 border-t-0 bg-black/24 p-2.5 text-white/75 shadow-[0_6px_18px_rgba(0,0,0,0.18)] backdrop-blur-[1.5px] z-[80]'
 
 export const TOP_STRIP_POPOVER_STACK = 'space-y-2.5'
+
+export function TopStripTextFontChip({
+  value,
+  onChange,
+  idPrefix,
+}: {
+  value: AnnotationTextFontId
+  onChange: (id: AnnotationTextFontId) => void
+  idPrefix: string
+}) {
+  const [open, setOpen] = useState(false)
+  const active = getAnnotationTextFont(value)
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          id={`${idPrefix}-text-font`}
+          className={cn(
+            stripChipClass,
+            'inline-flex w-auto min-w-[4.75rem] max-w-[8.5rem] gap-0.5 px-1.5',
+          )}
+          aria-label={`Text font: ${active.label}. Click to choose another font.`}
+          title={`Font: ${active.label}`}
+        >
+          <span
+            className="truncate text-[11px] font-medium leading-none text-white/85"
+            style={{ fontFamily: active.cssFamily }}
+          >
+            Aa
+          </span>
+          <ChevronDown className="h-3 w-3 shrink-0 opacity-60" aria-hidden />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        sideOffset={6}
+        className={cn(TOP_STRIP_POPOVER_CLASS, 'w-[min(15rem,calc(100vw-2rem))] space-y-0.5 p-1.5')}
+      >
+        <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-white/45">
+          Text font
+        </p>
+        <div className="max-h-[min(16rem,50vh)] space-y-0.5 overflow-y-auto overscroll-contain pr-0.5">
+        {ANNOTATION_TEXT_FONTS.map((font) => {
+          const selected = font.id === value
+          return (
+            <button
+              key={font.id}
+              type="button"
+              className={cn(
+                'flex w-full items-center rounded-md px-2 py-1.5 text-left text-sm text-white/85 transition-colors hover:bg-white/10',
+                selected && 'bg-white/12 ring-1 ring-amber-400/40',
+              )}
+              style={{ fontFamily: font.cssFamily }}
+              onClick={() => {
+                onChange(font.id)
+                setOpen(false)
+              }}
+            >
+              {font.label}
+            </button>
+          )
+        })}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
 
 export type { ShapeMode, StampVariant }

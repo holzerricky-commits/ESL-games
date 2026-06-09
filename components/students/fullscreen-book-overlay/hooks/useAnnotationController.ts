@@ -6,7 +6,7 @@ import {
   normalizeCustomHex,
 } from '@/lib/books/annotation-custom-color'
 import {
-  ANNOTATION_PEN_STROKE_WIDTH_STEPS,
+  ANNOTATION_FINE_INK_STROKE_WIDTH_STEPS,
   ANNOTATION_STROKE_WIDTH_STEPS,
   type AnnotationStrokeThicknessStep,
   type BookAnnotationInteractionMode,
@@ -41,6 +41,7 @@ import {
 import {
   coercePenSwatchIdForProfile,
   DEFAULT_PEN_STROKE_PROFILE,
+  normalizeActivePenStrokeProfile,
   penProfileWidthScaleMultiplier,
   resolvePenInkStyleForProfile,
   type PenStrokeProfile,
@@ -53,12 +54,17 @@ import type {
 } from '@/lib/books/annotation-command-types'
 import type { AnnotationCapabilities, BookPageAnnotationHandle } from '@/components/students/book-page-annotation-layer'
 import { ANNOTATION_TEXT_FONT_NORM_STEPS } from '@/components/students/fullscreen-book-overlay/constants'
+import {
+  DEFAULT_ANNOTATION_TEXT_FONT_ID,
+  type AnnotationTextFontId,
+} from '@/lib/books/annotation-text-fonts'
 import { useCtrlTemporarySelect } from '@/components/students/fullscreen-book-overlay/hooks/useCtrlTemporarySelect'
 import {
   createInkSessionSelectProxy,
   createSpreadSessionSelectProxy,
   type InkSessionSelectProxyHandle,
 } from '@/lib/books/ink-session-select-proxy'
+import { lockPenFigureAutoJoinOnCommands } from '@/lib/books/annotation-pen-auto-group'
 import { whiteboardInkSessionEnabled } from '@/lib/books/feature-flags'
 import type { SpreadSessionStore } from '@/lib/books/spread-session-store'
 import type { WhiteboardSessionStore } from '@/lib/books/whiteboard-session-store'
@@ -90,6 +96,8 @@ export function useAnnotationController({
 }: UseAnnotationControllerArgs) {
   const [wbCaps, setWbCaps] = useState<AnnotationCapabilities>({ canUndo: false, canRedo: false })
   const [annotationMode, setAnnotationMode] = useState<BookAnnotationInteractionMode>('pen')
+  const prevAnnotationModeRef = useRef<BookAnnotationInteractionMode | null>(null)
+
   const ctrlTemporarySelect = useCtrlTemporarySelect({
     enabled: overlayOpen,
     isLessonPaperOpen,
@@ -138,6 +146,7 @@ export function useAnnotationController({
   const [eraserPixelThicknessStep, setEraserPixelThicknessStep] = useState<AnnotationStrokeThicknessStep>(3)
   const [eraserLineThicknessStep, setEraserLineThicknessStep] = useState<AnnotationStrokeThicknessStep>(3)
   const [textVisualStyle, setTextVisualStyle] = useState<TextAnnotationVisualStyle>('plain')
+  const [textFontId, setTextFontId] = useState<AnnotationTextFontId>(DEFAULT_ANNOTATION_TEXT_FONT_ID)
   const [textFillColor, setTextFillColor] = useState<string>(DEFAULT_TEXT_FILL_COLOR)
   const [penLineDashStyle, setPenLineDashStyle] = useState<AnnotationLineDashStyle>('solid')
   const [markerLineDashStyle, setMarkerLineDashStyle] = useState<AnnotationLineDashStyle>('solid')
@@ -151,6 +160,7 @@ export function useAnnotationController({
   const [shapeStrokeEnabled, setShapeStrokeEnabled] = useState(true)
   const [shapeFillMode, setShapeFillMode] = useState<ShapeFillMode>('none')
   const [shapeFillColor, setShapeFillColor] = useState<string>(ANNOTATION_MARKER_SWATCHES[0])
+  const [shapeRoundedCorners, setShapeRoundedCorners] = useState(true)
   const [eyedropperVariant, setEyedropperVariant] = useState<EyedropperVariant>(DEFAULT_EYEDROPPER_VARIANT)
   const [annotationTargetPage, setAnnotationTargetPageState] = useState(pageNumber)
   const setAnnotationTargetPage = useCallback((next: number) => {
@@ -175,9 +185,27 @@ export function useAnnotationController({
   const [prefsReady, setPrefsReady] = useState(false)
   const loadGenRef = useRef(0)
 
+  const lockPenFigureAutoJoinEverywhere = useCallback(() => {
+    spreadSessionStoreRef?.current?.patchCommands(lockPenFigureAutoJoinOnCommands)
+    whiteboardSessionStoreRef?.current?.patchCommands(lockPenFigureAutoJoinOnCommands)
+    leftAnnRef.current?.lockPenFigureAutoJoin?.()
+    rightAnnRef.current?.lockPenFigureAutoJoin?.()
+    wbAnnRef.current?.lockPenFigureAutoJoin?.()
+  }, [spreadSessionStoreRef, whiteboardSessionStoreRef])
+
+  useEffect(() => {
+    if (!prefsReady) return
+    const prev = prevAnnotationModeRef.current
+    prevAnnotationModeRef.current = annotationMode
+    if (prev != null && prev === 'pen' && annotationMode !== 'pen') {
+      lockPenFigureAutoJoinEverywhere()
+    }
+  }, [annotationMode, lockPenFigureAutoJoinEverywhere, prefsReady])
+
   useEffect(() => {
     const gen = ++loadGenRef.current
     setPrefsReady(false)
+    prevAnnotationModeRef.current = null
     if (!studentId) {
       setPrefsReady(true)
       return
@@ -208,6 +236,7 @@ export function useAnnotationController({
     setStampVariant(prefs.stampVariant)
     setStampQuestionColor(prefs.stampQuestionColor)
     setTextColor(prefs.textColor)
+    setTextFontId(prefs.textFontId)
     setTextVisualStyle(prefs.textVisualStyle)
     setTextFillColor(prefs.textFillColor)
     setShapeStrokeSwatchId(prefs.shapeStrokeSwatchId)
@@ -215,6 +244,7 @@ export function useAnnotationController({
     setShapeStrokeEnabled(prefs.shapeStrokeEnabled)
     setShapeFillMode(prefs.shapeFillMode)
     setShapeFillColor(prefs.shapeFillColor)
+    setShapeRoundedCorners(prefs.shapeRoundedCorners)
     setStickyFillColor(prefs.stickyFillColor)
     setEyedropperVariant(prefs.eyedropperVariant)
     queueMicrotask(() => {
@@ -252,6 +282,7 @@ export function useAnnotationController({
         stampVariant,
         stampQuestionColor,
         textColor,
+        textFontId,
         textVisualStyle,
         textFillColor,
         shapeStrokeSwatchId,
@@ -259,6 +290,7 @@ export function useAnnotationController({
         shapeStrokeEnabled,
         shapeFillMode,
         shapeFillColor,
+        shapeRoundedCorners,
         stickyFillColor,
         eyedropperVariant,
       }),
@@ -290,6 +322,7 @@ export function useAnnotationController({
     stampVariant,
     stampQuestionColor,
     textColor,
+    textFontId,
     textVisualStyle,
     textFillColor,
     shapeStrokeSwatchId,
@@ -297,13 +330,15 @@ export function useAnnotationController({
     shapeStrokeEnabled,
     shapeFillMode,
     shapeFillColor,
+    shapeRoundedCorners,
     stickyFillColor,
     eyedropperVariant,
   ])
 
   const setPenStrokeProfile = useCallback((profile: PenStrokeProfile) => {
-    setPenStrokeProfileState(profile)
-    setPenSwatchId((id) => coercePenSwatchIdForProfile(id, profile))
+    const active = normalizeActivePenStrokeProfile(profile)
+    setPenStrokeProfileState(active)
+    setPenSwatchId((id) => coercePenSwatchIdForProfile(id, active))
   }, [])
 
   const pickPenSwatch = useCallback((id: string) => {
@@ -353,7 +388,7 @@ export function useAnnotationController({
 
   const strokeWidthScale =
     annotationMode === 'pen'
-      ? ANNOTATION_PEN_STROKE_WIDTH_STEPS[penThicknessStep]
+      ? ANNOTATION_FINE_INK_STROKE_WIDTH_STEPS[penThicknessStep]
       : annotationMode === 'marker'
         ? ANNOTATION_STROKE_WIDTH_STEPS[markerThicknessStep]
         : annotationMode === 'eraser-line'
@@ -364,12 +399,12 @@ export function useAnnotationController({
 
   const eraserLineStrokeWidthScale = ANNOTATION_STROKE_WIDTH_STEPS[eraserLineThicknessStep]
   const penStrokeWidthScale =
-    ANNOTATION_PEN_STROKE_WIDTH_STEPS[penThicknessStep] * penProfileWidthScaleMultiplier(penStrokeProfile)
+    ANNOTATION_FINE_INK_STROKE_WIDTH_STEPS[penThicknessStep] * penProfileWidthScaleMultiplier(penStrokeProfile)
 
   const strokeColor =
     annotationMode === 'pen' ? penColor : annotationMode === 'marker' ? markerColor : undefined
 
-  const shapeStrokeWidthScale = ANNOTATION_STROKE_WIDTH_STEPS[shapeThicknessStep]
+  const shapeStrokeWidthScale = ANNOTATION_FINE_INK_STROKE_WIDTH_STEPS[shapeThicknessStep]
   const stampScale = ANNOTATION_STROKE_WIDTH_STEPS[stampThicknessStep]
   const textFontSizeNorm = ANNOTATION_TEXT_FONT_NORM_STEPS[textThicknessStep]
   const stickyFontSizeNorm = ANNOTATION_TEXT_FONT_NORM_STEPS[stickyThicknessStep]
@@ -619,14 +654,19 @@ export function useAnnotationController({
 
   const getPageAnnotationRef = useCallback(() => {
     if (isWhiteboardOpen) {
-      if (effectiveAnnotationMode === 'select' && whiteboardSessionSelectReady()) {
+      if (whiteboardSessionSelectReady()) {
         return whiteboardSessionSelectProxyRef
       }
       return wbAnnRef
     }
     if (isSinglePageMode) return leftAnnRef
-    if (spreadRightPage != null && effectiveAnnotationMode === 'select') {
-      return spreadSessionSelectReady() ? spreadSessionSelectProxyRef : legacySpreadSelectProxyRef
+    if (spreadRightPage != null) {
+      if (spreadSessionSelectReady()) {
+        return spreadSessionSelectProxyRef
+      }
+      if (effectiveAnnotationMode === 'select') {
+        return legacySpreadSelectProxyRef
+      }
     }
     if (spreadRightPage != null && annotationTargetPage === spreadRightPage) return rightAnnRef
     return leftAnnRef
@@ -682,6 +722,7 @@ export function useAnnotationController({
     eraserPixelThicknessStep, setEraserPixelThicknessStep,
     eraserLineThicknessStep, setEraserLineThicknessStep,
     textVisualStyle, setTextVisualStyle,
+    textFontId, setTextFontId,
     textFillColor,
     setTextFillColor,
     penLineDashStyle, setPenLineDashStyle,
@@ -694,6 +735,7 @@ export function useAnnotationController({
     shapeStrokeEnabled, setShapeStrokeEnabled,
     shapeFillMode, setShapeFillMode,
     shapeFillColor, setShapeFillColor,
+    shapeRoundedCorners, setShapeRoundedCorners,
     eyedropperVariant, setEyedropperVariant,
     strokeLineDashStyleForInk,
     annotationTargetPage, setAnnotationTargetPage,

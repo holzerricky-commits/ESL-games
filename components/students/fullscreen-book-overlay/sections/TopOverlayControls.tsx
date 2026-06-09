@@ -5,7 +5,7 @@ interface TopOverlayControlsProps {
   hasResolvedUnit: boolean
   suppressChrome: boolean
   isPageListOpen: boolean
-  /** Board expanded in a slot or fullscreen — hides vocab shelf only then. */
+  /** Board open — hides vocab shelf only then. */
   isWhiteboardExpanded: boolean
   interactiveVocabNode: ReactNode
 }

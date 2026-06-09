@@ -46,6 +46,95 @@
   --sidebar-accent-foreground: #edf3ff;
   --sidebar-border: #2a385d;
   --sidebar-ring: #86bbff;
+  --font-annotation: 'DS SweetKiss Light', cursive;
+}
+
+@font-face {
+  font-family: 'DS SweetKiss Light';
+  src: url('/fonts/ds-sweetkiss-light.woff2') format('woff2');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Cre ChocoCookie Light';
+  src: url('/fonts/cre-chococookie-light.woff2') format('woff2');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Cre ChocoCookie Medium';
+  src: url('/fonts/cre-chococookie-medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Cre ChocoCookie MM';
+  src: url('/fonts/cre-chococookie-mm.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Cre ChocoCookie C';
+  src: url('/fonts/cre-chococookie-c.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Minako Regular';
+  src: url('/fonts/minako-regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Happy Friday';
+  src: url('/fonts/happy-friday.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Mix String Cheese';
+  src: url('/fonts/mix-string-cheese.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Casino Hand';
+  src: url('/fonts/casino-hand.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Grimnotes Demo';
+  src: url('/fonts/grimnotes.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Grimnotes Alternate Demo';
+  src: url('/fonts/grimnotes-alternate.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
 }
 
 @theme inline {
@@ -120,6 +209,10 @@
 
   .ui-simple-block {
     @apply rounded-md bg-background/70;
+  }
+
+  .font-annotation {
+    font-family: var(--font-annotation);
   }
 }
 

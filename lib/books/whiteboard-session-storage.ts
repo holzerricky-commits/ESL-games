@@ -1,4 +1,8 @@
 import {
+  normalizeLessonBoardSessionDocument,
+  prepareLessonBoardSessionForPersist,
+} from '@/lib/books/lesson-board-types'
+import {
   createEmptyWhiteboardSession,
   whiteboardSessionDocId,
   type WhiteboardSessionDocument,
@@ -51,12 +55,65 @@ export function createMemoryWhiteboardSessionStorage(
   }
 }
 
+function normalizeLoadedWhiteboardSession(
+  raw: WhiteboardSessionDocument | undefined,
+  key: WhiteboardSessionKey,
+): WhiteboardSessionDocument {
+  if (!raw) return createEmptyWhiteboardSession(key)
+  const withKey: WhiteboardSessionDocument = { ...raw, key: raw.key ?? key, docId: raw.docId ?? whiteboardSessionDocId(key) }
+  return normalizeLessonBoardSessionDocument(withKey) as WhiteboardSessionDocument
+}
+
 export function loadWhiteboardSession(
   key: WhiteboardSessionKey,
   adapter: WhiteboardSessionStorageAdapter = browserStorageAdapter(),
 ): WhiteboardSessionDocument {
   const root = adapter.readRoot()
-  return root[whiteboardSessionDocId(key)] ?? createEmptyWhiteboardSession(key)
+  const raw = root[whiteboardSessionDocId(key)] as WhiteboardSessionDocument | undefined
+  return normalizeLoadedWhiteboardSession(raw, key)
+}
+
+export function scoreWhiteboardSessionRichness(doc: WhiteboardSessionDocument): number {
+  const pages = doc.pages ?? []
+  const pageInk = pages.reduce((n, p) => n + p.commands.length, 0)
+  return pages.length * 10_000 + pageInk * 10 + doc.commands.length
+}
+
+/**
+ * Load the richest session among candidate storage keys, then bind to `primaryKey`
+ * so the next checkpoint writes to the canonical key (e.g. live class session).
+ */
+export function loadWhiteboardSessionBestMatch(
+  primaryKey: WhiteboardSessionKey,
+  storagePageKeyCandidates: readonly string[],
+  adapter: WhiteboardSessionStorageAdapter = browserStorageAdapter(),
+): WhiteboardSessionDocument {
+  const keys = [
+    ...new Set(
+      storagePageKeyCandidates.map((k) => k.trim()).filter((k) => k.length > 0),
+    ),
+  ]
+  if (keys.length === 0) keys.push(primaryKey.storagePageKey)
+
+  let best: WhiteboardSessionDocument | null = null
+  let bestScore = -1
+
+  for (const storagePageKey of keys) {
+    const candidateKey = { ...primaryKey, storagePageKey }
+    const doc = loadWhiteboardSession(candidateKey, adapter)
+    const score = scoreWhiteboardSessionRichness(doc)
+    if (score > bestScore) {
+      bestScore = score
+      best = doc
+    }
+  }
+
+  const loaded = best ?? createEmptyWhiteboardSession(primaryKey)
+  return {
+    ...loaded,
+    key: primaryKey,
+    docId: whiteboardSessionDocId(primaryKey),
+  }
 }
 
 export function saveWhiteboardSessionCheckpoint(
@@ -64,6 +121,8 @@ export function saveWhiteboardSessionCheckpoint(
   adapter: WhiteboardSessionStorageAdapter = browserStorageAdapter(),
 ): void {
   const root = adapter.readRoot()
-  root[doc.docId] = doc
+  root[doc.docId] = normalizeLessonBoardSessionDocument(
+    prepareLessonBoardSessionForPersist(doc),
+  ) as WhiteboardSessionDocument
   adapter.writeRoot(root)
 }

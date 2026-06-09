@@ -22,3 +22,17 @@ export function resolveWhiteboardStorageKey(args: {
   if (sessionId) return annotationStorageSessionKey(sessionId)
   return annotationStorageLocalWhiteboardKey(args.bookId, args.unitId)
 }
+
+/** Keys to try on load so reload finds ink saved under class or local session id. */
+export function listWhiteboardStorageKeyCandidates(args: {
+  classSessionId: string | null | undefined
+  bookId: string
+  unitId: string
+}): string[] {
+  const local = annotationStorageLocalWhiteboardKey(args.bookId, args.unitId)
+  const sessionId = args.classSessionId?.trim()
+  const keys: string[] = []
+  if (sessionId) keys.push(annotationStorageSessionKey(sessionId))
+  keys.push(local)
+  return [...new Set(keys)]
+}

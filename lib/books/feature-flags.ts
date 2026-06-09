@@ -2,6 +2,12 @@
 export const spreadSessionEditingEnabled = true
 
 /**
+ * Book highlighter on spread-level multiply band (z-[25]) instead of per-page slots.
+ * Off by default — can cover in-page text; enable only if per-page paint stays invisible.
+ */
+export const spreadMarkerSpreadOverlayFallbackEnabled = false
+
+/**
  * Whiteboard fast session ink (shipped Phase 5). Set `false` to restore legacy board canvas path.
  */
 export const whiteboardInkSessionEnabled = true

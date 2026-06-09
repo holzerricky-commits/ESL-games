@@ -1,5 +1,5 @@
 import type { RefObject } from 'react'
-import { ChevronLeft, ChevronRight, Languages, LayoutTemplate, Redo2, Smartphone, Trash2, Undo2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Languages, Presentation, Redo2, Smartphone, Trash2, Undo2 } from 'lucide-react'
 import { BookAnnotationToolbar } from '@/components/students/book-annotation-toolbar'
 import { BookCaptureMenu } from '@/components/students/book-capture-menu'
 import { Button } from '@/components/ui/button'
@@ -95,6 +95,8 @@ interface AnnotationRailProps {
   setShapeFillMode: (v: ShapeFillMode) => void
   shapeFillColor: string
   setShapeFillColor: (v: string) => void
+  shapeRoundedCorners: boolean
+  setShapeRoundedCorners: (v: boolean) => void
   eyedropperVariant: EyedropperVariant
   setEyedropperVariant: (v: EyedropperVariant) => void
   pdfReady: boolean
@@ -199,6 +201,8 @@ export function AnnotationRail({
   setShapeFillMode,
   shapeFillColor,
   setShapeFillColor,
+  shapeRoundedCorners,
+  setShapeRoundedCorners,
   eyedropperVariant,
   setEyedropperVariant,
   pdfReady,
@@ -324,6 +328,8 @@ export function AnnotationRail({
               setShapeFillMode={setShapeFillMode}
               shapeFillColor={shapeFillColor}
               setShapeFillColor={setShapeFillColor}
+              shapeRoundedCorners={shapeRoundedCorners}
+              setShapeRoundedCorners={setShapeRoundedCorners}
               eyedropperVariant={eyedropperVariant}
               setEyedropperVariant={setEyedropperVariant}
             />
@@ -382,7 +388,7 @@ export function AnnotationRail({
               }
               onClick={onWhiteboardRailClick}
             >
-              <LayoutTemplate className="h-4 w-4" strokeWidth={2} />
+              <Presentation className="h-4 w-4" strokeWidth={2} aria-hidden />
             </Button>
             <Button
               type="button"

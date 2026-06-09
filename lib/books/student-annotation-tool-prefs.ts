@@ -40,8 +40,14 @@ import {
   coercePenSwatchIdForProfile,
   DEFAULT_PEN_STROKE_PROFILE,
   isPenStrokeProfile,
+  normalizeActivePenStrokeProfile,
   type PenStrokeProfile,
 } from '@/lib/books/pen-stroke-profile'
+import {
+  DEFAULT_ANNOTATION_TEXT_FONT_ID,
+  isAnnotationTextFontId,
+  type AnnotationTextFontId,
+} from '@/lib/books/annotation-text-fonts'
 import { isEffectPenInkStyle } from '@/lib/books/pen-ink'
 
 const STORAGE_KEY = 'esl_student_annotation_tool_prefs_v1'
@@ -58,6 +64,7 @@ export type StudentAnnotationToolPrefs = {
   textSwatchId?: string
   textColor?: string
   textThicknessStep?: AnnotationStrokeThicknessStep
+  textFontId?: AnnotationTextFontId
   textVisualStyle?: TextAnnotationVisualStyle
   textFillColor?: string
   shapeStrokeSwatchId?: string
@@ -66,6 +73,8 @@ export type StudentAnnotationToolPrefs = {
   shapeStrokeEnabled?: boolean
   shapeFillMode?: ShapeFillMode
   shapeFillColor?: string
+  /** Rounded corners on rect/triangle; default true when omitted. */
+  shapeRoundedCorners?: boolean
   stickyFillColor?: string
   stickyThicknessStep?: AnnotationStrokeThicknessStep
   markerColor?: string
@@ -185,6 +194,7 @@ export function normalizeStudentAnnotationToolPrefs(raw: unknown): StudentAnnota
   if (isValidPenSwatchId(o.textSwatchId)) out.textSwatchId = migratePenSwatchId(o.textSwatchId)
   if (typeof o.textColor === 'string') out.textColor = migrateTextStrokeColor(o.textColor)
   if (isThicknessStep(o.textThicknessStep)) out.textThicknessStep = o.textThicknessStep
+  if (isAnnotationTextFontId(o.textFontId)) out.textFontId = o.textFontId
   if (isTextVisualStyle(o.textVisualStyle)) out.textVisualStyle = o.textVisualStyle
   if (typeof o.textFillColor === 'string') out.textFillColor = migrateTextFillColor(o.textFillColor)
   if (isValidPenSwatchId(o.shapeStrokeSwatchId)) {
@@ -195,6 +205,7 @@ export function normalizeStudentAnnotationToolPrefs(raw: unknown): StudentAnnota
   if (typeof o.shapeStrokeEnabled === 'boolean') out.shapeStrokeEnabled = o.shapeStrokeEnabled
   if (isShapeFillMode(o.shapeFillMode)) out.shapeFillMode = o.shapeFillMode
   if (isValidShapeFillColor(o.shapeFillColor)) out.shapeFillColor = o.shapeFillColor
+  if (typeof o.shapeRoundedCorners === 'boolean') out.shapeRoundedCorners = o.shapeRoundedCorners
   if (isValidStickyFillColor(o.stickyFillColor)) out.stickyFillColor = o.stickyFillColor
   if (isThicknessStep(o.stickyThicknessStep)) out.stickyThicknessStep = o.stickyThicknessStep
   if (isValidMarkerColor(o.markerColor)) out.markerColor = o.markerColor
@@ -297,7 +308,7 @@ export function resolvePenToolPrefsFromStorage(studentId: string): {
     ? migratePenSwatchId(saved.penSwatchId!)
     : DEFAULT_PEN_SWATCH_ID
   let penStrokeProfile: PenStrokeProfile = isPenStrokeProfile(saved.penStrokeProfile)
-    ? saved.penStrokeProfile
+    ? normalizeActivePenStrokeProfile(saved.penStrokeProfile)
     : DEFAULT_PEN_STROKE_PROFILE
   if (!saved.penStrokeProfile) {
     const swatchInk = getPenSwatch(penSwatchId).patternId
@@ -390,6 +401,7 @@ export { DEFAULT_PEN_CUSTOM_HEX, DEFAULT_MARKER_CUSTOM_HEX }
 export function resolveTextToolPrefsFromStorage(studentId: string): {
   textColor: string
   textThicknessStep: AnnotationStrokeThicknessStep
+  textFontId: AnnotationTextFontId
   textVisualStyle: TextAnnotationVisualStyle
   textFillColor: string
 } {
@@ -405,6 +417,9 @@ export function resolveTextToolPrefsFromStorage(studentId: string): {
   return {
     textColor,
     textThicknessStep: resolveThicknessStep(saved.textThicknessStep, saved.penThicknessStep),
+    textFontId: isAnnotationTextFontId(saved.textFontId)
+      ? saved.textFontId
+      : DEFAULT_ANNOTATION_TEXT_FONT_ID,
     textVisualStyle: isTextVisualStyle(saved.textVisualStyle) ? saved.textVisualStyle : 'plain',
     textFillColor:
       typeof saved.textFillColor === 'string'
@@ -433,6 +448,7 @@ export function resolveShapeToolPrefsFromStorage(studentId: string): {
   shapeStrokeEnabled: boolean
   shapeFillMode: ShapeFillMode
   shapeFillColor: string
+  shapeRoundedCorners: boolean
 } {
   const saved = readStudentAnnotationToolPrefs(studentId)
   const penFallback = isValidPenSwatchId(saved.penSwatchId)
@@ -450,6 +466,8 @@ export function resolveShapeToolPrefsFromStorage(studentId: string): {
     shapeFillColor: isValidShapeFillColor(saved.shapeFillColor)
       ? saved.shapeFillColor!
       : DEFAULT_SHAPE_FILL_COLOR,
+    shapeRoundedCorners:
+      typeof saved.shapeRoundedCorners === 'boolean' ? saved.shapeRoundedCorners : true,
   }
 }
 

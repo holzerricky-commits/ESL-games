@@ -24,6 +24,10 @@ function strokeInkFields(cmd: StrokeAnnotationCommand): Omit<StrokeAnnotationCom
     ...(cmd.penInkPatternPhaseY != null ? { penInkPatternPhaseY: cmd.penInkPatternPhaseY } : {}),
     ...(cmd.markerDecoratedEdge ? { markerDecoratedEdge: true } : {}),
     ...(cmd.figureGroupId ? { figureGroupId: cmd.figureGroupId } : {}),
+    ...(cmd.committedAtMs != null ? { committedAtMs: cmd.committedAtMs } : {}),
+    ...(cmd.figureAutoJoinClosed ? { figureAutoJoinClosed: true } : {}),
+    ...(cmd.rotationBounds ? { rotationBounds: cmd.rotationBounds } : {}),
+    ...(cmd.rotationDeg != null ? { rotationDeg: cmd.rotationDeg } : {}),
   }
 }
 
@@ -80,9 +84,25 @@ function mapCommandSpreadToOwnerPage(
   layout: SpreadInkLayout,
 ): AnnotationCommand {
   if (cmd.kind === 'stroke') {
+    let rotationBounds = cmd.rotationBounds
+    if (rotationBounds) {
+      const tl = mapSpreadPointToOwnerPage([rotationBounds.x, rotationBounds.y], side, layout)
+      const br = mapSpreadPointToOwnerPage(
+        [rotationBounds.x + rotationBounds.w, rotationBounds.y + rotationBounds.h],
+        side,
+        layout,
+      )
+      rotationBounds = {
+        x: Math.min(tl[0], br[0]),
+        y: Math.min(tl[1], br[1]),
+        w: Math.abs(br[0] - tl[0]),
+        h: Math.abs(br[1] - tl[1]),
+      }
+    }
     return {
       ...cmd,
       points: cmd.points.map((p) => mapSpreadPointToOwnerPage(p, side, layout)),
+      ...(rotationBounds ? { rotationBounds } : {}),
     }
   }
   if (cmd.kind === 'line') {

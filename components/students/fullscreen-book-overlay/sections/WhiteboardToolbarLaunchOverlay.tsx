@@ -1,11 +1,14 @@
 'use client'
 
 import type { CSSProperties } from 'react'
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 import { panelFlightTransformToMatchButton } from '@/lib/books/whiteboard-toolbar-launch-flip'
-import { WHITEBOARD_PANEL_CHROME } from '../constants'
+import {
+  WHITEBOARD_HEADER_CHROME,
+  WHITEBOARD_PANEL_CHROME,
+} from '../constants'
 
 const FLIGHT_MS = 360
 const FLIGHT_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'
@@ -27,8 +30,11 @@ export function WhiteboardToolbarLaunchOverlay({
   surfaceStyle,
   onComplete,
 }: WhiteboardToolbarLaunchOverlayProps) {
-  const nodeRef = useRef<HTMLDivElement | null>(null)
-  const foldedTransform = panelFlightTransformToMatchButton(flight.button, flight.panel)
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const foldedTransform = useMemo(
+    () => panelFlightTransformToMatchButton(flight.button, flight.panel),
+    [flight.button, flight.panel],
+  )
   const [transform, setTransform] = useState(
     flight.mode === 'enter' ? foldedTransform : 'none',
   )
@@ -53,7 +59,7 @@ export function WhiteboardToolbarLaunchOverlay({
   }, [flight, foldedTransform])
 
   useLayoutEffect(() => {
-    const el = nodeRef.current
+    const el = panelRef.current
     if (!el) return
 
     let done = false
@@ -78,20 +84,36 @@ export function WhiteboardToolbarLaunchOverlay({
 
   return createPortal(
     <div
-      ref={nodeRef}
-      className={cn('pointer-events-none fixed z-[200]', WHITEBOARD_PANEL_CHROME)}
+      className="pointer-events-none fixed z-[200]"
       style={{
         left: flight.panel.left,
         top: flight.panel.top,
         width: flight.panel.width,
         height: flight.panel.height,
-        transform,
-        transformOrigin: 'center center',
-        transition: transitionOn ? `transform ${FLIGHT_MS}ms ${FLIGHT_EASE}` : 'none',
-        ...surfaceStyle,
       }}
       aria-hidden
-    />,
+    >
+      <div
+        ref={panelRef}
+        className={cn(
+          'flex h-full w-full flex-col overflow-hidden',
+          WHITEBOARD_PANEL_CHROME,
+        )}
+        style={{
+          transform,
+          transformOrigin: 'center center',
+          transition: transitionOn ? `transform ${FLIGHT_MS}ms ${FLIGHT_EASE}` : 'none',
+        }}
+      >
+        <header
+          className={cn(
+            'relative z-20 flex h-9 shrink-0 items-center px-2.5',
+            WHITEBOARD_HEADER_CHROME,
+          )}
+        />
+        <div className="min-h-0 flex-1" style={surfaceStyle} />
+      </div>
+    </div>,
     document.body,
   )
 }
