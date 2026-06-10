@@ -45,7 +45,7 @@ interface PageListRailProps {
   onSelectLessonBoardPage: (pageId: string) => void
   onNewLessonBoardPage?: (orientation: LessonBoardPageOrientation) => void
   onRenameLessonBoardPage?: (pageId: string, title: string | undefined) => void
-  lessonBoardActivePageRowRef: MutableRefObject<HTMLButtonElement | null>
+  lessonBoardActivePageRowRef: MutableRefObject<HTMLDivElement | null>
 }
 
 function RailTabButton({
