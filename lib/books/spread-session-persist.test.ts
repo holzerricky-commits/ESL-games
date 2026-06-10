@@ -156,7 +156,13 @@ describe('spread-session-persist', () => {
       unitId: key.unitId,
     })
 
-    expect(getAnnotationsForPage(key.studentId, key.bookId, key.unitId, key.leftPage)).toEqual([existingText])
+    const saved = getAnnotationsForPage(key.studentId, key.bookId, key.unitId, key.leftPage)
+    expect(saved.map((cmd) => cmd.id)).toEqual(['text-1'])
+    expect(saved[0]?.kind).toBe('text')
+    expect(saved[0]).toMatchObject({
+      text: 'keep me',
+      color: '#111827',
+    })
   })
 
   it('flushSpreadSessionDocumentToPageStorage refreshes spread ink without dropping page-owned notes', () => {
