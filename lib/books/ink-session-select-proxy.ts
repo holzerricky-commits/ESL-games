@@ -1,4 +1,5 @@
 import type { BookPageAnnotationHandle } from '@/components/students/book-page-annotation-layer'
+import type { InkSessionDocument } from '@/lib/books/ink-session-types'
 import type { InkSessionStore } from '@/lib/books/ink-session-store'
 import type { SpreadSessionStore } from '@/lib/books/spread-session-store'
 
@@ -24,8 +25,8 @@ export type InkSessionSelectProxyHandle = Pick<
 /** @deprecated Use InkSessionSelectProxyHandle */
 export type SpreadSessionSelectProxyHandle = InkSessionSelectProxyHandle
 
-export function createInkSessionSelectProxy(
-  getStore: () => InkSessionStore | null,
+export function createInkSessionSelectProxy<TDoc extends InkSessionDocument>(
+  getStore: () => InkSessionStore<TDoc> | null,
 ): InkSessionSelectProxyHandle {
   return {
     getSelectedIds: () => getStore()?.getState().selectedIds ?? [],
