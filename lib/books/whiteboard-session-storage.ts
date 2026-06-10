@@ -79,9 +79,16 @@ export function scoreWhiteboardSessionRichness(doc: WhiteboardSessionDocument): 
   return pages.length * 10_000 + pageInk * 10 + doc.commands.length
 }
 
+function whiteboardSessionHasUserContent(doc: WhiteboardSessionDocument): boolean {
+  const pages = doc.pages ?? []
+  if (doc.commands.length > 0) return true
+  if (pages.length > 1) return true
+  return pages.some((page) => page.commands.length > 0 || (page.title?.trim().length ?? 0) > 0)
+}
+
 /**
- * Load the richest session among candidate storage keys, then bind to `primaryKey`
- * so the next checkpoint writes to the canonical key (e.g. live class session).
+ * Keep the canonical session when it already has work; otherwise load the richest
+ * fallback and bind it to `primaryKey` for the next checkpoint.
  */
 export function loadWhiteboardSessionBestMatch(
   primaryKey: WhiteboardSessionKey,
@@ -94,6 +101,11 @@ export function loadWhiteboardSessionBestMatch(
     ),
   ]
   if (keys.length === 0) keys.push(primaryKey.storagePageKey)
+
+  const primaryDoc = loadWhiteboardSession(primaryKey, adapter)
+  if (whiteboardSessionHasUserContent(primaryDoc)) {
+    return primaryDoc
+  }
 
   let best: WhiteboardSessionDocument | null = null
   let bestScore = -1
