@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { getAnnotationsForPage, setAnnotationsForPage } from '@/lib/books/annotation-storage'
+import type { AnnotationCommand } from '@/lib/books/annotation-command-types'
 import { createMemorySpreadSessionStorage } from '@/lib/books/spread-session-storage'
 import { loadSpreadSession } from '@/lib/books/spread-session-storage'
 import {
@@ -24,7 +26,75 @@ const layout = {
   seamNormX: 0.5,
 }
 
+class LocalStorageMock {
+  private map = new Map<string, string>()
+
+  clear() {
+    this.map.clear()
+  }
+
+  getItem(key: string) {
+    return this.map.has(key) ? (this.map.get(key) ?? null) : null
+  }
+
+  removeItem(key: string) {
+    this.map.delete(key)
+  }
+
+  setItem(key: string, value: string) {
+    this.map.set(key, value)
+  }
+}
+
+function mockBrowserStorage() {
+  const storage = new LocalStorageMock()
+  Object.defineProperty(globalThis, 'localStorage', {
+    value: storage,
+    writable: true,
+    configurable: true,
+  })
+  Object.defineProperty(globalThis, 'window', {
+    value: { localStorage: storage },
+    writable: true,
+    configurable: true,
+  })
+}
+
+const existingText: AnnotationCommand = {
+  kind: 'text',
+  id: 'text-1',
+  x: 0.1,
+  y: 0.1,
+  w: 0.2,
+  h: 0.1,
+  text: 'keep me',
+  color: '#111827',
+  fontSizeNorm: 0.04,
+}
+
+const oldSpreadCopy: AnnotationCommand = {
+  kind: 'stroke',
+  id: 'old-stroke',
+  tool: 'pen',
+  points: [
+    [0.1, 0.1],
+    [0.2, 0.2],
+  ],
+}
+
 describe('spread-session-persist', () => {
+  beforeEach(() => {
+    mockBrowserStorage()
+  })
+
+  afterEach(() => {
+    Object.defineProperty(globalThis, 'window', {
+      value: undefined,
+      writable: true,
+      configurable: true,
+    })
+  })
+
   it('checkpointSpreadSessionDocument writes spread storage', () => {
     const storage = createMemorySpreadSessionStorage()
     const doc = createEmptySpreadSession(key)
@@ -71,5 +141,49 @@ describe('spread-session-persist', () => {
         unitId: key.unitId,
       }),
     ).not.toThrow()
+  })
+
+  it('flushSpreadSessionDocumentToPageStorage preserves page-owned notes when spread doc is empty', () => {
+    setAnnotationsForPage(key.studentId, key.bookId, key.unitId, key.leftPage, [existingText, oldSpreadCopy])
+    const doc = createEmptySpreadSession(key)
+
+    flushSpreadSessionDocumentToPageStorage({
+      doc,
+      key,
+      layout,
+      studentId: key.studentId,
+      bookId: key.bookId,
+      unitId: key.unitId,
+    })
+
+    expect(getAnnotationsForPage(key.studentId, key.bookId, key.unitId, key.leftPage)).toEqual([existingText])
+  })
+
+  it('flushSpreadSessionDocumentToPageStorage refreshes spread ink without dropping page-owned notes', () => {
+    setAnnotationsForPage(key.studentId, key.bookId, key.unitId, key.leftPage, [existingText, oldSpreadCopy])
+    const doc = createEmptySpreadSession(key)
+    doc.commands = [
+      {
+        kind: 'stroke',
+        id: 'new-stroke',
+        tool: 'pen',
+        points: [
+          [0.1, 0.1],
+          [0.2, 0.2],
+        ],
+      },
+    ]
+
+    flushSpreadSessionDocumentToPageStorage({
+      doc,
+      key,
+      layout,
+      studentId: key.studentId,
+      bookId: key.bookId,
+      unitId: key.unitId,
+    })
+
+    const saved = getAnnotationsForPage(key.studentId, key.bookId, key.unitId, key.leftPage)
+    expect(saved.map((cmd) => cmd.id)).toEqual(['text-1', 'new-stroke'])
   })
 })
