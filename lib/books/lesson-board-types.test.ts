@@ -201,4 +201,36 @@ describe('lesson-board-types', () => {
     expect(loaded.commands).toHaveLength(1)
     expect(loaded.pages[0]?.commands).toHaveLength(1)
   })
+
+  it('loadWhiteboardSessionBestMatch keeps live class ink even when local board is richer', () => {
+    const storage = createMemoryWhiteboardSessionStorage()
+    const classKey = annotationStorageSessionKey('class-live')
+    const localKey = annotationStorageLocalWhiteboardKey(key.bookId, key.unitId)
+    const classStroke = { ...stroke, id: 'class-stroke' }
+    const localStrokeA = { ...stroke, id: 'local-stroke-a' }
+    const localStrokeB = { ...stroke, id: 'local-stroke-b' }
+
+    const classDoc = createEmptyWhiteboardSession({ ...key, storagePageKey: classKey })
+    classDoc.commands = [classStroke]
+
+    const localDoc = createEmptyWhiteboardSession({ ...key, storagePageKey: localKey })
+    localDoc.pages = [
+      createLessonBoardPage('standard', { id: 'local-page-a', commands: [localStrokeA] }),
+      createLessonBoardPage('standard', { id: 'local-page-b', commands: [localStrokeB] }),
+    ]
+    localDoc.activePageId = 'local-page-a'
+    localDoc.commands = [localStrokeA]
+
+    storage.writeRoot({
+      [classDoc.docId]: prepareLessonBoardSessionForPersist(classDoc) as never,
+      [localDoc.docId]: prepareLessonBoardSessionForPersist(localDoc) as never,
+    })
+
+    const primaryKey = { ...key, storagePageKey: classKey }
+    const loaded = loadWhiteboardSessionBestMatch(primaryKey, [classKey, localKey], storage)
+    expect(loaded.key.storagePageKey).toBe(classKey)
+    expect(loaded.docId).toBe(whiteboardSessionDocId(primaryKey))
+    expect(loaded.commands.map((cmd) => cmd.id)).toEqual(['class-stroke'])
+    expect(loaded.pages).toHaveLength(1)
+  })
 })

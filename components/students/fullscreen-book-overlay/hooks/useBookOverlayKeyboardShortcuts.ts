@@ -228,7 +228,7 @@ export function useBookOverlayKeyboardShortcuts({
     }
 
     function penCurrentIndex(): number {
-      const idx = PEN_STROKE_PROFILES.indexOf(penStrokeProfile)
+      const idx = PEN_STROKE_PROFILES.findIndex((profile) => profile === penStrokeProfile)
       return idx >= 0 ? idx : 0
     }
 

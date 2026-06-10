@@ -1,8 +1,10 @@
-import { setAnnotationsForPage } from '@/lib/books/annotation-storage'
+import { getAnnotationsForPage, setAnnotationsForPage } from '@/lib/books/annotation-storage'
+import { isInkSessionDelegatedCanvasCommand } from '@/lib/books/ink-session-page-layer'
 import { projectSpreadSessionToOwnerPages } from '@/lib/books/spread-session-commit'
 import { saveSpreadSessionCheckpoint, type SpreadSessionStorageAdapter } from '@/lib/books/spread-session-storage'
 import type { SpreadSessionDocument, SpreadSessionKey } from '@/lib/books/spread-session-types'
 import type { SpreadInkLayout } from '@/lib/books/spread-stroke-split'
+import type { AnnotationCommand } from '@/lib/books/annotation-command-types'
 
 export type FlushSpreadSessionToPagesParams = {
   doc: SpreadSessionDocument
@@ -34,12 +36,36 @@ export function flushSpreadSessionDocumentToPageStorage({
   unitId,
 }: FlushSpreadSessionToPagesParams): void {
   const pages = { leftPage: key.leftPage, rightPage: key.rightPage }
-  if (doc.commands.length === 0) {
-    setAnnotationsForPage(studentId, bookId, unitId, pages.leftPage, [], 'pdf')
-    setAnnotationsForPage(studentId, bookId, unitId, pages.rightPage, [], 'pdf')
-    return
-  }
   const projected = projectSpreadSessionToOwnerPages(doc.commands, layout)
-  setAnnotationsForPage(studentId, bookId, unitId, pages.leftPage, projected.left, 'pdf')
-  setAnnotationsForPage(studentId, bookId, unitId, pages.rightPage, projected.right, 'pdf')
+  setAnnotationsForPage(
+    studentId,
+    bookId,
+    unitId,
+    pages.leftPage,
+    mergePageLayerWithSpreadSession(
+      getAnnotationsForPage(studentId, bookId, unitId, pages.leftPage, 'pdf'),
+      projected.left,
+    ),
+    'pdf',
+  )
+  setAnnotationsForPage(
+    studentId,
+    bookId,
+    unitId,
+    pages.rightPage,
+    mergePageLayerWithSpreadSession(
+      getAnnotationsForPage(studentId, bookId, unitId, pages.rightPage, 'pdf'),
+      projected.right,
+    ),
+    'pdf',
+  )
+}
+
+export function mergePageLayerWithSpreadSession(
+  pageLayerCommands: readonly AnnotationCommand[],
+  sessionCommands: readonly AnnotationCommand[],
+): AnnotationCommand[] {
+  const pageOwnedCommands = pageLayerCommands.filter((cmd) => !isInkSessionDelegatedCanvasCommand(cmd))
+  if (sessionCommands.length === 0) return pageOwnedCommands
+  return [...pageOwnedCommands, ...sessionCommands]
 }

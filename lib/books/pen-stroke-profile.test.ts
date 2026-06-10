@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   coercePenSwatchIdForProfile,
   filterPenSwatchesForProfile,
+  PEN_STROKE_PROFILE_LABEL,
   penProfileUsesEffectInk,
   penProfileWidthScaleMultiplier,
   resolvePenInkStyleForProfile,
@@ -17,6 +18,11 @@ describe('pen-stroke-profile', () => {
   it('applies width multipliers', () => {
     expect(penProfileWidthScaleMultiplier('fine-liner')).toBeLessThan(0.5)
     expect(penProfileWidthScaleMultiplier('brush')).toBeGreaterThan(1)
+  })
+
+  it('labels legacy pen profiles kept in saved strokes', () => {
+    expect(PEN_STROKE_PROFILE_LABEL.pencil).toBe('Pencil')
+    expect(PEN_STROKE_PROFILE_LABEL['fine-liner']).toBe('Fine liner')
   })
 
   it('resolves effect ink only in effects profile', () => {

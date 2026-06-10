@@ -15,7 +15,7 @@ export function lessonBoardPageStorageKey(sessionStoragePageKey: string, pageId:
   return `${base}::lb-page::${pageId}`
 }
 
-type LessonBoardDocumentFields = Pick<WhiteboardSessionDocument, 'pages' | 'activePageId' | 'commands'>
+type LessonBoardDocumentFields = Pick<WhiteboardSessionDocument, 'pages' | 'activePageId'>
 
 export function getLessonBoardActivePageIndex(doc: LessonBoardDocumentFields): number {
   const idx = doc.pages.findIndex((p) => p.id === doc.activePageId)
