@@ -4,6 +4,7 @@ import type {
   ShapeFillMode,
   StrokeAnnotationCommand,
 } from '@/lib/books/annotation-command-types'
+import { isInkSessionDelegatedCanvasCommand } from '@/lib/books/ink-session-page-layer'
 import type { ShapeCommitOptions, TwoPointShapeKind } from '@/lib/books/spread-command-split'
 import { splitTwoPointShapeCommandsViaClientRects } from '@/lib/books/spread-command-split'
 import {
@@ -194,10 +195,12 @@ export function hydrateSpreadSessionFromOwnerPages(
 ): AnnotationCommand[] {
   const out = new Map<string, AnnotationCommand>()
   for (const cmd of leftCommands) {
+    if (!isInkSessionDelegatedCanvasCommand(cmd)) continue
     const mapped = mapCommandPageToSpread(cmd, 'left', layout)
     if (!out.has(mapped.id)) out.set(mapped.id, mapped)
   }
   for (const cmd of rightCommands) {
+    if (!isInkSessionDelegatedCanvasCommand(cmd)) continue
     const mapped = mapCommandPageToSpread(cmd, 'right', layout)
     if (!out.has(mapped.id)) out.set(mapped.id, mapped)
   }
