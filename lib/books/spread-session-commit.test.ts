@@ -120,4 +120,29 @@ describe('hydrateSpreadSessionFromOwnerPages', () => {
       expect(line.b[0]).toBeCloseTo(0.4, 6)
     }
   })
+
+  it('keeps page-layer notes out of the spread session', () => {
+    const leftCommands: AnnotationCommand[] = [
+      {
+        kind: 'text',
+        id: 'note-1',
+        x: 0.2,
+        y: 0.3,
+        text: 'Keep on page layer',
+        fontSizeNorm: 0.03,
+        color: '#111827',
+      },
+      {
+        kind: 'stroke',
+        id: 'ink-1',
+        tool: 'pen',
+        points: [
+          [0.2, 0.3],
+          [0.4, 0.5],
+        ],
+      },
+    ]
+    const hydrated = hydrateSpreadSessionFromOwnerPages(leftCommands, [], layout)
+    expect(hydrated.map((c) => c.id)).toEqual(['ink-1'])
+  })
 })
