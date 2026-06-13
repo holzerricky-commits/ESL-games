@@ -1884,7 +1884,6 @@ export function useBookPageAnnotationLayer(
       }
       straightStrokeAxisRef.current = null
       holdShapeDraftRef.current = null
-      twoDraftRef.current = null
       resetStrokeHoldStraightTracker(holdStraightRef.current)
       draftStrokeRef.current = null
       if (draft && gesture === 'stroke' && !holdShape && draft.points.length >= 1) {

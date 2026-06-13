@@ -76,7 +76,8 @@ export function loadWhiteboardSession(
 export function scoreWhiteboardSessionRichness(doc: WhiteboardSessionDocument): number {
   const pages = doc.pages ?? []
   const pageInk = pages.reduce((n, p) => n + p.commands.length, 0)
-  return pages.length * 10_000 + pageInk * 10 + doc.commands.length
+  const inkCommands = pageInk + doc.commands.length
+  return inkCommands * 10_000 + pages.length
 }
 
 /**
