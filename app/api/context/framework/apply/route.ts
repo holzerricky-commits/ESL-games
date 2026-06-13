@@ -112,6 +112,13 @@ function pushUnique(target: string[], value: string) {
   if (!target.some((item) => item.toLowerCase() === next.toLowerCase())) target.push(next)
 }
 
+function mergeTrimmedLists(primary: readonly string[], existing: readonly string[] | undefined, max: number): string[] {
+  const out: string[] = []
+  for (const item of primary) pushUnique(out, item)
+  for (const item of existing ?? []) pushUnique(out, item)
+  return trimList(out, max)
+}
+
 function tokenSet(value: string): Set<string> {
   return new Set(
     value
@@ -338,18 +345,19 @@ export async function POST(req: Request) {
           unitId: row.unitId,
           lessonId,
           partId: scratch.partId,
-          partTitle: scratch.partTitle || undefined,
-          partGoals: trimList(scratch.goals, 20),
-          activityNotes: trimList(scratch.notes, 30),
+          partTitle: scratch.partTitle || existingPart?.partTitle || undefined,
+          partGoals: mergeTrimmedLists(scratch.goals, existingPart?.partGoals, 20),
+          activityNotes: mergeTrimmedLists(scratch.notes, existingPart?.activityNotes, 30),
           languageFocus: {
-            grammarNotes: trimList(scratch.grammar, 20),
-            writingNotes: trimList(scratch.writing, 20),
+            grammarNotes: mergeTrimmedLists(scratch.grammar, existingPart?.languageFocus?.grammarNotes, 20),
+            writingNotes: mergeTrimmedLists(scratch.writing, existingPart?.languageFocus?.writingNotes, 20),
           },
           sourcePageRange: scratch.range,
           scanProfile: 'balanced',
           contextVersion: CONTEXT_VERSION,
           createdAt: existingPart?.createdAt ?? now,
           updatedAt: now,
+          interactiveVocabulary: existingPart?.interactiveVocabulary,
         }
         partRecords.push(partRecord)
         if (!dryRun) await store.savePartContext(partRecord)

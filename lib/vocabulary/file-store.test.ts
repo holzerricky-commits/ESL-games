@@ -1,3 +1,5 @@
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { FileVocabularyStore } from '@/lib/vocabulary/file-store'
 import type { VocabularySet } from '@/lib/vocabulary/types'
@@ -102,5 +104,41 @@ describe('FileVocabularyStore', () => {
     )
     expect(updated?.entries.find((entry) => entry.id === `${setId}-safe`)?.approved).toBe(true)
     expect(updated?.entries.find((entry) => entry.id === `${setId}-offscope`)?.approved).toBe(false)
+  })
+
+  it('rejects traversal ids instead of reading or writing outside vocabulary storage', async () => {
+    const store = new FileVocabularyStore()
+    const contextDir = join(process.cwd(), 'data', 'context')
+    const targetId = `vocab-traversal-target-${Date.now()}`
+    const targetPath = join(contextDir, `${targetId}.json`)
+    const original = JSON.stringify({ id: targetId, kind: 'part', interactiveVocabulary: [{ id: 'w1', word: 'river' }] }, null, 2)
+
+    await mkdir(contextDir, { recursive: true })
+    await writeFile(targetPath, original, 'utf8')
+    try {
+      await expect(store.getSet(`../context/${targetId}`)).resolves.toBeNull()
+      await expect(store.setStatus(`../context/${targetId}`, 'published')).resolves.toBeNull()
+      await expect(readFile(targetPath, 'utf8')).resolves.toBe(original)
+    } finally {
+      await rm(targetPath, { force: true })
+    }
+  })
+
+  it('ignores malformed JSON records even when the id is safe', async () => {
+    const store = new FileVocabularyStore()
+    const vocabDir = join(process.cwd(), 'data', 'vocabulary')
+    const setId = `malformed-set-${Date.now()}`
+    const setPath = join(vocabDir, `${setId}.json`)
+    const original = JSON.stringify({ id: setId, status: 'draft' }, null, 2)
+
+    await mkdir(vocabDir, { recursive: true })
+    await writeFile(setPath, original, 'utf8')
+    try {
+      await expect(store.getSet(setId)).resolves.toBeNull()
+      await expect(store.setStatus(setId, 'published')).resolves.toBeNull()
+      await expect(readFile(setPath, 'utf8')).resolves.toBe(original)
+    } finally {
+      await rm(setPath, { force: true })
+    }
   })
 })
