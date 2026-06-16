@@ -84,4 +84,58 @@ describe('whiteboard-viewport-ink', () => {
       expect(projected[0].points[1]?.[1]).toBeCloseTo((600 - 400) / 800, 5)
     }
   })
+
+  it('projectCommandsForWhiteboardViewport keeps and shifts shapes in viewport norm space', () => {
+    const commands = [
+      {
+        kind: 'rect' as const,
+        id: 'r1',
+        x: 0.1,
+        y: 500 / 2400,
+        w: 0.2,
+        h: 200 / 2400,
+        strokeColor: '#111111',
+      },
+      {
+        kind: 'arrow' as const,
+        id: 'a1',
+        from: [0.6, 450 / 2400] as [number, number],
+        to: [0.7, 650 / 2400] as [number, number],
+        color: '#222222',
+      },
+    ]
+
+    const projected = projectCommandsForWhiteboardViewport(commands, config)
+
+    expect(projected).toHaveLength(2)
+    expect(projected[0]?.kind).toBe('rect')
+    if (projected[0]?.kind === 'rect') {
+      expect(projected[0].y).toBeCloseTo((500 - 400) / 800, 5)
+      expect(projected[0].h).toBeCloseTo(200 / 800, 5)
+    }
+    expect(projected[1]?.kind).toBe('arrow')
+    if (projected[1]?.kind === 'arrow') {
+      expect(projected[1].from[1]).toBeCloseTo((450 - 400) / 800, 5)
+      expect(projected[1].to[1]).toBeCloseTo((650 - 400) / 800, 5)
+    }
+  })
+
+  it('projectCommandsForWhiteboardViewport drops shapes outside the viewport band', () => {
+    const projected = projectCommandsForWhiteboardViewport(
+      [
+        {
+          kind: 'ellipse' as const,
+          id: 'e1',
+          x: 0.1,
+          y: 1300 / 2400,
+          w: 0.2,
+          h: 100 / 2400,
+          strokeColor: '#111111',
+        },
+      ],
+      config,
+    )
+
+    expect(projected).toHaveLength(0)
+  })
 })

@@ -5,6 +5,7 @@ import {
   commitBookOverlayTypingTarget,
   isBookOverlayKeyboardTypingTarget,
   isWritingAssistTabActive,
+  shouldHandleBookOverlayKeyboard,
 } from '@/lib/books/book-overlay-keyboard-guards'
 import { requestSpreadSessionFlush } from '@/lib/books/spread-session-events'
 import {
@@ -30,6 +31,7 @@ function clampThicknessStep(step: number): AnnotationStrokeThicknessStep {
 
 interface UseBookOverlayKeyboardShortcutsArgs {
   open: boolean
+  userPresented: boolean
   onClose: () => void
   isLessonPaperOpen: boolean
   annotationMode: BookAnnotationInteractionMode
@@ -114,6 +116,7 @@ interface UseBookOverlayKeyboardShortcutsArgs {
 
 export function useBookOverlayKeyboardShortcuts({
   open,
+  userPresented,
   onClose,
   isLessonPaperOpen,
   annotationMode,
@@ -176,7 +179,7 @@ export function useBookOverlayKeyboardShortcuts({
   }, [annotationMode])
 
   useEffect(() => {
-    if (!open) return
+    if (!shouldHandleBookOverlayKeyboard(open, userPresented)) return
 
     function isAnnotationFieldTyping(): boolean {
       return (
@@ -582,6 +585,7 @@ export function useBookOverlayKeyboardShortcuts({
     return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [
     open,
+    userPresented,
     onClose,
     isLessonPaperOpen,
     annotationMode,

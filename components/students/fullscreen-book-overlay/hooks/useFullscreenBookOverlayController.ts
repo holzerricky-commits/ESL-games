@@ -1323,6 +1323,7 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
 
   useArrowKeyPageTurn({
     open,
+    userPresented,
     isLessonPaperOpen,
     goToAdjacentPage,
   })
@@ -1464,6 +1465,7 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
 
   useBookOverlayKeyboardShortcuts({
     open,
+    userPresented,
     onClose,
     isLessonPaperOpen,
     annotationMode,

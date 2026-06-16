@@ -7,6 +7,7 @@ import {
   resolveShortcutTapIndex,
   type BookOverlayShapeMode,
 } from './book-overlay-keyboard-shortcuts'
+import { shouldHandleBookOverlayKeyboard } from './book-overlay-keyboard-guards'
 
 describe('book-overlay-keyboard-shortcuts', () => {
   it('cycleBookOverlayShapeMode walks all shape modes in order', () => {
@@ -50,5 +51,11 @@ describe('book-overlay-keyboard-shortcuts', () => {
     expect(first.index).toBe(3)
     const second = resolveShortcutTapIndex(first.nextState, 5000 + 100, 4, 3)
     expect(second.index).toBe(0)
+  })
+
+  it('shouldHandleBookOverlayKeyboard disables keys during hidden warm-up', () => {
+    expect(shouldHandleBookOverlayKeyboard(true, false)).toBe(false)
+    expect(shouldHandleBookOverlayKeyboard(true, true)).toBe(true)
+    expect(shouldHandleBookOverlayKeyboard(false, true)).toBe(false)
   })
 })
