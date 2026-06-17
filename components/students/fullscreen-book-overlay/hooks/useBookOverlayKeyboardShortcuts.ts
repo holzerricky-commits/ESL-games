@@ -6,7 +6,9 @@ import {
   isBookOverlayKeyboardTypingTarget,
   isWritingAssistTabActive,
 } from '@/lib/books/book-overlay-keyboard-guards'
+import { flushPendingUnitPageSave } from '@/lib/books/progress'
 import { requestSpreadSessionFlush } from '@/lib/books/spread-session-events'
+import { requestWhiteboardSessionFlush } from '@/lib/books/whiteboard-session-events'
 import {
   BOOK_OVERLAY_DEFAULT_SHAPE_MODE,
   BOOK_OVERLAY_ERASER_MODES,
@@ -319,7 +321,9 @@ export function useBookOverlayKeyboardShortcuts({
           setIsPageListOpen(false)
           return
         }
+        flushPendingUnitPageSave()
         requestSpreadSessionFlush()
+        requestWhiteboardSessionFlush()
         e.preventDefault()
         onClose()
         return

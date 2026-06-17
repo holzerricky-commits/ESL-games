@@ -98,6 +98,29 @@ function strokeIntersectsViewport(cmd: StrokeAnnotationCommand, config: Whiteboa
   return false
 }
 
+function commandYBounds(cmd: AnnotationCommand): [number, number] | null {
+  if (cmd.kind === 'stroke') {
+    if (cmd.points.length === 0) return null
+    const ys = cmd.points.map(([, y]) => y)
+    return [Math.min(...ys), Math.max(...ys)]
+  }
+  if (cmd.kind === 'line') return [Math.min(cmd.a[1], cmd.b[1]), Math.max(cmd.a[1], cmd.b[1])]
+  if (cmd.kind === 'arrow') return [Math.min(cmd.from[1], cmd.to[1]), Math.max(cmd.from[1], cmd.to[1])]
+  if (cmd.kind === 'rect' || cmd.kind === 'ellipse' || cmd.kind === 'triangle') {
+    return [Math.min(cmd.y, cmd.y + cmd.h), Math.max(cmd.y, cmd.y + cmd.h)]
+  }
+  return null
+}
+
+function commandIntersectsViewport(cmd: AnnotationCommand, config: WhiteboardViewportInkConfig): boolean {
+  if (cmd.kind === 'stroke') return strokeIntersectsViewport(cmd, config)
+  const bounds = commandYBounds(cmd)
+  if (!bounds) return false
+  const minY = mapDocumentYNormToViewportNorm(bounds[0], config)
+  const maxY = mapDocumentYNormToViewportNorm(bounds[1], config)
+  return Math.max(minY, maxY) >= -0.02 && Math.min(minY, maxY) <= 1.02
+}
+
 function projectStrokeCommand(
   cmd: StrokeAnnotationCommand,
   config: WhiteboardViewportInkConfig,
@@ -111,6 +134,37 @@ function projectStrokeCommand(
   }
 }
 
+function projectCommandForWhiteboardViewport(
+  cmd: AnnotationCommand,
+  config: WhiteboardViewportInkConfig,
+): AnnotationCommand | null {
+  if (cmd.kind === 'stroke') return projectStrokeCommand(cmd, config)
+  if (cmd.kind === 'line') {
+    return {
+      ...cmd,
+      a: [cmd.a[0], mapDocumentYNormToViewportNorm(cmd.a[1], config)] as [number, number],
+      b: [cmd.b[0], mapDocumentYNormToViewportNorm(cmd.b[1], config)] as [number, number],
+    }
+  }
+  if (cmd.kind === 'arrow') {
+    return {
+      ...cmd,
+      from: [cmd.from[0], mapDocumentYNormToViewportNorm(cmd.from[1], config)] as [number, number],
+      to: [cmd.to[0], mapDocumentYNormToViewportNorm(cmd.to[1], config)] as [number, number],
+    }
+  }
+  if (cmd.kind === 'rect' || cmd.kind === 'ellipse' || cmd.kind === 'triangle') {
+    const top = mapDocumentYNormToViewportNorm(cmd.y, config)
+    const bottom = mapDocumentYNormToViewportNorm(cmd.y + cmd.h, config)
+    return {
+      ...cmd,
+      y: Math.min(top, bottom),
+      h: Math.abs(bottom - top),
+    }
+  }
+  return null
+}
+
 /** Project document-space session commands onto the visible viewport canvas for paint. */
 export function projectCommandsForWhiteboardViewport(
   commands: readonly AnnotationCommand[],
@@ -119,11 +173,9 @@ export function projectCommandsForWhiteboardViewport(
   if (!isWhiteboardViewportInkActive(config)) return [...commands]
   const out: AnnotationCommand[] = []
   for (const cmd of commands) {
-    if (cmd.kind !== 'stroke') {
-      continue
-    }
-    if (!strokeIntersectsViewport(cmd, config)) continue
-    out.push(projectStrokeCommand(cmd, config))
+    if (!commandIntersectsViewport(cmd, config)) continue
+    const projected = projectCommandForWhiteboardViewport(cmd, config)
+    if (projected) out.push(projected)
   }
   return out
 }
