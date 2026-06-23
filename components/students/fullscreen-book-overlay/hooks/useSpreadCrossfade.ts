@@ -17,7 +17,6 @@ export type OutgoingSpreadSnapshot = {
 interface UseSpreadCrossfadeArgs {
   anchorPage: number
   visiblePages: number[]
-  isSinglePageMode: boolean
   enabled?: boolean
 }
 
@@ -28,7 +27,6 @@ interface UseSpreadCrossfadeArgs {
 export function useSpreadCrossfade({
   anchorPage,
   visiblePages,
-  isSinglePageMode,
   enabled = spreadCrossfadeEnabled,
 }: UseSpreadCrossfadeArgs) {
   const prevAnchorRef = useRef(anchorPage)
@@ -66,7 +64,7 @@ export function useSpreadCrossfade({
       return
     }
 
-    const snapshot = resolveSpreadAnchorPages(prevAnchor, visiblePages, isSinglePageMode)
+    const snapshot = resolveSpreadAnchorPages(prevAnchor, visiblePages)
     setOutgoing(snapshot)
     setIncomingVisible(false)
 
@@ -89,7 +87,7 @@ export function useSpreadCrossfade({
       setIncomingVisible(true)
       setOutgoing(null)
     }
-  }, [anchorPage, visiblePages, isSinglePageMode, enabled])
+  }, [anchorPage, visiblePages, enabled])
 
   return {
     outgoing,

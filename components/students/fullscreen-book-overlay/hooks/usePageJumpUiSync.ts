@@ -12,7 +12,6 @@ interface UsePageJumpUiSyncArgs {
   activePageRowRef: RefObject<HTMLButtonElement | null>
   pageNumber: number
   numPages: number | null
-  isSinglePageMode: boolean
   pageJumpFocused: boolean
   spreadRightPage: number | null
   pageAlignmentRuntime: PageAlignmentRuntime
@@ -27,7 +26,6 @@ export function usePageJumpUiSync({
   activePageRowRef,
   pageNumber,
   numPages,
-  isSinglePageMode,
   pageJumpFocused,
   spreadRightPage,
   pageAlignmentRuntime,
@@ -39,7 +37,7 @@ export function usePageJumpUiSync({
   useEffect(() => {
     if (!isPageListOpen) return
     activePageRowRef.current?.scrollIntoView({ block: 'nearest' })
-  }, [isPageListOpen, pageNumber, numPages, isSinglePageMode, activePageRowRef])
+  }, [isPageListOpen, pageNumber, numPages, activePageRowRef])
 
   useEffect(() => {
     if (pageJumpFocused) return
@@ -47,7 +45,6 @@ export function usePageJumpUiSync({
       mapPdfSpreadToDisplayLabel(
         pageNumber,
         spreadRightPage,
-        isSinglePageMode,
         selectedBook,
         selectedUnit,
         numPages,
@@ -56,7 +53,6 @@ export function usePageJumpUiSync({
     )
   }, [
     pageNumber,
-    isSinglePageMode,
     numPages,
     pageJumpFocused,
     spreadRightPage,

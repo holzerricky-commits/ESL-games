@@ -14,6 +14,8 @@ export type MarkerEdgeDecoration =
   | 'default'
 
 const MARKER_DECORATION_BY_HEX: Readonly<Record<string, MarkerEdgeDecoration>> = {
+  '#ffff00': 'flare',
+  '#fff59d': 'flare',
   '#ffeb3b': 'flare',
   '#ff9800': 'flame',
   '#ff5252': 'heart',

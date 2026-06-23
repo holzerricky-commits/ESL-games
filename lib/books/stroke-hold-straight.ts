@@ -1,6 +1,6 @@
 import { STROKE_POINT_MIN_DIST_SQ } from '@/lib/books/stroke-pointer-samples'
 
-/** Pause duration (ms) with pointer down before stroke snaps to straight H/V. */
+/** Pause duration (ms) with pointer down before hold-to-shape recognition runs. */
 export const STROKE_HOLD_STRAIGHT_MS = 350
 
 export type StrokeHoldStraightTracker = {
@@ -52,7 +52,7 @@ function sampleMovedFrom(
 
 /**
  * Feed pointer-move samples during an active stroke.
- * After a pause with the pointer still down, returns true (like holding Shift).
+ * After a pause with the pointer still down, activates hold-to-shape recognition.
  */
 export function feedStrokeHoldStraightMove(
   tracker: StrokeHoldStraightTracker,

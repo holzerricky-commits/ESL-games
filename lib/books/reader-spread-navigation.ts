@@ -5,36 +5,28 @@ export interface NormalizePageTurnTargetArgs {
   nextPage: number
   visiblePages: number[]
   readerBounds: UnitPageBounds
-  isSinglePageMode: boolean
 }
 
 /** Same normalization as `useBookNavigation` / arrow-key turns before committing a spread. */
 export function normalizePageTurnTarget(args: NormalizePageTurnTargetArgs): number {
-  const { nextPage, visiblePages, readerBounds, isSinglePageMode } = args
+  const { nextPage, visiblePages, readerBounds } = args
   let normalized = clampPdfPageToVisible(nextPage, visiblePages, readerBounds)
-  if (!isSinglePageMode) {
-    const idx = visiblePages.indexOf(normalized)
-    normalized = idx >= 0 ? visiblePages[Math.max(0, idx - (idx % 2))] ?? normalized : normalized
-  }
+  const idx = visiblePages.indexOf(normalized)
+  normalized = idx >= 0 ? visiblePages[Math.max(0, idx - (idx % 2))] ?? normalized : normalized
   return normalized
 }
 
 export function resolveSpreadAnchorPages(
   anchorPage: number,
   visiblePages: number[],
-  isSinglePageMode: boolean,
 ): { left: number; right: number | null } {
-  const left = isSinglePageMode
-    ? anchorPage
-    : normalizePageTurnTarget({
-        nextPage: anchorPage,
-        visiblePages,
-        readerBounds: { min: 1, max: Number.MAX_SAFE_INTEGER },
-        isSinglePageMode: false,
-      })
+  const left = normalizePageTurnTarget({
+    nextPage: anchorPage,
+    visiblePages,
+    readerBounds: { min: 1, max: Number.MAX_SAFE_INTEGER },
+  })
   const leftIdx = visiblePages.indexOf(left)
-  const right =
-    !isSinglePageMode && leftIdx >= 0 ? (visiblePages[leftIdx + 1] ?? null) : null
+  const right = leftIdx >= 0 ? (visiblePages[leftIdx + 1] ?? null) : null
   return { left, right }
 }
 

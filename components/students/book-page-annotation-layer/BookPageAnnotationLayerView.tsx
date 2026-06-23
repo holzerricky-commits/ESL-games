@@ -11,6 +11,7 @@ import type {
 import type { AnnotationTextFontId } from '@/lib/books/annotation-text-fonts'
 import { buildAnnotationRenderSlices } from '@/lib/books/annotation-render-slices'
 import { BookPageAnnotationDomLayer } from '@/components/students/book-page-annotation-dom-layer'
+import { BookOverlayFocusSink } from '@/components/students/book-overlay-focus-sink'
 import { SelectionBoundsChrome } from '@/components/students/selection-bounds-chrome'
 import {
   MARKER_CANVAS_BLEND,
@@ -24,8 +25,6 @@ import {
 import { cn } from '@/lib/utils'
 import type { TextAnnotationCommand, StickyAnnotationCommand } from '@/lib/books/annotation-command-types'
 import type { OrientedSelectionFrame } from '@/lib/books/annotation-select'
-import type { ScaleHandleId } from '@/lib/books/annotation-scale'
-
 export interface BookPageAnnotationLayerViewProps {
   widthPx: number
   heightPx: number
@@ -47,12 +46,15 @@ export interface BookPageAnnotationLayerViewProps {
   isSelect: boolean
   editingId: string | null
   setEditingId: (id: string | null) => void
+  handleEditingIdChange: (id: string | null) => void
   marqueeRect: NormRect | null
   marqueeMode: MarqueeSelectMode | null
   showSelectionChrome: boolean
   selectionOutlineFramesList: OrientedSelectionFrame[]
+  hoverOutlineFramesList: OrientedSelectionFrame[]
   selectionHandleFrame: OrientedSelectionFrame | null
   showScaleHandles: boolean
+  showUnionOutline: boolean
   showRotationHandle: boolean
   draftZ: number
   selectChromeZ: number
@@ -67,8 +69,12 @@ export interface BookPageAnnotationLayerViewProps {
   onOverlayPointerUp: (e: React.PointerEvent<HTMLDivElement>) => void
   onOverlayPointerCancel: (e: React.PointerEvent<HTMLDivElement>) => void
   onSelectDoubleClick: (e: React.MouseEvent<HTMLDivElement>) => void
-  setPointerOverSelection: (v: boolean) => void
-  setHoveredScaleHandle: (v: ScaleHandleId | null) => void
+  onPointerLeave: () => void
+  textToolActive: boolean
+  textInputEnabled: boolean
+  textToolHoverFrames: OrientedSelectionFrame[]
+  textToolEditingFrames: OrientedSelectionFrame[]
+  onEditingTextDraftChange?: (text: string | null) => void
 }
 
 export function BookPageAnnotationLayerView({
@@ -92,12 +98,15 @@ export function BookPageAnnotationLayerView({
   isSelect,
   editingId,
   setEditingId,
+  handleEditingIdChange,
   marqueeRect,
   marqueeMode,
   showSelectionChrome,
   selectionOutlineFramesList,
+  hoverOutlineFramesList,
   selectionHandleFrame,
   showScaleHandles,
+  showUnionOutline,
   showRotationHandle,
   draftZ,
   selectChromeZ,
@@ -112,8 +121,12 @@ export function BookPageAnnotationLayerView({
   onOverlayPointerUp,
   onOverlayPointerCancel,
   onSelectDoubleClick,
-  setPointerOverSelection,
-  setHoveredScaleHandle,
+  onPointerLeave,
+  textToolActive,
+  textInputEnabled,
+  textToolHoverFrames,
+  textToolEditingFrames,
+  onEditingTextDraftChange,
 }: BookPageAnnotationLayerViewProps) {
   let inkSliceIdx = 0
   let markerSliceIdx = 0
@@ -160,7 +173,7 @@ export function BookPageAnnotationLayerView({
             key={`dom-${slice.zIndex}`}
             widthPx={widthPx}
             heightPx={heightPx}
-            zIndex={(mode === 'text' ? pointerOverlayZ + 1 : sliceStackZ(slice.zIndex)) + domZBoost}
+            zIndex={sliceStackZ(slice.zIndex) + domZBoost}
             defaultTextFontId={textFontId}
             commands={sliceCommands}
             onUpdateCommand={patchCommand}
@@ -169,9 +182,11 @@ export function BookPageAnnotationLayerView({
             focusNewId={focusNewId}
             onConsumedFocusNew={() => setFocusNewId(null)}
             selectMode={isSelect}
-            textToolActive={mode === 'text'}
+            textToolActive={textToolActive}
+            textInputEnabled={textInputEnabled}
             editingId={editingId}
-            onEditingIdChange={setEditingId}
+            onEditingIdChange={handleEditingIdChange}
+            onEditingTextDraftChange={onEditingTextDraftChange}
             coachField={storageChannel === 'whiteboard' ? 'whiteboard' : 'label'}
           />
         )
@@ -188,13 +203,15 @@ export function BookPageAnnotationLayerView({
         className="pointer-events-none"
         style={{ ...pageBox(draftZ), ...MARKER_CANVAS_BLEND }}
       />
-      {showSelectionChrome ? (
+      {showSelectionChrome || textToolHoverFrames.length > 0 || textToolEditingFrames.length > 0 ? (
         <div
           className="pointer-events-none"
           style={{ ...pageBox(selectChromeZ + domZBoost) }}
           aria-hidden
         >
-          {marqueeRect ? (
+          {showSelectionChrome ? (
+            <>
+              {marqueeRect ? (
             <div
               className={cn(
                 'absolute box-border',
@@ -214,10 +231,43 @@ export function BookPageAnnotationLayerView({
             outlineFrames={selectionOutlineFramesList}
             handleFrame={selectionHandleFrame}
             showHandles={showScaleHandles}
+            showUnionOutline={showUnionOutline}
             showRotationHandle={showRotationHandle}
             layoutWidthPx={widthPx}
             layoutHeightPx={heightPx}
           />
+          {hoverOutlineFramesList.length > 0 ? (
+            <SelectionBoundsChrome
+              outlineFrames={hoverOutlineFramesList}
+              handleFrame={null}
+              showHandles={false}
+              variant="hover"
+              layoutWidthPx={widthPx}
+              layoutHeightPx={heightPx}
+            />
+          ) : null}
+            </>
+          ) : null}
+          {textToolHoverFrames.length > 0 ? (
+            <SelectionBoundsChrome
+              outlineFrames={textToolHoverFrames}
+              handleFrame={null}
+              showHandles={false}
+              variant="hover"
+              layoutWidthPx={widthPx}
+              layoutHeightPx={heightPx}
+            />
+          ) : null}
+          {textToolEditingFrames.length > 0 ? (
+            <SelectionBoundsChrome
+              outlineFrames={textToolEditingFrames}
+              handleFrame={null}
+              showHandles={false}
+              variant="selection"
+              layoutWidthPx={widthPx}
+              layoutHeightPx={heightPx}
+            />
+          ) : null}
         </div>
       ) : null}
       <div
@@ -234,14 +284,13 @@ export function BookPageAnnotationLayerView({
         onPointerUp={onOverlayPointerUp}
         onPointerCancel={onOverlayPointerCancel}
         onDoubleClick={isSelect ? onSelectDoubleClick : undefined}
-        onPointerLeave={() => {
-          setPointerOverSelection(false)
-          setHoveredScaleHandle(null)
-        }}
+        onPointerLeave={onPointerLeave}
         onContextMenu={(e) => {
           if ((e.nativeEvent as PointerEvent).pointerType === 'pen') e.preventDefault()
         }}
-      />
+      >
+        <BookOverlayFocusSink />
+      </div>
     </>
   )
 }

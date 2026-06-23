@@ -1,4 +1,5 @@
 import type { GrammarIssue } from '@/lib/lesson-coach/types'
+import { findUncapitalizedSentenceStartLetters } from '@/lib/writing-assist/sentence-capitalization'
 
 const THIRD_PERSON_PRONOUNS = /\b(he|she|it)\s+([a-z]+)\b/gi
 const THIRD_PERSON_AUX = new Set([
@@ -52,15 +53,13 @@ export function analyzeText(text: string): GrammarIssue[] {
 
   const drafts: DraftIssue[] = []
 
-  // Sentence-start capitalization (start of text or after .?! + space)
-  const sentenceStartRe = /(^|[.?!]\s+)([a-z])/g
-  let m: RegExpExecArray | null
-  while ((m = sentenceStartRe.exec(text)) !== null) {
-    const letterIndex = m.index + m[1].length
-    const ch = m[2]
+  // Sentence-start capitalization (start of text or after .?! + space/newline)
+  for (const hit of findUncapitalizedSentenceStartLetters(text)) {
+    const ch = hit.letter
+    if (!ch) continue
     pushIssue(drafts, {
-      start: letterIndex,
-      end: letterIndex + 1,
+      start: hit.index,
+      end: hit.index + 1,
       type: 'capitalization',
       message: 'Start the sentence with a capital letter.',
       suggestion: ch.toUpperCase(),
@@ -70,6 +69,7 @@ export function analyzeText(text: string): GrammarIssue[] {
 
   // Standalone lowercase i
   const loneIRe = /\bi\b/g
+  let m: RegExpExecArray | null
   while ((m = loneIRe.exec(text)) !== null) {
     pushIssue(drafts, {
       start: m.index,

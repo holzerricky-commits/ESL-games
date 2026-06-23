@@ -34,7 +34,6 @@ export function SpreadStage({
   showSpreadRightPage,
   spreadRightPage,
   children,
-  isSinglePageMode,
   anchorPage,
   visiblePages,
   unitId,
@@ -46,7 +45,6 @@ export function SpreadStage({
   const crossfade = useSpreadCrossfade({
     anchorPage,
     visiblePages,
-    isSinglePageMode,
     enabled: spreadCrossfadeEnabled && !spreadSlideEnabled,
   })
 
@@ -77,7 +75,7 @@ export function SpreadStage({
         return (
           <SpreadTurnSlideOutgoing
             captureUrl={slide.outgoingCaptureUrl}
-            spreadOverlayWidthPx={isSinglePageMode ? spreadPageWidth : spreadOverlayWidthPx}
+            spreadOverlayWidthPx={spreadOverlayWidthPx}
             pageCanvasHeightPx={pageCanvasHeightPx}
             translateXPercent={slide.outgoingTranslateX}
             slideTransitionActive={slide.transitionActive}
@@ -94,7 +92,7 @@ export function SpreadStage({
             gutterPullPx={gutterPullPx}
             prefetchRevision={prefetchRevision}
             opacity={1}
-            spreadOverlayWidthPx={isSinglePageMode ? spreadPageWidth : spreadOverlayWidthPx}
+            spreadOverlayWidthPx={spreadOverlayWidthPx}
             translateXPercent={slide.outgoingTranslateX}
             slideTransitionActive={slide.transitionActive}
           />
@@ -113,40 +111,8 @@ export function SpreadStage({
         gutterPullPx={gutterPullPx}
         prefetchRevision={prefetchRevision}
         opacity={crossfade.outgoingOpacity}
-        spreadOverlayWidthPx={isSinglePageMode ? spreadPageWidth : spreadOverlayWidthPx}
+        spreadOverlayWidthPx={spreadOverlayWidthPx}
       />
-    )
-  }
-
-  if (isSinglePageMode) {
-    return (
-      <div
-        ref={gridRef}
-        className="relative flex w-max max-w-full items-start justify-center overflow-hidden leading-none"
-        style={{ minHeight: pageCanvasHeightPx }}
-      >
-        {renderOutgoing()}
-        <div
-          className={cn(
-            'relative motion-reduce:transition-none',
-            !useSlide && crossfade.isAnimating && 'transition-opacity ease-out',
-          )}
-          style={incomingLayerStyle}
-        >
-          <PageViewPool
-            {...poolProps}
-            unitId={unitId}
-            prefetchRevision={prefetchRevision}
-            anchorPage={anchorPage}
-            spreadRightPage={null}
-            isSinglePageMode
-            visiblePages={visiblePages}
-            pageCanvasHeightPx={pageCanvasHeightPx}
-            gutterPullPx={gutterPullPx}
-            spreadPageWidth={spreadPageWidth}
-          />
-        </div>
-      </div>
     )
   }
 
@@ -177,17 +143,22 @@ export function SpreadStage({
           prefetchRevision={prefetchRevision}
           anchorPage={anchorPage}
           spreadRightPage={effectiveSpreadRight}
-          isSinglePageMode={false}
           visiblePages={visiblePages}
           pageCanvasHeightPx={pageCanvasHeightPx}
           gutterPullPx={gutterPullPx}
           spreadPageWidth={spreadPageWidth}
-        >
-          {children}
-        </PageViewPool>
+        />
       </div>
       {!showSpreadRightPage || spreadRightPage == null ? (
         <div aria-hidden className="shrink-0" style={{ width: spreadPageWidth, height: pageCanvasHeightPx }} />
+      ) : null}
+      {children ? (
+        <div
+          className="pointer-events-none absolute inset-0 z-[36]"
+          style={{ width: spreadOverlayWidthPx, height: pageCanvasHeightPx }}
+        >
+          {children}
+        </div>
       ) : null}
     </div>
   )

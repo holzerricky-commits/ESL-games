@@ -1,4 +1,6 @@
 import { SymSpell, Verbosity } from '@/lib/writing-assist/symspell-browser'
+import { suggestCommonTypo } from '@/lib/writing-assist/common-typos'
+import { suggestContraction } from '@/lib/writing-assist/contractions'
 
 const DICT_URL = '/writing-assist/en-us-50k.json'
 const FREQ_MARGIN = 3
@@ -8,9 +10,6 @@ const MAX_EDIT_DISTANCE = 2
 const TRANSPOSE_2: Record<string, string> = {
   si: 'is',
   is: 'si',
-  teh: 'the',
-  yuo: 'you',
-  taht: 'that',
 }
 
 export type CorrectionResult = { from: string; to: string }
@@ -75,6 +74,7 @@ export class SpellEngine {
   private readonly wordsByPrefix1 = new Map<string, string[]>()
   private readonly wordsByPrefix2 = new Map<string, string[]>()
   private lessonWords = new Set<string>()
+  private learnedWords = new Set<string>()
 
   private constructor(symSpell: SymSpell) {
     this.symSpell = symSpell
@@ -149,6 +149,21 @@ export class SpellEngine {
     }
   }
 
+  setLearnedWords(words: Iterable<string>): void {
+    this.learnedWords = new Set()
+    for (const w of words) {
+      const t = normalizeToken(w)
+      if (t) {
+        this.learnedWords.add(t)
+        this.validWords.add(t)
+      }
+    }
+  }
+
+  getLearnedWords(): Set<string> {
+    return this.learnedWords
+  }
+
   isValidWord(word: string): boolean {
     const t = normalizeToken(word)
     return t.length > 0 && this.validWords.has(t)
@@ -160,7 +175,17 @@ export class SpellEngine {
     const lower = word.toLowerCase()
     if (lower.length === 1) return null
 
+    const contraction = suggestContraction(word)
+    if (contraction) {
+      return { from: word, to: contraction }
+    }
+
     if (this.isValidWord(word)) return null
+
+    const commonTypo = suggestCommonTypo(word)
+    if (commonTypo && commonTypo.toLowerCase() !== lower) {
+      return { from: word, to: commonTypo }
+    }
 
     if (lower.length === 2 && TRANSPOSE_2[lower]) {
       const to = preserveCase(word, TRANSPOSE_2[lower])
@@ -227,6 +252,7 @@ export function createSpellEngineForTest(entries: [string, number][]): SpellEngi
     entries.map(([w, c]) => [w.toLowerCase(), c]),
   )
   ;(engine as unknown as { lessonWords: Set<string> }).lessonWords = new Set()
+  ;(engine as unknown as { learnedWords: Set<string> }).learnedWords = new Set()
   ;(engine as unknown as { wordsByPrefix1: Map<string, string[]> }).wordsByPrefix1 = new Map()
   ;(engine as unknown as { wordsByPrefix2: Map<string, string[]> }).wordsByPrefix2 = new Map()
   const wordsByPrefix1 = (engine as unknown as { wordsByPrefix1: Map<string, string[]> }).wordsByPrefix1
@@ -247,6 +273,8 @@ export function createSpellEngineForTest(entries: [string, number][]): SpellEngi
     }
   }
   engine.setLessonWords = SpellEngine.prototype.setLessonWords.bind(engine)
+  engine.setLearnedWords = SpellEngine.prototype.setLearnedWords.bind(engine)
+  engine.getLearnedWords = SpellEngine.prototype.getLearnedWords.bind(engine)
   engine.getWordFrequency = SpellEngine.prototype.getWordFrequency.bind(engine)
   engine.findWordsWithPrefix = SpellEngine.prototype.findWordsWithPrefix.bind(engine)
   return engine

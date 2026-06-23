@@ -16,10 +16,12 @@ import {
   getPartialWordAtCaret,
   getPreviousWord,
   getSecondPreviousWord,
+  isSentenceStart,
   suggestNextWords,
   type GhostSuggestion,
 } from '@/lib/writing-assist/ghost-complete'
 import { loadNgramIndex } from '@/lib/writing-assist/ngram-index'
+import { loadLearnedWords, rememberLearnedWord } from '@/lib/writing-assist/learned-words'
 import { loadWritingAssistEnabled } from '@/lib/writing-assist/writing-assist-prefs'
 
 const GHOST_DEBOUNCE_MS = 60
@@ -29,14 +31,18 @@ type WritingAssistContextValue = {
   enabled: boolean
   engine: SpellEngine | null
   lessonWords: Set<string>
+  learnedWords: Set<string>
   sessionBigrams: Map<string, string[]>
   registerSessionTokens: (text: string) => void
+  rememberWord: (word: string) => void
   preload: () => void
   ghostCandidates: GhostSuggestion[]
   ghostIndex: number
   ghostPartial: string
   activeGhost: GhostSuggestion | null
   updateGhostFromText: (text: string, caret: number) => void
+  /** Refresh ghost immediately (e.g. right after space or sentence punctuation). */
+  flushGhostFromText: (text: string, caret: number) => void
   cycleGhost: (delta: 1 | -1) => void
   clearGhost: () => void
 }
@@ -56,6 +62,7 @@ export function WritingAssistProvider({
   const [ready, setReady] = useState(false)
   const [engine, setEngine] = useState<SpellEngine | null>(null)
   const [enabled] = useState(() => loadWritingAssistEnabled())
+  const [learnedWords, setLearnedWords] = useState<Set<string>>(() => loadLearnedWords())
   const sessionTokensRef = useRef<string[]>([])
   const [sessionBigrams, setSessionBigrams] = useState<Map<string, string[]>>(() => new Map())
   const [ngramIndex, setNgramIndex] = useState<Map<string, { word: string; count: number }[]> | null>(
@@ -73,6 +80,7 @@ export function WritingAssistProvider({
     void Promise.all([getSpellEngine(), loadNgramIndex()])
       .then(([e, ngrams]) => {
         e.setLessonWords(lessonWords)
+        e.setLearnedWords(learnedWords)
         setEngine(e)
         setNgramIndex(ngrams)
         setReady(true)
@@ -80,21 +88,39 @@ export function WritingAssistProvider({
       .catch((err) => {
         console.warn('[WritingAssist] Dictionary load failed', err)
       })
-  }, [enabled, lessonWords])
+  }, [enabled, lessonWords, learnedWords])
 
   useEffect(() => {
     if (active) preload()
   }, [active, preload])
 
   useEffect(() => {
-    if (engine) engine.setLessonWords(lessonWords)
-  }, [engine, lessonWords])
+    if (engine) {
+      engine.setLessonWords(lessonWords)
+      engine.setLearnedWords(learnedWords)
+    }
+  }, [engine, lessonWords, learnedWords])
 
   useEffect(() => {
     return () => {
       if (ghostDebounceRef.current) clearTimeout(ghostDebounceRef.current)
     }
   }, [])
+
+  const rememberWord = useCallback(
+    (word: string) => {
+      rememberLearnedWord(word)
+      setLearnedWords((prev) => {
+        const token = word.trim().toLowerCase()
+        if (!token || prev.has(token)) return prev
+        const next = new Set(prev)
+        next.add(token)
+        if (engine) engine.setLearnedWords(next)
+        return next
+      })
+    },
+    [engine],
+  )
 
   const registerSessionTokens = useCallback((text: string) => {
     const tokens = text
@@ -117,12 +143,20 @@ export function WritingAssistProvider({
         return
       }
 
+      // Empty field shows placeholder hint — no inline ghost or prediction strip.
+      if (text.length === 0) {
+        setGhostCandidates([])
+        setGhostIndex(0)
+        setGhostPartial('')
+        return
+      }
+
       const partial = getPartialWordAtCaret(text, caret)
       const prev = getPreviousWord(text, caret)
       const prev2 = getSecondPreviousWord(text, caret)
       setGhostPartial(partial)
 
-      if (!prev && !partial) {
+      if (!prev && !partial && !isSentenceStart(text, caret, partial)) {
         setGhostCandidates([])
         setGhostIndex(0)
         return
@@ -139,6 +173,17 @@ export function WritingAssistProvider({
       setGhostIndex(0)
     },
     [enabled, ready, sessionBigrams, lessonWords, engine, ngramIndex],
+  )
+
+  const flushGhostFromText = useCallback(
+    (text: string, caret: number) => {
+      if (ghostDebounceRef.current) {
+        clearTimeout(ghostDebounceRef.current)
+        ghostDebounceRef.current = null
+      }
+      applyGhostUpdate(text, caret)
+    },
+    [applyGhostUpdate],
   )
 
   const updateGhostFromText = useCallback(
@@ -177,14 +222,17 @@ export function WritingAssistProvider({
       enabled,
       engine,
       lessonWords,
+      learnedWords,
       sessionBigrams,
       registerSessionTokens,
+      rememberWord,
       preload,
       ghostCandidates,
       ghostIndex,
       ghostPartial,
       activeGhost,
       updateGhostFromText,
+      flushGhostFromText,
       cycleGhost,
       clearGhost,
     }),
@@ -193,14 +241,17 @@ export function WritingAssistProvider({
       enabled,
       engine,
       lessonWords,
+      learnedWords,
       sessionBigrams,
       registerSessionTokens,
+      rememberWord,
       preload,
       ghostCandidates,
       ghostIndex,
       ghostPartial,
       activeGhost,
       updateGhostFromText,
+      flushGhostFromText,
       cycleGhost,
       clearGhost,
     ],
@@ -217,14 +268,17 @@ export function useWritingAssistContext(): WritingAssistContextValue {
       enabled: false,
       engine: null,
       lessonWords: new Set(),
+      learnedWords: new Set(),
       sessionBigrams: new Map(),
       registerSessionTokens: () => {},
+      rememberWord: () => {},
       preload: () => {},
       ghostCandidates: [],
       ghostIndex: 0,
       ghostPartial: '',
       activeGhost: null,
       updateGhostFromText: () => {},
+      flushGhostFromText: () => {},
       cycleGhost: () => {},
       clearGhost: () => {},
     }

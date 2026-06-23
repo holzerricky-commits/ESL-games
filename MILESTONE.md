@@ -42,6 +42,7 @@ Defer **perfect PDF/LLM extraction**, **full monster/boss combat**, and **studen
 
 - [ ] No requirement for interactive vocab deep-dive, reading popups, AI lesson generator, or map redesign.
 - [ ] No requirement for multi-device sync or student logins.
+- [x] **No single-page-centered book reader** — v1 is spread-only (left + optional right); see `PROJECT_CONTEXT.md` → *Book reader layout — spread-only v1*.
 
 ---
 
@@ -89,6 +90,8 @@ Phase 1 preview items above (bookmark paths, **Open book**, session log) are **c
 
 ## Notes (fill as you go)
 
+**Reader layout (locked in):** Spread-only v1 — two page slots per view, right may be empty. New reader/ink/selection code should not add `isSinglePageMode` branches; legacy branches may be removed when touched. PDF export’s temporary one-page capture stays isolated from reader behavior.
+
 **Run target (locked in):** `npm run dev` on this machine for real lessons. Hot reload is rare enough that a separate `build` + `start` routine is **not** required unless that changes.
 
 **Phase 1 — bookmark / “where we left off”:** The saved place is the **last viewed PDF page at the moment the teacher ends the class** (or taps “finish class” when we add it). If you flip ahead to preview with the student, **navigate back** to the page where you want the bookmark, then end the class there. Scheduled classes + prepared lesson parts will be assigned before class; **finish class** can later set the bookmark automatically to that “last viewed” page.
@@ -98,6 +101,8 @@ Phase 1 preview items above (bookmark paths, **Open book**, session log) are **c
 ---
 
 ## Last updated
+
+2026-06-10 — **Spread-only v1** locked in `PROJECT_CONTEXT.md`; non-goal + Notes updated; ink/selection work should assume spread (left + optional right), not single-page reader.
 
 2026-06-08 — **Lesson Hub + multi-book:** decisions captured in `docs/LESSON_HUB_AND_MULTI_BOOK_PRODUCT.md`; build after Phase 2–3; static backdrop replaces dimmed map when implemented.
 

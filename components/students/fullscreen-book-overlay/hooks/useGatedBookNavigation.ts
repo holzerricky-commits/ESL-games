@@ -38,7 +38,6 @@ interface UseGatedBookNavigationArgs {
   selectedUnit: BookLibraryPayload['books'][number]['units'][number] | null
   numPages: number | null
   visiblePages: number[]
-  isSinglePageMode: boolean
   pageNumber: number
   pageJumpDraft: string
   numberingMode: PageNumberingMode
@@ -60,7 +59,6 @@ export function useGatedBookNavigation({
   selectedUnit,
   numPages,
   visiblePages,
-  isSinglePageMode,
   pageNumber,
   pageJumpDraft,
   numberingMode,
@@ -105,7 +103,6 @@ export function useGatedBookNavigation({
       const { immediate } = splitReaderPrefetchPages({
         anchorPage,
         visiblePages,
-        isSinglePageMode,
         readerBounds,
         directionBias: intent === 'routine' ? getReaderPrefetchDirectionBias() : 'neutral',
         intent,
@@ -125,7 +122,7 @@ export function useGatedBookNavigation({
         shouldProceed: () => true,
       })
     },
-    [open, selectedUnit, layoutSpreadPageWidth, visiblePages, isSinglePageMode, readerBounds],
+    [open, selectedUnit, layoutSpreadPageWidth, visiblePages, readerBounds],
   )
 
   const commitPageNow = useCallback(
@@ -223,7 +220,6 @@ export function useGatedBookNavigation({
         nextPage,
         visiblePages,
         readerBounds,
-        isSinglePageMode,
       })
       if (normalizedNext === anchorRef.current) return
 
@@ -243,7 +239,6 @@ export function useGatedBookNavigation({
       selectedUnit,
       visiblePages,
       readerBounds,
-      isSinglePageMode,
       commitPageNow,
     ],
   )
@@ -255,7 +250,6 @@ export function useGatedBookNavigation({
         anchorPage: anchorRef.current,
         direction,
         visiblePages,
-        isSinglePageMode,
       })
       if (nextPage == null) return
 
@@ -263,11 +257,10 @@ export function useGatedBookNavigation({
         nextPage,
         visiblePages,
         readerBounds,
-        isSinglePageMode,
       })
       enqueueAdjacentStep(normalizedNext)
     },
-    [visiblePages, isSinglePageMode, readerBounds, enqueueAdjacentStep],
+    [visiblePages, readerBounds, enqueueAdjacentStep],
   )
 
   const commitPageJump = useCallback(() => {
@@ -291,7 +284,7 @@ export function useGatedBookNavigation({
     const singleMatch = raw.match(/^(\d+)$/)
 
     if (usePrinted) {
-      if (!isSinglePageMode && spreadMatch) {
+      if (spreadMatch) {
         const pdf = resolvePrintedToPdf(parseInt(spreadMatch[1]!, 10))
         if (pdf != null) requestGoToPage(pdf)
         return
@@ -321,7 +314,6 @@ export function useGatedBookNavigation({
     requestGoToPage(n)
   }, [
     requestGoToPage,
-    isSinglePageMode,
     numPages,
     numberingMode,
     pageJumpDraft,

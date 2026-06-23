@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { isBookOverlayKeyboardTypingTarget } from '@/lib/books/book-overlay-keyboard-guards'
+import { shouldDeferBookOverlayToolShortcuts } from '@/lib/books/book-overlay-keyboard-guards'
 
 interface UseArrowKeyPageTurnArgs {
   open: boolean
@@ -18,7 +18,7 @@ export function useArrowKeyPageTurn({
     function onArrowPageTurn(e: KeyboardEvent) {
       if (e.defaultPrevented) return
       if (e.altKey || e.ctrlKey || e.metaKey) return
-      if (isBookOverlayKeyboardTypingTarget()) return
+      if (shouldDeferBookOverlayToolShortcuts()) return
 
       if (e.key === 'ArrowLeft') {
         e.preventDefault()

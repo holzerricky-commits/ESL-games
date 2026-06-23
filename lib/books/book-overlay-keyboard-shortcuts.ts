@@ -1,5 +1,6 @@
 import type { BookAnnotationInteractionMode } from '@/lib/books/annotation-storage'
 import type { StampVariant } from '@/lib/books/annotation-command-types'
+import { STICKER_QUICK_VARIANTS } from '@/lib/books/sticker-tool'
 
 /** Max gap between repeated key presses to count as cycling variants. */
 export const BOOK_OVERLAY_SHORTCUT_TAP_MAX_MS = 450
@@ -21,14 +22,9 @@ export function cycleBookOverlayShapeMode(current: BookOverlayShapeMode): BookOv
   return BOOK_OVERLAY_SHAPE_MODES[next]!
 }
 
-/** Stamp icons in toolbar / S shortcut cycle order. */
-export const BOOK_OVERLAY_STAMP_VARIANTS: readonly StampVariant[] = [
-  'check',
-  'cross',
-  'question',
-  'star',
-  'heart',
-]
+/** Quick sticker symbols in toolbar / S shortcut cycle order. */
+export const BOOK_OVERLAY_STAMP_VARIANTS: readonly StampVariant[] = STICKER_QUICK_VARIANTS
+export const BOOK_OVERLAY_STICKER_QUICK_VARIANTS = BOOK_OVERLAY_STAMP_VARIANTS
 
 /** Eraser modes in E shortcut cycle order. */
 export const BOOK_OVERLAY_ERASER_MODES = ['eraser-line', 'eraser'] as const satisfies readonly BookAnnotationInteractionMode[]
@@ -65,13 +61,17 @@ export function resolveShortcutTapIndex(
   return { index, nextState: { lastAt: now, lastIndex: index } }
 }
 
-/** Alt+1 … Alt+5 for direct stamp variant selection. */
+/** Alt+1 … Alt+9 for direct quick sticker selection. */
 export const BOOK_OVERLAY_STAMP_VARIANT_BY_DIGIT: Record<string, StampVariant> = {
   '1': 'check',
   '2': 'cross',
   '3': 'question',
   '4': 'star',
   '5': 'heart',
+  '6': 'thumbsUp',
+  '7': 'repeat',
+  '8': 'yourTurn',
+  '9': 'newWord',
 }
 
 /** Single-key labels shown in tooltips. */
@@ -87,9 +87,12 @@ export const BOOK_OVERLAY_SHORTCUT_LABELS = {
   shapeArrow: 'A',
   shapeLineAndTriangle: 'M again to cycle',
   stamp: 'S',
-  stampVariants: 'S again, Alt+1–5',
+  stampVariants: 'S again, Alt+1–9',
+  sticker: 'S',
+  stickerVariants: 'S again, Alt+1–9',
   text: 'T',
   sticky: 'N',
+  stickyWritable: 'N',
   callout: 'K',
   eraserStroke: 'E',
   eraserRub: 'E again',
@@ -102,6 +105,8 @@ export const BOOK_OVERLAY_SHORTCUT_LABELS = {
   duplicate: 'Ctrl+D',
   selectNext: 'Tab',
   selectPrev: 'Shift+Tab',
+  nudgeSelection: 'Arrow keys',
+  nudgeSelectionCoarse: 'Shift+Arrow',
   undo: 'Ctrl+Z',
   redo: 'Ctrl+Shift+Z',
   clearPage: 'Ctrl+Shift+Backspace',
@@ -120,3 +125,8 @@ export const BOOK_OVERLAY_SHORTCUT_LABELS = {
   pageNext: '→',
   closePanelOrBook: 'Esc',
 } as const
+
+/** Normalized nudge per arrow press (~3px on an 800px-wide page). */
+export const ANNOTATION_KEYBOARD_NUDGE_NORM = 0.004
+
+export const ANNOTATION_KEYBOARD_NUDGE_SHIFT_MULTIPLIER = 10

@@ -12,7 +12,7 @@ export function roundedCornersFieldForCommit(prefEnabled: boolean): { roundedCor
 export function shapeCornerRadiusPx(w: number, h: number): number {
   const minDim = Math.min(Math.abs(w), Math.abs(h))
   if (minDim <= 0) return 0
-  return Math.max(4, Math.min(minDim * 0.14, 28))
+  return Math.max(2, Math.min(minDim * 0.07, 14))
 }
 
 function clampRadius(r: number, w: number, h: number): number {

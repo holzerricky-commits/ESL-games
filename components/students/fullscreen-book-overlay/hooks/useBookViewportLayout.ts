@@ -1,6 +1,6 @@
 import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from 'react'
 import { shouldSkipSpreadTargetWidthSync } from '@/lib/books/spread-viewport-zoom'
-import { computeSinglePageWidth, computeSpreadPageWidth } from '@/lib/books/spread-viewport-layout'
+import { computeSpreadPageWidth } from '@/lib/books/spread-viewport-layout'
 import type { BookLibraryPayload } from '@/lib/books/types'
 
 interface UseBookViewportLayoutArgs {
@@ -14,7 +14,6 @@ interface UseBookViewportLayoutArgs {
   pageAreaRef: MutableRefObject<HTMLDivElement | null>
   spreadRenderBaseKeyRef: MutableRefObject<string>
   setPageAreaSize: Dispatch<SetStateAction<{ w: number; h: number }>>
-  setIsSinglePageMode: Dispatch<SetStateAction<boolean>>
   setTargetSpreadPageWidth: Dispatch<SetStateAction<number>>
   setSpreadPageWidth: Dispatch<SetStateAction<number>>
 }
@@ -30,7 +29,6 @@ export function useBookViewportLayout({
   pageAreaRef,
   spreadRenderBaseKeyRef,
   setPageAreaSize,
-  setIsSinglePageMode,
   setTargetSpreadPageWidth,
   setSpreadPageWidth,
 }: UseBookViewportLayoutArgs) {
@@ -59,27 +57,9 @@ export function useBookViewportLayout({
       }
       lastDevicePixelRatio = nextDpr
 
-      const useSinglePageMode = false
-      setIsSinglePageMode(useSinglePageMode)
-
-      const minWidth = useSinglePageMode ? 420 : 1
-      // Do not key on `pageAspectRatio`: primed from PDF before first paint (B3); target width still
-      // updates on every sync when aspect refines, while `spreadPageWidth` resets on book/unit/mode
-      // and when lesson notebook opens or closes (viewport width step changes).
-      const baseKey = `${selectedBookId ?? ''}|${selectedUnitId ?? ''}|${useSinglePageMode ? '1' : '0'}|lp:${isLessonPaperOpen ? 1 : 0}`
-
-      const nextWidth = useSinglePageMode
-        ? computeSinglePageWidth(bounds.width, bounds.height, pageAspectRatio, minWidth)
-        : computeSpreadPageWidth(bounds.width, bounds.height, pageAspectRatio, minWidth)
-
-      if (useSinglePageMode) {
-        setTargetSpreadPageWidth(nextWidth)
-        if (spreadRenderBaseKeyRef.current !== baseKey) {
-          setSpreadPageWidth(nextWidth)
-          spreadRenderBaseKeyRef.current = baseKey
-        }
-        return
-      }
+      const minWidth = 1
+      const baseKey = `${selectedBookId ?? ''}|${selectedUnitId ?? ''}|lp:${isLessonPaperOpen ? 1 : 0}`
+      const nextWidth = computeSpreadPageWidth(bounds.width, bounds.height, pageAspectRatio, minWidth)
 
       setTargetSpreadPageWidth(nextWidth)
       if (spreadRenderBaseKeyRef.current !== baseKey) {
@@ -103,7 +83,6 @@ export function useBookViewportLayout({
     selectedUnitId,
     pageAreaRef,
     spreadRenderBaseKeyRef,
-    setIsSinglePageMode,
     setPageAreaSize,
     setSpreadPageWidth,
     setTargetSpreadPageWidth,

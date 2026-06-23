@@ -27,6 +27,9 @@ import {
   Square,
   Star,
   StickyNote,
+  ThumbsUp,
+  Repeat,
+  ArrowRight,
   Triangle,
   Type,
   X,
@@ -42,6 +45,10 @@ import {
   STAMP_COLOR_CROSS,
   STAMP_COLOR_HEART,
   STAMP_COLOR_STAR,
+  STAMP_COLOR_THUMBS_UP,
+  STAMP_COLOR_REPEAT,
+  STAMP_COLOR_YOUR_TURN,
+  STAMP_COLOR_NEW_WORD,
   getPenSwatch,
 } from '@/lib/books/annotation-palettes'
 import {
@@ -71,7 +78,17 @@ import type {
   ShapeFillMode,
   StampVariant,
   TextAnnotationVisualStyle,
+  WritableStickerVariant,
 } from '@/lib/books/annotation-command-types'
+import {
+  STICKER_QUICK_LABEL,
+  STICKER_QUICK_VARIANTS,
+  WRITABLE_STICKER_LABEL,
+  WRITABLE_STICKER_VARIANTS,
+  type StickerKind,
+} from '@/lib/books/sticker-tool'
+import { writableStickerIcon } from '@/components/students/annotation-sticker-icons'
+import { defaultWritableStickerFill } from '@/lib/books/writable-sticker-visuals'
 import { shapeFillModeHasFill } from '@/lib/books/annotation-command-types'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -98,32 +115,6 @@ const SHAPE_LABEL: Record<ShapeToolbarMode, string> = {
   ellipse: 'Ellipse',
   triangle: 'Triangle',
   arrow: 'Arrow',
-}
-
-const STAMP_LABEL: Record<StampVariant, string> = {
-  check: 'Check',
-  cross: 'Cross',
-  question: 'Question',
-  star: 'Star',
-  heart: 'Heart',
-}
-
-function StampQuestionMarkIcon({ color = 'currentColor' }: { color?: string }) {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
-      <text
-        x="9"
-        y="12.5"
-        textAnchor="middle"
-        fontSize="13"
-        fontWeight="700"
-        fill={color}
-        fontFamily="system-ui, sans-serif"
-      >
-        ?
-      </text>
-    </svg>
-  )
 }
 
 function shapeIconForMode(mode: ShapeToolbarMode): typeof Minus {
@@ -171,6 +162,7 @@ function TextWithBackgroundIcon() {
 }
 
 const iconCls = TOOLBAR_ICON_CLASS
+const STAMP_LABEL = STICKER_QUICK_LABEL
 
 const SHAPE_ICON_OPTIONS = SHAPE_TOOLBAR_MODES.map((mode) => ({
   value: mode,
@@ -180,6 +172,24 @@ const SHAPE_ICON_OPTIONS = SHAPE_TOOLBAR_MODES.map((mode) => ({
     return <Icon className={iconCls} strokeWidth={1.75} aria-hidden />
   })(),
 }))
+
+function StampQuestionMarkIcon({ color = 'currentColor' }: { color?: string }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+      <text
+        x="9"
+        y="12.5"
+        textAnchor="middle"
+        fontSize="13"
+        fontWeight="700"
+        fill={color}
+        fontFamily="system-ui, sans-serif"
+      >
+        ?
+      </text>
+    </svg>
+  )
+}
 
 export function stampIconForVariant(variant: StampVariant, questionColor: string): ReactNode {
   if (variant === 'check') {
@@ -194,26 +204,47 @@ export function stampIconForVariant(variant: StampVariant, questionColor: string
   if (variant === 'star') {
     return <Star className={iconCls} strokeWidth={1.75} style={{ color: STAMP_COLOR_STAR }} aria-hidden />
   }
-  return <Heart className={iconCls} strokeWidth={1.75} style={{ color: STAMP_COLOR_HEART }} aria-hidden />
+  if (variant === 'heart') {
+    return <Heart className={iconCls} strokeWidth={1.75} style={{ color: STAMP_COLOR_HEART }} aria-hidden />
+  }
+  if (variant === 'thumbsUp') {
+    return <ThumbsUp className={iconCls} strokeWidth={1.75} style={{ color: STAMP_COLOR_THUMBS_UP }} aria-hidden />
+  }
+  if (variant === 'repeat') {
+    return <Repeat className={iconCls} strokeWidth={1.75} style={{ color: STAMP_COLOR_REPEAT }} aria-hidden />
+  }
+  if (variant === 'yourTurn') {
+    return <ArrowRight className={iconCls} strokeWidth={1.75} style={{ color: STAMP_COLOR_YOUR_TURN }} aria-hidden />
+  }
+  return <Sparkles className={iconCls} strokeWidth={1.75} style={{ color: STAMP_COLOR_NEW_WORD }} aria-hidden />
 }
 
-const STAMP_ICON_OPTIONS: { value: StampVariant; ariaLabel: string; icon: ReactNode }[] = [
-  { value: 'check', ariaLabel: 'Check', icon: stampIconForVariant('check', '') },
-  { value: 'cross', ariaLabel: 'Cross', icon: stampIconForVariant('cross', '') },
-  {
-    value: 'question',
-    ariaLabel: 'Question',
-    icon: stampIconForVariant('question', '#c4b5a8'),
-  },
-  { value: 'star', ariaLabel: 'Star', icon: stampIconForVariant('star', '') },
-  { value: 'heart', ariaLabel: 'Heart', icon: stampIconForVariant('heart', '') },
-]
+const STAMP_ICON_OPTIONS: { value: StampVariant; ariaLabel: string; icon: ReactNode }[] =
+  STICKER_QUICK_VARIANTS.map((value) => ({
+    value,
+    ariaLabel: STICKER_QUICK_LABEL[value],
+    icon: stampIconForVariant(value, value === 'question' ? '#c4b5a8' : ''),
+  }))
+
+const WRITABLE_STICKER_ICON_OPTIONS: {
+  value: WritableStickerVariant
+  ariaLabel: string
+  icon: ReactNode
+}[] = WRITABLE_STICKER_VARIANTS.map((value) => ({
+  value,
+  ariaLabel: WRITABLE_STICKER_LABEL[value],
+  icon: writableStickerIcon(value),
+}))
 
 export interface BookAnnotationToolbarProps {
   annotationMode: BookAnnotationInteractionMode
   setAnnotationMode: (m: BookAnnotationInteractionMode) => void
   stampVariant: StampVariant
   setStampVariant: (v: StampVariant) => void
+  stickerKind: StickerKind
+  setStickerKind: (k: StickerKind) => void
+  writableStickerVariant: WritableStickerVariant
+  setWritableStickerVariant: (v: WritableStickerVariant) => void
   stampQuestionColor: string
   setStampQuestionColor: (c: string) => void
   penSwatchId: string
@@ -431,6 +462,10 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
     setAnnotationMode,
     stampVariant,
     setStampVariant,
+    stickerKind,
+    setStickerKind,
+    writableStickerVariant,
+    setWritableStickerVariant,
     stampQuestionColor,
     setStampQuestionColor,
     penSwatchId,
@@ -500,9 +535,8 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
   const [markerOpen, setMarkerOpen] = useState(false)
   const [eraserOpen, setEraserOpen] = useState(false)
   const [shapesOpen, setShapesOpen] = useState(false)
-  const [stampsOpen, setStampsOpen] = useState(false)
+  const [stickersOpen, setStickersOpen] = useState(false)
   const [textOpen, setTextOpen] = useState(false)
-  const [stickyOpen, setStickyOpen] = useState(false)
   const [eraserSubMode, setEraserSubMode] = useState<'rubber' | 'line'>('line')
   const [eyedropperOpen, setEyedropperOpen] = useState(false)
   const eyedropperLongPressRef = useRef<{ timer: ReturnType<typeof setTimeout> | null; fired: boolean }>({
@@ -524,7 +558,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
   }
 
   function closeAllExcept(
-    which: 'pen' | 'marker' | 'eraser' | 'shapes' | 'stamps' | 'text' | 'sticky' | 'eyedropper',
+    which: 'pen' | 'marker' | 'eraser' | 'shapes' | 'stickers' | 'text' | 'eyedropper',
   ) {
     if (which !== 'pen') {
       setPenOpen(false)
@@ -533,9 +567,8 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
     if (which !== 'marker') setMarkerOpen(false)
     if (which !== 'eraser') setEraserOpen(false)
     if (which !== 'shapes') setShapesOpen(false)
-    if (which !== 'stamps') setStampsOpen(false)
+    if (which !== 'stickers') setStickersOpen(false)
     if (which !== 'text') setTextOpen(false)
-    if (which !== 'sticky') setStickyOpen(false)
     if (which !== 'eyedropper') setEyedropperOpen(false)
   }
 
@@ -545,9 +578,8 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
     setMarkerOpen(false)
     setEraserOpen(false)
     setShapesOpen(false)
-    setStampsOpen(false)
+    setStickersOpen(false)
     setTextOpen(false)
-    setStickyOpen(false)
     setEyedropperOpen(false)
   }
 
@@ -562,9 +594,28 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
   const markerActive = annotationMode === 'marker'
   const eraserActive = annotationMode === 'eraser' || annotationMode === 'eraser-line'
   const shapesActive = SHAPE_TOOLBAR_MODES.includes(annotationMode as ShapeToolbarMode)
-  const stampsActive = annotationMode === 'stamp'
+  const stickerActive =
+    annotationMode === 'sticker' || annotationMode === 'stamp' || annotationMode === 'sticky'
+  const stickerToolbarIcon =
+    stickerKind === 'writable' || annotationMode === 'sticky' ? (
+      <span className="relative inline-flex">
+        {writableStickerIcon(writableStickerVariant)}
+        <span
+          className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-black/20"
+          style={{
+            backgroundColor: defaultWritableStickerFill(writableStickerVariant, stickyFillColor),
+          }}
+          aria-hidden
+        />
+      </span>
+    ) : (
+      stampIconForVariant(stampVariant, stampQuestionColor)
+    )
+  const stickerToolbarLabel =
+    stickerKind === 'writable'
+      ? WRITABLE_STICKER_LABEL[writableStickerVariant]
+      : STAMP_LABEL[stampVariant]
   const textActive = annotationMode === 'text'
-  const stickyActive = annotationMode === 'sticky'
   const calloutActive = annotationMode === 'callout'
   const selectActive = annotationMode === 'select'
   const penSwatch = useMemo(() => getPenSwatch(penSwatchId), [penSwatchId])
@@ -611,14 +662,14 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
       setShapesOpen(true)
     },
   )
-  const stampsRailPress = useRailVariantToolPress(
+  const stickersRailPress = useRailVariantToolPress(
     () => {
       closeAllPopovers()
-      setAnnotationMode('stamp')
+      setAnnotationMode('sticker')
     },
     () => {
-      closeAllExcept('stamps')
-      setStampsOpen(true)
+      closeAllExcept('stickers')
+      setStickersOpen(true)
     },
   )
   const textRailPress = useRailVariantToolPress(
@@ -1140,20 +1191,20 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
       )}
 
       {useContextStrip ? (
-        <Popover open={stampsOpen} onOpenChange={setStampsOpen}>
+        <Popover open={stickersOpen} onOpenChange={setStickersOpen}>
           <PopoverAnchor asChild>
             <Button
               type="button"
               variant="outline"
               size="icon"
-              aria-expanded={stampsOpen}
+              aria-expanded={stickersOpen}
               aria-haspopup="dialog"
-              aria-label={`Stamp: ${STAMP_LABEL[stampVariant]}`}
-              title={`Stamp – ${STAMP_LABEL[stampVariant]} (${SC.stamp})${railVariantToolTitleSuffix}`}
-              className={cn(toolBtnClass, (stampsOpen || stampsActive) && toolBtnActiveClass)}
-              {...stampsRailPress}
+              aria-label={`Sticker: ${stickerToolbarLabel}`}
+              title={`Sticker – ${stickerToolbarLabel} (${SC.sticker})${railVariantToolTitleSuffix}`}
+              className={cn(toolBtnClass, (stickersOpen || stickerActive) && toolBtnActiveClass)}
+              {...stickersRailPress}
             >
-              {stampIconForVariant(stampVariant, stampQuestionColor)}
+              {stickerToolbarIcon}
             </Button>
           </PopoverAnchor>
           <PopoverContent
@@ -1161,80 +1212,166 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
             align="center"
             className={railVariantPopoverClass}
           >
-            <PopoverIconGridRow
-              label="Stamp"
-              labelHidden
-              surface="rail"
-              value={stampVariant}
-              onChange={(v) => {
-                setStampVariant(v as StampVariant)
-                setAnnotationMode('stamp')
-                setStampsOpen(false)
-              }}
-              idPrefix="stamp-variant"
-              options={STAMP_ICON_OPTIONS}
-            />
+            <div className={popoverStackClass}>
+              <PopoverIconSegmentRow
+                label="Kind"
+                labelHidden
+                surface="rail"
+                value={stickerKind}
+                onChange={(v) => {
+                  if (v === 'quick' || v === 'writable') {
+                    setStickerKind(v)
+                    setAnnotationMode('sticker')
+                  }
+                }}
+                idPrefix="sticker-kind"
+                options={[
+                  { value: 'quick', ariaLabel: 'Quick', icon: stampIconForVariant(stampVariant, stampQuestionColor) },
+                  { value: 'writable', ariaLabel: 'Writable', icon: writableStickerIcon(writableStickerVariant) },
+                ]}
+              />
+              {stickerKind === 'quick' ? (
+                <PopoverIconGridRow
+                  label="Quick sticker"
+                  labelHidden
+                  surface="rail"
+                  value={stampVariant}
+                  onChange={(v) => {
+                    setStampVariant(v as StampVariant)
+                    setStickerKind('quick')
+                    setAnnotationMode('sticker')
+                    setStickersOpen(false)
+                  }}
+                  idPrefix="sticker-quick-variant"
+                  options={STAMP_ICON_OPTIONS}
+                />
+              ) : (
+                <PopoverIconGridRow
+                  label="Writable sticker"
+                  labelHidden
+                  surface="rail"
+                  value={writableStickerVariant}
+                  onChange={(v) => {
+                    setWritableStickerVariant(v as WritableStickerVariant)
+                    setStickerKind('writable')
+                    setAnnotationMode('sticker')
+                    setStickersOpen(false)
+                  }}
+                  idPrefix="sticker-writable-variant"
+                  options={WRITABLE_STICKER_ICON_OPTIONS}
+                />
+              )}
+            </div>
           </PopoverContent>
         </Popover>
       ) : (
         <Popover
-          open={stampsOpen}
-        onOpenChange={(o) => {
-          setStampsOpen(o)
-          if (o) {
-            closeAllExcept('stamps')
-            setAnnotationMode('stamp')
-          }
-        }}
-      >
-        <PopoverTrigger asChild>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            aria-expanded={stampsOpen}
-            aria-haspopup="dialog"
-            aria-label={`Stamp: ${STAMP_LABEL[stampVariant]}`}
-            title={`Stamp – ${STAMP_LABEL[stampVariant]} (${SC.stamp}, ${SC.stampVariants})`}
-            className={cn(toolBtnClass, (stampsOpen || stampsActive) && toolBtnActiveClass)}
-          >
-            {stampIconForVariant(stampVariant, stampQuestionColor)}
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent side={layout === 'vertical' ? 'left' : 'top'} align="center" className={popoverContentClass}>
-          <div className={popoverStackClass}>
-            <PopoverIconGridRow
-              label="Stamp"
-              labelHidden
-              value={stampVariant}
-              onChange={(v) => {
-                setStampVariant(v as StampVariant)
-                setAnnotationMode('stamp')
-                setStampsOpen(false)
-              }}
-              idPrefix="stamp-variant"
-              options={STAMP_ICON_OPTIONS}
-            />
-            {stampVariant === 'question' ? (
-              <ColorSwatchRow
-                colors={ANNOTATION_STAMP_QUESTION_SWATCHES}
-                current={stampQuestionColor}
-                onPick={setStampQuestionColor}
-                idPrefix="stamp-question"
-                label="Question color"
+          open={stickersOpen}
+          onOpenChange={(o) => {
+            setStickersOpen(o)
+            if (o) {
+              closeAllExcept('stickers')
+              setAnnotationMode('sticker')
+            }
+          }}
+        >
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              aria-expanded={stickersOpen}
+              aria-haspopup="dialog"
+              aria-label={`Sticker: ${stickerToolbarLabel}`}
+              title={`Sticker – ${stickerToolbarLabel} (${SC.sticker}, ${SC.stickerVariants}; ${SC.stickyWritable} for writable)`}
+              className={cn(toolBtnClass, (stickersOpen || stickerActive) && toolBtnActiveClass)}
+            >
+              {stickerToolbarIcon}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent side={layout === 'vertical' ? 'left' : 'top'} align="center" className={popoverContentClass}>
+            <div className={popoverStackClass}>
+              <PopoverIconSegmentRow
+                label="Kind"
+                value={stickerKind}
+                onChange={(v) => {
+                  if (v === 'quick' || v === 'writable') {
+                    setStickerKind(v)
+                    setAnnotationMode('sticker')
+                  }
+                }}
+                idPrefix="sticker-kind"
+                options={[
+                  { value: 'quick', ariaLabel: 'Quick', icon: stampIconForVariant(stampVariant, stampQuestionColor) },
+                  { value: 'writable', ariaLabel: 'Writable', icon: writableStickerIcon(writableStickerVariant) },
+                ]}
               />
-            ) : null}
-            {!useContextStrip ? (
-              <ThicknessSliderRow
-                value={stampThicknessStep}
-                onChange={setStampThicknessStep}
-                idPrefix="stamp"
-                previewDots={ANNOTATION_MARKER_THICKNESS_PREVIEW_DOTS}
-                ariaLabel="Stamp size"
-              />
-            ) : null}
-          </div>
-        </PopoverContent>
+              {stickerKind === 'quick' ? (
+                <>
+                  <PopoverIconGridRow
+                    label="Quick sticker"
+                    labelHidden
+                    value={stampVariant}
+                    onChange={(v) => {
+                      setStampVariant(v as StampVariant)
+                      setStickerKind('quick')
+                      setAnnotationMode('sticker')
+                    }}
+                    idPrefix="sticker-quick-variant"
+                    options={STAMP_ICON_OPTIONS}
+                  />
+                  {stampVariant === 'question' ? (
+                    <ColorSwatchRow
+                      colors={ANNOTATION_STAMP_QUESTION_SWATCHES}
+                      current={stampQuestionColor}
+                      onPick={setStampQuestionColor}
+                      idPrefix="stamp-question"
+                      label="Question color"
+                    />
+                  ) : null}
+                  <ThicknessSliderRow
+                    value={stampThicknessStep}
+                    onChange={setStampThicknessStep}
+                    idPrefix="stamp"
+                    previewDots={ANNOTATION_MARKER_THICKNESS_PREVIEW_DOTS}
+                    ariaLabel="Sticker size"
+                  />
+                </>
+              ) : (
+                <>
+                  <PopoverHint>
+                    Tap the page to place. Notes use your pick color; speech and thought default to white;
+                    captions use a dark bar.
+                  </PopoverHint>
+                  <PopoverIconGridRow
+                    label="Writable sticker"
+                    labelHidden
+                    value={writableStickerVariant}
+                    onChange={(v) => {
+                      setWritableStickerVariant(v as WritableStickerVariant)
+                      setStickerKind('writable')
+                      setAnnotationMode('sticker')
+                    }}
+                    idPrefix="sticker-writable-variant"
+                    options={WRITABLE_STICKER_ICON_OPTIONS}
+                  />
+                  <ColorSwatchRow
+                    colors={ANNOTATION_STICKY_FILL_SWATCHES}
+                    current={stickyFillColor}
+                    onPick={setStickyFillColor}
+                    idPrefix="sticky"
+                    label="Fill color"
+                  />
+                  <ThicknessSliderRow
+                    value={stickyThicknessStep}
+                    onChange={setStickyThicknessStep}
+                    idPrefix="sticky"
+                    ariaLabel="Text size"
+                  />
+                </>
+              )}
+            </div>
+          </PopoverContent>
         </Popover>
       )}
 
@@ -1383,67 +1520,6 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
               onChange={setTextThicknessStep}
               idPrefix="text"
               ariaLabel="Text size"
-            />
-          </div>
-        </PopoverContent>
-        </Popover>
-      )}
-
-      {useContextStrip ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          aria-label="Sticky note"
-          title={`Sticky note (${SC.sticky})`}
-          className={cn(toolBtnClass, stickyActive && toolBtnActiveClass)}
-          onClick={() => {
-            closeAllPopovers()
-            setAnnotationMode('sticky')
-          }}
-        >
-          <ToolbarIcon icon={StickyNote} colorDot={stickyFillColor} />
-        </Button>
-      ) : (
-        <Popover
-          open={stickyOpen}
-          onOpenChange={(o) => {
-            setStickyOpen(o)
-            if (o) {
-              closeAllExcept('sticky')
-              setAnnotationMode('sticky')
-            }
-          }}
-        >
-          <PopoverTrigger asChild>
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              aria-expanded={stickyOpen}
-              aria-haspopup="dialog"
-              aria-label="Sticky note"
-              title={`Sticky note (${SC.sticky})`}
-              className={cn(toolBtnClass, (stickyOpen || stickyActive) && toolBtnActiveClass)}
-            >
-              <ToolbarIcon icon={StickyNote} colorDot={stickyFillColor} />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent side={layout === 'vertical' ? 'left' : 'top'} align="center" className={popoverContentClass}>
-          <div className={popoverStackClass}>
-            <PopoverHint>Tap the page to place a note.</PopoverHint>
-            <ColorSwatchRow
-              colors={ANNOTATION_STICKY_FILL_SWATCHES}
-              current={stickyFillColor}
-              onPick={setStickyFillColor}
-              idPrefix="sticky"
-              label="Note color"
-            />
-            <ThicknessSliderRow
-              value={stickyThicknessStep}
-              onChange={setStickyThicknessStep}
-              idPrefix="sticky"
-              ariaLabel="Note text size"
             />
           </div>
         </PopoverContent>

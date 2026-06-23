@@ -9,11 +9,10 @@ export function resolveAdjacentAnchorPage(args: {
   anchorPage: number
   direction: -1 | 1
   visiblePages: number[]
-  isSinglePageMode: boolean
 }): number | null {
-  const { anchorPage, direction, visiblePages, isSinglePageMode } = args
+  const { anchorPage, direction, visiblePages } = args
   if (!visiblePages.length) return null
-  const step = isSinglePageMode ? 1 : 2
+  const step = 2
   const currentIndex = Math.max(0, visiblePages.indexOf(anchorPage))
   const nextIndex = Math.max(
     0,

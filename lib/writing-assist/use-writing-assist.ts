@@ -4,30 +4,23 @@ import {
   useCallback,
   useEffect,
   useRef,
-  useState,
   type ChangeEvent,
   type FormEvent,
   type KeyboardEvent,
   type RefObject,
 } from 'react'
 import type { LastCorrection } from '@/lib/writing-assist/autocorrect'
-import { shouldClearLastCorrection } from '@/lib/writing-assist/autocorrect'
+import { shouldClearLastCorrection, triggerCharFromKeyboardKey } from '@/lib/writing-assist/autocorrect'
 import {
   getContentEditableCaretOffset,
   getContentEditablePlainText,
   getTextareaCaretState,
   handleContentEditableBackspaceUndo,
-  handleContentEditableSpaceAutocorrect,
+  handleContentEditableTriggerAutocorrect,
   handleTextareaBackspaceUndo,
-  handleTextareaSpaceAutocorrect,
+  handleTextareaTriggerAutocorrect,
   setTextareaValueAndCaret,
 } from '@/lib/writing-assist/caret-text'
-import {
-  getPartialWordAtCaret,
-  getPreviousWord,
-  suggestNextWord,
-  type GhostSuggestion,
-} from '@/lib/writing-assist/ghost-complete'
 import { setWritingAssistGhostTabActive } from '@/lib/writing-assist/tab-active'
 import { useWritingAssistContext } from '@/lib/writing-assist/writing-assist-context'
 
@@ -66,16 +59,27 @@ type BindContentEditableArgs = {
 }
 
 export function useWritingAssist() {
-  const { ready, enabled, engine, lessonWords, sessionBigrams, registerSessionTokens } =
-    useWritingAssistContext()
+  const {
+    ready,
+    enabled,
+    engine,
+    registerSessionTokens,
+    rememberWord,
+    activeGhost,
+    ghostPartial,
+    ghostCandidates,
+    ghostIndex,
+    updateGhostFromText,
+    flushGhostFromText,
+    cycleGhost,
+    clearGhost,
+  } = useWritingAssistContext()
   const lastCorrectionRef = useRef<LastCorrection | null>(null)
-  const [ghost, setGhost] = useState<GhostSuggestion | null>(null)
-  const [ghostPartial, setGhostPartial] = useState('')
 
   useEffect(() => {
-    setWritingAssistGhostTabActive(Boolean(ghost?.suffix))
+    setWritingAssistGhostTabActive(Boolean(activeGhost?.suffix))
     return () => setWritingAssistGhostTabActive(false)
-  }, [ghost])
+  }, [activeGhost])
 
   const suggest = useCallback(
     (word: string) => {
@@ -85,29 +89,38 @@ export function useWritingAssist() {
     [enabled, ready, engine],
   )
 
-  const updateGhostFromText = useCallback(
-    (text: string, caret: number) => {
-      if (!enabled) {
-        setGhost(null)
-        setGhostPartial('')
-        return
-      }
-      const partial = getPartialWordAtCaret(text, caret)
-      const prev = getPreviousWord(text, caret)
-      setGhostPartial(partial)
-
-      if (!prev && !partial) {
-        setGhost(null)
-        return
-      }
-
-      const next = suggestNextWord(prev, partial, sessionBigrams, lessonWords, ready ? engine : null)
-      setGhost(next?.suffix ? next : null)
+  const acceptGhostTextarea = useCallback(
+    (
+      el: HTMLTextAreaElement,
+      setValue: (next: string) => void,
+      onAfterChange?: () => void,
+    ) => {
+      if (!activeGhost?.suffix) return false
+      const caret = el.selectionStart
+      const current = el.value
+      const insert = activeGhost.suffix
+      const next = current.slice(0, caret) + insert + current.slice(caret)
+      const newCaret = caret + insert.length
+      setValue(next)
+      registerSessionTokens(insert)
+      lastCorrectionRef.current = null
+      clearGhost()
+      queueMicrotask(() => {
+        setTextareaValueAndCaret(el, next, newCaret)
+        onAfterChange?.()
+        updateGhostFromText(next, newCaret)
+      })
+      return true
     },
-    [enabled, ready, sessionBigrams, lessonWords, engine],
+    [activeGhost, registerSessionTokens, clearGhost, updateGhostFromText],
   )
 
-  const clearGhost = useCallback(() => setGhost(null), [])
+  const refreshGhostAfterWordBoundary = useCallback(
+    (text: string, caret: number) => {
+      flushGhostFromText(text, caret)
+    },
+    [flushGhostFromText],
+  )
 
   const bindTextarea = useCallback(
     ({
@@ -125,27 +138,21 @@ export function useWritingAssist() {
           return
         }
 
-        if (e.key === 'Tab' && ghost?.suffix) {
+        if (e.key === 'Tab' && activeGhost?.suffix) {
           e.preventDefault()
           e.stopPropagation()
-          const caret = el.selectionStart
-          const current = el.value
-          const insert = ghost.suffix
-          const next = current.slice(0, caret) + insert + current.slice(caret)
-          const newCaret = caret + insert.length
-          setValue(next)
-          registerSessionTokens(insert)
-          lastCorrectionRef.current = null
-          setGhost(null)
-          queueMicrotask(() => {
-            setTextareaValueAndCaret(el, next, newCaret)
-            onAfterChange?.()
-          })
+          acceptGhostTextarea(el, setValue, onAfterChange)
+          return
+        }
+
+        if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && ghostCandidates.length > 1) {
+          e.preventDefault()
+          cycleGhost(e.key === 'ArrowUp' ? -1 : 1)
           return
         }
 
         if (e.key === 'Escape') {
-          if (ghost) {
+          if (activeGhost) {
             e.preventDefault()
             clearGhost()
             return
@@ -153,10 +160,11 @@ export function useWritingAssist() {
         }
 
         if (enabled && ready) {
-          if (e.key === ' ') {
+          const trigger = triggerCharFromKeyboardKey(e.key)
+          if (trigger) {
             e.preventDefault()
             const state = getTextareaCaretState(el)
-            const result = handleTextareaSpaceAutocorrect(state, suggest)
+            const result = handleTextareaTriggerAutocorrect(state, suggest, trigger)
             if (result) {
               setValue(result.state.value)
               lastCorrectionRef.current = result.last
@@ -164,7 +172,7 @@ export function useWritingAssist() {
               queueMicrotask(() => {
                 setTextareaValueAndCaret(el, result.state.value, result.state.selectionStart)
                 onAfterChange?.()
-                updateGhostFromText(result.state.value, result.state.selectionStart)
+                refreshGhostAfterWordBoundary(result.state.value, result.state.selectionStart)
               })
             }
             userKeyDown?.(e)
@@ -176,6 +184,9 @@ export function useWritingAssist() {
             const undo = handleTextareaBackspaceUndo(state, lastCorrectionRef.current)
             if (undo) {
               e.preventDefault()
+              if (lastCorrectionRef.current?.original) {
+                rememberWord(lastCorrectionRef.current.original)
+              }
               setValue(undo.state.value)
               lastCorrectionRef.current = undo.last
               queueMicrotask(() => {
@@ -216,7 +227,21 @@ export function useWritingAssist() {
         onInput,
       }
     },
-    [ghost, enabled, ready, suggest, registerSessionTokens, updateGhostFromText, clearGhost],
+    [
+      activeGhost,
+      ghostCandidates.length,
+      enabled,
+      ready,
+      suggest,
+      registerSessionTokens,
+      updateGhostFromText,
+      flushGhostFromText,
+      refreshGhostAfterWordBoundary,
+      clearGhost,
+      cycleGhost,
+      acceptGhostTextarea,
+      rememberWord,
+    ],
   )
 
   const bindContentEditable = useCallback(
@@ -238,35 +263,46 @@ export function useWritingAssist() {
           return
         }
 
-        const full = getContentEditablePlainText(root)
-        const caret = getContentEditableCaretOffset(root)
-
-        if (e.key === 'Tab' && ghost?.suffix) {
+        if (e.key === 'Tab' && activeGhost?.suffix) {
           e.preventDefault()
           e.stopPropagation()
-          const insert = ghost.suffix
+          const insert = activeGhost.suffix
           document.execCommand('insertText', false, insert)
           registerSessionTokens(insert)
           lastCorrectionRef.current = null
-          setGhost(null)
+          clearGhost()
           onSync()
+          queueMicrotask(() => {
+            const text = getContentEditablePlainText(root)
+            const caret = getContentEditableCaretOffset(root)
+            updateGhostFromText(text, caret)
+          })
           return
         }
 
-        if (e.key === 'Escape' && ghost) {
+        if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && ghostCandidates.length > 1) {
+          e.preventDefault()
+          cycleGhost(e.key === 'ArrowUp' ? -1 : 1)
+          return
+        }
+
+        if (e.key === 'Escape' && activeGhost) {
           e.preventDefault()
           clearGhost()
           return
         }
 
         if (enabled && ready) {
-          if (e.key === ' ') {
+          const trigger = triggerCharFromKeyboardKey(e.key)
+          if (trigger) {
             e.preventDefault()
-            const { last } = handleContentEditableSpaceAutocorrect(root, suggest)
+            const { last } = handleContentEditableTriggerAutocorrect(root, suggest, trigger)
             lastCorrectionRef.current = last
             onSync()
             registerSessionTokens(getContentEditablePlainText(root))
-            updateGhostFromText(getContentEditablePlainText(root), getContentEditableCaretOffset(root))
+            const text = getContentEditablePlainText(root)
+            const caret = getContentEditableCaretOffset(root)
+            refreshGhostAfterWordBoundary(text, caret)
             userKeyDown?.(e)
             return
           }
@@ -275,6 +311,9 @@ export function useWritingAssist() {
             const undone = handleContentEditableBackspaceUndo(root, lastCorrectionRef.current)
             if (undone) {
               e.preventDefault()
+              if (lastCorrectionRef.current?.original) {
+                rememberWord(lastCorrectionRef.current.original)
+              }
               lastCorrectionRef.current = null
               onSync()
               updateGhostFromText(getContentEditablePlainText(root), getContentEditableCaretOffset(root))
@@ -283,7 +322,7 @@ export function useWritingAssist() {
             }
           }
 
-          if (shouldClearLastCorrection(e.key, caret, lastCorrectionRef.current)) {
+          if (shouldClearLastCorrection(e.key, getContentEditableCaretOffset(root), lastCorrectionRef.current)) {
             lastCorrectionRef.current = null
           }
         }
@@ -311,16 +350,33 @@ export function useWritingAssist() {
         onInput: dictationMode ? undefined : onInput,
       }
     },
-    [ghost, enabled, ready, suggest, registerSessionTokens, updateGhostFromText, clearGhost],
+    [
+      activeGhost,
+      ghostCandidates.length,
+      enabled,
+      ready,
+      suggest,
+      registerSessionTokens,
+      updateGhostFromText,
+      flushGhostFromText,
+      refreshGhostAfterWordBoundary,
+      clearGhost,
+      cycleGhost,
+      rememberWord,
+    ],
   )
 
   return {
     ready,
     enabled,
-    ghost,
+    engine,
+    ghost: activeGhost,
     ghostPartial,
+    ghostCandidates,
+    ghostIndex,
     bindTextarea,
     bindContentEditable,
     clearGhost,
+    updateGhostFromText,
   }
 }

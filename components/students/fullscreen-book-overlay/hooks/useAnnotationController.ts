@@ -51,7 +51,9 @@ import type {
   ShapeFillMode,
   StampVariant,
   TextAnnotationVisualStyle,
+  WritableStickerVariant,
 } from '@/lib/books/annotation-command-types'
+import type { StickerKind } from '@/lib/books/sticker-tool'
 import type { AnnotationCapabilities, BookPageAnnotationHandle } from '@/components/students/book-page-annotation-layer'
 import { ANNOTATION_TEXT_FONT_NORM_STEPS } from '@/components/students/fullscreen-book-overlay/constants'
 import {
@@ -60,6 +62,7 @@ import {
 } from '@/lib/books/annotation-text-fonts'
 import { useCtrlTemporarySelect } from '@/components/students/fullscreen-book-overlay/hooks/useCtrlTemporarySelect'
 import {
+  createCompositeInkSessionSelectProxy,
   createInkSessionSelectProxy,
   createSpreadSessionSelectProxy,
   type InkSessionSelectProxyHandle,
@@ -72,7 +75,6 @@ import type { WhiteboardSessionStore } from '@/lib/books/whiteboard-session-stor
 interface UseAnnotationControllerArgs {
   studentId: string
   pageNumber: number
-  isSinglePageMode: boolean
   isWhiteboardOpen: boolean
   showSpreadRight: boolean
   spreadRightPage: number | null
@@ -85,7 +87,6 @@ interface UseAnnotationControllerArgs {
 export function useAnnotationController({
   studentId,
   pageNumber,
-  isSinglePageMode,
   isWhiteboardOpen,
   showSpreadRight,
   spreadRightPage,
@@ -107,6 +108,8 @@ export function useAnnotationController({
       ctrlTemporarySelect && annotationMode !== 'select' ? 'select' : annotationMode,
     [ctrlTemporarySelect, annotationMode],
   )
+  const [stickerKind, setStickerKind] = useState<StickerKind>('quick')
+  const [writableStickerVariant, setWritableStickerVariant] = useState<WritableStickerVariant>('note')
   const [stampVariant, setStampVariant] = useState<StampVariant>('check')
   const [stampQuestionColor, setStampQuestionColor] = useState<string>(DEFAULT_STAMP_QUESTION_COLOR)
   const [penSwatchId, setPenSwatchId] = useState<string>(DEFAULT_PEN_SWATCH_ID)
@@ -233,6 +236,8 @@ export function useAnnotationController({
     setStampThicknessStep(prefs.stampThicknessStep)
     setEraserPixelThicknessStep(prefs.eraserPixelThicknessStep)
     setEraserLineThicknessStep(prefs.eraserLineThicknessStep)
+    setStickerKind(prefs.stickerKind)
+    setWritableStickerVariant(prefs.writableStickerVariant)
     setStampVariant(prefs.stampVariant)
     setStampQuestionColor(prefs.stampQuestionColor)
     setTextColor(prefs.textColor)
@@ -279,6 +284,8 @@ export function useAnnotationController({
         stampThicknessStep,
         eraserPixelThicknessStep,
         eraserLineThicknessStep,
+        stickerKind,
+        writableStickerVariant,
         stampVariant,
         stampQuestionColor,
         textColor,
@@ -319,6 +326,8 @@ export function useAnnotationController({
     stampThicknessStep,
     eraserPixelThicknessStep,
     eraserLineThicknessStep,
+    stickerKind,
+    writableStickerVariant,
     stampVariant,
     stampQuestionColor,
     textColor,
@@ -431,7 +440,7 @@ export function useAnnotationController({
 
   useEffect(() => {
     setAnnotationTargetPage(pageNumber)
-  }, [pageNumber, isSinglePageMode, setAnnotationTargetPage])
+  }, [pageNumber, setAnnotationTargetPage])
 
   const whiteboardDrawingInteractionActive = useMemo(() => {
     if (!whiteboardInkSessionEnabled || !isWhiteboardOpen) return false
@@ -441,6 +450,7 @@ export function useAnnotationController({
       mode !== 'text' &&
       mode !== 'sticky' &&
       mode !== 'stamp' &&
+      mode !== 'sticker' &&
       mode !== 'callout' &&
       mode !== 'eyedropper'
     )
@@ -458,12 +468,7 @@ export function useAnnotationController({
   const whiteboardStrokeCaptureEnabled = whiteboardDrawingInteractionActive
 
   const spreadDrawingInteractionActive = useMemo(() => {
-    if (
-      isSinglePageMode ||
-      !showSpreadRight ||
-      spreadRightPage == null ||
-      isWhiteboardOpen
-    ) {
+    if (isWhiteboardOpen) {
       return false
     }
     const mode = effectiveAnnotationMode
@@ -472,23 +477,13 @@ export function useAnnotationController({
       mode !== 'text' &&
       mode !== 'sticky' &&
       mode !== 'stamp' &&
+      mode !== 'sticker' &&
       mode !== 'callout' &&
       mode !== 'eyedropper'
     )
-  }, [
-    effectiveAnnotationMode,
-    isSinglePageMode,
-    isWhiteboardOpen,
-    showSpreadRight,
-    spreadRightPage,
-  ])
+  }, [effectiveAnnotationMode, isWhiteboardOpen])
 
-  const spreadSessionInkActive =
-    Boolean(spreadSessionStoreRef) &&
-    !isSinglePageMode &&
-    showSpreadRight &&
-    spreadRightPage != null &&
-    !isWhiteboardOpen
+  const spreadSessionInkActive = Boolean(spreadSessionStoreRef) && !isWhiteboardOpen
 
   const spreadSessionSelectReady = () =>
     spreadSessionInkActive && spreadSessionStoreRef?.current != null
@@ -497,7 +492,7 @@ export function useAnnotationController({
     spreadSessionInkActive &&
     (spreadDrawingInteractionActive || effectiveAnnotationMode === 'select')
 
-  const activeAnnotationPage = isSinglePageMode ? pageNumber : annotationTargetPage
+  const activeAnnotationPage = annotationTargetPage
   const activeAnnCaps = annCapsByPage[activeAnnotationPage] ?? { canUndo: false, canRedo: false }
   const toolbarCaps = isWhiteboardOpen
     ? whiteboardSessionToolbarActive
@@ -528,6 +523,12 @@ export function useAnnotationController({
     () => whiteboardSessionStoreRef?.current ?? null,
   )
 
+  const whiteboardCompositeSelectProxyRef = useRef<InkSessionSelectProxyHandle | null>(null)
+  whiteboardCompositeSelectProxyRef.current = createCompositeInkSessionSelectProxy(
+    () => whiteboardSessionStoreRef?.current ?? null,
+    [wbAnnRef],
+  )
+
   function getActiveAnnotationRef() {
     if (isWhiteboardOpen) {
       if (whiteboardDrawingInteractionActive) return wbStrokeOverlayRef
@@ -536,7 +537,6 @@ export function useAnnotationController({
       }
       return wbAnnRef
     }
-    if (isSinglePageMode) return leftAnnRef
     if (spreadDrawingInteractionActive) return spreadStrokeOverlayRef
     if (spreadSessionSelectReady() && effectiveAnnotationMode === 'select') {
       return spreadSessionSelectProxyRef
@@ -655,11 +655,10 @@ export function useAnnotationController({
   const getPageAnnotationRef = useCallback(() => {
     if (isWhiteboardOpen) {
       if (whiteboardSessionSelectReady()) {
-        return whiteboardSessionSelectProxyRef
+        return whiteboardCompositeSelectProxyRef
       }
       return wbAnnRef
     }
-    if (isSinglePageMode) return leftAnnRef
     if (spreadRightPage != null) {
       if (spreadSessionSelectReady()) {
         return spreadSessionSelectProxyRef
@@ -672,21 +671,96 @@ export function useAnnotationController({
     return leftAnnRef
   }, [
     isWhiteboardOpen,
-    isSinglePageMode,
     spreadRightPage,
     annotationTargetPage,
     effectiveAnnotationMode,
     spreadSessionInkActive,
   ])
 
+  const selectAllPageLayerAnnotations = useCallback(() => {
+    if (spreadRightPage != null) {
+      leftAnnRef.current?.selectAll?.()
+      rightAnnRef.current?.selectAll?.()
+      return
+    }
+    leftAnnRef.current?.selectAll?.()
+  }, [spreadRightPage])
+
+  const deselectAllPageLayerAnnotations = useCallback(() => {
+    if (spreadRightPage != null) {
+      leftAnnRef.current?.deselectAll?.()
+      rightAnnRef.current?.deselectAll?.()
+      return
+    }
+    leftAnnRef.current?.deselectAll?.()
+  }, [spreadRightPage])
+
+  /** Session ink (spread/whiteboard) plus page-local items (stamp, text, sticky, callout). */
   const selectAllOnActivePage = useCallback(() => {
-    getPageAnnotationRef().current?.selectAll?.()
-  }, [getPageAnnotationRef])
+    if (isWhiteboardOpen) {
+      if (whiteboardSessionSelectReady()) {
+        whiteboardSessionStoreRef?.current?.selectAll()
+      }
+      wbAnnRef.current?.selectAll?.()
+      return
+    }
+    if (spreadSessionSelectReady()) {
+      spreadSessionStoreRef?.current?.selectAll()
+      return
+    }
+    selectAllPageLayerAnnotations()
+  }, [
+    isWhiteboardOpen,
+    selectAllPageLayerAnnotations,
+    spreadSessionStoreRef,
+    whiteboardSessionStoreRef,
+  ])
+
+  const deselectAllOnActivePage = useCallback(() => {
+    if (isWhiteboardOpen) {
+      if (whiteboardSessionSelectReady()) {
+        whiteboardSessionStoreRef?.current?.setSelectedIds([])
+      }
+      wbAnnRef.current?.deselectAll?.()
+      return
+    }
+    if (spreadSessionSelectReady()) {
+      spreadSessionStoreRef?.current?.setSelectedIds([])
+      return
+    }
+    deselectAllPageLayerAnnotations()
+  }, [
+    isWhiteboardOpen,
+    deselectAllPageLayerAnnotations,
+    spreadSessionStoreRef,
+    whiteboardSessionStoreRef,
+  ])
+
+  const hasAnyAnnotationSelection = useCallback((): boolean => {
+    if (isWhiteboardOpen) {
+      if (
+        whiteboardSessionSelectReady() &&
+        (whiteboardSessionStoreRef?.current?.getState().selectedIds.length ?? 0) > 0
+      ) {
+        return true
+      }
+      if ((wbAnnRef.current?.getSelectedIds?.() ?? []).length > 0) return true
+      return false
+    }
+    if (spreadSessionSelectReady()) {
+      return (spreadSessionStoreRef?.current?.getState().selectedIds.length ?? 0) > 0
+    }
+    if ((leftAnnRef.current?.getSelectedIds?.() ?? []).length > 0) return true
+    if ((rightAnnRef.current?.getSelectedIds?.() ?? []).length > 0) return true
+    return false
+  }, [isWhiteboardOpen, spreadSessionStoreRef, whiteboardSessionStoreRef])
 
   return {
     annotationMode, setAnnotationMode,
     effectiveAnnotationMode,
     ctrlTemporarySelect,
+    stickerKind, setStickerKind,
+    writableStickerVariant, setWritableStickerVariant,
     stampVariant, setStampVariant,
     stampQuestionColor, setStampQuestionColor,
     penSwatchId,
@@ -760,5 +834,7 @@ export function useAnnotationController({
     getActiveAnnotationRef,
     getPageAnnotationRef,
     selectAllOnActivePage,
+    deselectAllOnActivePage,
+    hasAnyAnnotationSelection,
   }
 }

@@ -37,26 +37,24 @@ describe('computePooledPageIndices', () => {
 
 describe('resolvePageViewSlotRole', () => {
   it('assigns left/right for two-up spread', () => {
-    expect(resolvePageViewSlotRole(4, 4, 5, false)).toEqual({ role: 'left', isActiveSpread: true })
-    expect(resolvePageViewSlotRole(5, 4, 5, false)).toEqual({ role: 'right', isActiveSpread: true })
-    expect(resolvePageViewSlotRole(6, 4, 5, false)).toEqual({ role: 'hidden', isActiveSpread: false })
+    expect(resolvePageViewSlotRole(4, 4, 5)).toEqual({ role: 'left', isActiveSpread: true })
+    expect(resolvePageViewSlotRole(5, 4, 5)).toEqual({ role: 'right', isActiveSpread: true })
+    expect(resolvePageViewSlotRole(6, 4, 5)).toEqual({ role: 'hidden', isActiveSpread: false })
   })
 
-  it('assigns single role in one-up mode', () => {
-    expect(resolvePageViewSlotRole(7, 7, null, true)).toEqual({ role: 'single', isActiveSpread: true })
-    expect(resolvePageViewSlotRole(8, 7, null, true)).toEqual({ role: 'hidden', isActiveSpread: false })
+  it('assigns left only when spread has no right page', () => {
+    expect(resolvePageViewSlotRole(7, 7, null)).toEqual({ role: 'left', isActiveSpread: true })
+    expect(resolvePageViewSlotRole(8, 7, null)).toEqual({ role: 'hidden', isActiveSpread: false })
   })
 })
 
 describe('getActiveSpreadPageNumbers', () => {
-  it('returns anchor only in single-page mode', () => {
-    expect(getActiveSpreadPageNumbers({ anchorPage: 3, spreadRightPage: 4, isSinglePageMode: true })).toEqual([3])
+  it('returns anchor only when no right page', () => {
+    expect(getActiveSpreadPageNumbers({ anchorPage: 3, spreadRightPage: null })).toEqual([3])
   })
 
   it('returns both pages in spread mode', () => {
-    expect(getActiveSpreadPageNumbers({ anchorPage: 3, spreadRightPage: 4, isSinglePageMode: false })).toEqual([
-      3, 4,
-    ])
+    expect(getActiveSpreadPageNumbers({ anchorPage: 3, spreadRightPage: 4 })).toEqual([3, 4])
   })
 })
 

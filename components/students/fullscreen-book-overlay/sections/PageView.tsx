@@ -80,7 +80,7 @@ export function PageView({
         ...style,
       }
     }
-    if (slotRole === 'left' || slotRole === 'single') {
+    if (slotRole === 'left') {
       return {
         position: 'relative',
         flexShrink: 0,

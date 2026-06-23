@@ -9,7 +9,6 @@ export type MapAnchorSpreadContext = {
   unitId: string
   anchorPage: number
   visiblePages: number[]
-  isSinglePageMode: boolean
   widthPx: number
 }
 
@@ -31,7 +30,6 @@ export function isMapAnchorSpreadCacheReady(widthPx?: number): boolean {
     unitId: ctx.unitId,
     anchorPage: ctx.anchorPage,
     visiblePages: ctx.visiblePages,
-    isSinglePageMode: ctx.isSinglePageMode,
     spreadPageWidthPx: w,
   })
 }

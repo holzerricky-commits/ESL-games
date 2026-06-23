@@ -90,6 +90,17 @@ function mapDocumentYNormToViewportNorm(yDoc: number, config: WhiteboardViewport
   return (yDoc * config.contentHeightPx - config.scrollTopPx) / config.viewportHeightPx
 }
 
+function projectNormRectY(
+  rect: { x: number; y: number; w: number; h: number },
+  config: WhiteboardViewportInkConfig,
+): { x: number; y: number; w: number; h: number } {
+  const y0 = mapDocumentYNormToViewportNorm(rect.y, config)
+  const y1 = mapDocumentYNormToViewportNorm(rect.y + rect.h, config)
+  const minY = Math.min(y0, y1)
+  const maxY = Math.max(y0, y1)
+  return { x: rect.x, y: minY, w: rect.w, h: Math.max(0, maxY - minY) }
+}
+
 function strokeIntersectsViewport(cmd: StrokeAnnotationCommand, config: WhiteboardViewportInkConfig): boolean {
   for (const [, y] of cmd.points) {
     const yv = mapDocumentYNormToViewportNorm(y, config)
@@ -102,12 +113,16 @@ function projectStrokeCommand(
   cmd: StrokeAnnotationCommand,
   config: WhiteboardViewportInkConfig,
 ): StrokeAnnotationCommand {
+  const rotationBounds = cmd.rotationBounds
+    ? projectNormRectY(cmd.rotationBounds, config)
+    : undefined
   return {
     ...cmd,
     points: cmd.points.map(([x, y]) => [
       x,
       mapDocumentYNormToViewportNorm(y, config),
     ] as [number, number]),
+    ...(rotationBounds ? { rotationBounds } : {}),
   }
 }
 

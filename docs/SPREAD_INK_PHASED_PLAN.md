@@ -39,7 +39,7 @@
 - `BookSpreadStrokeOverlay`: in `spreadSessionMode`, commit **one** spread-normalized stroke (no `splitSpreadNormPolylineToPageNormalizedChains` on lift).
 - `BookCanvasStage`: prefer spread session storage; hydrate from per-page files only when spread doc is empty.
 - `spreadSessionStore.syncCommands` — mirror overlay ↔ store without polluting undo stack.
-- `BookPageAnnotationLayer` + `pageLayerCanvasCommandsWhenSpreadInkDelegated` — hide pen/marker/shape canvas ink on pages while spread layer shows it (text/sticky/stamps stay on pages).
+- `BookPageAnnotationLayer` + `pageLayerCommandsWhenSpreadDelegated` — hide all spread-owned ink (canvas + text/sticky) on pages while `BookSpreadSessionLayer` shows it.
 - `BookSpreadSessionLayer` at z-[24]; live draft overlay at z-[30].
 
 ## Live vs committed incremental (clarification)

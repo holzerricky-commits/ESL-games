@@ -11,11 +11,12 @@ import {
 } from 'react'
 import { useBrowserZoomRepaintRevision } from '@/components/students/fullscreen-book-overlay/hooks/useBrowserZoomRepaintRevision'
 import type { CSSProperties, MutableRefObject } from 'react'
-import type {
-  AnnotationCommand,
-  AnnotationLineDashStyle,
-  ShapeFillMode,
-  StrokeAnnotationCommand,
+import {
+  shapeFillAlphaForMode,
+  type AnnotationCommand,
+  type AnnotationLineDashStyle,
+  type ShapeFillMode,
+  type StrokeAnnotationCommand,
 } from '@/lib/books/annotation-command-types'
 import type { BookAnnotationInteractionMode } from '@/lib/books/annotation-storage'
 import {
@@ -77,7 +78,10 @@ import {
   effectiveStrokeToolForPointer,
   isAnnotationPointerDownAccepted,
 } from '@/lib/books/pen-barrel-button'
-import { buildHoldShapeCommand } from '@/lib/books/hold-shape-commit'
+import {
+  buildHoldMarkerLineStrokeCommand,
+  buildHoldShapeCommand,
+} from '@/lib/books/hold-shape-commit'
 import { roundedCornersFieldForCommit } from '@/lib/books/shape-rounded-corners'
 import {
   createStrokeHoldStraightTracker,
@@ -798,6 +802,31 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
       const hold = holdShapeDraftRef.current
       const strokeDraft = draftStrokeRef.current
       if (!hold) return
+      const markerLinePreview =
+        strokeDraft != null
+          ? buildHoldMarkerLineStrokeCommand(hold, strokeDraft, 'hold-preview')
+          : null
+      if (markerLinePreview) {
+        twoDraftRef.current = null
+        clearLiveTwoPointDraftsBothPages(leftAnnRef, rightAnnRef)
+        spreadIncrementalDraftRef.current = null
+        pushLiveStrokeDraftsForSpread(
+          markerLinePreview,
+          spreadOverlayWidthPx,
+          spreadCanvasHeightPx,
+          draftInkCanvasRef.current,
+          draftMarkerCanvasRef.current,
+          spreadIncrementalDraftRef,
+          leftAnnRef,
+          rightAnnRef,
+          whiteboardViewportInk,
+          markerLiveOwnedBySessionLayer,
+          markerLiveOnPageMultiplyLayers,
+          spreadSessionMode,
+          onSpreadMarkerStrokeDraftChange,
+        )
+        return
+      }
       twoDraftRef.current = {
         kind: hold.kind,
         anchor: hold.anchor,
@@ -827,6 +856,9 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
         markerLiveOwnedBySessionLayer,
         markerLiveOnPageMultiplyLayers,
       )
+      if (spreadSessionMode) {
+        onSpreadMarkerStrokeDraftChange?.(null)
+      }
       clearLiveTwoPointDraftsBothPages(leftAnnRef, rightAnnRef)
       if (spreadSessionMode) {
         paintSpreadShapePreview(
@@ -846,6 +878,7 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
       leftAnnRef,
       markerLiveOnPageMultiplyLayers,
       markerLiveOwnedBySessionLayer,
+      onSpreadMarkerStrokeDraftChange,
       rightAnnRef,
       shapeCommitOptions,
       spreadCanvasHeightPx,
@@ -871,25 +904,11 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
       if (!canSnap) return
 
       const recognized = recognizeHoldShapeFromStroke(draft.points)
-      if (recognized) {
-        snapHoldShapeDraftOnActivate(recognized, tracker.lastSample)
-        holdShapeDraftRef.current = recognized
-        syncHoldShapePreview()
-        return
-      }
+      if (!recognized) return
 
-      straightStrokeAxisRef.current = extendStrokeDraftFromMove(
-        draft,
-        [tracker.lastSample],
-        {
-          shiftKey: false,
-          straightFromHold: true,
-          markerStraightStrokeEnabled: markerStraightStroke,
-          penInkStyle: draft.tool === 'pen' ? penInkStyle : undefined,
-          straightStrokeAxis: straightStrokeAxisRef.current,
-        },
-      )
-      scheduleLiveSpreadStrokePaint()
+      snapHoldShapeDraftOnActivate(recognized, tracker.lastSample)
+      holdShapeDraftRef.current = recognized
+      syncHoldShapePreview()
     }
 
     const cancelLiveSpreadStrokePaint = useCallback(() => {
@@ -1095,6 +1114,10 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
         const w = Math.abs(td.current[0] - td.anchor[0])
         const h = Math.abs(td.current[1] - td.anchor[1])
         if (w >= 0.004 && h >= 0.004) {
+          let strokeOn = shapeCommitOptions.shapeStrokeEnabled
+          const fillAlpha = shapeFillAlphaForMode(shapeCommitOptions.shapeFillMode)
+          let fillOn = fillAlpha != null
+          if (!strokeOn && !fillOn) strokeOn = true
           const base = {
             id: newAnnotationId(),
             x,
@@ -1104,8 +1127,11 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
             strokeColor: shapeCommitOptions.shapeColor,
             strokeWidthScale: shapeCommitOptions.shapeStrokeWidthScale,
             lineDashStyle: shapeCommitOptions.shapeLineDashStyle,
-            strokeVisible: shapeCommitOptions.shapeStrokeEnabled,
-            fillVisible: shapeCommitOptions.shapeFillMode !== 'none',
+            strokeVisible: strokeOn,
+            fillVisible: fillOn,
+            ...(fillOn && fillAlpha != null
+              ? { fillColor: shapeCommitOptions.shapeFillColor, fillAlpha }
+              : {}),
             ...roundedCornersFieldForCommit(shapeCommitOptions.shapeRoundedCorners !== false),
           }
           if (td.kind === 'rect') {
@@ -1165,6 +1191,51 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
 
         if (spreadSessionMode) {
           onSpreadSessionAppendCommand?.(sessionCmd)
+          return
+        }
+
+        if (sessionCmd.kind === 'stroke') {
+          clearLiveStrokeDraftsBothPages(leftAnnRef, rightAnnRef)
+          const layout = spreadInkLayoutRef.current
+          if (!(layout.spreadOverlayWidthPx > 0) || !(layout.spreadPageWidthPx > 0)) return
+          const gestureId = sessionCmd.id
+          const { leftNorm, rightNorm } = splitSpreadNormPolylineToPageNormalizedChains(
+            sessionCmd.points,
+            layout,
+          )
+          const leftCmds: StrokeAnnotationCommand[] = []
+          const rightCmds: StrokeAnnotationCommand[] = []
+
+          for (const chain of leftNorm) {
+            if (chain.length < 2) continue
+            const cmd: StrokeAnnotationCommand = {
+              ...sessionCmd,
+              id: gestureId,
+              points: chain,
+            }
+            leftCmds.push(cmd)
+            leftAnnRef.current?.appendCommand(cmd)
+          }
+          for (const chain of rightNorm) {
+            if (chain.length < 2) continue
+            const cmd: StrokeAnnotationCommand = {
+              ...sessionCmd,
+              id: gestureId,
+              points: chain,
+            }
+            rightCmds.push(cmd)
+            rightAnnRef.current?.appendCommand(cmd)
+          }
+
+          if (leftCmds.length > 0 || rightCmds.length > 0) {
+            undoStackRef.current.push({
+              kind: 'stroke',
+              left: leftCmds.map(cloneStroke),
+              right: rightCmds.map(cloneStroke),
+            })
+            redoStackRef.current = []
+            emitCapabilities()
+          }
           return
         }
 
@@ -1500,7 +1571,7 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
         return
       }
 
-      const straightFromHold = feedStrokeHoldStraightMove(
+      feedStrokeHoldStraightMove(
         holdStraightRef.current,
         samples,
         draft.points[0],
@@ -1508,7 +1579,7 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
       )
       straightStrokeAxisRef.current = extendStrokeDraftFromMove(draft, samples, {
         shiftKey: e.shiftKey,
-        straightFromHold,
+        straightFromHold: false,
         markerStraightStrokeEnabled: markerStraightStroke,
         penInkStyle: draft.tool === 'pen' ? penInkStyle : undefined,
         straightStrokeAxis: straightStrokeAxisRef.current,
@@ -1548,7 +1619,7 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
         const p = clientToInkNorm(canvasRect, e.clientX, e.clientY)
         finalizeStrokeDraftEndPoint(draft, p, {
           shiftKey: e.shiftKey,
-          straightFromHold: holdStraightRef.current.holdStraightActive,
+          straightFromHold: false,
           markerStraightStrokeEnabled: markerStraightStroke,
           penInkStyle: draft.tool === 'pen' ? penInkStyle : undefined,
           straightStrokeAxis: straightStrokeAxisRef.current,
@@ -1561,7 +1632,13 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
 
       const willCommitStroke =
         gesture === 'stroke' && draft && !holdShape && draft.points.length >= 1
-      const committedMarker = willCommitStroke && draft.tool === 'marker'
+      const committedMarkerHoldLine =
+        gesture === 'stroke' &&
+        !!holdShape &&
+        holdShape.kind === 'line' &&
+        draft?.tool === 'marker'
+      const committedMarker =
+        (willCommitStroke && draft.tool === 'marker') || committedMarkerHoldLine
 
       if (willCommitStroke) {
         commitStrokeFromClientPoints()

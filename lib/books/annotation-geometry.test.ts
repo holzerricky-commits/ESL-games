@@ -7,21 +7,28 @@ import {
   textTopYFromCenterAnchor,
 } from './annotation-geometry'
 
+const widthPx = 800
+const heightPx = 600
+
 describe('annotation-geometry', () => {
   it('textTopYFromCenterAnchor preserves the top edge of a single-line box', () => {
     const fontSizeNorm = 0.04
     const centerY = 0.5
-    const box = textCommandBBox({
-      kind: 'text',
-      id: 't0',
-      x: 0.1,
-      y: centerY,
-      yAnchor: 'center',
-      text: 'Hi',
-      fontSizeNorm,
-      color: '#111',
-    })
-    expect(textTopYFromCenterAnchor(centerY, fontSizeNorm, 1)).toBeCloseTo(box.y, 5)
+    const box = textCommandBBox(
+      {
+        kind: 'text',
+        id: 't0',
+        x: 0.1,
+        y: centerY,
+        yAnchor: 'center',
+        text: 'Hi',
+        fontSizeNorm,
+        color: '#111',
+      },
+      widthPx,
+      heightPx,
+    )
+    expect(textTopYFromCenterAnchor(centerY, fontSizeNorm, 1, heightPx)).toBeCloseTo(box.y, 5)
   })
 
   it('textCommandBBox shifts top upward when yAnchor is center', () => {
@@ -35,8 +42,8 @@ describe('annotation-geometry', () => {
       fontSizeNorm: 0.04,
       color: '#111',
     }
-    const box = textCommandBBox(cmd)
-    expect(box.h).toBeCloseTo(0.04 * 1.4, 5)
+    const box = textCommandBBox(cmd, widthPx, heightPx)
+    expect(box.h).toBeCloseTo(0.04 * 1.3 + (2 * 4) / heightPx, 5)
     expect(box.y).toBeCloseTo(0.5 - box.h / 2, 5)
   })
 
@@ -79,6 +86,53 @@ describe('annotation-geometry', () => {
         points: [
           [0.5, 0.1],
           [0.5, 0.9],
+        ],
+      },
+    ]
+    const dead = computeEraserLineDeadIndices(commands)
+    expect(dead.has(0)).toBe(true)
+    expect(dead.has(1)).toBe(true)
+    expect(dead.has(2)).toBe(false)
+  })
+
+  it('eraser-line removes all strokes in a hit figure group', () => {
+    const commands: AnnotationCommand[] = [
+      {
+        kind: 'stroke',
+        id: 'a',
+        tool: 'pen',
+        points: [
+          [0.1, 0.5],
+          [0.3, 0.5],
+        ],
+        figureGroupId: 'grp1',
+      },
+      {
+        kind: 'stroke',
+        id: 'b',
+        tool: 'pen',
+        points: [
+          [0.3, 0.5],
+          [0.5, 0.5],
+        ],
+        figureGroupId: 'grp1',
+      },
+      {
+        kind: 'stroke',
+        id: 'c',
+        tool: 'pen',
+        points: [
+          [0.7, 0.5],
+          [0.9, 0.5],
+        ],
+      },
+      {
+        kind: 'stroke',
+        id: 'e1',
+        tool: 'eraser-line',
+        points: [
+          [0.2, 0.3],
+          [0.2, 0.7],
         ],
       },
     ]

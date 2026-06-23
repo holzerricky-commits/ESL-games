@@ -11,7 +11,6 @@ interface UseBookNavigationArgs {
   selectedUnit: BookLibraryPayload['books'][number]['units'][number] | null
   numPages: number | null
   visiblePages: number[]
-  isSinglePageMode: boolean
   pageNumber: number
   pageJumpDraft: string
   numberingMode: PageNumberingMode
@@ -26,7 +25,6 @@ export function useBookNavigation({
   selectedUnit,
   numPages,
   visiblePages,
-  isSinglePageMode,
   pageNumber,
   pageJumpDraft,
   numberingMode,
@@ -38,26 +36,24 @@ export function useBookNavigation({
       if (!selectedBookId || !selectedUnitId || !selectedUnit) return
       const bounds = getUnitReaderBounds(selectedUnit, numPages, selectedBook ?? undefined)
       let normalizedNext = clampPdfPageToVisible(nextPage, visiblePages, bounds)
-      if (!isSinglePageMode) {
-        const idx = visiblePages.indexOf(normalizedNext)
-        normalizedNext = idx >= 0 ? visiblePages[Math.max(0, idx - (idx % 2))] ?? normalizedNext : normalizedNext
-      }
+      const idx = visiblePages.indexOf(normalizedNext)
+      normalizedNext = idx >= 0 ? visiblePages[Math.max(0, idx - (idx % 2))] ?? normalizedNext : normalizedNext
       setPageNumber(normalizedNext)
       saveUnitPage(selectedBookId, selectedUnitId, normalizedNext)
     },
-    [isSinglePageMode, numPages, selectedBook, selectedBookId, selectedUnit, selectedUnitId, setPageNumber, visiblePages],
+    [numPages, selectedBook, selectedBookId, selectedUnit, selectedUnitId, setPageNumber, visiblePages],
   )
 
   const goToAdjacentPage = useCallback(
     (direction: -1 | 1) => {
       if (!visiblePages.length) return
-      const step = isSinglePageMode ? 1 : 2
+      const step = 2
       const currentIndex = Math.max(0, visiblePages.indexOf(pageNumber))
       const nextIndex = Math.max(0, Math.min(currentIndex + direction * step, visiblePages.length - 1))
       const nextPage = visiblePages[nextIndex] ?? pageNumber
       goToPage(nextPage)
     },
-    [goToPage, isSinglePageMode, pageNumber, visiblePages],
+    [goToPage, pageNumber, visiblePages],
   )
 
   const commitPageJump = useCallback(() => {
@@ -75,18 +71,13 @@ export function useBookNavigation({
     const singleMatch = raw.match(/^(\d+)$/)
 
     if (usePrinted) {
-      if (!isSinglePageMode && spreadMatch) {
+      if (spreadMatch) {
         const pdf = resolvePrintedToPdf(parseInt(spreadMatch[1]!, 10))
         if (pdf != null) goToPage(pdf)
         return
       }
       if (singleMatch) {
         const pdf = resolvePrintedToPdf(parseInt(singleMatch[1]!, 10))
-        if (pdf != null) goToPage(pdf)
-        return
-      }
-      if (spreadMatch) {
-        const pdf = resolvePrintedToPdf(parseInt(spreadMatch[1]!, 10))
         if (pdf != null) goToPage(pdf)
         return
       }
@@ -105,7 +96,6 @@ export function useBookNavigation({
     goToPage(n)
   }, [
     goToPage,
-    isSinglePageMode,
     numPages,
     numberingMode,
     pageJumpDraft,

@@ -17,7 +17,6 @@ interface BookPageNavigationProps {
   setPageJumpDraft: (v: string) => void
   setPageJumpFocused: (v: boolean) => void
   spreadRightPage: number | null
-  isSinglePageMode: boolean
   selectedBook: BookLibraryPayload['books'][number] | null
   selectedUnit: BookLibraryPayload['books'][number]['units'][number] | null
   numberingMode: PageNumberingMode
@@ -37,7 +36,6 @@ export function BookPageNavigation({
   setPageJumpDraft,
   setPageJumpFocused,
   spreadRightPage,
-  isSinglePageMode,
   selectedBook,
   selectedUnit,
   numberingMode,
@@ -85,7 +83,6 @@ export function BookPageNavigation({
               mapPdfSpreadToDisplayLabel(
                 pageNumber,
                 spreadRightPage,
-                isSinglePageMode,
                 selectedBook,
                 selectedUnit,
                 numPages,

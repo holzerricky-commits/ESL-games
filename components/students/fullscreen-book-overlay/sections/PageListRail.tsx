@@ -23,7 +23,6 @@ interface PageListRailProps {
   isPageListOpen: boolean
   selectedUnitTitle?: string
   pageListNumbers: number[]
-  isSinglePageMode: boolean
   pageNumber: number
   showSpreadRightPage: boolean
   spreadRightPage: number | null
@@ -79,7 +78,6 @@ export function PageListRail({
   isPageListOpen,
   selectedUnitTitle,
   pageListNumbers,
-  isSinglePageMode,
   pageNumber,
   showSpreadRightPage,
   spreadRightPage,
@@ -175,9 +173,8 @@ export function PageListRail({
         >
           {activeTab === 'book'
             ? pageListNumbers.map((p) => {
-                const rowActive = isSinglePageMode
-                  ? p === pageNumber
-                  : p === pageNumber || (showSpreadRightPage && p === spreadRightPage)
+                const rowActive =
+                  p === pageNumber || (showSpreadRightPage && p === spreadRightPage)
                 return (
                   <button
                     key={p}

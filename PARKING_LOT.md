@@ -6,6 +6,12 @@ Deferred ideas and polish. Paste assistant `--- PARKING_LOT ---` blocks under **
 
 <!-- Newest on top -->
 
+### Fill tool (paint bucket) for closed pen shapes
+
+- **Doc:** `docs/FILL_TOOL_PLAN.md`
+- **Resume when:** Coloring hand-drawn outlines is a recurring lesson pain; lesson board + spread ink stable.
+- **Effort:** ~1–3 days for v1; optional Phase 0 quick win (shape fill defaults + hold-to-shape fill) in hours.
+
 ### Whiteboard ink — viewport tiles (if needed after unified engine)
 
 - **Resume when:** Phase 5 of `docs/WHITEBOARD_INK_UNIFIED_PLAN.md` done but tall runway still heavy on live drag.

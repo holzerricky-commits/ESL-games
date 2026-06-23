@@ -9,11 +9,23 @@ import {
   SELECTION_BOX_BORDER_WIDTH_PX,
   SELECTION_HANDLE_CLASS,
   SELECTION_HANDLE_SIZE_PX,
+  SELECTION_HOVER_BOX_BORDER,
+  SELECTION_MULTI_UNION_BORDER,
   SELECTION_ROTATION_HANDLE_SIZE_PX,
 } from '@/lib/books/annotation-selection-chrome'
 
-/** Corner squares only — matches text-box selection mockup. */
-const CORNER_HANDLE_IDS: ScaleHandleId[] = ['nw', 'ne', 'se', 'sw']
+const SCALE_HANDLE_IDS: ScaleHandleId[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
+
+const HANDLE_ANCHOR: Record<ScaleHandleId, { left: string; top: string }> = {
+  nw: { left: '0%', top: '0%' },
+  n: { left: '50%', top: '0%' },
+  ne: { left: '100%', top: '0%' },
+  e: { left: '100%', top: '50%' },
+  se: { left: '100%', top: '100%' },
+  s: { left: '50%', top: '100%' },
+  sw: { left: '0%', top: '100%' },
+  w: { left: '0%', top: '50%' },
+}
 
 function OrientedFrameShell({
   frame,
@@ -51,18 +63,24 @@ export function SelectionBoundsChrome({
   outlineFrames,
   handleFrame,
   showHandles,
+  showUnionOutline = false,
   showRotationHandle = false,
+  variant = 'selection',
   layoutWidthPx,
   layoutHeightPx,
 }: {
   outlineFrames: OrientedSelectionFrame[]
   handleFrame: OrientedSelectionFrame | null
   showHandles: boolean
+  /** Dotted neutral border around combined multi-selection bounds. */
+  showUnionOutline?: boolean
   showRotationHandle?: boolean
+  /** `hover` = dashed preview only (no handles). */
+  variant?: 'selection' | 'hover'
   layoutWidthPx: number
   layoutHeightPx: number
 }) {
-  const half = SELECTION_HANDLE_SIZE_PX / 2
+  const outlineBorder = variant === 'hover' ? SELECTION_HOVER_BOX_BORDER : SELECTION_BOX_BORDER
   const rotationHalf = SELECTION_ROTATION_HANDLE_SIZE_PX / 2
   const stemOffsetPx = SELECTION_ROTATION_HANDLE_OFFSET_PX
 
@@ -77,7 +95,7 @@ export function SelectionBoundsChrome({
         >
           <div
             className="absolute inset-0 box-border"
-            style={{ border: SELECTION_BOX_BORDER }}
+            style={{ border: outlineBorder }}
           />
         </OrientedFrameShell>
       ))}
@@ -88,49 +106,54 @@ export function SelectionBoundsChrome({
           layoutWidthPx={layoutWidthPx}
           layoutHeightPx={layoutHeightPx}
         >
+          {showUnionOutline ? (
+            <div
+              className="absolute inset-0 box-border"
+              style={{ border: SELECTION_MULTI_UNION_BORDER }}
+            />
+          ) : null}
+
           {showRotationHandle ? (
             <>
               <div
                 className="absolute pointer-events-none"
                 style={{
                   left: '50%',
-                  top: -stemOffsetPx,
+                  top: 0,
                   width: SELECTION_BOX_BORDER_WIDTH_PX,
                   height: stemOffsetPx,
                   backgroundColor: SELECTION_ACCENT,
-                  transform: `translateX(-${SELECTION_BOX_BORDER_WIDTH_PX / 2}px)`,
+                  transform: 'translate(-50%, -100%)',
                 }}
               />
               <div
                 className={SELECTION_HANDLE_CLASS}
                 style={{
                   left: '50%',
-                  top: -(stemOffsetPx + rotationHalf),
+                  top: 0,
                   width: SELECTION_ROTATION_HANDLE_SIZE_PX,
                   height: SELECTION_ROTATION_HANDLE_SIZE_PX,
                   borderRadius: '9999px',
                   backgroundColor: SELECTION_ACCENT,
-                  transform: 'translate(-50%, -50%)',
+                  transform: `translate(-50%, calc(-${stemOffsetPx + rotationHalf}px))`,
                 }}
               />
             </>
           ) : null}
 
-          {CORNER_HANDLE_IDS.map((id) => {
-            const left =
-              id === 'nw' || id === 'sw' ? -half : `calc(100% - ${half}px)`
-            const top =
-              id === 'nw' || id === 'ne' ? -half : `calc(100% - ${half}px)`
+          {SCALE_HANDLE_IDS.map((id) => {
+            const anchor = HANDLE_ANCHOR[id]
             return (
               <div
                 key={`handle-${id}`}
                 className={SELECTION_HANDLE_CLASS}
                 style={{
-                  left,
-                  top,
+                  left: anchor.left,
+                  top: anchor.top,
                   width: SELECTION_HANDLE_SIZE_PX,
                   height: SELECTION_HANDLE_SIZE_PX,
                   backgroundColor: SELECTION_ACCENT,
+                  transform: 'translate(-50%, -50%)',
                 }}
               />
             )

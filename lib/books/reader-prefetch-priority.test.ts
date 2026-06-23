@@ -16,7 +16,6 @@ describe('splitReaderPrefetchPages', () => {
     const { immediate } = splitReaderPrefetchPages({
       anchorPage: 3,
       visiblePages: visible,
-      isSinglePageMode: false,
       readerBounds: bounds,
     })
     expect(immediate).toEqual([3, 4, 5, 6, 7, 8, 9, 10, 1, 2])
@@ -27,7 +26,6 @@ describe('splitReaderPrefetchPages', () => {
     const { immediate } = splitReaderPrefetchPages({
       anchorPage: 5,
       visiblePages: visible,
-      isSinglePageMode: false,
       readerBounds: bounds,
     })
     expect(immediate.slice(0, 2)).toEqual([5, 6])
@@ -40,7 +38,6 @@ describe('splitReaderPrefetchPages', () => {
     const { immediate } = splitReaderPrefetchPages({
       anchorPage: 14,
       visiblePages: visible,
-      isSinglePageMode: false,
       readerBounds: bounds,
     })
     const idx14 = immediate.indexOf(14)
@@ -61,7 +58,6 @@ describe('splitReaderPrefetchPages', () => {
     const { immediate, idle } = splitReaderPrefetchPages({
       anchorPage,
       visiblePages: visible,
-      isSinglePageMode: false,
       readerBounds: bounds,
     })
     const windowPages = getReaderPrefetchVisiblePageIndices({
@@ -75,23 +71,11 @@ describe('splitReaderPrefetchPages', () => {
     expect(immediate.length + idle.length).toBe(windowPages.length)
   })
 
-  it('single-page mode steps one page per spread', () => {
-    const visible = [1, 2, 3, 4, 5, 6, 7, 8]
-    const { immediate } = splitReaderPrefetchPages({
-      anchorPage: 4,
-      visiblePages: visible,
-      isSinglePageMode: true,
-      readerBounds: bounds,
-    })
-    expect(immediate).toEqual([4, 5, 6, 7, 3])
-  })
-
   it('deduplicates PDF pages when spreads overlap at window edge', () => {
     const visible = [1, 2, 3, 4]
     const { immediate } = splitReaderPrefetchPages({
       anchorPage: 1,
       visiblePages: visible,
-      isSinglePageMode: false,
       readerBounds: bounds,
     })
     expect(new Set(immediate).size).toBe(immediate.length)
@@ -101,7 +85,6 @@ describe('splitReaderPrefetchPages', () => {
     const { immediate, idle } = splitReaderPrefetchPages({
       anchorPage: 50,
       visiblePages: [],
-      isSinglePageMode: false,
       readerBounds: { min: 10, max: 20 },
     })
     expect(immediate).toEqual([20])
@@ -119,7 +102,6 @@ describe('splitReaderPrefetchPages', () => {
     const { immediate } = splitReaderPrefetchPages({
       anchorPage: 7,
       visiblePages: visible,
-      isSinglePageMode: false,
       readerBounds: bounds,
       directionBias: 'backward',
       intent: 'routine',
@@ -136,7 +118,6 @@ describe('splitReaderPrefetchPages', () => {
     const { immediate } = splitReaderPrefetchPages({
       anchorPage: 12,
       visiblePages: visible,
-      isSinglePageMode: false,
       readerBounds: bounds,
       intent: 'jump',
     })
@@ -152,7 +133,6 @@ describe('splitReaderPrefetchPages', () => {
     const { immediate } = splitReaderPrefetchPages({
       anchorPage: 3,
       visiblePages: visible,
-      isSinglePageMode: false,
       readerBounds: bounds,
       intent: 'map-warm',
     })

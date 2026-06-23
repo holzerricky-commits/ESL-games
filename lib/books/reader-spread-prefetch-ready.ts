@@ -9,12 +9,11 @@ export function areReaderSpreadPagesPrefetched(args: {
   unitId: string
   anchorPage: number
   visiblePages: number[]
-  isSinglePageMode: boolean
   spreadPageWidthPx: number
 }): boolean {
-  const { unitId, anchorPage, visiblePages, isSinglePageMode, spreadPageWidthPx } = args
+  const { unitId, anchorPage, visiblePages, spreadPageWidthPx } = args
   if (!(spreadPageWidthPx > 0)) return false
-  const { left, right } = resolveSpreadAnchorPages(anchorPage, visiblePages, isSinglePageMode)
+  const { left, right } = resolveSpreadAnchorPages(anchorPage, visiblePages)
   if (!getPageRenderCacheBitmap(unitId, left, spreadPageWidthPx)) return false
   if (right != null && !getPageRenderCacheBitmap(unitId, right, spreadPageWidthPx)) return false
   return true
@@ -23,8 +22,7 @@ export function areReaderSpreadPagesPrefetched(args: {
 export function spreadPdfPagesForAnchor(
   anchorPage: number,
   visiblePages: number[],
-  isSinglePageMode: boolean,
 ): number[] {
-  const { left, right } = resolveSpreadAnchorPages(anchorPage, visiblePages, isSinglePageMode)
+  const { left, right } = resolveSpreadAnchorPages(anchorPage, visiblePages)
   return right != null ? [left, right] : [left]
 }

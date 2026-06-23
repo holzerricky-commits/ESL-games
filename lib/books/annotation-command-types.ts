@@ -24,7 +24,18 @@ export function shapeFillAlphaForMode(mode: ShapeFillMode): number | undefined {
   return SHAPE_FILL_ALPHA_TRANSPARENT
 }
 
-export type StampVariant = 'check' | 'cross' | 'question' | 'star' | 'heart'
+export type StampVariant =
+  | 'check'
+  | 'cross'
+  | 'question'
+  | 'star'
+  | 'heart'
+  | 'thumbsUp'
+  | 'repeat'
+  | 'yourTurn'
+  | 'newWord'
+
+export type WritableStickerVariant = 'note' | 'speech' | 'thought' | 'caption'
 
 export interface StrokeAnnotationCommand {
   kind: 'stroke'
@@ -196,6 +207,8 @@ export interface StickyAnnotationCommand {
   fontId?: AnnotationTextFontId
   /** Note background (#RRGGBB). */
   fillColor?: string
+  /** Writable sticker shape; legacy stickies default to `note`. */
+  writableVariant?: WritableStickerVariant
 }
 
 export type AnnotationCommand =

@@ -84,7 +84,7 @@ export function FullscreenBookOverlayView({
     isLessonPaperSplitView,
     isPageListOpen,
     pageListRailTab,
-    isSinglePageMode,
+    exportCaptureLayoutActive,
     isVisible,
     isWhiteboardOpen,
     isWhiteboardSessionOpen,
@@ -246,6 +246,8 @@ export function FullscreenBookOverlayView({
     setPenThicknessStep,
     setRegionSelectOpen,
     setStampVariant,
+    setStickerKind,
+    setWritableStickerVariant,
     pickTextFillColor,
     setTextFillColor,
     setTextVisualStyle,
@@ -268,6 +270,7 @@ export function FullscreenBookOverlayView({
     wbStrokeOverlayRef,
     whiteboardStrokeCaptureEnabled,
     whiteboardSessionStoreRef,
+    whiteboardSelectionMoveClampRef,
     whiteboardSessionDoc,
     appendWhiteboardSessionCommand,
     whiteboardSessionUndo,
@@ -284,6 +287,8 @@ export function FullscreenBookOverlayView({
     onSpreadSlotsPixelsReady,
     stampScale,
     stampVariant,
+    stickerKind,
+    writableStickerVariant,
     stampQuestionColor,
     setStampQuestionColor,
     stickyFontSizeNorm,
@@ -457,7 +462,6 @@ export function FullscreenBookOverlayView({
         isPageListOpen={isPageListOpen}
         selectedUnitTitle={selectedUnit?.title}
         pageListNumbers={pageListNumbers}
-        isSinglePageMode={isSinglePageMode}
         pageNumber={pageNumber}
         showSpreadRightPage={showSpreadRightPage}
         spreadRightPage={spreadRightPage}
@@ -495,6 +499,10 @@ export function FullscreenBookOverlayView({
         setAnnotationMode={setAnnotationMode}
         stampVariant={stampVariant}
         setStampVariant={setStampVariant}
+        stickerKind={stickerKind}
+        setStickerKind={setStickerKind}
+        writableStickerVariant={writableStickerVariant}
+        setWritableStickerVariant={setWritableStickerVariant}
         stampQuestionColor={stampQuestionColor}
         setStampQuestionColor={setStampQuestionColor}
         penSwatchId={penSwatchId}
@@ -765,7 +773,7 @@ export function FullscreenBookOverlayView({
             setWhiteboardSlotSide={setWhiteboardSlotSide}
             applyWhiteboardSlotSide={applyWhiteboardSlotSide}
             registerWhiteboardSlotMotion={registerWhiteboardSlotMotion}
-            isSinglePageMode={isSinglePageMode}
+            exportCaptureLayoutActive={exportCaptureLayoutActive}
             leftPageCaptureRef={leftPageCaptureRef}
             pageNumber={pageNumber}
             spreadPageWidth={layoutSpreadPageWidth}
@@ -776,6 +784,8 @@ export function FullscreenBookOverlayView({
             pageCanvasHeightPx={pageCanvasHeightPx}
             annotationMode={effectiveAnnotationMode}
             eyedropperVariant={eyedropperVariant}
+            stickerKind={stickerKind}
+            writableStickerVariant={writableStickerVariant}
             stampVariant={stampVariant}
             stampQuestionColor={stampQuestionColor}
             strokeWidthScale={strokeWidthScale}
@@ -848,6 +858,7 @@ export function FullscreenBookOverlayView({
             wbStrokeOverlayRef={wbStrokeOverlayRef}
             whiteboardStrokeCaptureEnabled={whiteboardStrokeCaptureEnabled}
             whiteboardSessionStoreRef={whiteboardSessionStoreRef}
+            whiteboardSelectionMoveClampRef={whiteboardSelectionMoveClampRef}
             whiteboardSessionDoc={whiteboardSessionDoc}
             appendWhiteboardSessionCommand={appendWhiteboardSessionCommand}
             whiteboardSessionUndo={whiteboardSessionUndo}
@@ -891,7 +902,6 @@ export function FullscreenBookOverlayView({
             setPageJumpDraft={setPageJumpDraft}
             setPageJumpFocused={setPageJumpFocused}
             spreadRightPage={spreadRightPage}
-            isSinglePageMode={isSinglePageMode}
             selectedBook={selectedBook}
             selectedUnit={selectedUnit}
             numberingMode={numberingMode}

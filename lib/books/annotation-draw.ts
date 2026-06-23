@@ -16,12 +16,16 @@ import {
   shapeRoundedCornersEnabled,
 } from '@/lib/books/shape-rounded-corners'
 import { traceStrokePoints } from '@/lib/books/stroke-path-trace'
+import {
+  ANNOTATION_MARKER_SWATCHES,
+  migrateMarkerColor,
+} from '@/lib/books/annotation-palettes'
 
 export const PEN_LINE_WIDTH = 2.5
 const DEFAULT_PEN_COLOR = '#2a1d12'
 /** Highlighter stroke width in CSS px (before widthScale). */
 export const MARKER_LINE_WIDTH = 22
-const DEFAULT_MARKER_COLOR = '#ffeb3b'
+const DEFAULT_MARKER_COLOR = ANNOTATION_MARKER_SWATCHES[0]
 
 /**
  * Marker ink is drawn at full opacity on a dedicated canvas with CSS `mix-blend-mode: multiply`
@@ -167,7 +171,7 @@ export function drawStrokePath(
   }
 
   if (tool === 'marker') {
-    const markerColor = cmd.color ?? DEFAULT_MARKER_COLOR
+    const markerColor = migrateMarkerColor(cmd.color ?? DEFAULT_MARKER_COLOR)
     const markerLw = MARKER_LINE_WIDTH * scale
     const dashSolid = !cmd.lineDashStyle || cmd.lineDashStyle === 'solid'
     if (cmd.markerDecoratedEdge === true && dashSolid) {
@@ -277,7 +281,35 @@ function drawStampSymbol(
     ctx.bezierCurveTo(cx + s * 0.55, cy - s * 0.55, cx + s * 1.1, cy + s * 0.15, cx, cy + s * 0.95)
     ctx.closePath()
     ctx.fill()
-  } else {
+  } else if (variant === 'thumbsUp') {
+    ctx.beginPath()
+    ctx.roundRect(cx - r * 0.22, cy - r * 0.08, r * 0.28, r * 0.52, r * 0.06)
+    ctx.fill()
+    ctx.beginPath()
+    ctx.roundRect(cx - r * 0.42, cy + r * 0.08, r * 0.22, r * 0.34, r * 0.08)
+    ctx.fill()
+  } else if (variant === 'repeat') {
+    ctx.beginPath()
+    ctx.arc(cx, cy, r * 0.34, Math.PI * 0.25, Math.PI * 1.35)
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.moveTo(cx + r * 0.22, cy - r * 0.34)
+    ctx.lineTo(cx + r * 0.38, cy - r * 0.34)
+    ctx.lineTo(cx + r * 0.3, cy - r * 0.5)
+    ctx.stroke()
+  } else if (variant === 'yourTurn') {
+    ctx.beginPath()
+    ctx.moveTo(cx - r * 0.35, cy + r * 0.35)
+    ctx.lineTo(cx + r * 0.15, cy - r * 0.05)
+    ctx.lineTo(cx - r * 0.02, cy - r * 0.05)
+    ctx.lineTo(cx + r * 0.28, cy - r * 0.42)
+    ctx.stroke()
+  } else if (variant === 'newWord') {
+    ctx.font = `bold ${r * 0.62}px system-ui, sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText('W', cx, cy + r * 0.04)
+  } else if (variant === 'star') {
     const spikes = 5
     const outer = r * 0.48
     const inner = r * 0.2

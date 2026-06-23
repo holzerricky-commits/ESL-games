@@ -35,6 +35,7 @@ export type BookAnnotationInteractionMode =
   | 'triangle'
   | 'arrow'
   | 'stamp'
+  | 'sticker'
   | 'text'
   | 'sticky'
   | 'callout'
@@ -181,7 +182,24 @@ function sanitizePoints(raw: unknown): [number, number][] | null {
 }
 
 function parseStampVariant(v: unknown): StampVariant | null {
-  if (v === 'check' || v === 'cross' || v === 'question' || v === 'star' || v === 'heart') return v
+  if (
+    v === 'check' ||
+    v === 'cross' ||
+    v === 'question' ||
+    v === 'star' ||
+    v === 'heart' ||
+    v === 'thumbsUp' ||
+    v === 'repeat' ||
+    v === 'yourTurn' ||
+    v === 'newWord'
+  ) {
+    return v
+  }
+  return null
+}
+
+function parseWritableStickerVariant(v: unknown): import('@/lib/books/annotation-command-types').WritableStickerVariant | null {
+  if (v === 'note' || v === 'speech' || v === 'thought' || v === 'caption') return v
   return null
 }
 
@@ -523,6 +541,9 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
         fontSizeNorm,
         ...(fillColor != null ? { fillColor } : {}),
         ...(stickyFontId != null ? { fontId: stickyFontId } : {}),
+        ...(parseWritableStickerVariant(rec.writableVariant)
+          ? { writableVariant: parseWritableStickerVariant(rec.writableVariant)! }
+          : {}),
       } satisfies StickyAnnotationCommand)
       continue
     }

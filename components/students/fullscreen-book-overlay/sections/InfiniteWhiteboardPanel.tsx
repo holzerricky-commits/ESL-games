@@ -30,9 +30,11 @@ import {
   type WhiteboardViewportInkConfig,
 } from '@/lib/books/whiteboard-viewport-ink'
 import { appendCommandWithPenAutoGroup } from '@/lib/books/annotation-pen-auto-group'
+import { isWritableStickerInteraction } from '@/lib/books/sticker-tool'
 import { commitRotatedAnnotationCommands } from '@/lib/books/annotation-rotation'
-import { scaleAnnotationCommands } from '@/lib/books/annotation-scale'
-import type { NormRect } from '@/lib/books/annotation-select'
+import { scaleAnnotationCommandsFromOrientedFrames } from '@/lib/books/annotation-scale'
+import type { NormRect, OrientedSelectionFrame } from '@/lib/books/annotation-select'
+import type { SelectionMoveClampContext } from '@/lib/books/annotation-scale'
 import { cn } from '@/lib/utils'
 import {
   WHITEBOARD_HEADER_HEIGHT_PX,
@@ -42,6 +44,11 @@ import type { WhiteboardLayoutMode, WhiteboardSlotSide } from '../hooks/useWhite
 import { useWhiteboardSlotMotion } from '../hooks/useWhiteboardSlotMotion'
 import type { WhiteboardSlotMotionApi } from '../hooks/useWhiteboardSlotMotion'
 import { WhiteboardHeader } from './WhiteboardChrome'
+import type { SpreadSessionDomConfig } from '@/components/students/fullscreen-book-overlay/hooks/useSpreadSessionDomInteraction'
+import type {
+  StickyAnnotationCommand,
+  TextAnnotationCommand,
+} from '@/lib/books/annotation-command-types'
 
 const SCROLLBAR_HIDDEN =
   'overflow-y-auto overscroll-y-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
@@ -53,6 +60,8 @@ type LayerProps = Pick<
   | 'unitId'
   | 'mode'
   | 'eyedropperVariant'
+  | 'stickerKind'
+  | 'writableStickerVariant'
   | 'stampVariant'
   | 'stampQuestionColor'
   | 'strokeWidthScale'
@@ -118,6 +127,7 @@ export interface InfiniteWhiteboardPanelProps extends LayerProps {
   wbAnnRef: MutableRefObject<BookPageAnnotationHandle | null>
   wbStrokeOverlayRef?: MutableRefObject<BookPageAnnotationHandle | null>
   whiteboardSessionStoreRef?: MutableRefObject<WhiteboardSessionStore | null>
+  selectionMoveClampRef?: MutableRefObject<SelectionMoveClampContext | null>
   whiteboardSessionDoc?: WhiteboardSessionDocument | null
   appendWhiteboardSessionCommand?: (cmd: AnnotationCommand) => void
   whiteboardSessionUndo?: () => boolean
@@ -162,6 +172,7 @@ export function InfiniteWhiteboardPanel({
   wbAnnRef,
   wbStrokeOverlayRef,
   whiteboardSessionStoreRef,
+  selectionMoveClampRef,
   whiteboardSessionDoc = null,
   appendWhiteboardSessionCommand,
   whiteboardSessionUndo,
@@ -189,6 +200,10 @@ export function InfiniteWhiteboardPanel({
   const [wbEraserLineDraft, setWbEraserLineDraft] = useState<LiveEraserLineDraft | null>(null)
   const [wbMarkerStrokeDraft, setWbMarkerStrokeDraft] = useState<LiveStrokeDraft | null>(null)
   const [wbSessionSelectedIds, setWbSessionSelectedIds] = useState<string[]>([])
+  const [wbSessionNudgePreview, setWbSessionNudgePreview] = useState<{
+    dx: number
+    dy: number
+  } | null>(null)
 
   const setWbSessionSelected = useCallback(
     (ids: string[]) => {
@@ -200,19 +215,9 @@ export function InfiniteWhiteboardPanel({
   const moveWbSessionSelected = useCallback(
     (dx: number, dy: number) => {
       whiteboardSessionStoreRef?.current?.moveSelectedBy(dx, dy)
+      wbAnnRef.current?.moveSelectedBy?.(dx, dy)
     },
-    [whiteboardSessionStoreRef],
-  )
-
-  const scaleWbSessionSelected = useCallback(
-    (startBounds: NormRect, newBounds: NormRect) => {
-      const store = whiteboardSessionStoreRef?.current
-      if (!store) return
-      const ids = new Set(store.getState().selectedIds)
-      if (ids.size === 0) return
-      store.patchCommands((cmds) => scaleAnnotationCommands(cmds, ids, startBounds, newBounds))
-    },
-    [whiteboardSessionStoreRef],
+    [wbAnnRef, whiteboardSessionStoreRef],
   )
 
   const panelWidthPx = widthPx
@@ -230,13 +235,17 @@ export function InfiniteWhiteboardPanel({
   useEffect(() => {
     if (!whiteboardSessionActive) {
       setWbSessionSelectedIds([])
+      setWbSessionNudgePreview(null)
       return
     }
     const store = whiteboardSessionStoreRef?.current
     if (!store) return
-    setWbSessionSelectedIds(store.getState().selectedIds)
+    const initial = store.getState()
+    setWbSessionSelectedIds(initial.selectedIds)
+    setWbSessionNudgePreview(initial.nudgePreview)
     return store.subscribe((state) => {
       setWbSessionSelectedIds(state.selectedIds)
+      setWbSessionNudgePreview(state.nudgePreview)
     })
   }, [
     whiteboardSessionActive,
@@ -269,18 +278,59 @@ export function InfiniteWhiteboardPanel({
     measuredContentHeightPx,
   )
 
+  useLayoutEffect(() => {
+    if (!selectionMoveClampRef) return
+    if (!(paintWidthPx > 0) || !(effectivePaintContentHeightPx > 0)) {
+      selectionMoveClampRef.current = null
+      return
+    }
+    selectionMoveClampRef.current = {
+      widthPx: paintWidthPx,
+      heightPx: effectivePaintContentHeightPx,
+    }
+  }, [selectionMoveClampRef, paintWidthPx, effectivePaintContentHeightPx])
+
   const rotateWbSessionSelected = useCallback(
     (
       pivot: [number, number],
       deltaRad: number,
       ids: string[],
       previewBase?: readonly AnnotationCommand[] | null,
+      groupRotationFrame?: OrientedSelectionFrame | null,
     ) => {
       const store = whiteboardSessionStoreRef?.current
       if (!store || ids.length === 0 || Math.abs(deltaRad) < 1e-6) return
       const layout = { widthPx: paintWidthPx, heightPx: effectivePaintContentHeightPx }
       store.patchCommands((cmds) =>
-        commitRotatedAnnotationCommands(cmds, new Set(ids), pivot, deltaRad, layout, previewBase),
+        commitRotatedAnnotationCommands(
+          cmds,
+          new Set(ids),
+          pivot,
+          deltaRad,
+          layout,
+          previewBase,
+          groupRotationFrame,
+        ),
+      )
+    },
+    [effectivePaintContentHeightPx, paintWidthPx, whiteboardSessionStoreRef],
+  )
+
+  const scaleWbSessionSelected = useCallback(
+    (startFrame: OrientedSelectionFrame, newFrame: OrientedSelectionFrame) => {
+      const store = whiteboardSessionStoreRef?.current
+      if (!store) return
+      const ids = new Set(store.getState().selectedIds)
+      if (ids.size === 0) return
+      store.patchCommands((cmds) =>
+        scaleAnnotationCommandsFromOrientedFrames(
+          cmds,
+          ids,
+          startFrame,
+          newFrame,
+          paintWidthPx,
+          effectivePaintContentHeightPx,
+        ),
       )
     },
     [effectivePaintContentHeightPx, paintWidthPx, whiteboardSessionStoreRef],
@@ -320,6 +370,80 @@ export function InfiniteWhiteboardPanel({
     : storagePageKey
 
   const whiteboardInkDelegated = whiteboardSessionActive
+  const wbDomToolsActive =
+    whiteboardInkDelegated &&
+    (mode === 'text' || isWritableStickerInteraction(mode, layerProps.stickerKind ?? 'quick'))
+
+  const patchWhiteboardSessionDomCommand = useCallback(
+    (id: string, partial: Partial<TextAnnotationCommand | StickyAnnotationCommand>) => {
+      whiteboardSessionStoreRef?.current?.patchCommands((cmds) =>
+        cmds.map((c) => (c.id === id ? ({ ...c, ...partial } as AnnotationCommand) : c)),
+      )
+    },
+    [whiteboardSessionStoreRef],
+  )
+
+  const deleteWhiteboardSessionDomCommand = useCallback(
+    (id: string) => {
+      const store = whiteboardSessionStoreRef?.current
+      if (!store) return
+      store.patchCommands((cmds) => cmds.filter((c) => c.id !== id))
+      const remaining = store.getState().selectedIds.filter((sid) => sid !== id)
+      if (remaining.length !== store.getState().selectedIds.length) {
+        store.setSelectedIds(remaining)
+      }
+    },
+    [whiteboardSessionStoreRef],
+  )
+
+  const whiteboardDomConfig = useMemo((): SpreadSessionDomConfig | null => {
+    if (!whiteboardInkDelegated || !whiteboardSessionDoc) return null
+    return {
+      enabled: true,
+      mode,
+      stickerKind: layerProps.stickerKind ?? 'quick',
+      writableStickerVariant: layerProps.writableStickerVariant ?? 'note',
+      textColor: layerProps.textColor ?? '#111827',
+      textFontSizeNorm: layerProps.textFontSizeNorm,
+      textFontId: layerProps.textFontId,
+      textVisualStyle: layerProps.textVisualStyle ?? 'plain',
+      textFillColor: layerProps.textFillColor ?? '#ffffff',
+      stickyFillColor: layerProps.stickyFillColor ?? '#fef3c7',
+      stickyFontSizeNorm: layerProps.stickyFontSizeNorm,
+      defaultStickyWNorm: layerProps.defaultStickyWNorm ?? 0.22,
+      defaultStickyHNorm: layerProps.defaultStickyHNorm ?? 0.11,
+      commands: whiteboardSessionDoc.commands,
+      widthPx: paintWidthPx,
+      heightPx: effectivePaintContentHeightPx,
+      selectEnabled: mode === 'select',
+      selectedIds: wbSessionSelectedIds,
+      onAppendCommand: appendWhiteboardSessionCommandWithAutoGroup,
+      onPatchCommand: patchWhiteboardSessionDomCommand,
+      onDeleteText: deleteWhiteboardSessionDomCommand,
+      onDeleteSticky: deleteWhiteboardSessionDomCommand,
+      onSelectedIdsChange: setWbSessionSelected,
+    }
+  }, [
+    appendWhiteboardSessionCommandWithAutoGroup,
+    deleteWhiteboardSessionDomCommand,
+    effectivePaintContentHeightPx,
+    layerProps.defaultStickyHNorm,
+    layerProps.defaultStickyWNorm,
+    layerProps.stickyFillColor,
+    layerProps.stickyFontSizeNorm,
+    layerProps.textColor,
+    layerProps.textFillColor,
+    layerProps.textFontId,
+    layerProps.textFontSizeNorm,
+    layerProps.textVisualStyle,
+    mode,
+    paintWidthPx,
+    patchWhiteboardSessionDomCommand,
+    setWbSessionSelected,
+    wbSessionSelectedIds,
+    whiteboardInkDelegated,
+    whiteboardSessionDoc,
+  ])
 
   const activePageOrientation = lessonBoardPageNav.page?.orientation ?? 'standard'
   const slotDragEnabled = layoutMode === 'slot' && activePageOrientation !== 'wide'
@@ -467,10 +591,10 @@ export function InfiniteWhiteboardPanel({
               ref={wbInkLayerRef}
               className={cn(
                 'absolute inset-0',
-                mode === 'select' ? 'z-[36]' : 'z-[25]',
+                mode === 'select' || wbDomToolsActive ? 'z-[40]' : 'z-[25]',
                 wbStrokeCaptureEnabled
-                  ? 'touch-none'
-                  : mode === 'select'
+                  ? 'touch-none pointer-events-auto'
+                  : mode === 'select' || wbDomToolsActive
                     ? 'pointer-events-auto'
                     : 'pointer-events-none',
               )}
@@ -489,10 +613,12 @@ export function InfiniteWhiteboardPanel({
                 trailingMarkerStrokeDraft={wbMarkerStrokeDraft}
                 selectEnabled={mode === 'select'}
                 selectedIds={wbSessionSelectedIds}
+                nudgePreview={wbSessionNudgePreview}
                 onSelectedIdsChange={setWbSessionSelected}
                 onMoveSelectedBy={moveWbSessionSelected}
                 onScaleSelectedBy={scaleWbSessionSelected}
                 onRotateSelectedBy={rotateWbSessionSelected}
+                domConfig={whiteboardDomConfig}
               />
               <BookSpreadStrokeOverlay
                 ref={wbStrokeOverlayRef}
@@ -535,6 +661,7 @@ export function InfiniteWhiteboardPanel({
                 rightPenInkPatternOriginXPx={0}
                 spreadSeamNormX={1}
                 spreadSessionMode
+                spreadSessionCommands={whiteboardSessionDoc.commands}
                 onSpreadSessionAppendCommand={appendWhiteboardSessionCommandWithAutoGroup}
                 spreadSessionUndo={whiteboardSessionUndo}
                 spreadSessionRedo={whiteboardSessionRedo}

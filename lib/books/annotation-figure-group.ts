@@ -11,6 +11,27 @@ export function newFigureGroupId(): string {
   return `fg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 11)}`
 }
 
+/**
+ * When any pen/marker stroke in `dead` has a figure group, mark all sibling strokes dead too.
+ */
+export function expandDeadIndicesForFigureGroups(
+  commands: readonly AnnotationCommand[],
+  dead: Set<number>,
+): void {
+  const groupsToExpand = new Set<string>()
+  for (const idx of dead) {
+    const cmd = commands[idx]
+    if (!cmd || !isPenOrMarkerStroke(cmd) || !cmd.figureGroupId) continue
+    groupsToExpand.add(cmd.figureGroupId)
+  }
+  if (groupsToExpand.size === 0) return
+  for (let i = 0; i < commands.length; i++) {
+    const cmd = commands[i]!
+    if (!isPenOrMarkerStroke(cmd) || !cmd.figureGroupId) continue
+    if (groupsToExpand.has(cmd.figureGroupId)) dead.add(i)
+  }
+}
+
 /** All pen/marker stroke ids on the page with this figure group id. */
 export function idsInFigureGroup(
   commands: AnnotationCommand[],

@@ -25,6 +25,12 @@
 - The **book is always central.** “Opening the book” must not feel like leaving the app; the book should stay **one click away** (tab, split view, or persistent entry)—not buried under unrelated navigation that confuses students on screen share.
 - **You must always be able to browse the book however you want** (preview, skip ahead, jump pages). No game gate should block **teacher** navigation. If student-facing “quests” lock progress, that applies to **guided student session / map milestones**, not to your free reading of the PDF.
 
+### Book reader layout — spread-only v1
+
+The fullscreen book reader is **always a two-page spread**: a **left** page slot and an optional **right** page slot (empty on the last page of a unit or when there is no facing page). There is **no separate single-page-centered reader** in v1—do not branch ink, selection, navigation, or layout logic for a hypothetical one-page view. Page turns advance by **spread** (pairs), not one PDF page at a time. If a dedicated single-page layout is needed later, it ships as an explicit top-level mode—not by reviving scattered `isSinglePageMode` branches. **Exception:** PDF export may temporarily use a one-page capture path; that is export-only and must not shape normal reader behavior.
+
+**Build against this model:** one spread session owns pen, marker, shapes, stamp, callout, text, and sticky (spread-normalized coordinates); per-page storage is a projection on flush/hydrate only. Unified selection and transforms assume spread coordinates and optional right page, not “one page ref only.”
+
 ### Timed challenge and legacy quizzes
 
 - **Not the main loop** anymore. They are **extras** or **one way to pass a section / checkpoint**—exact rules TBD.
@@ -114,6 +120,7 @@ Exact “success metrics” can evolve; update this section when you lock them.
 
 ## Changelog
 
+- **2026-06-10** — **Spread-only v1:** reader is always a two-page spread (right slot optional); no single-page-centered reader until explicitly designed; new ink/selection work assumes spread model (see section above).
 - **2026-05-03** — Phase 0 marked complete in `MILESTONE.md`; run target = `npm run dev`; bookmark rule (last viewed at end class); renamed “smoke test” → “lesson-path try” in docs.
 - **2026-05-02** — Phase 0 tooling: `docs/PHASE0.md`, Settings backup/restore for `esl_*` localStorage (`lib/local-data-backup.ts`).
 - **2026-05-02** — `MILESTONE.md` expanded: phased path to teachable app, Phase 0–1 sprint, Phase 2–3 task breakdown for interactive book.

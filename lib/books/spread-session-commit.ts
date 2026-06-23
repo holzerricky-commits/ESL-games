@@ -50,7 +50,19 @@ function ownerSideForCommand(cmd: AnnotationCommand, seamNormX: number): SpreadS
   if (cmd.kind === 'line') return cmd.a[0] <= seamNormX ? 'left' : 'right'
   if (cmd.kind === 'arrow') return cmd.from[0] <= seamNormX ? 'left' : 'right'
   if (cmd.kind === 'rect' || cmd.kind === 'ellipse' || cmd.kind === 'triangle') return cmd.x <= seamNormX ? 'left' : 'right'
+  if (cmd.kind === 'stamp' || cmd.kind === 'callout') return cmd.center[0] <= seamNormX ? 'left' : 'right'
+  if (cmd.kind === 'text' || cmd.kind === 'sticky') return cmd.x <= seamNormX ? 'left' : 'right'
   return 'left'
+}
+
+function pageNormWidthToSpreadNorm(widthNorm: number, layout: SpreadInkLayout): number {
+  if (!(layout.spreadOverlayWidthPx > 0)) return widthNorm
+  return widthNorm * (layout.spreadPageWidthPx / layout.spreadOverlayWidthPx)
+}
+
+function spreadNormWidthToPageNorm(widthNorm: number, layout: SpreadInkLayout): number {
+  if (!(layout.spreadPageWidthPx > 0)) return widthNorm
+  return widthNorm * (layout.spreadOverlayWidthPx / layout.spreadPageWidthPx)
 }
 
 function mapSpreadPointToOwnerPage(
@@ -130,10 +142,38 @@ function mapCommandSpreadToOwnerPage(
       h: Math.abs(br[1] - tl[1]),
     }
   }
+  if (cmd.kind === 'stamp' || cmd.kind === 'callout') {
+    return {
+      ...cmd,
+      center: mapSpreadPointToOwnerPage(cmd.center, side, layout),
+    }
+  }
+  if (cmd.kind === 'text') {
+    const pos = mapSpreadPointToOwnerPage([cmd.x, cmd.y], side, layout)
+    return {
+      ...cmd,
+      x: pos[0],
+      y: pos[1],
+      ...(cmd.maxWidthNorm != null
+        ? { maxWidthNorm: spreadNormWidthToPageNorm(cmd.maxWidthNorm, layout) }
+        : {}),
+    }
+  }
+  if (cmd.kind === 'sticky') {
+    const tl = mapSpreadPointToOwnerPage([cmd.x, cmd.y], side, layout)
+    const br = mapSpreadPointToOwnerPage([cmd.x + cmd.w, cmd.y + cmd.h], side, layout)
+    return {
+      ...cmd,
+      x: Math.min(tl[0], br[0]),
+      y: Math.min(tl[1], br[1]),
+      w: Math.abs(br[0] - tl[0]),
+      h: Math.abs(br[1] - tl[1]),
+    }
+  }
   return cmd
 }
 
-function mapCommandPageToSpread(
+export function mapCommandPageToSpread(
   cmd: AnnotationCommand,
   side: SpreadSide,
   layout: SpreadInkLayout,
@@ -169,7 +209,73 @@ function mapCommandPageToSpread(
       h: Math.abs(br[1] - tl[1]),
     }
   }
+  if (cmd.kind === 'stamp' || cmd.kind === 'callout') {
+    return {
+      ...cmd,
+      center: pageNormPointToSpreadNorm(cmd.center, side, layout),
+    }
+  }
+  if (cmd.kind === 'text') {
+    const pos = pageNormPointToSpreadNorm([cmd.x, cmd.y], side, layout)
+    return {
+      ...cmd,
+      x: pos[0],
+      y: pos[1],
+      ...(cmd.maxWidthNorm != null
+        ? { maxWidthNorm: pageNormWidthToSpreadNorm(cmd.maxWidthNorm, layout) }
+        : {}),
+    }
+  }
+  if (cmd.kind === 'sticky') {
+    const tl = pageNormPointToSpreadNorm([cmd.x, cmd.y], side, layout)
+    const br = pageNormPointToSpreadNorm([cmd.x + cmd.w, cmd.y + cmd.h], side, layout)
+    return {
+      ...cmd,
+      x: Math.min(tl[0], br[0]),
+      y: Math.min(tl[1], br[1]),
+      w: Math.abs(br[0] - tl[0]),
+      h: Math.abs(br[1] - tl[1]),
+    }
+  }
   return cmd
+}
+
+function isPageOwnedSpreadCommand(cmd: AnnotationCommand): boolean {
+  return (
+    cmd.kind === 'stamp' ||
+    cmd.kind === 'callout' ||
+    cmd.kind === 'text' ||
+    cmd.kind === 'sticky'
+  )
+}
+
+/** Page-owned items merged into spread session with correct spread coords. */
+export function mergeSpreadSessionPageOwnedFromOwnerPages(
+  sessionCommands: readonly AnnotationCommand[],
+  leftCommands: readonly AnnotationCommand[],
+  rightCommands: readonly AnnotationCommand[],
+  layout: SpreadInkLayout,
+): AnnotationCommand[] {
+  const withoutPageOwned = sessionCommands.filter((c) => !isPageOwnedSpreadCommand(c))
+  const pageOwnedLeft = leftCommands.filter(isPageOwnedSpreadCommand)
+  const pageOwnedRight = rightCommands.filter(isPageOwnedSpreadCommand)
+  const mapped = hydrateSpreadSessionFromOwnerPages(pageOwnedLeft, pageOwnedRight, layout)
+  return [...withoutPageOwned, ...mapped]
+}
+
+/** @deprecated Use mergeSpreadSessionPageOwnedFromOwnerPages */
+export function mergeSpreadSessionStampCalloutsFromOwnerPages(
+  sessionCommands: readonly AnnotationCommand[],
+  leftCommands: readonly AnnotationCommand[],
+  rightCommands: readonly AnnotationCommand[],
+  layout: SpreadInkLayout,
+): AnnotationCommand[] {
+  return mergeSpreadSessionPageOwnedFromOwnerPages(
+    sessionCommands,
+    leftCommands,
+    rightCommands,
+    layout,
+  )
 }
 
 export function projectSpreadSessionToOwnerPages(

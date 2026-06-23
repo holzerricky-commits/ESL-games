@@ -2,14 +2,22 @@ import type { InkSessionCommand, InkSessionDocument } from '@/lib/books/ink-sess
 import { computeEraserLineDeadIndices } from '@/lib/books/annotation-geometry'
 import { selectNextStackId } from '@/lib/books/annotation-selection-ops'
 import { translateAnnotationCommands } from '@/lib/books/annotation-select'
+import {
+  clampSelectionMoveDelta,
+  type SelectionMoveClampContext,
+} from '@/lib/books/annotation-scale'
 import { duplicateCommandsForPaste, getAnnotationClipboard, setAnnotationClipboard } from '@/lib/books/annotation-clipboard'
 import { assignFigureGroupId, clearFigureGroupId, newFigureGroupId, shouldToggleSelectionToUngroup } from '@/lib/books/annotation-figure-group'
+
+export type InkSessionNudgePreview = { dx: number; dy: number }
 
 type InkSessionState<TDoc extends InkSessionDocument> = {
   doc: TDoc
   canUndo: boolean
   canRedo: boolean
   selectedIds: string[]
+  /** Live keyboard nudge offset (not committed until `commitNudgePreview`). */
+  nudgePreview: InkSessionNudgePreview | null
 }
 
 type Listener<TDoc extends InkSessionDocument> = (state: InkSessionState<TDoc>) => void
@@ -32,6 +40,9 @@ export type InkSessionStore<TDoc extends InkSessionDocument = InkSessionDocument
   selectAll: () => void
   deleteSelected: () => boolean
   moveSelectedBy: (dx: number, dy: number) => boolean
+  setNudgePreview: (dx: number, dy: number) => void
+  commitNudgePreview: () => boolean
+  clearNudgePreview: () => void
   copySelected: () => boolean
   pasteFromClipboard: () => boolean
   duplicateSelected: () => boolean
@@ -54,6 +65,8 @@ export type CreateInkSessionStoreOptions<TDoc extends InkSessionDocument = InkSe
   /** When false, no debounced save and no checkpoint on destroy (Phase 1 whiteboard dev). */
   persistEnabled?: boolean
   now?: () => number
+  /** Page/board size for keeping moved ink partially on-canvas. */
+  getSelectionMoveClamp?: () => SelectionMoveClampContext | null
 }
 
 export function createInkSessionStore<TDoc extends InkSessionDocument>(
@@ -66,14 +79,36 @@ export function createInkSessionStore<TDoc extends InkSessionDocument>(
   const undoStack: InkSessionUndoEntry[] = []
   const redoStack: InkSessionRedoEntry[] = []
   let selectedIds: string[] = []
+  let nudgePreviewDx = 0
+  let nudgePreviewDy = 0
   let autosaveTimer: ReturnType<typeof setTimeout> | null = null
   let destroyed = false
 
   let doc = options.loadInitialDoc()
 
+  function clampMoveDelta(dx: number, dy: number): { dx: number; dy: number } {
+    if (dx === 0 && dy === 0 || selectedIds.length === 0) return { dx, dy }
+    const ctx = options.getSelectionMoveClamp?.()
+    if (!ctx || !(ctx.widthPx > 0) || !(ctx.heightPx > 0)) return { dx, dy }
+    return clampSelectionMoveDelta(
+      doc.commands,
+      selectedIds,
+      dx,
+      dy,
+      ctx.widthPx,
+      ctx.heightPx,
+      { canvas: ctx.canvas, deadIndices: ctx.deadIndices },
+    )
+  }
+
   function emit(): void {
     const state = getState()
     for (const listener of listeners) listener(state)
+  }
+
+  function clearNudgePreviewInternal(): void {
+    nudgePreviewDx = 0
+    nudgePreviewDy = 0
   }
 
   function getState(): InkSessionState<TDoc> {
@@ -82,6 +117,10 @@ export function createInkSessionStore<TDoc extends InkSessionDocument>(
       canUndo: undoStack.length > 0,
       canRedo: redoStack.length > 0,
       selectedIds,
+      nudgePreview:
+        nudgePreviewDx === 0 && nudgePreviewDy === 0
+          ? null
+          : { dx: nudgePreviewDx, dy: nudgePreviewDy },
     }
   }
 
@@ -204,9 +243,36 @@ export function createInkSessionStore<TDoc extends InkSessionDocument>(
     moveSelectedBy: (dx, dy) => {
       if (dx === 0 && dy === 0) return false
       if (selectedIds.length === 0) return false
+      clearNudgePreviewInternal()
+      const clamped = clampMoveDelta(dx, dy)
+      if (clamped.dx === 0 && clamped.dy === 0) return false
+      const picked = new Set(selectedIds)
+      applyCommands(translateAnnotationCommands(doc.commands, picked, clamped.dx, clamped.dy))
+      return true
+    },
+    setNudgePreview: (dx, dy) => {
+      const clamped = clampMoveDelta(dx, dy)
+      nudgePreviewDx = clamped.dx
+      nudgePreviewDy = clamped.dy
+      emit()
+    },
+    commitNudgePreview: () => {
+      if (nudgePreviewDx === 0 && nudgePreviewDy === 0) return false
+      const dx = nudgePreviewDx
+      const dy = nudgePreviewDy
+      clearNudgePreviewInternal()
+      if (selectedIds.length === 0) {
+        emit()
+        return false
+      }
       const picked = new Set(selectedIds)
       applyCommands(translateAnnotationCommands(doc.commands, picked, dx, dy))
       return true
+    },
+    clearNudgePreview: () => {
+      if (nudgePreviewDx === 0 && nudgePreviewDy === 0) return
+      clearNudgePreviewInternal()
+      emit()
     },
     copySelected: () => {
       if (selectedIds.length === 0) return false

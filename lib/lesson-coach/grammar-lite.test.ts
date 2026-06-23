@@ -18,6 +18,11 @@ describe('grammar-lite', () => {
     expect(issues.some((i) => i.type === 'punctuation-space')).toBe(true)
   })
 
+  it('flags uncapitalized sentence starts', () => {
+    const issues = analyzeText('hello. world')
+    expect(issues.some((i) => i.type === 'capitalization')).toBe(true)
+  })
+
   it('flags a before vowel', () => {
     const issues = analyzeText('I saw a elephant')
     expect(issues.some((i) => i.type === 'article-an')).toBe(true)

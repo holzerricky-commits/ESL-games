@@ -78,6 +78,15 @@ describe('student-annotation-tool-prefs', () => {
     expect(marker.markerCustomHex).toBe('#112233')
   })
 
+  it('migrates retired highlighter yellow when loading saved prefs', () => {
+    mockLocalStorage()
+    patchStudentAnnotationToolPrefs('stu-a', {
+      markerColor: '#ffeb3b',
+      markerColorSource: 'swatch',
+    })
+    expect(resolveMarkerToolPrefsFromStorage('stu-a').markerColor).toBe('#ffff00')
+  })
+
   it('stores text color and sticky fill per student', () => {
     mockLocalStorage()
 

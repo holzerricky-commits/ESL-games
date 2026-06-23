@@ -22,6 +22,37 @@ const shapeOpts = {
 }
 
 describe('hold-shape-commit', () => {
+  it('commits a marker hold line as a marker stroke', () => {
+    const markerStroke: StrokeAnnotationCommand = {
+      kind: 'stroke',
+      id: 's1',
+      tool: 'marker',
+      points: [[0.1, 0.2]],
+      color: '#ffeb3b',
+      widthScale: 1.2,
+    }
+    const cmd = buildHoldShapeCommand(
+      {
+        kind: 'line',
+        anchor: [0.1, 0.2],
+        current: [0.6, 0.2],
+        lineAxis: 'horizontal',
+      },
+      markerStroke,
+      shapeOpts,
+    )
+    expect(cmd?.kind).toBe('stroke')
+    if (cmd?.kind === 'stroke') {
+      expect(cmd.tool).toBe('marker')
+      expect(cmd.points).toEqual([
+        [0.1, 0.2],
+        [0.6, 0.2],
+      ])
+      expect(cmd.color).toBe('#ffeb3b')
+      expect(cmd.widthScale).toBe(1.2)
+    }
+  })
+
   it('commits a line with stroke ink', () => {
     const cmd = buildHoldShapeCommand(
       {

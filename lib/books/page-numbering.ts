@@ -23,14 +23,12 @@ export function mapPdfPageToDisplayLabel(
 export function mapPdfSpreadToDisplayLabel(
   leftPdfPage: number,
   rightPdfPage: number | null,
-  singlePage: boolean,
   book: BookRecord | null | undefined,
   unit: BookUnitRecord | null | undefined,
   totalPdfPages: number | null,
   mode: PageNumberingMode = 'mapped',
 ): string {
   const left = mapPdfPageToDisplayLabel(leftPdfPage, book, unit, totalPdfPages, mode)
-  if (singlePage) return left
   if (rightPdfPage == null) return left
   const right = mapPdfPageToDisplayLabel(rightPdfPage, book, unit, totalPdfPages, mode)
   return `${left}-${right}`

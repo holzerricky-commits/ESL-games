@@ -1,11 +1,18 @@
-import type { AnnotationCommand } from '@/lib/books/annotation-command-types'
+import type {
+  AnnotationCommand,
+  StrokeAnnotationCommand,
+} from '@/lib/books/annotation-command-types'
 import {
   snapshotRotationBaseCommands,
   snapshotStrokeRotationBounds,
+  strokeUnrotatedBounds,
   type NormRect,
   type OrientedSelectionFrame,
 } from '@/lib/books/annotation-select'
-import { SELECTION_HANDLE_HIT_RADIUS_PX } from '@/lib/books/annotation-selection-chrome'
+import {
+  SELECTION_HANDLE_HIT_RADIUS_PX,
+  SELECTION_ROTATION_HANDLE_SIZE_PX,
+} from '@/lib/books/annotation-selection-chrome'
 
 export const ROTATABLE_SHAPE_KINDS = new Set([
   'line',
@@ -82,6 +89,26 @@ export function rotatePointAroundPivot(
   return [pivot[0] + dx * cos - dy * sin, pivot[1] + dx * sin + dy * cos]
 }
 
+/** Rotate normalized coords around a normalized pivot using pixel-space geometry (matches CSS/canvas). */
+export function rotateNormPointInPixelSpace(
+  point: [number, number],
+  pivot: [number, number],
+  deltaRad: number,
+  widthPx: number,
+  heightPx: number,
+): [number, number] {
+  if (Math.abs(deltaRad) < 1e-9 || widthPx <= 0 || heightPx <= 0) return point
+  const px = point[0] * widthPx
+  const py = point[1] * heightPx
+  const cx = pivot[0] * widthPx
+  const cy = pivot[1] * heightPx
+  const dx = px - cx
+  const dy = py - cy
+  const cos = Math.cos(deltaRad)
+  const sin = Math.sin(deltaRad)
+  return [(cx + dx * cos - dy * sin) / widthPx, (cy + dx * sin + dy * cos) / heightPx]
+}
+
 function boxShapeCenter(cmd: { x: number; y: number; w: number; h: number }): [number, number] {
   return [cmd.x + cmd.w / 2, cmd.y + cmd.h / 2]
 }
@@ -146,42 +173,126 @@ export function shapeRotationDeg(cmd: AnnotationCommand): number {
   return 0
 }
 
+export type RotateAnnotationLayout = { widthPx: number; heightPx: number }
+
+const STROKE_POINT_MATCH_EPS = 1e-5
+
+function strokePointsMatch(a: StrokeAnnotationCommand, b: StrokeAnnotationCommand): boolean {
+  if (a.points.length !== b.points.length) return false
+  for (let i = 0; i < a.points.length; i++) {
+    const ap = a.points[i]!
+    const bp = b.points[i]!
+    if (Math.abs(ap[0] - bp[0]) > STROKE_POINT_MATCH_EPS) return false
+    if (Math.abs(ap[1] - bp[1]) > STROKE_POINT_MATCH_EPS) return false
+  }
+  return true
+}
+
+/** Rotate in pixel space when layout is known (matches canvas draw geometry). */
+function rotateNormPointForGesture(
+  point: [number, number],
+  pivot: [number, number],
+  deltaRad: number,
+  layout?: RotateAnnotationLayout,
+): [number, number] {
+  if (layout) {
+    return rotateNormPointInPixelSpace(point, pivot, deltaRad, layout.widthPx, layout.heightPx)
+  }
+  return rotatePointAroundPivot(point, pivot, deltaRad)
+}
+
+/** Single stroke: local bounds + `rotationDeg`. Group: shared bounds + shared `rotationDeg`. */
+function rotatePenMarkerStrokeAroundPivot(
+  cmd: StrokeAnnotationCommand,
+  deltaRad: number,
+  layout: RotateAnnotationLayout,
+  rotateAsRigidGroup: boolean,
+  groupRotationFrame: OrientedSelectionFrame | null | undefined,
+): StrokeAnnotationCommand {
+  const bounds =
+    cmd.rotationBounds ?? strokeUnrotatedBounds(cmd, layout.widthPx, layout.heightPx)
+  if (!bounds) return cmd
+
+  const existingDeg = cmd.rotationDeg ?? 0
+
+  if (!rotateAsRigidGroup) {
+    return {
+      ...cmd,
+      rotationBounds: bounds,
+      rotationDeg: normalizeDeg(existingDeg + radToDeg(deltaRad)),
+    }
+  }
+
+  const groupBounds = groupRotationFrame?.rect
+  if (!groupBounds) return cmd
+
+  const groupStartDeg = groupRotationFrame?.rotationDeg ?? 0
+  return {
+    ...cmd,
+    rotationBounds: groupBounds,
+    rotationDeg: normalizeDeg(groupStartDeg + radToDeg(deltaRad)),
+  }
+}
+
 export function rotateAnnotationCommand(
   cmd: AnnotationCommand,
   pivot: [number, number],
   deltaRad: number,
+  layout?: RotateAnnotationLayout,
+  rotateAsRigidGroup = false,
+  groupRotationFrame?: OrientedSelectionFrame | null,
 ): AnnotationCommand {
   if (Math.abs(deltaRad) < 1e-9) return cmd
   switch (cmd.kind) {
     case 'line':
       return {
         ...cmd,
-        a: rotatePointAroundPivot(cmd.a, pivot, deltaRad),
-        b: rotatePointAroundPivot(cmd.b, pivot, deltaRad),
+        a: rotateNormPointForGesture(cmd.a, pivot, deltaRad, layout),
+        b: rotateNormPointForGesture(cmd.b, pivot, deltaRad, layout),
       }
     case 'arrow':
       return {
         ...cmd,
-        from: rotatePointAroundPivot(cmd.from, pivot, deltaRad),
-        to: rotatePointAroundPivot(cmd.to, pivot, deltaRad),
+        from: rotateNormPointForGesture(cmd.from, pivot, deltaRad, layout),
+        to: rotateNormPointForGesture(cmd.to, pivot, deltaRad, layout),
       }
     case 'rect':
     case 'ellipse':
-    case 'triangle':
-      return { ...cmd, rotationDeg: normalizeDeg(shapeRotationDeg(cmd) + radToDeg(deltaRad)) }
+    case 'triangle': {
+      const nextDeg = normalizeDeg(shapeRotationDeg(cmd) + radToDeg(deltaRad))
+      if (rotateAsRigidGroup && layout) {
+        const cx = cmd.x + cmd.w / 2
+        const cy = cmd.y + cmd.h / 2
+        const newCenter = rotateNormPointForGesture([cx, cy], pivot, deltaRad, layout)
+        return {
+          ...cmd,
+          x: newCenter[0] - cmd.w / 2,
+          y: newCenter[1] - cmd.h / 2,
+          rotationDeg: nextDeg,
+        }
+      }
+      return { ...cmd, rotationDeg: nextDeg }
+    }
     case 'stroke':
       if (!isRotatablePenMarkerStroke(cmd)) return cmd
-      if (!cmd.rotationBounds) return cmd
-      return {
-        ...cmd,
-        rotationDeg: normalizeDeg((cmd.rotationDeg ?? 0) + radToDeg(deltaRad)),
+      if (!layout) {
+        if (!cmd.rotationBounds) return cmd
+        return {
+          ...cmd,
+          rotationDeg: normalizeDeg((cmd.rotationDeg ?? 0) + radToDeg(deltaRad)),
+        }
       }
+      return rotatePenMarkerStrokeAroundPivot(
+        cmd,
+        deltaRad,
+        layout,
+        rotateAsRigidGroup,
+        groupRotationFrame,
+      )
     default:
       return cmd
   }
 }
-
-export type RotateAnnotationLayout = { widthPx: number; heightPx: number }
 
 export function rotateAnnotationCommands(
   commands: AnnotationCommand[],
@@ -189,20 +300,30 @@ export function rotateAnnotationCommands(
   pivot: [number, number],
   deltaRad: number,
   layout?: RotateAnnotationLayout,
+  groupRotationFrame?: OrientedSelectionFrame | null,
 ): AnnotationCommand[] {
   if (Math.abs(deltaRad) < 1e-9) return commands
+  const rotateAsRigidGroup = ids.size > 1
   return commands.map((c) => {
     if (!ids.has(c.id)) return c
     let cmd = c
     if (
       layout &&
+      !rotateAsRigidGroup &&
       cmd.kind === 'stroke' &&
       isRotatablePenMarkerStroke(cmd) &&
       !cmd.rotationBounds
     ) {
       cmd = snapshotStrokeRotationBounds(cmd, layout.widthPx, layout.heightPx)
     }
-    return rotateAnnotationCommand(cmd, pivot, deltaRad)
+    return rotateAnnotationCommand(
+      cmd,
+      pivot,
+      deltaRad,
+      layout,
+      rotateAsRigidGroup,
+      groupRotationFrame,
+    )
   })
 }
 
@@ -214,11 +335,22 @@ export function commitRotatedAnnotationCommands(
   deltaRad: number,
   layout: RotateAnnotationLayout,
   previewBase?: readonly AnnotationCommand[] | null,
+  groupRotationFrame?: OrientedSelectionFrame | null,
 ): AnnotationCommand[] {
   if (Math.abs(deltaRad) < 1e-9 || ids.size === 0) return commands
   const base = previewBase ?? commands
-  const prepared = snapshotRotationBaseCommands(base, [...ids], layout.widthPx, layout.heightPx)
-  const rotated = rotateAnnotationCommands(prepared, ids, pivot, deltaRad, layout)
+  const prepared =
+    ids.size > 1
+      ? [...base]
+      : snapshotRotationBaseCommands(base, [...ids], layout.widthPx, layout.heightPx)
+  const rotated = rotateAnnotationCommands(
+    prepared,
+    ids,
+    pivot,
+    deltaRad,
+    layout,
+    groupRotationFrame,
+  )
   const byId = new Map<string, AnnotationCommand>()
   for (const cmd of rotated) {
     if (ids.has(cmd.id)) byId.set(cmd.id, cmd)
@@ -226,29 +358,116 @@ export function commitRotatedAnnotationCommands(
   return commands.map((c) => byId.get(c.id) ?? c)
 }
 
+/** Rotated command snapshots only — not the full stack (avoids freezing move/scale after commit). */
+export function rotatedCommandsFromCommitOverlay(
+  committed: readonly AnnotationCommand[],
+  rotatedIds: readonly string[],
+): AnnotationCommand[] {
+  const idSet = new Set(rotatedIds)
+  return committed.filter((c) => idSet.has(c.id) && isRotatableShapeCommand(c))
+}
+
+/** Keep committed rotate fields visible until upstream `commands` catch up after pointer-up. */
+export function mergeRotatedCommandOverlay(
+  commands: readonly AnnotationCommand[],
+  overlay: readonly AnnotationCommand[] | null,
+): AnnotationCommand[] {
+  if (!overlay || overlay.length === 0) return [...commands]
+  const byId = new Map(
+    overlay.filter((c) => isRotatableShapeCommand(c)).map((c) => [c.id, c]),
+  )
+  if (byId.size === 0) return [...commands]
+  return commands.map((c) => {
+    const o = byId.get(c.id)
+    if (!o) return c
+    if (isRotatablePenMarkerStroke(o) && isRotatablePenMarkerStroke(c)) {
+      const overlayDeg = o.rotationDeg ?? 0
+      const liveDeg = c.rotationDeg ?? 0
+      if (Math.abs(overlayDeg) < 1e-6 && Math.abs(liveDeg) < 1e-6) {
+        if (strokePointsMatch(o, c)) return c
+        return {
+          ...c,
+          points: o.points,
+          rotationBounds: o.rotationBounds ?? c.rotationBounds,
+        }
+      }
+      if (Math.abs(overlayDeg) < 1e-6) return c
+      if (Math.abs(liveDeg - overlayDeg) < 1e-6 && c.rotationBounds) return c
+      return {
+        ...c,
+        rotationDeg: overlayDeg,
+        rotationBounds: c.rotationBounds ?? o.rotationBounds,
+      }
+    }
+    if (
+      (o.kind === 'rect' || o.kind === 'ellipse' || o.kind === 'triangle') &&
+      (c.kind === 'rect' || c.kind === 'ellipse' || c.kind === 'triangle')
+    ) {
+      const overlayDeg = o.rotationDeg ?? 0
+      const liveDeg = c.rotationDeg ?? 0
+      if (Math.abs(overlayDeg) < 1e-6) return c
+      if (Math.abs(liveDeg - overlayDeg) < 1e-6) return c
+      return { ...c, rotationDeg: overlayDeg }
+    }
+    return c
+  })
+}
+
+export function isRotateCommitOverlaySynced(
+  overlay: readonly AnnotationCommand[],
+  commands: readonly AnnotationCommand[],
+): boolean {
+  if (overlay.length === 0) return true
+  const liveById = new Map(commands.map((c) => [c.id, c]))
+  for (const o of overlay) {
+    if (!isRotatableShapeCommand(o)) continue
+    const live = liveById.get(o.id)
+    if (!live) return false
+    if (isRotatablePenMarkerStroke(o) && isRotatablePenMarkerStroke(live)) {
+      if ((o.rotationDeg ?? 0) !== (live.rotationDeg ?? 0)) return false
+      if (!strokePointsMatch(o, live)) return false
+      if (!live.rotationBounds) return false
+      continue
+    }
+    if (shapeRotationDeg(o) !== shapeRotationDeg(live)) return false
+  }
+  return true
+}
+
 export function orientedFrameCenter(frame: OrientedSelectionFrame): [number, number] {
   return [frame.rect.x + frame.rect.w / 2, frame.rect.y + frame.rect.h / 2]
 }
 
-export function orientedFrameTopCenterNorm(frame: OrientedSelectionFrame): [number, number] {
+export function orientedFrameTopCenterNorm(
+  frame: OrientedSelectionFrame,
+  widthPx: number,
+  heightPx: number,
+): [number, number] {
   const center = orientedFrameCenter(frame)
   const top: [number, number] = [center[0], frame.rect.y]
   const rad = degToRad(frame.rotationDeg)
   if (Math.abs(rad) < 1e-6) return top
-  return rotatePointAroundPivot(top, center, rad)
+  return rotateNormPointInPixelSpace(top, center, rad, widthPx, heightPx)
 }
 
 export function rotationHandleNormPositionForFrame(
   frame: OrientedSelectionFrame,
+  widthPx: number,
   heightPx: number,
   offsetPx = SELECTION_ROTATION_HANDLE_OFFSET_PX,
 ): [number, number] {
-  const [topX, topY] = orientedFrameTopCenterNorm(frame)
-  const offsetNorm = heightPx > 0 ? offsetPx / heightPx : 0.04
+  if (widthPx <= 0 || heightPx <= 0) return orientedFrameCenter(frame)
+  const half = SELECTION_ROTATION_HANDLE_SIZE_PX / 2
+  const cx = (frame.rect.x + frame.rect.w / 2) * widthPx
+  const cy = (frame.rect.y + frame.rect.h / 2) * heightPx
+  const hPx = frame.rect.h * heightPx
+  const d = hPx / 2 + offsetPx + half
   const rad = degToRad(frame.rotationDeg)
-  const outwardDx = -Math.sin(rad) * offsetNorm
-  const outwardDy = -Math.cos(rad) * offsetNorm
-  return [topX + outwardDx, Math.max(0, topY + outwardDy)]
+  // Match OrientedFrameShell + rotation handle in selection-bounds-chrome:
+  // local offset (0, -(h/2 + stem + handle/2)) rotated around frame center.
+  const hx = cx + d * Math.sin(rad)
+  const hy = cy - d * Math.cos(rad)
+  return [hx / widthPx, hy / heightPx]
 }
 
 /** @deprecated Prefer rotationHandleNormPositionForFrame. */
@@ -257,7 +476,12 @@ export function rotationHandleNormPosition(
   heightPx: number,
   offsetPx = SELECTION_ROTATION_HANDLE_OFFSET_PX,
 ): [number, number] {
-  return rotationHandleNormPositionForFrame({ rect: bounds, rotationDeg: 0 }, heightPx, offsetPx)
+  return rotationHandleNormPositionForFrame(
+    { rect: bounds, rotationDeg: 0 },
+    heightPx,
+    heightPx,
+    offsetPx,
+  )
 }
 
 export function hitTestRotationHandleForFrame(
@@ -267,7 +491,7 @@ export function hitTestRotationHandleForFrame(
   heightPx: number,
   hitRadiusPx = ROTATION_HANDLE_HIT_RADIUS_PX,
 ): boolean {
-  const [hx, hy] = rotationHandleNormPositionForFrame(frame, heightPx)
+  const [hx, hy] = rotationHandleNormPositionForFrame(frame, widthPx, heightPx)
   const px = hx * widthPx
   const py = hy * heightPx
   const qx = point[0] * widthPx
@@ -291,6 +515,30 @@ export function hitTestRotationHandle(
     heightPx,
     hitRadiusPx,
   )
+}
+
+/** Snapshot commands + oriented start frame when a rotate gesture begins. */
+export function prepareRotationGestureState(
+  commands: readonly AnnotationCommand[],
+  rotIds: readonly string[],
+  handleFrame: OrientedSelectionFrame,
+  layout: RotateAnnotationLayout,
+): {
+  pivot: [number, number]
+  startFrame: OrientedSelectionFrame
+  baseCommands: AnnotationCommand[]
+} {
+  const isGroup = rotIds.length > 1
+  return {
+    pivot: orientedFrameCenter(handleFrame),
+    startFrame: {
+      rect: { ...handleFrame.rect },
+      rotationDeg: handleFrame.rotationDeg,
+    },
+    baseCommands: isGroup
+      ? [...commands]
+      : snapshotRotationBaseCommands(commands, rotIds, layout.widthPx, layout.heightPx),
+  }
 }
 
 export type { OrientedSelectionFrame }
@@ -357,6 +605,19 @@ export function hitTestBoxShapeAtPoint(
 
 export function selectionPivotFromBounds(bounds: NormRect): [number, number] {
   return [bounds.x + bounds.w / 2, bounds.y + bounds.h / 2]
+}
+
+/** Oriented group selection chrome after rigid multi-stroke rotate commit. */
+export function committedRotationFrameFromGesture(
+  startFrame: OrientedSelectionFrame | null,
+  deltaRad: number,
+  rotatedIdCount: number,
+): OrientedSelectionFrame | null {
+  if (!startFrame || rotatedIdCount < 2 || Math.abs(deltaRad) < 1e-6) return null
+  return {
+    rect: startFrame.rect,
+    rotationDeg: normalizeDeg(startFrame.rotationDeg + radToDeg(deltaRad)),
+  }
 }
 
 export function angleFromPivotToPoint(pivot: [number, number], point: [number, number]): number {

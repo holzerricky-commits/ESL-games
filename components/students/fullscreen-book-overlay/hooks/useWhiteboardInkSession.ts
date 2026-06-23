@@ -17,6 +17,7 @@ import {
 } from '@/lib/books/whiteboard-session-persist'
 import { INK_SESSION_AUTOSAVE_MS } from '@/lib/books/ink-session-persist-config'
 import type { WhiteboardSessionDocument } from '@/lib/books/whiteboard-session-types'
+import type { SelectionMoveClampContext } from '@/lib/books/annotation-scale'
 import {
   createWhiteboardSessionStore,
   type WhiteboardSessionStore,
@@ -31,6 +32,7 @@ export type UseWhiteboardInkSessionArgs = {
   /** Class + local keys tried on reload so ink is not lost when session id differs. */
   storagePageKeyCandidates?: readonly string[]
   whiteboardSessionStoreRef: MutableRefObject<WhiteboardSessionStore | null>
+  selectionMoveClampRef?: MutableRefObject<SelectionMoveClampContext | null>
   onOverlayCaps?: (caps: { canUndo: boolean; canRedo: boolean }) => void
 }
 
@@ -42,6 +44,7 @@ export function useWhiteboardInkSession({
   storagePageKey,
   storagePageKeyCandidates,
   whiteboardSessionStoreRef,
+  selectionMoveClampRef,
   onOverlayCaps,
 }: UseWhiteboardInkSessionArgs) {
   const [whiteboardSessionDoc, setWhiteboardSessionDoc] = useState<WhiteboardSessionDocument | null>(null)
@@ -105,6 +108,7 @@ export function useWhiteboardInkSession({
     const store = createWhiteboardSessionStore(sessionKey, {
       autosaveMs: INK_SESSION_AUTOSAVE_MS,
       storageKeyCandidates: candidates,
+      getSelectionMoveClamp: () => selectionMoveClampRef?.current ?? null,
     })
     whiteboardSessionStoreRef.current = store
 
@@ -139,13 +143,20 @@ export function useWhiteboardInkSession({
       canRedo: initialState.canRedo,
     })
 
+    let lastOverlayCaps = {
+      canUndo: initialState.canUndo,
+      canRedo: initialState.canRedo,
+    }
     const unsub = store.subscribe((state) => {
       setWhiteboardSessionDoc(state.doc)
       whiteboardSessionDocRef.current = state.doc
-      onOverlayCaps?.({
-        canUndo: state.canUndo,
-        canRedo: state.canRedo,
-      })
+      if (
+        state.canUndo !== lastOverlayCaps.canUndo ||
+        state.canRedo !== lastOverlayCaps.canRedo
+      ) {
+        lastOverlayCaps = { canUndo: state.canUndo, canRedo: state.canRedo }
+        onOverlayCaps?.(lastOverlayCaps)
+      }
     })
 
     return () => {

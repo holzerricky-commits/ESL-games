@@ -11,7 +11,6 @@ describe('resolveAdjacentAnchorPage', () => {
         anchorPage: 2,
         direction: 1,
         visiblePages: spreadVisible,
-        isSinglePageMode: false,
       }),
     ).toBe(4)
   })
@@ -22,7 +21,6 @@ describe('resolveAdjacentAnchorPage', () => {
         anchorPage: 10,
         direction: 1,
         visiblePages: spreadVisible,
-        isSinglePageMode: false,
       }),
     ).toBeNull()
   })
@@ -33,7 +31,6 @@ describe('resolveAdjacentAnchorPage', () => {
       anchorPage: anchor,
       direction: 1,
       visiblePages: spreadVisible,
-      isSinglePageMode: false,
     })
     expect(a).toBe(3)
     anchor = a!
@@ -41,19 +38,7 @@ describe('resolveAdjacentAnchorPage', () => {
       anchorPage: anchor,
       direction: 1,
       visiblePages: spreadVisible,
-      isSinglePageMode: false,
     })
     expect(b).toBe(5)
-  })
-
-  it('steps by one page in single-page mode', () => {
-    expect(
-      resolveAdjacentAnchorPage({
-        anchorPage: 4,
-        direction: 1,
-        visiblePages: spreadVisible,
-        isSinglePageMode: true,
-      }),
-    ).toBe(5)
   })
 })

@@ -6,13 +6,18 @@ import {
   hitTestSelectedAnnotationIndex,
   isFullFigureGroupSelected,
   marqueeSelectModeFromDrag,
+  orientedSelectionFrameForCommand,
   resolveMarqueeSelectMode,
+  preferLiveRotationChromeFrame,
+  resolveSelectionHandleFrame,
   selectionOutlineFramesForChrome,
   selectionOutlineRects,
+  sharedRotationFrameFromStrokeMembers,
   translateAnnotationCommand,
   unionNormRects,
 } from '@/lib/books/annotation-select'
 import type { AnnotationCommand } from '@/lib/books/annotation-command-types'
+import { commitRotatedAnnotationCommands } from '@/lib/books/annotation-rotation'
 import { sanitizeAnnotationCommands } from '@/lib/books/annotation-storage'
 
 describe('annotation-select', () => {
@@ -259,6 +264,41 @@ describe('annotation-select', () => {
     expect(bounds).not.toBeNull()
   })
 
+  it('stroke bounds extend past top-left when points are off-page', () => {
+    const cmd: AnnotationCommand = {
+      kind: 'stroke',
+      id: 'x',
+      tool: 'pen',
+      points: [
+        [-0.05, -0.04],
+        [0.1, 0.08],
+      ],
+    }
+    const bounds = getAnnotationBounds(cmd, 800, 600)
+    expect(bounds).not.toBeNull()
+    expect(bounds!.x).toBeLessThan(0)
+    expect(bounds!.y).toBeLessThan(0)
+  })
+
+  it('translates stroke points past page edges without squashing geometry', () => {
+    const cmd: AnnotationCommand = {
+      kind: 'stroke',
+      id: 'x',
+      tool: 'pen',
+      points: [
+        [0.85, 0.5],
+        [0.95, 0.5],
+      ],
+    }
+    const moved = translateAnnotationCommand(cmd, 0.2, 0)
+    expect(moved.kind).toBe('stroke')
+    if (moved.kind === 'stroke') {
+      expect(moved.points[0]![0]).toBeCloseTo(1.05)
+      expect(moved.points[1]![0]).toBeCloseTo(1.15)
+      expect(moved.points[0]![0]).not.toBe(moved.points[1]![0])
+    }
+  })
+
   it('selectionOutlineFramesForChrome applies live rotation to pen stroke outline', () => {
     const cmd: AnnotationCommand = {
       kind: 'stroke',
@@ -285,6 +325,236 @@ describe('annotation-select', () => {
     expect(frames).toHaveLength(1)
     expect(frames[0]!.rotationDeg).toBeCloseTo(45, 3)
     expect(frames[0]!.rect).toEqual(startFrame.rect)
+  })
+
+  it('getAnnotationBounds inflates rect stroke by half line width', () => {
+    const cmd: AnnotationCommand = {
+      kind: 'rect',
+      id: 'r1',
+      x: 0.2,
+      y: 0.2,
+      w: 0.2,
+      h: 0.1,
+      strokeColor: '#000',
+      strokeWidthScale: 2,
+    }
+    const bounds = getAnnotationBounds(cmd, 800, 600)!
+    expect(bounds.x).toBeLessThan(0.2)
+    expect(bounds.y).toBeLessThan(0.2)
+    expect(bounds.x + bounds.w).toBeGreaterThan(0.4)
+    expect(bounds.y + bounds.h).toBeGreaterThan(0.3)
+  })
+
+  it('brush pen bounds are at least as large as plain pen bounds', () => {
+    const points: [number, number][] = [
+      [0.3, 0.3],
+      [0.5, 0.35],
+    ]
+    const plain: AnnotationCommand = {
+      kind: 'stroke',
+      id: 'p',
+      tool: 'pen',
+      points,
+      color: '#000',
+    }
+    const brush: AnnotationCommand = {
+      kind: 'stroke',
+      id: 'b',
+      tool: 'pen',
+      points,
+      color: '#000',
+      penStrokeProfile: 'brush',
+    }
+    const plainBounds = getAnnotationBounds(plain, 800, 600)!
+    const brushBounds = getAnnotationBounds(brush, 800, 600)!
+    expect(brushBounds.w).toBeGreaterThanOrEqual(plainBounds.w)
+    expect(brushBounds.h).toBeGreaterThanOrEqual(plainBounds.h)
+  })
+
+  it('selectionOutlineFramesForChrome uses scaled bounds with stale committed rotation frame', () => {
+    const preScaleBounds = { x: 0.28, y: 0.48, w: 0.44, h: 0.06 }
+    const scaledBounds = { x: 0.26, y: 0.46, w: 0.48, h: 0.08 }
+    const commands: AnnotationCommand[] = [
+      {
+        kind: 'stroke',
+        id: 'a',
+        tool: 'pen',
+        figureGroupId: 'g1',
+        points: [
+          [0.3, 0.5],
+          [0.4, 0.5],
+        ],
+        color: '#000',
+        rotationBounds: scaledBounds,
+        rotationDeg: 45,
+      },
+      {
+        kind: 'stroke',
+        id: 'b',
+        tool: 'pen',
+        figureGroupId: 'g1',
+        points: [
+          [0.6, 0.5],
+          [0.7, 0.5],
+        ],
+        color: '#000',
+        rotationBounds: scaledBounds,
+        rotationDeg: 45,
+      },
+    ]
+    const committedFrame = { rect: preScaleBounds, rotationDeg: 45 }
+    const frames = selectionOutlineFramesForChrome(
+      commands,
+      ['a', 'b'],
+      800,
+      600,
+      'union',
+      undefined,
+      null,
+      null,
+      committedFrame,
+    )
+    expect(frames).toHaveLength(1)
+    expect(frames[0]!.rect).toEqual(scaledBounds)
+    expect(frames[0]!.rotationDeg).toBeCloseTo(45, 3)
+  })
+
+  it('resolveSelectionHandleFrame prefers scaled shared bounds over committed snapshot', () => {
+    const preScaleBounds = { x: 0.28, y: 0.48, w: 0.44, h: 0.06 }
+    const scaledBounds = { x: 0.26, y: 0.46, w: 0.48, h: 0.08 }
+    const commands: AnnotationCommand[] = [
+      {
+        kind: 'stroke',
+        id: 'a',
+        tool: 'pen',
+        points: [
+          [0.3, 0.5],
+          [0.4, 0.5],
+        ],
+        color: '#000',
+        rotationBounds: scaledBounds,
+        rotationDeg: 45,
+      },
+      {
+        kind: 'stroke',
+        id: 'b',
+        tool: 'pen',
+        points: [
+          [0.6, 0.5],
+          [0.7, 0.5],
+        ],
+        color: '#000',
+        rotationBounds: scaledBounds,
+        rotationDeg: 45,
+      },
+    ]
+    const frame = resolveSelectionHandleFrame(
+      commands,
+      ['a', 'b'],
+      800,
+      600,
+      { x: 0.26, y: 0.46, w: 0.48, h: 0.08 },
+      null,
+      null,
+      { rect: preScaleBounds, rotationDeg: 45 },
+    )
+    expect(frame?.rect).toEqual(scaledBounds)
+    expect(preferLiveRotationChromeFrame(commands, ['a', 'b'], 800, 600, {
+      rect: preScaleBounds,
+      rotationDeg: 45,
+    }).rect).toEqual(scaledBounds)
+  })
+
+  it('selectionOutlineFramesForChrome keeps shared rotation for re-selected figure group', () => {
+    const sharedBounds = { x: 0.28, y: 0.48, w: 0.44, h: 0.06 }
+    const commands: AnnotationCommand[] = [
+      {
+        kind: 'stroke',
+        id: 'a',
+        tool: 'pen',
+        figureGroupId: 'g1',
+        points: [
+          [0.3, 0.5],
+          [0.4, 0.5],
+        ],
+        color: '#000',
+        rotationBounds: sharedBounds,
+        rotationDeg: 45,
+      },
+      {
+        kind: 'stroke',
+        id: 'b',
+        tool: 'pen',
+        figureGroupId: 'g1',
+        points: [
+          [0.6, 0.5],
+          [0.7, 0.5],
+        ],
+        color: '#000',
+        rotationBounds: sharedBounds,
+        rotationDeg: 45,
+      },
+    ]
+    expect(sharedRotationFrameFromStrokeMembers(commands as never)).toEqual({
+      rect: sharedBounds,
+      rotationDeg: 45,
+    })
+    const frames = selectionOutlineFramesForChrome(commands, ['a', 'b'], 800, 600)
+    expect(frames).toHaveLength(1)
+    expect(frames[0]!.rotationDeg).toBeCloseTo(45, 3)
+    expect(frames[0]!.rect).toEqual(sharedBounds)
+  })
+
+  it('selectionOutlineFramesForChrome keeps rotationDeg for lone auto-grouped pen stroke', () => {
+    const stroke: AnnotationCommand = {
+      kind: 'stroke',
+      id: 's1',
+      tool: 'pen',
+      figureGroupId: 'g1',
+      points: [
+        [0.5, 0.5],
+        [0.6, 0.5],
+      ],
+      color: '#000',
+      rotationBounds: { x: 0.48, y: 0.48, w: 0.14, h: 0.06 },
+      rotationDeg: 45,
+    }
+    const frames = selectionOutlineFramesForChrome([stroke], ['s1'], 800, 600)
+    expect(frames).toHaveLength(1)
+    expect(frames[0]!.rotationDeg).toBeCloseTo(45, 3)
+    expect(frames[0]!.rect).toEqual(stroke.rotationBounds)
+  })
+
+  it('selectionOutlineFramesForChrome keeps rotationDeg after commit without live delta', () => {
+    const stroke: AnnotationCommand = {
+      kind: 'stroke',
+      id: 's1',
+      tool: 'pen',
+      points: [
+        [0.5, 0.5],
+        [0.6, 0.5],
+      ],
+      color: '#000',
+    }
+    const previewBase = [
+      {
+        ...stroke,
+        rotationBounds: { x: 0.48, y: 0.48, w: 0.14, h: 0.06 },
+      },
+    ]
+    const committed = commitRotatedAnnotationCommands(
+      [stroke],
+      new Set(['s1']),
+      [0.55, 0.5],
+      Math.PI / 2,
+      { widthPx: 800, heightPx: 600 },
+      previewBase,
+    )
+    const frames = selectionOutlineFramesForChrome(committed, ['s1'], 800, 600)
+    expect(frames).toHaveLength(1)
+    expect(frames[0]!.rotationDeg).toBeCloseTo(90, 3)
+    const frame = orientedSelectionFrameForCommand(committed[0]!, 800, 600)
+    expect(frame?.rotationDeg).toBeCloseTo(90, 3)
   })
 
   it('sanitizeAnnotationCommands keeps pen stroke rotation fields', () => {

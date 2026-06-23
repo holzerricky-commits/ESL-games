@@ -1,7 +1,7 @@
 'use client'
 
 import { Bold, BookMarked, Heading3, Languages, List, PanelRightClose, PenLine } from 'lucide-react'
-import type { ClipboardEvent, MutableRefObject } from 'react'
+import { useEffect, useState, type ClipboardEvent, type MutableRefObject } from 'react'
 import { CoachDictationLessonPaperChip } from '@/components/lesson-coach/coach-dictation-lesson-paper-chip'
 import {
   CoachSentenceGrammarPanel,
@@ -10,6 +10,9 @@ import {
 import { useLessonCoachSync } from '@/lib/lesson-coach/lesson-coach-sync-context'
 import { getContentEditablePlainText } from '@/lib/writing-assist/caret-text'
 import { useWritingAssist } from '@/lib/writing-assist/use-writing-assist'
+import { useSpellMarkerSpans } from '@/lib/writing-assist/use-spell-marker-spans'
+import { WritingAssistGhostUi } from '@/components/writing-assist/writing-assist-ghost-hint'
+import { WritingAssistSpellMirror } from '@/components/writing-assist/writing-assist-spell-mirror'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { isNotebookDocEmpty } from '@/lib/books/notebook-doc-empty'
@@ -94,17 +97,38 @@ export function LessonPaperPanel({
 }: LessonPaperPanelProps) {
   const coach = useLessonCoachSync()
 
-  const { bindContentEditable } = useWritingAssist()
+  const {
+    bindContentEditable,
+    ghost,
+    ghostPartial,
+    ghostCandidates,
+    ghostIndex,
+  } = useWritingAssist()
+
+  const [lessonPaperPlainForAssist, setLessonPaperPlainForAssist] = useState('')
 
   const lessonPaperAssist = bindContentEditable({
     editorRef: lessonPaperEditorRef,
     onSync: onLessonPaperInput,
-    dictationMode: true,
+    dictationMode: coach.dictationMode,
   })
+
+  useEffect(() => {
+    if (!lessonPaperEditorRef.current) return
+    setLessonPaperPlainForAssist(getContentEditablePlainText(lessonPaperEditorRef.current))
+  }, [lessonPaperEditVersion, lessonPaperEditorRef, lessonPaperHtml])
+
+  const spellSpans = useSpellMarkerSpans(
+    lessonPaperPlainForAssist,
+    notebookEditable && !coach.dictationMode,
+  )
 
   const handleLessonPaperEditorInput = () => {
     onLessonPaperInput()
     lessonPaperAssist.onInput?.()
+    if (lessonPaperEditorRef.current) {
+      setLessonPaperPlainForAssist(getContentEditablePlainText(lessonPaperEditorRef.current))
+    }
     if (coach.sessionId && lessonPaperEditorRef.current) {
       coach.syncSharedText(
         getContentEditablePlainText(lessonPaperEditorRef.current),
@@ -319,9 +343,25 @@ export function LessonPaperPanel({
             <div className="relative mt-8 min-h-full">
               <div className="flex w-full flex-col items-stretch gap-0">
                 <div className="relative min-w-0 w-full">
+                  {notebookEditable && !coach.dictationMode ? (
+                    <WritingAssistSpellMirror
+                      text={lessonPaperPlainForAssist}
+                      spans={spellSpans}
+                      className="px-0 py-0"
+                      style={{
+                        fontFamily:
+                          '"Avenir Next Rounded", "Nunito", "Trebuchet MS", "Segoe UI", sans-serif',
+                        fontSize: '1.5rem',
+                        fontWeight: 600,
+                        lineHeight: 1.75,
+                        color: '#2f2f2f',
+                        minHeight: '8rem',
+                      }}
+                    />
+                  ) : null}
                   <div
                     ref={lessonPaperEditorRef}
-                    className={`relative min-h-[8rem] w-full p-0 text-[1.5rem] font-semibold leading-[1.75] text-[#2f2f2f] outline-none caret-[#2f2f2f] empty:before:pointer-events-none empty:before:text-[#9ca3af] empty:before:content-[attr(data-placeholder)] ${
+                    className={`relative z-[1] min-h-[8rem] w-full p-0 text-[1.5rem] font-semibold leading-[1.75] text-[#2f2f2f] outline-none caret-[#2f2f2f] empty:before:pointer-events-none empty:before:text-[#9ca3af] empty:before:content-[attr(data-placeholder)] ${
                       canType ? 'cursor-text' : 'pointer-events-none opacity-95'
                     }`}
                     contentEditable={canType}
@@ -354,6 +394,24 @@ export function LessonPaperPanel({
                         '"Avenir Next Rounded", "Nunito", "Trebuchet MS", "Segoe UI", sans-serif',
                     }}
                   />
+                  {canType && !coach.dictationMode && lessonPaperPlainForAssist.length > 0 ? (
+                    <WritingAssistGhostUi
+                      text={lessonPaperPlainForAssist}
+                      ghost={ghost}
+                      partial={ghostPartial}
+                      candidates={ghostCandidates}
+                      candidateIndex={ghostIndex}
+                      mirrorStyle={{
+                        fontFamily:
+                          '"Avenir Next Rounded", "Nunito", "Trebuchet MS", "Segoe UI", sans-serif',
+                        fontSize: '1.5rem',
+                        fontWeight: 600,
+                        lineHeight: 1.75,
+                        minHeight: '8rem',
+                      }}
+                      stripClassName="-top-10"
+                    />
+                  ) : null}
                 </div>
                 {lessonPaperGrammarVisible ? (
                   <CoachSentenceGrammarPanel

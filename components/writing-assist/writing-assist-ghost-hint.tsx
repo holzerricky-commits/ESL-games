@@ -1,30 +1,255 @@
 'use client'
 
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type RefObject,
+} from 'react'
+import { createPortal } from 'react-dom'
 import type { GhostSuggestion } from '@/lib/writing-assist/ghost-complete'
+import { cn } from '@/lib/utils'
 
-/** Visible Tab completion hint below the active typing field. */
-export function WritingAssistGhostHintBar({
+type GhostMirrorStyle = CSSProperties
+
+const STRIP_Z_INDEX = 10050
+
+function useAnchorRect(
+  anchorRef: RefObject<HTMLElement | null>,
+  active: boolean,
+  revisionKey: string,
+): DOMRect | null {
+  const [rect, setRect] = useState<DOMRect | null>(null)
+
+  useLayoutEffect(() => {
+    if (!active) {
+      setRect(null)
+      return
+    }
+
+    const el = anchorRef.current
+    if (!el) {
+      setRect(null)
+      return
+    }
+
+    const update = () => {
+      const next = anchorRef.current
+      setRect(next ? next.getBoundingClientRect() : null)
+    }
+
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(el)
+
+    window.addEventListener('scroll', update, true)
+    window.addEventListener('resize', update)
+
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('scroll', update, true)
+      window.removeEventListener('resize', update)
+    }
+  }, [anchorRef, active, revisionKey])
+
+  return rect
+}
+
+/** Faded completion inline after the typed text (Gmail / iOS style). */
+export function WritingAssistInlineGhost({
+  text,
   ghost,
-  partial = '',
+  className,
+  style,
 }: {
+  text: string
   ghost: GhostSuggestion | null
-  partial?: string
+  className?: string
+  style?: GhostMirrorStyle
 }) {
   if (!ghost?.suffix) return null
 
-  const preview = partial
-    ? `${partial}${ghost.suffix}`
-    : ghost.word
+  return (
+    <div
+      className={cn(
+        'pointer-events-none absolute inset-0 z-[3] box-border overflow-x-visible overflow-y-hidden whitespace-pre-wrap break-words',
+        className,
+      )}
+      style={style}
+      aria-hidden
+    >
+      <span className="text-transparent">{text}</span>
+      <span className="text-slate-400/55">{ghost.suffix}</span>
+    </div>
+  )
+}
+
+function PredictionChip({
+  candidate,
+  partial,
+  active,
+}: {
+  candidate: GhostSuggestion
+  partial: string
+  active: boolean
+}) {
+  const word = candidate.word
+  const partLower = partial.toLowerCase()
+  const showSplit = partLower.length > 0 && word.startsWith(partLower)
+
+  return (
+    <span
+      title={word}
+      className={cn(
+        'inline-flex shrink-0 items-baseline whitespace-nowrap rounded-md px-2 py-0.5 text-[11px] font-medium leading-tight',
+        active ? 'bg-slate-100 text-slate-800 ring-1 ring-slate-200' : 'text-slate-500',
+      )}
+    >
+      {showSplit ? (
+        <>
+          <span className="text-slate-400">{partial}</span>
+          <span>{word.slice(partLower.length)}</span>
+        </>
+      ) : (
+        word
+      )}
+    </span>
+  )
+}
+
+/** Light prediction chips when several next-word options exist (mobile keyboard style). */
+export function WritingAssistPredictionStrip({
+  candidates,
+  activeIndex,
+  partial = '',
+  className,
+  style,
+}: {
+  candidates: GhostSuggestion[]
+  activeIndex: number
+  partial?: string
+  className?: string
+  style?: CSSProperties
+}) {
+  if (candidates.length <= 1) return null
+
+  const visible = candidates.slice(0, 5)
 
   return (
     <div
-      className="pointer-events-none absolute -bottom-8 left-0 z-[40] flex max-w-[min(100%,20rem)] items-center gap-1.5 rounded-md border border-amber-300/70 bg-amber-950/95 px-2 py-1 shadow-md backdrop-blur-sm"
+      className={cn('pointer-events-none flex w-max max-w-full items-center gap-1', className)}
+      style={style}
+      data-writing-assist-ui
       aria-hidden
     >
-      <kbd className="shrink-0 rounded border border-amber-200/40 bg-amber-800 px-1.5 py-0.5 font-sans text-[10px] font-semibold text-amber-50">
-        Tab
-      </kbd>
-      <span className="truncate text-xs font-semibold text-amber-50">{preview}</span>
+      <div className="inline-flex w-max max-w-full items-center gap-1 overflow-x-auto rounded-lg border border-slate-200/90 bg-white/95 px-1.5 py-1 shadow-sm backdrop-blur-sm [scrollbar-width:thin]">
+        {visible.map((candidate, i) => (
+          <PredictionChip
+            key={`${candidate.word}-${i}`}
+            candidate={candidate}
+            partial={partial}
+            active={i === activeIndex}
+          />
+        ))}
+      </div>
     </div>
+  )
+}
+
+function WritingAssistPredictionStripPortal({
+  anchorRef,
+  candidates,
+  activeIndex,
+  partial,
+  anchorRevision = '',
+  stripOffsetPx = 6,
+}: {
+  anchorRef: RefObject<HTMLElement | null>
+  candidates: GhostSuggestion[]
+  activeIndex: number
+  partial?: string
+  anchorRevision?: string
+  stripOffsetPx?: number
+}) {
+  const active = candidates.length > 1
+  const revisionKey = `${anchorRevision}:${activeIndex}:${partial}:${candidates.map((c) => c.word).join('\0')}`
+  const rect = useAnchorRect(anchorRef, active, revisionKey)
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  if (!mounted || !active || !rect) return null
+
+  const viewportPad = 12
+  const maxWidth = Math.max(160, Math.min(448, window.innerWidth - rect.left - viewportPad))
+
+  const style: CSSProperties = {
+    position: 'fixed',
+    left: Math.max(viewportPad, rect.left),
+    top: rect.top - stripOffsetPx,
+    transform: 'translateY(-100%)',
+    maxWidth,
+    zIndex: STRIP_Z_INDEX,
+  }
+
+  return createPortal(
+    <WritingAssistPredictionStrip
+      candidates={candidates}
+      activeIndex={activeIndex}
+      partial={partial}
+      style={style}
+    />,
+    document.body,
+  )
+}
+
+/** Inline ghost + optional multi-candidate strip. */
+export function WritingAssistGhostUi({
+  text,
+  ghost,
+  partial = '',
+  candidates = [],
+  candidateIndex = 0,
+  mirrorClassName,
+  mirrorStyle,
+  stripOffsetPx = 6,
+}: {
+  text: string
+  ghost: GhostSuggestion | null
+  partial?: string
+  candidates?: GhostSuggestion[]
+  candidateIndex?: number
+  mirrorClassName?: string
+  mirrorStyle?: GhostMirrorStyle
+  /** @deprecated Strip is portaled; offset is controlled by stripOffsetPx. */
+  stripClassName?: string
+  stripOffsetPx?: number
+}) {
+  const anchorRef = useRef<HTMLDivElement>(null)
+
+  if (text.length === 0 || !ghost?.suffix) return null
+
+  return (
+    <>
+      <div ref={anchorRef} className="pointer-events-none absolute inset-0 z-[2]" aria-hidden />
+      <WritingAssistInlineGhost
+        text={text}
+        ghost={ghost}
+        className={mirrorClassName}
+        style={mirrorStyle}
+      />
+      <WritingAssistPredictionStripPortal
+        anchorRef={anchorRef}
+        candidates={candidates}
+        activeIndex={candidateIndex}
+        partial={partial}
+        anchorRevision={text}
+        stripOffsetPx={stripOffsetPx}
+      />
+    </>
   )
 }

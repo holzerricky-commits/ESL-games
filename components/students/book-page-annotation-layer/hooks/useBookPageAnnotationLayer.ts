@@ -25,7 +25,8 @@ import {
 } from '@/lib/books/annotation-render-slices'
 import {
   isInkSessionDelegatedCanvasCommand,
-  pageLayerCanvasCommandsWhenSpreadInkDelegated,
+  isSpreadSessionOwnedCommand,
+  pageLayerCommandsWhenSpreadDelegated,
   pageLayerCanvasCommandsWhenWhiteboardInkDelegated,
 } from '@/lib/books/ink-session-page-layer'
 import {
@@ -73,7 +74,10 @@ import {
   effectiveStrokeToolForPointer,
   isAnnotationPointerDownAccepted,
 } from '@/lib/books/pen-barrel-button'
-import { buildHoldShapeCommand } from '@/lib/books/hold-shape-commit'
+import {
+  buildHoldMarkerLineStrokeCommand,
+  buildHoldShapeCommand,
+} from '@/lib/books/hold-shape-commit'
 import {
   createStrokeHoldStraightTracker,
   resetStrokeHoldStraightTracker,
@@ -98,13 +102,14 @@ import { resolveAnnotationToolCursor } from '@/lib/books/annotation-tool-cursor'
 import {
   annotationIdsInMarquee,
   hitTestAnnotationIndex,
+  hitTestTextAnnotationIndex,
   hitTestSelectedAnnotationIndex,
   normalizeMarqueeRect,
   resolveMarqueeSelectMode,
   resolveSelectionHandleFrame,
-  rotationStartFrameForGesture,
   selectionOutlineFramesForChrome,
-  snapshotRotationBaseCommands,
+  selectionIdsMatch,
+  resolveSelectClickTargetIds,
   translateAnnotationCommands,
   type GroupSelectionChrome,
   type MarqueeSelectMode,
@@ -112,7 +117,6 @@ import {
   type NormRect,
   type OrientedSelectionFrame,
 } from '@/lib/books/annotation-select'
-import { resolvePenMarkerSelectionIds } from '@/lib/books/annotation-connected-strokes'
 import {
   autoGroupPenStrokeAfterCommit,
   lockPenFigureAutoJoinOnCommands,
@@ -140,24 +144,45 @@ import { cursorForRotationHandle } from '@/lib/books/annotation-selection-chrome
 import {
   angleFromPivotToPoint,
   commitRotatedAnnotationCommands,
+  committedRotationFrameFromGesture,
   hitTestRotationHandleForFrame,
+  isRotateCommitOverlaySynced,
+  prepareRotationGestureState,
+  mergeRotatedCommandOverlay,
   rotateAnnotationCommands,
+  rotatedCommandsFromCommitOverlay,
   rotatableIdsInSelection,
   selectionHasRotatableShapes,
-  selectionPivotFromBounds,
 } from '@/lib/books/annotation-rotation'
 import {
-  cursorForScaleHandle,
+  clampSelectionMoveDelta,
+  cursorForScaleHandleOnFrame,
   hitTestScaleHandleForFrame,
-  resizeBoundsFromHandle,
-  scaleAnnotationCommands,
-  unionSelectionBounds,
+  resizeOrientedFrameFromHandle,
+  scaleAnnotationCommandsFromOrientedFrames,
   type ScaleHandleId,
 } from '@/lib/books/annotation-scale'
 import {
   commitBookOverlayTypingTarget,
+  endBookOverlayAnnotationEditingFocus,
   isAnnotationTextFieldFocused,
+  setBookOverlayAnnotationEditSessionId,
 } from '@/lib/books/book-overlay-keyboard-guards'
+import { shouldDismissBookOverlayAnnotationEditOnPointerDown } from '@/lib/books/book-overlay-typing-dismiss'
+import {
+  isQuickStickerInteraction,
+  isWritableStickerInteraction,
+} from '@/lib/books/sticker-tool'
+import {
+  defaultWritableStickerFill,
+  defaultWritableStickerSize,
+} from '@/lib/books/writable-sticker-visuals'
+import {
+  resolveTextToolHoverTargetId,
+  textToolEditingOutlineFrames,
+  textToolHoverOutlineFrames,
+  textToolPlacementCursor,
+} from '@/lib/books/text-tool-hover'
 import type { PenStrokeProfile } from '@/lib/books/pen-stroke-profile'
 import { useLessonCoachSyncActions } from '@/lib/lesson-coach/lesson-coach-sync-context'
 import { cn } from '@/lib/utils'
@@ -192,6 +217,19 @@ import type {
   TwoPointDraft,
 } from '@/components/students/book-page-annotation-layer/types'
 import type { BookPageAnnotationLayerViewProps } from '@/components/students/book-page-annotation-layer/BookPageAnnotationLayerView'
+import { useInkSessionSelectionInteraction } from '@/components/students/ink-session-selection/useInkSessionSelectionInteraction'
+
+function pageLocalSelectedIds(
+  commands: readonly AnnotationCommand[],
+  selectedIds: readonly string[],
+  sessionOwnsCanvasInk: boolean,
+): string[] {
+  if (!sessionOwnsCanvasInk) return [...selectedIds]
+  return selectedIds.filter((id) => {
+    const cmd = commands.find((c) => c.id === id)
+    return cmd != null && !isSpreadSessionOwnedCommand(cmd)
+  })
+}
 
 export function useBookPageAnnotationLayer(
   props: BookPageAnnotationLayerProps,
@@ -208,6 +246,8 @@ export function useBookPageAnnotationLayer(
       heightPx,
       mode,
       eyedropperVariant = 'sample',
+      stickerKind = 'quick',
+      writableStickerVariant = 'note',
       stampVariant,
       stampQuestionColor = DEFAULT_STAMP_QUESTION_COLOR,
       strokeWidthScale,
@@ -251,10 +291,19 @@ export function useBookPageAnnotationLayer(
       whiteboardInkDelegated = false,
       whiteboardSessionStoreRef,
       onSelectionMoveCommitted,
+      onSpreadCanvasCommandCommit,
   } = props
 
+    const isSelect = mode === 'select'
     const { setAnnotationGestureActive } = useLessonCoachSyncActions()
     const overlayRef = useRef<HTMLDivElement | null>(null)
+    const paintRef = useRef<
+      (
+        draftStroke: StrokeAnnotationCommand | null,
+        twoDraft: TwoPointDraft | null,
+        options?: AnnotationPaintOptions,
+      ) => void
+    >(() => {})
     const inkSliceRefs = useRef<(HTMLCanvasElement | null)[]>([])
     const markerSliceRefs = useRef<(HTMLCanvasElement | null)[]>([])
     const draftInkCanvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -283,35 +332,14 @@ export function useBookPageAnnotationLayer(
     const groupSelectionChromeRef = useRef<GroupSelectionChrome>('union')
     groupSelectionChromeRef.current = groupSelectionChrome
     const [editingId, setEditingId] = useState<string | null>(null)
-    const [marqueeRect, setMarqueeRect] = useState<NormRect | null>(null)
-    const [marqueeMode, setMarqueeMode] = useState<MarqueeSelectMode | null>(null)
-    const [selectDragLive, setSelectDragLive] = useState<{ dx: number; dy: number } | null>(null)
-    const [selectScaleLiveBounds, setSelectScaleLiveBounds] = useState<NormRect | null>(null)
-    const [selectRotationLiveDelta, setSelectRotationLiveDelta] = useState<number | null>(null)
-    const [pointerOverSelection, setPointerOverSelection] = useState(false)
-    const [hoveredScaleHandle, setHoveredScaleHandle] = useState<ScaleHandleId | null>(null)
-    const [hoveredRotationHandle, setHoveredRotationHandle] = useState(false)
+    const [selectTextEditActive, setSelectTextEditActive] = useState(false)
+    const dismissedTextEditIdRef = useRef<string | null>(null)
+    const [textToolHoverTargetId, setTextToolHoverTargetId] = useState<string | null>(null)
+    const [editingTextDraft, setEditingTextDraft] = useState<string | null>(null)
+    const [rotateCommitOverlay, setRotateCommitOverlay] = useState<AnnotationCommand[] | null>(null)
+    const [rotateCommitFrame, setRotateCommitFrame] = useState<OrientedSelectionFrame | null>(null)
     const selectedIdsRef = useRef<string[]>([])
-    const selectGestureRef = useRef<'marquee' | 'move' | 'scale' | 'rotate' | null>(null)
-    const marqueeSelModeRef = useRef<SelectionChangeMode>('replace')
-    const selectAnchorRef = useRef<[number, number] | null>(null)
-    const selectDragLiveRef = useRef<{ dx: number; dy: number } | null>(null)
-    /** Ids translated during an active select drag (whole selection or one limb in group-edit). */
-    const selectMoveIdsRef = useRef<string[]>([])
-    const selectScaleIdsRef = useRef<string[]>([])
-    const selectScaleStartBoundsRef = useRef<NormRect | null>(null)
-    const selectScaleHandleRef = useRef<ScaleHandleId | null>(null)
-    const selectScaleLiveBoundsRef = useRef<NormRect | null>(null)
-    const selectRotateIdsRef = useRef<string[]>([])
-    const selectRotationPivotRef = useRef<[number, number] | null>(null)
-    const selectRotationStartAngleRef = useRef<number | null>(null)
-    const selectRotationBaseCommandsRef = useRef<AnnotationCommand[] | null>(null)
-    const selectRotationStartFrameRef = useRef<OrientedSelectionFrame | null>(null)
-    const selectRotationLiveDeltaRef = useRef<number | null>(null)
-    selectScaleLiveBoundsRef.current = selectScaleLiveBounds
-    selectRotationLiveDeltaRef.current = selectRotationLiveDelta
     selectedIdsRef.current = selectedIds
-    selectDragLiveRef.current = selectDragLive
     /** Bumped when live eraser preview dead indices change so DOM text/stickies hide in sync with canvas. */
     const [erasePreviewEpoch, setErasePreviewEpoch] = useState(0)
     const erasePreviewDeadKeyRef = useRef<string | null>(null)
@@ -335,7 +363,7 @@ export function useBookPageAnnotationLayer(
 
     const canvasPaintCommands = useMemo(() => {
       if (spreadInkDelegated) {
-        return pageLayerCanvasCommandsWhenSpreadInkDelegated(commands, true)
+        return pageLayerCommandsWhenSpreadDelegated(commands, true)
       }
       if (whiteboardInkDelegated || whiteboardPenInkDelegated) {
         return pageLayerCanvasCommandsWhenWhiteboardInkDelegated(commands, true)
@@ -452,6 +480,221 @@ export function useBookPageAnnotationLayer(
       [persist],
     )
 
+    const clampMoveDeltaForSelection = useCallback(
+      (dx: number, dy: number, ids?: readonly string[]) => {
+        const useIds = ids ?? selectedIdsRef.current
+        const trailing = eraserLineTrailingForReplay(
+          draftStrokeRef.current,
+          liveEraserLineDraftRef.current,
+        )
+        const dead = computeEraserLineDeadIndices(commandsRef.current, trailing)
+        return clampSelectionMoveDelta(
+          commandsRef.current,
+          useIds,
+          dx,
+          dy,
+          widthPx,
+          heightPx,
+          { deadIndices: dead },
+        )
+      },
+      [widthPx, heightPx],
+    )
+
+    const commandsForSelectionChrome = useMemo(() => {
+      const base = sessionOwnsCanvasInk ? canvasPaintCommands : commands
+      return mergeRotatedCommandOverlay(base, rotateCommitOverlay)
+    }, [canvasPaintCommands, commands, rotateCommitOverlay, sessionOwnsCanvasInk])
+
+    const deadIndicesForInteraction = useMemo(() => {
+      const trailing = eraserLineTrailingForReplay(
+        draftStrokeRef.current,
+        liveEraserLineDraftRef.current,
+      )
+      return computeEraserLineDeadIndices(commands, trailing)
+    }, [commands, erasePreviewEpoch])
+
+    const pageToNorm = useCallback(
+      (el: HTMLDivElement, clientX: number, clientY: number): [number, number] | null => {
+        const target = overlayRef.current ?? el
+        const r = target.getBoundingClientRect()
+        if (r.width <= 0 || r.height <= 0) return null
+        const nx = (clientX - r.left) / r.width
+        const ny = (clientY - r.top) / r.height
+        return [clamp01(nx), clamp01(ny)]
+      },
+      [],
+    )
+
+    const resolveClickTargetForSelection = useCallback(
+      (cmd: AnnotationCommand) => {
+        const trailing = eraserLineTrailingForReplay(
+          draftStrokeRef.current,
+          liveEraserLineDraftRef.current,
+        )
+        const dead = computeEraserLineDeadIndices(commandsRef.current, trailing)
+        return resolveSelectClickTargetIds(commandsRef.current, cmd, widthPx, heightPx, dead)
+      },
+      [widthPx, heightPx],
+    )
+
+    const selectMoveIdsForDrag = useCallback(
+      (hitCmd: AnnotationCommand): string[] => {
+        if (
+          groupSelectionChromeRef.current === 'perStroke' &&
+          hitCmd.kind === 'stroke' &&
+          (hitCmd.tool === 'pen' || hitCmd.tool === 'marker') &&
+          selectedIdsRef.current.includes(hitCmd.id)
+        ) {
+          return [hitCmd.id]
+        }
+        return [...selectedIdsRef.current]
+      },
+      [],
+    )
+
+    const selectionChromeEnabled = isSelect || selectedIds.length > 0
+
+    const selection = useInkSessionSelectionInteraction(
+      {
+        enabled: selectionChromeEnabled,
+        pointerEnabled: true,
+        hoverEnabled: selectionChromeEnabled,
+        hitTestCommands: commandsForSelectionChrome,
+        paintCommands: canvasPaintCommands,
+        selectedIds,
+        widthPx,
+        heightPx,
+        deadIndices: deadIndicesForInteraction,
+        groupSelectionChrome,
+        marqueeSelectRule,
+        editingId,
+        rotateCommitFrame,
+        clearSelectionOnEmptyClick: true,
+        onSelectedIdsChange: setSelectedIds,
+        onGroupChromeReset: () => setGroupSelectionChrome('union'),
+        onClearEditing: () => {
+          endBookOverlayAnnotationEditingFocus(overlayRef.current)
+          setBookOverlayAnnotationEditSessionId(null)
+          setFocusNewId(null)
+          setEditingId(null)
+          setEditingTextDraft(null)
+          setSelectTextEditActive(false)
+        },
+        acceptPointerDown: isAnnotationPointerDownAccepted,
+        resolveClickTargetIds: resolveClickTargetForSelection,
+        selectMoveIdsForDrag,
+        clampMoveDelta: clampMoveDeltaForSelection,
+        onGestureLiveChange: () => paintRef.current(null, null),
+        onMoveCommitted: (dx, dy, moveIds) => {
+          if (dx === 0 && dy === 0) return
+          const { dx: cdx, dy: cdy } = clampMoveDeltaForSelection(dx, dy, moveIds)
+          if (cdx === 0 && cdy === 0) return
+          pushUndoSnapshot()
+          const next = translateAnnotationCommands(
+            commandsRef.current,
+            new Set(moveIds),
+            cdx,
+            cdy,
+          )
+          setCommands(next)
+          persist(next)
+          onSelectionMoveCommitted?.([...moveIds], cdx, cdy)
+        },
+        onScaleCommitted: (startFrame, newFrame) => {
+          pushUndoSnapshot()
+          const ids = new Set(selectedIdsRef.current)
+          const next = scaleAnnotationCommandsFromOrientedFrames(
+            commandsRef.current,
+            ids,
+            startFrame,
+            newFrame,
+            widthPx,
+            heightPx,
+          )
+          setCommands(next)
+          persist(next)
+        },
+        onRotateCommitted: ({
+          pivot,
+          deltaRad,
+          ids,
+          previewBase,
+          rotationStartFrame,
+        }) => {
+          if (Math.abs(deltaRad) < 1e-6 || ids.length === 0) return
+          pushUndoSnapshot()
+          const next = commitRotatedAnnotationCommands(
+            commandsRef.current,
+            new Set(ids),
+            pivot,
+            deltaRad,
+            { widthPx, heightPx },
+            previewBase,
+            rotationStartFrame,
+          )
+          setRotateCommitOverlay(rotatedCommandsFromCommitOverlay(next, ids))
+          setRotateCommitFrame(
+            committedRotationFrameFromGesture(rotationStartFrame, deltaRad, ids.length),
+          )
+          setCommands(next)
+          persist(next)
+        },
+      },
+      pageToNorm,
+    )
+
+    const {
+      displayCommands: paintedCommands,
+      chrome: selectionChrome,
+      marqueeRect,
+      marqueeMode,
+      selectDragLive,
+      selectScaleLiveFrame,
+      selectRotationLiveDelta,
+      effectiveCursor: selectionCursor,
+      selectionInteractionCommandsRef,
+      selectionInteractionFrameRef,
+      selectionInteractionUnionRef,
+      selectionInteractionDeadRef,
+      selectGestureRef,
+      selectMoveIdsRef,
+      selectScaleIdsRef,
+      selectScaleStartFrameRef,
+      selectScaleHandleRef,
+      selectScaleLiveFrameRef,
+      selectRotateIdsRef,
+      selectRotationPivotRef,
+      selectRotationStartAngleRef,
+      selectRotationBaseCommandsRef,
+      selectRotationStartFrameRef,
+      selectRotationLiveDeltaRef,
+      selectAnchorRef,
+      selectDragLiveRef,
+      beginSelectMove,
+      resetSelectGesture,
+      clearSelectDragLive,
+      clearSelectScaleLive,
+      clearSelectionHover,
+      setSelectDragLive,
+      setHoverTargetIds,
+      onPointerDown: onSelectPointerDown,
+      onPointerMove: onSelectPointerMove,
+      onPointerUp: onSelectPointerUp,
+      onPointerCancel: onSelectPointerCancel,
+      updateSelectionHover,
+      isPointerOverSelected,
+    } = selection
+
+    const {
+      selectionOutlineFramesList,
+      hoverOutlineFramesList,
+      showScaleHandles,
+      showRotationHandle,
+      selectionHandleFrame,
+      showUnionOutline,
+    } = selectionChrome
+
     const paint = useCallback(
       (
         draftStroke: StrokeAnnotationCommand | null,
@@ -460,7 +703,7 @@ export function useBookPageAnnotationLayer(
       ) => {
         if (widthPx <= 0 || heightPx <= 0) return
         const trailing = eraserLineTrailingForReplay(draftStroke, liveEraserLineDraftRef.current)
-        const stack = selectDragLiveRef.current
+        const internalDrag = selectDragLiveRef.current
         const replayCommitted = !options?.skipCommittedReplay
 
         if (replayCommitted) {
@@ -468,20 +711,36 @@ export function useBookPageAnnotationLayer(
           const rotPivot = selectRotationPivotRef.current
           const rotBase = selectRotationBaseCommandsRef.current
           const rotIds = selectRotateIdsRef.current
+          const scaleStartFrame = selectScaleStartFrameRef.current
+          const scaleLiveFrame = selectScaleLiveFrameRef.current
+          const moveIds = internalDrag ? selectMoveIdsRef.current : []
           let painted: AnnotationCommand[] =
             rotDelta != null && rotPivot && rotBase && rotIds.length > 0
-              ? rotateAnnotationCommands(rotBase, new Set(rotIds), rotPivot, rotDelta, {
-                  widthPx,
-                  heightPx,
-                })
-              : stack
-                ? translateAnnotationCommands(
+              ? rotateAnnotationCommands(
+                  rotBase,
+                  new Set(rotIds),
+                  rotPivot,
+                  rotDelta,
+                  { widthPx, heightPx },
+                  selectRotationStartFrameRef.current,
+                )
+              : scaleLiveFrame && scaleStartFrame
+                ? scaleAnnotationCommandsFromOrientedFrames(
                     canvasPaintCommands,
-                    new Set(selectMoveIdsRef.current),
-                    stack.dx,
-                    stack.dy,
+                    new Set(selectScaleIdsRef.current),
+                    scaleStartFrame,
+                    scaleLiveFrame,
+                    widthPx,
+                    heightPx,
                   )
-                : canvasPaintCommands
+                : internalDrag && moveIds.length > 0
+                  ? translateAnnotationCommands(
+                      canvasPaintCommands,
+                      new Set(moveIds),
+                      internalDrag.dx,
+                      internalDrag.dy,
+                    )
+                  : canvasPaintCommands
           const dead = computeEraserLineDeadIndices(painted, trailing)
           const slices = buildAnnotationRenderSlices(painted, dead)
 
@@ -587,17 +846,48 @@ export function useBookPageAnnotationLayer(
       ],
     )
 
+    useEffect(() => {
+      paintRef.current = paint
+    }, [paint])
+
     const syncHoldShapePreview = () => {
       const hold = holdShapeDraftRef.current
       const strokeDraft = draftStrokeRef.current
       if (!hold) return
+      const markerLinePreview =
+        strokeDraft != null
+          ? buildHoldMarkerLineStrokeCommand(hold, strokeDraft, 'hold-preview')
+          : null
+      const draftInkEl = draftInkCanvasRef.current
+      const draftMarkerEl = draftMarkerCanvasRef.current
+      if (markerLinePreview) {
+        twoDraftRef.current = null
+        if (!draftInkEl || !draftMarkerEl || widthPx <= 0 || heightPx <= 0) {
+          paint(null, null, { skipCommittedReplay: true })
+          return
+        }
+        const draftInkCtx = draftInkEl.getContext('2d', { alpha: true })
+        const draftMarkerCtx = draftMarkerEl.getContext('2d', { alpha: true })
+        if (!draftInkCtx || !draftMarkerCtx) {
+          paint(null, null, { skipCommittedReplay: true })
+          return
+        }
+        clearAnnotationCanvas(draftInkCtx)
+        clearAnnotationCanvas(draftMarkerCtx)
+        applyAnnotationCanvasDpr(draftMarkerCtx)
+        drawStrokePath(
+          draftMarkerCtx,
+          markerLinePreview,
+          widthPx,
+          heightPx,
+        )
+        return
+      }
       twoDraftRef.current = {
         kind: hold.kind,
         anchor: hold.anchor,
         current: hold.current,
       }
-      const draftInkEl = draftInkCanvasRef.current
-      const draftMarkerEl = draftMarkerCanvasRef.current
       if (!draftInkEl || !draftMarkerEl || widthPx <= 0 || heightPx <= 0) {
         paint(null, twoDraftRef.current, { skipCommittedReplay: true })
         return
@@ -639,27 +929,11 @@ export function useBookPageAnnotationLayer(
       if (!canSnap) return
 
       const recognized = recognizeHoldShapeFromStroke(draft.points)
-      if (recognized) {
-        snapHoldShapeDraftOnActivate(recognized, tracker.lastSample)
-        holdShapeDraftRef.current = recognized
-        syncHoldShapePreview()
-        return
-      }
+      if (!recognized) return
 
-      straightStrokeAxisRef.current = extendStrokeDraftFromMove(
-        draft,
-        [tracker.lastSample],
-        {
-          shiftKey: false,
-          straightFromHold: true,
-          markerStraightStrokeEnabled: markerStraightStroke,
-          penInkStyle: draft.tool === 'pen' ? penInkStyle : undefined,
-          straightStrokeAxis: straightStrokeAxisRef.current,
-        },
-      )
-      paint(draft, null, {
-        skipCommittedReplay: strokeToolSkipsCommittedReplayOnLivePaint(draft.tool),
-      })
+      snapHoldShapeDraftOnActivate(recognized, tracker.lastSample)
+      holdShapeDraftRef.current = recognized
+      syncHoldShapePreview()
     }
 
     function commitHoldShape(hold: HoldShapeDraft, strokeDraft: StrokeAnnotationCommand): void {
@@ -778,11 +1052,83 @@ export function useBookPageAnnotationLayer(
           if (dx === 0 && dy === 0) return false
           const targetIds = new Set(ids)
           if (targetIds.size === 0) return false
-          const next = translateAnnotationCommands(commandsRef.current, targetIds, dx, dy)
+          const { dx: cdx, dy: cdy } = clampMoveDeltaForSelection(dx, dy, ids)
+          if (cdx === 0 && cdy === 0) return false
+          const next = translateAnnotationCommands(commandsRef.current, targetIds, cdx, cdy)
           if (next === commandsRef.current) return false
           setCommands(next)
           persist(next)
           return true
+        },
+        moveSelectedBy: (dx: number, dy: number) => {
+          if (dx === 0 && dy === 0) return false
+          const ids = pageLocalSelectedIds(
+            commandsRef.current,
+            selectedIdsRef.current,
+            sessionOwnsCanvasInk,
+          )
+          if (ids.length === 0) return false
+          const { dx: cdx, dy: cdy } = clampMoveDeltaForSelection(dx, dy, ids)
+          if (cdx === 0 && cdy === 0) return false
+          pushUndoSnapshot()
+          const targetIds = new Set(ids)
+          const next = translateAnnotationCommands(commandsRef.current, targetIds, cdx, cdy)
+          if (next === commandsRef.current) return false
+          setCommands(next)
+          persist(next)
+          onSelectionMoveCommitted?.(ids, cdx, cdy)
+          return true
+        },
+        setNudgePreview: (dx: number, dy: number) => {
+          if (dx === 0 && dy === 0) {
+            clearSelectDragLive()
+            if (selectGestureRef.current !== 'move') {
+              selectMoveIdsRef.current = []
+            }
+          } else {
+            const { dx: cdx, dy: cdy } = clampMoveDeltaForSelection(dx, dy)
+            setSelectDragLive({ dx: cdx, dy: cdy })
+            selectMoveIdsRef.current = [...selectedIdsRef.current]
+          }
+          paint(null, null)
+        },
+        commitNudgePreview: () => {
+          const live = selectDragLiveRef.current
+          if (!live || (live.dx === 0 && live.dy === 0)) return false
+          const dx = live.dx
+          const dy = live.dy
+          clearSelectDragLive()
+          if (selectGestureRef.current !== 'move') {
+            selectMoveIdsRef.current = []
+          }
+          const ids = pageLocalSelectedIds(
+            commandsRef.current,
+            selectedIdsRef.current,
+            sessionOwnsCanvasInk,
+          )
+          if (ids.length === 0) {
+            paint(null, null)
+            return false
+          }
+          pushUndoSnapshot()
+          const targetIds = new Set(ids)
+          const next = translateAnnotationCommands(commandsRef.current, targetIds, dx, dy)
+          if (next === commandsRef.current) {
+            paint(null, null)
+            return false
+          }
+          setCommands(next)
+          persist(next)
+          onSelectionMoveCommitted?.(ids, dx, dy)
+          paint(null, null)
+          return true
+        },
+        clearNudgePreview: () => {
+          clearSelectDragLive()
+          if (selectGestureRef.current !== 'move') {
+            selectMoveIdsRef.current = []
+          }
+          paint(null, null)
         },
         selectAll: () => {
           const trailing = eraserLineTrailingForReplay(
@@ -790,14 +1136,23 @@ export function useBookPageAnnotationLayer(
             liveEraserLineDraftRef.current,
           )
           const dead = computeEraserLineDeadIndices(commandsRef.current, trailing)
-          const ids = commandsRef.current
-            .filter((_, i) => !dead.has(i))
-            .map((c) => c.id)
+          const eligible = commandsRef.current.filter((_, i) => !dead.has(i))
+          const ids = sessionOwnsCanvasInk
+            ? eligible
+                .filter((c) => !isInkSessionDelegatedCanvasCommand(c))
+                .map((c) => c.id)
+            : eligible.map((c) => c.id)
           setSelectedIds(ids)
           setEditingId(null)
         },
         deleteSelected: () => {
-          const ids = new Set(selectedIdsRef.current)
+          const ids = new Set(
+            pageLocalSelectedIds(
+              commandsRef.current,
+              selectedIdsRef.current,
+              sessionOwnsCanvasInk,
+            ),
+          )
           if (ids.size === 0) return false
           pushUndoSnapshot()
           const next = commandsRef.current.filter((c) => !ids.has(c.id))
@@ -921,7 +1276,7 @@ export function useBookPageAnnotationLayer(
           setEditingId(null)
         },
       }),
-      [persist, paint, pushUndoSnapshot],
+      [clampMoveDeltaForSelection, onSelectionMoveCommitted, persist, paint, pushUndoSnapshot],
     )
 
     useLayoutEffect(() => {
@@ -962,87 +1317,21 @@ export function useBookPageAnnotationLayer(
       strokeDrawOptions,
       selectedIds,
       selectDragLive,
-      selectScaleLiveBounds,
+      selectScaleLiveFrame,
       selectRotationLiveDelta,
       zoomRepaintRevision,
     ])
 
-    const moveSelectedBy = useCallback(
-      (dx: number, dy: number) => {
-        if (dx === 0 && dy === 0) return
-        pushUndoSnapshot()
-        const ids = new Set(selectMoveIdsRef.current)
-        const next = translateAnnotationCommands(commandsRef.current, ids, dx, dy)
-        setCommands(next)
-        persist(next)
-        onSelectionMoveCommitted?.([...ids], dx, dy)
-      },
-      [onSelectionMoveCommitted, persist, pushUndoSnapshot],
-    )
-
-    const scaleSelectedBy = useCallback(
-      (startBounds: NormRect, newBounds: NormRect) => {
-        pushUndoSnapshot()
-        const ids = new Set(selectScaleIdsRef.current)
-        const next = scaleAnnotationCommands(commandsRef.current, ids, startBounds, newBounds)
-        setCommands(next)
-        persist(next)
-      },
-      [persist, pushUndoSnapshot],
-    )
-
-    function clearSelectScaleLive(): void {
-      selectScaleStartBoundsRef.current = null
-      selectScaleHandleRef.current = null
-      selectScaleLiveBoundsRef.current = null
-      setSelectScaleLiveBounds(null)
-    }
-
-    function clearSelectRotationLive(): void {
-      selectRotateIdsRef.current = []
-      selectRotationPivotRef.current = null
-      selectRotationStartAngleRef.current = null
-      selectRotationBaseCommandsRef.current = null
-      selectRotationStartFrameRef.current = null
-      selectRotationLiveDeltaRef.current = null
-      setSelectRotationLiveDelta(null)
-    }
-
-    const rotateSelectedBy = useCallback(
-      (
-        pivot: [number, number],
-        deltaRad: number,
-        ids: readonly string[],
-        previewBase?: readonly AnnotationCommand[] | null,
-      ) => {
-        if (Math.abs(deltaRad) < 1e-6 || ids.length === 0) return
-        pushUndoSnapshot()
-        const next = commitRotatedAnnotationCommands(
-          commandsRef.current,
-          new Set(ids),
-          pivot,
-          deltaRad,
-          { widthPx, heightPx },
-          previewBase,
-        )
-        setCommands(next)
-        persist(next)
-      },
-      [persist, pushUndoSnapshot, widthPx, heightPx],
-    )
-
-    function resolveClickTargetIds(cmd: AnnotationCommand, dead: Set<number>): string[] {
-      if (cmd.kind === 'stroke' && (cmd.tool === 'pen' || cmd.tool === 'marker')) {
-        return resolvePenMarkerSelectionIds(
-          commandsRef.current,
-          cmd.id,
-          widthPx,
-          heightPx,
-          dead,
-        )
+    useEffect(() => {
+      if (!rotateCommitOverlay) return
+      if (isRotateCommitOverlaySynced(rotateCommitOverlay, commands)) {
+        setRotateCommitOverlay(null)
       }
-      return [cmd.id]
-    }
+    }, [commands, rotateCommitOverlay])
+
+    useEffect(() => {
+      setRotateCommitFrame(null)
+    }, [selectedIds])
 
     function applyPenAutoGroupAfterAppend(
       commands: AnnotationCommand[],
@@ -1057,91 +1346,6 @@ export function useBookPageAnnotationLayer(
       return autoGroupPenStrokeAfterCommit(commands, strokeId, widthPx, heightPx, dead)
     }
 
-    function selectMoveIdsForDrag(hitCmd: AnnotationCommand): string[] {
-      if (
-        groupSelectionChromeRef.current === 'perStroke' &&
-        hitCmd.kind === 'stroke' &&
-        (hitCmd.tool === 'pen' || hitCmd.tool === 'marker') &&
-        selectedIdsRef.current.includes(hitCmd.id)
-      ) {
-        return [hitCmd.id]
-      }
-      return [...selectedIdsRef.current]
-    }
-
-    function beginSelectMove(
-      e: React.PointerEvent<HTMLDivElement>,
-      p: [number, number],
-      moveIds?: string[],
-    ): void {
-      clearSelectScaleLive()
-      clearSelectRotationLive()
-      selectMoveIdsRef.current = moveIds ?? [...selectedIdsRef.current]
-      selectGestureRef.current = 'move'
-      selectAnchorRef.current = p
-      selectDragLiveRef.current = { dx: 0, dy: 0 }
-      setSelectDragLive({ dx: 0, dy: 0 })
-      setMarqueeRect(null)
-      e.currentTarget.setPointerCapture(e.pointerId)
-    }
-
-    function beginSelectScale(
-      e: React.PointerEvent<HTMLDivElement>,
-      handle: ScaleHandleId,
-      startBounds: NormRect,
-    ): void {
-      clearSelectRotationLive()
-      setSelectDragLive(null)
-      selectDragLiveRef.current = null
-      setMarqueeRect(null)
-      setMarqueeMode(null)
-      selectScaleIdsRef.current = [...selectedIdsRef.current]
-      selectScaleStartBoundsRef.current = startBounds
-      selectScaleHandleRef.current = handle
-      selectScaleLiveBoundsRef.current = startBounds
-      setSelectScaleLiveBounds(startBounds)
-      selectGestureRef.current = 'scale'
-      selectAnchorRef.current = null
-      e.currentTarget.setPointerCapture(e.pointerId)
-      paint(null, null)
-    }
-
-    function beginSelectRotate(
-      e: React.PointerEvent<HTMLDivElement>,
-      pivot: [number, number],
-      startBounds: NormRect,
-      p: [number, number],
-    ): void {
-      clearSelectScaleLive()
-      setSelectDragLive(null)
-      selectDragLiveRef.current = null
-      setMarqueeRect(null)
-      setMarqueeMode(null)
-      const rotIds = rotatableIdsInSelection(commandsRef.current, selectedIdsRef.current)
-      selectRotateIdsRef.current = rotIds
-      selectRotationPivotRef.current = pivot
-      selectRotationStartAngleRef.current = angleFromPivotToPoint(pivot, p)
-      selectRotationBaseCommandsRef.current = snapshotRotationBaseCommands(
-        commandsRef.current,
-        rotIds,
-        widthPx,
-        heightPx,
-      )
-      selectRotationStartFrameRef.current = rotationStartFrameForGesture(
-        selectRotationBaseCommandsRef.current,
-        selectedIdsRef.current,
-        startBounds,
-        widthPx,
-        heightPx,
-      )
-      selectRotationLiveDeltaRef.current = 0
-      setSelectRotationLiveDelta(0)
-      selectGestureRef.current = 'rotate'
-      selectAnchorRef.current = null
-      e.currentTarget.setPointerCapture(e.pointerId)
-      paint(null, null)
-    }
-
     function enterGroupStrokeEditMode(
       targetIds: string[],
       hitCmd: AnnotationCommand,
@@ -1149,11 +1353,7 @@ export function useBookPageAnnotationLayer(
       setEditingId(null)
       setSelectedIds(targetIds)
       setGroupSelectionChrome('perStroke')
-      selectGestureRef.current = null
-      selectAnchorRef.current = null
-      selectDragLiveRef.current = null
-      setSelectDragLive(null)
-      clearSelectScaleLive()
+      resetSelectGesture()
       selectMoveIdsRef.current =
         hitCmd.kind === 'stroke' && (hitCmd.tool === 'pen' || hitCmd.tool === 'marker')
           ? [hitCmd.id]
@@ -1161,7 +1361,6 @@ export function useBookPageAnnotationLayer(
     }
 
     function onSelectDoubleClick(e: React.MouseEvent<HTMLDivElement>) {
-      if (!isSelect) return
       e.preventDefault()
       e.stopPropagation()
       const p = clientToNorm(e.clientX, e.clientY)
@@ -1171,243 +1370,19 @@ export function useBookPageAnnotationLayer(
       if (idx == null) return
       const cmd = commandsRef.current[idx]!
       if (cmd.kind === 'text' || cmd.kind === 'sticky') {
+        if (!isSelect) return
         setSelectedIds([cmd.id])
+        setSelectTextEditActive(true)
         setEditingId(cmd.id)
         return
       }
+      if (!isSelect) return
       if (cmd.kind === 'stroke' && (cmd.tool === 'pen' || cmd.tool === 'marker')) {
-        const targetIds = resolveClickTargetIds(cmd, dead)
+        const targetIds = resolveClickTargetForSelection(cmd)
         if (targetIds.length > 1) {
           enterGroupStrokeEditMode(targetIds, cmd)
         }
       }
-    }
-
-    function onSelectPointerDown(e: React.PointerEvent<HTMLDivElement>) {
-      if (!isAnnotationPointerDownAccepted(e)) return
-      const p = clientToNorm(e.clientX, e.clientY)
-      if (!p) return
-
-      const trailing = eraserLineTrailingForReplay(
-        draftStrokeRef.current,
-        liveEraserLineDraftRef.current,
-      )
-      const dead = computeEraserLineDeadIndices(commandsRef.current, trailing)
-      const selMode = selectionChangeModeFromPointerKeys(e)
-
-      if (editingId == null && selectedIdsRef.current.length > 0) {
-        const union = unionSelectionBounds(
-          commandsRef.current,
-          selectedIdsRef.current,
-          widthPx,
-          heightPx,
-          dead,
-        )
-        if (union) {
-          const handleFrame = resolveSelectionHandleFrame(
-            commandsRef.current,
-            selectedIdsRef.current,
-            widthPx,
-            heightPx,
-            union,
-            null,
-            null,
-          )
-          if (
-            handleFrame &&
-            selectionHasRotatableShapes(commandsRef.current, selectedIdsRef.current) &&
-            hitTestRotationHandleForFrame(p, handleFrame, widthPx, heightPx)
-          ) {
-            beginSelectRotate(e, selectionPivotFromBounds(union), union, p)
-            return
-          }
-          const handle =
-            handleFrame && hitTestScaleHandleForFrame(p, handleFrame, widthPx, heightPx)
-          if (handle) {
-            beginSelectScale(e, handle, union)
-            return
-          }
-        }
-      }
-
-      setEditingId(null)
-      const idx = hitTestAnnotationIndex(commandsRef.current, p[0], p[1], widthPx, heightPx, dead)
-      if (idx != null) {
-        const cmd = commandsRef.current[idx]!
-        const targetIds = resolveClickTargetIds(cmd, dead)
-        const fullySelected = targetIds.every((id) => selectedIdsRef.current.includes(id))
-
-        if (selMode === 'replace' && fullySelected) {
-          beginSelectMove(e, p, selectMoveIdsForDrag(cmd))
-          return
-        }
-
-        const nextIds = applySelectionChange(selectedIdsRef.current, targetIds, selMode)
-        setSelectedIds(nextIds)
-        setGroupSelectionChrome('union')
-
-        if (selMode === 'shiftClick' || selMode === 'subtract') return
-        if (selMode === 'toggle' && fullySelected) return
-        if (nextIds.length === 0) return
-
-        beginSelectMove(e, p, selectMoveIdsForDrag(cmd))
-        return
-      }
-
-      if (selMode === 'replace') {
-        setSelectedIds([])
-        setGroupSelectionChrome('union')
-      }
-      marqueeSelModeRef.current = selMode === 'shiftClick' ? 'add' : selMode
-      selectGestureRef.current = 'marquee'
-      selectAnchorRef.current = p
-      setMarqueeRect(normalizeMarqueeRect(p, p))
-      setMarqueeMode(resolveMarqueeSelectMode(p, p, marqueeSelectRule))
-      setSelectDragLive(null)
-      e.currentTarget.setPointerCapture(e.pointerId)
-    }
-
-    function onSelectPointerMove(e: React.PointerEvent<HTMLDivElement>) {
-      if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
-      const p = clientToNorm(e.clientX, e.clientY)
-      if (!p) return
-
-      if (selectGestureRef.current === 'scale') {
-        const start = selectScaleStartBoundsRef.current
-        const handle = selectScaleHandleRef.current
-        if (!start || !handle) return
-        const next = resizeBoundsFromHandle(start, handle, p, { uniform: !e.shiftKey })
-        selectScaleLiveBoundsRef.current = next
-        setSelectScaleLiveBounds(next)
-        paint(null, null)
-        return
-      }
-
-      if (selectGestureRef.current === 'rotate') {
-        const pivot = selectRotationPivotRef.current
-        const startAngle = selectRotationStartAngleRef.current
-        if (pivot == null || startAngle == null) return
-        const delta = angleFromPivotToPoint(pivot, p) - startAngle
-        selectRotationLiveDeltaRef.current = delta
-        setSelectRotationLiveDelta(delta)
-        paint(null, null)
-        return
-      }
-
-      const anchor = selectAnchorRef.current
-      if (!anchor) return
-
-      if (selectGestureRef.current === 'marquee') {
-        setMarqueeRect(normalizeMarqueeRect(anchor, p))
-        setMarqueeMode(resolveMarqueeSelectMode(anchor, p, marqueeSelectRule))
-        return
-      }
-
-      if (selectGestureRef.current === 'move') {
-        const live = { dx: p[0] - anchor[0], dy: p[1] - anchor[1] }
-        selectDragLiveRef.current = live
-        setSelectDragLive(live)
-        paint(null, null)
-      }
-    }
-
-    function onSelectPointerUp(e: React.PointerEvent<HTMLDivElement>) {
-      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-        e.currentTarget.releasePointerCapture(e.pointerId)
-      }
-      const gesture = selectGestureRef.current
-      selectGestureRef.current = null
-      const anchor = selectAnchorRef.current
-      selectAnchorRef.current = null
-
-      if (gesture === 'marquee' && anchor) {
-        const p = clientToNorm(e.clientX, e.clientY)
-        const rect = p ? normalizeMarqueeRect(anchor, p) : marqueeRect
-        const mode = p
-          ? resolveMarqueeSelectMode(anchor, p, marqueeSelectRule)
-          : marqueeMode ?? 'crossing'
-        setMarqueeRect(null)
-        setMarqueeMode(null)
-        if (rect && rect.w * rect.h >= MARQUEE_MIN_AREA) {
-          const trailing = eraserLineTrailingForReplay(
-            draftStrokeRef.current,
-            liveEraserLineDraftRef.current,
-          )
-          const dead = computeEraserLineDeadIndices(commandsRef.current, trailing)
-          const hits = annotationIdsInMarquee(
-            commandsRef.current,
-            rect,
-            widthPx,
-            heightPx,
-            mode,
-            dead,
-          )
-          setSelectedIds(
-            applySelectionChange(selectedIdsRef.current, hits, marqueeSelModeRef.current),
-          )
-          setGroupSelectionChrome('union')
-        }
-        return
-      }
-
-      if (gesture === 'move') {
-        const live = selectDragLiveRef.current
-        selectDragLiveRef.current = null
-        setSelectDragLive(null)
-        if (live && (live.dx !== 0 || live.dy !== 0)) {
-          moveSelectedBy(live.dx, live.dy)
-        } else {
-          paint(null, null)
-        }
-        return
-      }
-
-      if (gesture === 'scale') {
-        const start = selectScaleStartBoundsRef.current
-        const live = selectScaleLiveBoundsRef.current
-        clearSelectScaleLive()
-        if (
-          start &&
-          live &&
-          (Math.abs(start.w - live.w) > 1e-6 ||
-            Math.abs(start.h - live.h) > 1e-6 ||
-            Math.abs(start.x - live.x) > 1e-6 ||
-            Math.abs(start.y - live.y) > 1e-6)
-        ) {
-          scaleSelectedBy(start, live)
-        } else {
-          paint(null, null)
-        }
-        return
-      }
-
-      if (gesture === 'rotate') {
-        const pivot = selectRotationPivotRef.current
-        const delta = selectRotationLiveDeltaRef.current
-        const rotIds = [...selectRotateIdsRef.current]
-        const previewBase = selectRotationBaseCommandsRef.current
-        clearSelectRotationLive()
-        if (pivot && delta != null && Math.abs(delta) > 1e-6) {
-          rotateSelectedBy(pivot, delta, rotIds, previewBase)
-        } else {
-          paint(null, null)
-        }
-      }
-    }
-
-    function onSelectPointerCancel(e: React.PointerEvent<HTMLDivElement>) {
-      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-        e.currentTarget.releasePointerCapture(e.pointerId)
-      }
-      selectGestureRef.current = null
-      selectAnchorRef.current = null
-      selectDragLiveRef.current = null
-      setMarqueeRect(null)
-      setMarqueeMode(null)
-      setSelectDragLive(null)
-      clearSelectScaleLive()
-      clearSelectRotationLive()
-      paint(null, null)
     }
 
     useEffect(
@@ -1440,91 +1415,8 @@ export function useBookPageAnnotationLayer(
       setSelectedIds([])
       setGroupSelectionChrome('union')
       setEditingId(null)
-      setMarqueeRect(null)
-      setMarqueeMode(null)
-      setSelectDragLive(null)
-      clearSelectScaleLive()
-      selectGestureRef.current = null
-      selectAnchorRef.current = null
-      selectDragLiveRef.current = null
-      setPointerOverSelection(false)
-      setHoveredScaleHandle(null)
-    }
-
-    function isPointerOverSelected(p: [number, number]): boolean {
-      if (selectedIdsRef.current.length === 0) return false
-      return (
-        hitTestSelectedAnnotationIndex(
-          commandsRef.current,
-          selectedIdsRef.current,
-          p[0],
-          p[1],
-          widthPx,
-          heightPx,
-          pointerHitDeadIndices(),
-        ) != null
-      )
-    }
-
-    function updateSelectionHover(e: React.PointerEvent<HTMLDivElement>): void {
-      if (e.currentTarget.hasPointerCapture(e.pointerId)) return
-      const p = clientToNorm(e.clientX, e.clientY)
-      if (!p) return
-
-      if (
-        isSelect &&
-        editingId == null &&
-        selectedIdsRef.current.length > 0 &&
-        !marqueeRect
-      ) {
-        const dead = pointerHitDeadIndices()
-        const union = unionSelectionBounds(
-          commandsRef.current,
-          selectedIdsRef.current,
-          widthPx,
-          heightPx,
-          dead,
-        )
-        if (union) {
-          const handleFrame = resolveSelectionHandleFrame(
-            commandsRef.current,
-            selectedIdsRef.current,
-            widthPx,
-            heightPx,
-            union,
-            null,
-            null,
-          )
-          const onRotation =
-            handleFrame != null &&
-            selectionHasRotatableShapes(commandsRef.current, selectedIdsRef.current) &&
-            hitTestRotationHandleForFrame(p, handleFrame, widthPx, heightPx)
-          if (onRotation !== hoveredRotationHandle) setHoveredRotationHandle(onRotation)
-          if (onRotation) {
-            if (hoveredScaleHandle) setHoveredScaleHandle(null)
-            if (pointerOverSelection) setPointerOverSelection(false)
-            return
-          }
-          const handle =
-            handleFrame && hitTestScaleHandleForFrame(p, handleFrame, widthPx, heightPx)
-          if (handle !== hoveredScaleHandle) setHoveredScaleHandle(handle)
-          if (handle) {
-            if (hoveredRotationHandle) setHoveredRotationHandle(false)
-            if (pointerOverSelection) setPointerOverSelection(false)
-            return
-          }
-        }
-      }
-
-      if (hoveredRotationHandle) setHoveredRotationHandle(false)
-      if (hoveredScaleHandle) setHoveredScaleHandle(null)
-
-      if (selectedIdsRef.current.length === 0) {
-        if (pointerOverSelection) setPointerOverSelection(false)
-        return
-      }
-      const over = isPointerOverSelected(p)
-      if (over !== pointerOverSelection) setPointerOverSelection(over)
+      resetSelectGesture()
+      clearSelectionHover()
     }
 
     const strokeWidthForTool = useCallback(
@@ -1540,11 +1432,76 @@ export function useBookPageAnnotationLayer(
       mode === 'line' || mode === 'rect' || mode === 'ellipse' || mode === 'triangle' || mode === 'arrow'
     const isTapTool =
       mode === 'stamp' ||
+      mode === 'sticker' ||
       mode === 'callout' ||
       mode === 'text' ||
       mode === 'sticky' ||
       mode === 'eyedropper'
-    const isSelect = mode === 'select'
+    const writableDomTool =
+      mode === 'sticky' || isWritableStickerInteraction(mode, stickerKind)
+    const textToolHoverViaSessionLayer =
+      (spreadInkDelegated || whiteboardInkDelegated) && (mode === 'text' || writableDomTool)
+
+    useEffect(() => {
+      if (editingId != null) setTextToolHoverTargetId(null)
+    }, [editingId])
+
+    useEffect(() => {
+      if (textToolHoverViaSessionLayer) return
+      setBookOverlayAnnotationEditSessionId(editingId)
+      if (!editingId) {
+        endBookOverlayAnnotationEditingFocus(overlayRef.current)
+      }
+      return () => setBookOverlayAnnotationEditSessionId(null)
+    }, [editingId, textToolHoverViaSessionLayer])
+
+    useEffect(() => {
+      if (!editingId || textToolHoverViaSessionLayer) return
+
+      const onDocumentPointerDown = (e: PointerEvent) => {
+        const target = e.target
+        if (!(target instanceof Node)) return
+        if (
+          !shouldDismissBookOverlayAnnotationEditOnPointerDown(target, {
+            overlayRoot: overlayRef.current,
+            editingId,
+          })
+        ) {
+          return
+        }
+        commitBookOverlayTypingTarget()
+        dismissedTextEditIdRef.current = editingId
+        setFocusNewId(null)
+        setSelectTextEditActive(false)
+        setEditingId(null)
+      }
+
+      document.addEventListener('pointerdown', onDocumentPointerDown, true)
+      return () => document.removeEventListener('pointerdown', onDocumentPointerDown, true)
+    }, [editingId, textToolHoverViaSessionLayer])
+
+    useEffect(() => {
+      if (editingId == null) setEditingTextDraft(null)
+    }, [editingId])
+
+    const onEditingTextDraftChange = useCallback((text: string | null) => {
+      setEditingTextDraft(text)
+    }, [])
+
+    const handleEditingIdChange = useCallback((id: string | null) => {
+      if (id === null) {
+        setSelectTextEditActive(false)
+        endBookOverlayAnnotationEditingFocus(overlayRef.current)
+        setFocusNewId(null)
+        setEditingTextDraft(null)
+        setBookOverlayAnnotationEditSessionId(null)
+        setEditingId(null)
+        return
+      }
+      setBookOverlayAnnotationEditSessionId(id)
+      setEditingId(id)
+      setFocusNewId(id)
+    }, [])
 
     function makeStrokeDraft(tool: StrokeTool, p: [number, number]): StrokeAnnotationCommand {
       const base: StrokeAnnotationCommand = {
@@ -1593,6 +1550,15 @@ export function useBookPageAnnotationLayer(
       const p = clientToNorm(e.clientX, e.clientY)
       if (!p) return
 
+      if (
+        mode === 'text' &&
+        editingId != null &&
+        shouldDismissBookOverlayAnnotationEditOnPointerDown(e.target, { editingId })
+      ) {
+        dismissedTextEditIdRef.current = editingId
+        handleEditingIdChange(null)
+      }
+
       if (selectedIdsRef.current.length > 0) {
         if (isPointerOverSelected(p)) {
           setEditingId(null)
@@ -1606,13 +1572,11 @@ export function useBookPageAnnotationLayer(
             pointerHitDeadIndices(),
           )
           const hitCmd = hitIdx != null ? commandsRef.current[hitIdx] : null
-          selectMoveIdsRef.current =
-            hitCmd != null ? selectMoveIdsForDrag(hitCmd) : [...selectedIdsRef.current]
-          selectGestureRef.current = 'move'
-          selectAnchorRef.current = p
-          selectDragLiveRef.current = { dx: 0, dy: 0 }
-          setSelectDragLive({ dx: 0, dy: 0 })
-          e.currentTarget.setPointerCapture(e.pointerId)
+          beginSelectMove(
+            e,
+            p,
+            hitCmd != null ? selectMoveIdsForDrag(hitCmd) : undefined,
+          )
           return
         }
         clearSelectionState()
@@ -1656,13 +1620,15 @@ export function useBookPageAnnotationLayer(
       }
 
       if (isTapTool) {
+        if (spreadInkDelegated && (mode === 'text' || writableDomTool)) return
+        if (whiteboardInkDelegated && (mode === 'text' || writableDomTool)) return
         if (mode === 'text') {
           const trailing = eraserLineTrailingForReplay(
             draftStrokeRef.current,
             liveEraserLineDraftRef.current,
           )
           const dead = computeEraserLineDeadIndices(commandsRef.current, trailing)
-          const hitIdx = hitTestAnnotationIndex(
+          const hitIdx = hitTestTextAnnotationIndex(
             commandsRef.current,
             p[0],
             p[1],
@@ -1672,17 +1638,35 @@ export function useBookPageAnnotationLayer(
           )
           if (hitIdx != null && commandsRef.current[hitIdx]?.kind === 'text') {
             const hitId = commandsRef.current[hitIdx]!.id
-            if (isAnnotationTextFieldFocused(hitId)) return
-            if (commitBookOverlayTypingTarget()) setFocusNewId(null)
+            if (isAnnotationTextFieldFocused(hitId)) {
+              dismissedTextEditIdRef.current = null
+              return
+            }
+            if (hitId === dismissedTextEditIdRef.current) {
+              dismissedTextEditIdRef.current = null
+              return
+            }
+            if (commitBookOverlayTypingTarget()) {
+              setFocusNewId(null)
+              setEditingId(null)
+            }
+            setEditingId(hitId)
             setFocusNewId(hitId)
+            dismissedTextEditIdRef.current = null
             return
           }
-          if (commitBookOverlayTypingTarget()) {
+          dismissedTextEditIdRef.current = null
+          if (editingId != null || commitBookOverlayTypingTarget()) {
             setFocusNewId(null)
+            setEditingId(null)
           }
         }
         gestureRef.current = 'tap'
-        tapModeRef.current = mode as TapMode
+        if (mode === 'sticker') {
+          tapModeRef.current = isQuickStickerInteraction(mode, stickerKind) ? 'stamp' : 'sticky'
+        } else {
+          tapModeRef.current = mode as TapMode
+        }
         tapStartRef.current = p
         tapStartClientRef.current = [e.clientX, e.clientY]
         e.currentTarget.setPointerCapture(e.pointerId)
@@ -1728,7 +1712,7 @@ export function useBookPageAnnotationLayer(
           return
         }
 
-        const straightFromHold = feedStrokeHoldStraightMove(
+        feedStrokeHoldStraightMove(
           holdStraightRef.current,
           samples,
           draft.points[0],
@@ -1736,7 +1720,7 @@ export function useBookPageAnnotationLayer(
         )
         straightStrokeAxisRef.current = extendStrokeDraftFromMove(draft, samples, {
           shiftKey: e.shiftKey,
-          straightFromHold,
+          straightFromHold: false,
           markerStraightStrokeEnabled: markerStraightStroke,
           penInkStyle: draft.tool === 'pen' ? penInkStyle : undefined,
           straightStrokeAxis: straightStrokeAxisRef.current,
@@ -1875,7 +1859,7 @@ export function useBookPageAnnotationLayer(
         if (p) {
           finalizeStrokeDraftEndPoint(draft, p, {
             shiftKey: e.shiftKey,
-            straightFromHold: holdStraightRef.current.holdStraightActive,
+            straightFromHold: false,
             markerStraightStrokeEnabled: markerStraightStroke,
             penInkStyle: draft.tool === 'pen' ? penInkStyle : undefined,
             straightStrokeAxis: straightStrokeAxisRef.current,
@@ -1927,6 +1911,10 @@ export function useBookPageAnnotationLayer(
             color: stampColorForVariant(stampVariant, stampQuestionColor),
             scale: stampScale,
           }
+          if (spreadInkDelegated && onSpreadCanvasCommandCommit) {
+            onSpreadCanvasCommandCommit(cmd, pageNumber)
+            return
+          }
           const next = [...commandsRef.current, cmd]
           setCommands(next)
           persist(next)
@@ -1939,10 +1927,15 @@ export function useBookPageAnnotationLayer(
             color: shapeColor,
             scale: stampScale,
           }
+          if (spreadInkDelegated && onSpreadCanvasCommandCommit) {
+            onSpreadCanvasCommandCommit(cmd, pageNumber)
+            return
+          }
           const next = [...commandsRef.current, cmd]
           setCommands(next)
           persist(next)
         } else if (tapMode === 'text') {
+          if (spreadInkDelegated || whiteboardInkDelegated) return
           const cmd: TextAnnotationCommand = {
             kind: 'text',
             id,
@@ -1960,13 +1953,18 @@ export function useBookPageAnnotationLayer(
           const next = [...commandsRef.current, cmd]
           setCommands(next)
           persist(next)
-          setFocusNewId(id)
+          queueMicrotask(() => {
+            setEditingId(id)
+            setFocusNewId(id)
+          })
         } else if (tapMode === 'eyedropper') {
           const [sampleClientX, sampleClientY] = tapClient0 ?? [e.clientX, e.clientY]
           onEyedropperPick?.(sampleClientX, sampleClientY)
         } else if (tapMode === 'sticky') {
-          const w = defaultStickyWNorm
-          const h = defaultStickyHNorm
+          if (spreadInkDelegated || whiteboardInkDelegated) return
+          const size = defaultWritableStickerSize(writableStickerVariant)
+          const w = size.wNorm
+          const h = size.hNorm
           let sx = at[0] - w / 2
           let sy = at[1] - h / 2
           sx = clamp01(sx)
@@ -1983,7 +1981,8 @@ export function useBookPageAnnotationLayer(
             text: '',
             fontSizeNorm: stickyFontSizeNorm,
             fontId: textFontId,
-            fillColor: stickyFillColor,
+            fillColor: defaultWritableStickerFill(writableStickerVariant, stickyFillColor),
+            writableVariant: writableStickerVariant,
           }
           const next = [...commandsRef.current, cmd]
           setCommands(next)
@@ -2019,8 +2018,32 @@ export function useBookPageAnnotationLayer(
       return isSelect || e.ctrlKey
     }
 
+    function overlayPointerHitsAnnotation(clientX: number, clientY: number): boolean {
+      const p = clientToNorm(clientX, clientY)
+      if (!p) return false
+      return (
+        hitTestAnnotationIndex(
+          commandsRef.current,
+          p[0],
+          p[1],
+          widthPx,
+          heightPx,
+          pointerHitDeadIndices(),
+        ) != null
+      )
+    }
+
     function onOverlayPointerDown(e: React.PointerEvent<HTMLDivElement>) {
       if (pointerUsesSelectInteraction(e)) {
+        onSelectPointerDown(e)
+        return
+      }
+      const pageTextOrWritableTool =
+        (mode === 'text' || writableDomTool) && !textToolHoverViaSessionLayer
+      if (
+        !pageTextOrWritableTool &&
+        overlayPointerHitsAnnotation(e.clientX, e.clientY)
+      ) {
         onSelectPointerDown(e)
         return
       }
@@ -2037,6 +2060,32 @@ export function useBookPageAnnotationLayer(
         (gestureRef.current === 'stroke' || gestureRef.current === 'two')
       ) {
         onPointerMove(e)
+        return
+      }
+      if (
+        mode === 'text' &&
+        editingId == null &&
+        !textToolHoverViaSessionLayer &&
+        !pointerUsesSelectInteraction(e) &&
+        !selectGestureRef.current &&
+        gestureRef.current !== 'stroke' &&
+        gestureRef.current !== 'two'
+      ) {
+        const p = clientToNorm(e.clientX, e.clientY)
+        if (p) {
+          const nextId = resolveTextToolHoverTargetId(
+            commandsRef.current,
+            p[0],
+            p[1],
+            widthPx,
+            heightPx,
+            'text',
+            deadIndicesForInteraction,
+          )
+          setTextToolHoverTargetId((prev) => (prev === nextId ? prev : nextId))
+        } else {
+          setTextToolHoverTargetId(null)
+        }
         return
       }
       if (pointerUsesSelectInteraction(e) || selectedIdsRef.current.length > 0) {
@@ -2087,105 +2136,62 @@ export function useBookPageAnnotationLayer(
     )
 
     const hasSelection = selectedIds.length > 0
-    const showSelectionChrome = isSelect || hasSelection
+    const selectionOwnedBySessionLayer =
+      sessionOwnsCanvasInk &&
+      hasSelection &&
+      selectedIds.every((id) => {
+        const cmd = commands.find((c) => c.id === id)
+        return cmd != null && isInkSessionDelegatedCanvasCommand(cmd)
+      })
+    const showSelectionChrome = (isSelect || hasSelection) && !selectionOwnedBySessionLayer
+
+    const textToolHoverFrames = useMemo(
+      () =>
+        mode === 'text' && textToolHoverTargetId && !textToolHoverViaSessionLayer
+          ? textToolHoverOutlineFrames(commands, textToolHoverTargetId, widthPx, heightPx)
+          : [],
+      [mode, textToolHoverTargetId, textToolHoverViaSessionLayer, commands, widthPx, heightPx],
+    )
+
+    const textToolEditingFrames = useMemo(
+      () =>
+        (mode === 'text' || writableDomTool) && editingId && !textToolHoverViaSessionLayer
+          ? textToolEditingOutlineFrames(
+              commands,
+              editingId,
+              widthPx,
+              heightPx,
+              editingTextDraft,
+            )
+          : [],
+      [
+        mode,
+        writableDomTool,
+        editingId,
+        textToolHoverViaSessionLayer,
+        commands,
+        widthPx,
+        heightPx,
+        editingTextDraft,
+      ],
+    )
 
     const effectiveOverlayCursor: CSSProperties['cursor'] =
-      selectRotationLiveDelta != null
-        ? cursorForRotationHandle(true)
-        : selectScaleLiveBounds
-          ? 'default'
-          : selectDragLive
-            ? 'grabbing'
-            : hoveredRotationHandle
-              ? cursorForRotationHandle(false)
-              : hoveredScaleHandle
-                ? cursorForScaleHandle(hoveredScaleHandle)
-                : pointerOverSelection && hasSelection
-                  ? 'grab'
-                  : isSelect
-                    ? 'default'
-                    : (overlayCursor ?? 'crosshair')
+      isSelect || hasSelection
+        ? selectionCursor
+        : mode === 'text' && !textToolHoverViaSessionLayer
+          ? textToolPlacementCursor(textToolHoverTargetId, true, false, editingId)
+          : (overlayCursor ?? 'crosshair')
 
     const overlayClass = cn('absolute inset-0 touch-none')
 
-    const trailingEraserForSelect = eraserLineTrailingForReplay(
+    if (widthPx <= 0 || heightPx <= 0) return null
+
+    const trailingEraser = eraserLineTrailingForReplay(
       draftStrokeRef.current,
       liveEraserLineDraftRef.current,
     )
-    const deadIndicesForSelect = computeEraserLineDeadIndices(commands, trailingEraserForSelect)
-    const paintedCommands =
-      selectRotationLiveDelta != null &&
-      selectRotationPivotRef.current &&
-      selectRotationBaseCommandsRef.current
-        ? rotateAnnotationCommands(
-            selectRotationBaseCommandsRef.current,
-            new Set(selectRotateIdsRef.current),
-            selectRotationPivotRef.current,
-            selectRotationLiveDelta,
-            { widthPx, heightPx },
-          )
-        : selectScaleLiveBounds && selectScaleStartBoundsRef.current
-          ? scaleAnnotationCommands(
-              commands,
-              new Set(selectScaleIdsRef.current),
-              selectScaleStartBoundsRef.current,
-              selectScaleLiveBounds,
-            )
-          : selectDragLive && selectMoveIdsRef.current.length > 0
-            ? translateAnnotationCommands(
-                commands,
-                new Set(selectMoveIdsRef.current),
-                selectDragLive.dx,
-                selectDragLive.dy,
-              )
-            : commands
-
-    const selectionOutlineFramesList = selectionOutlineFramesForChrome(
-      paintedCommands,
-      selectedIds,
-      widthPx,
-      heightPx,
-      groupSelectionChrome,
-      deadIndicesForSelect,
-      selectRotationLiveDelta,
-      selectRotationStartFrameRef.current,
-    )
-
-    const selectionUnionBounds =
-      hasSelection && isSelect && editingId == null && !marqueeRect
-        ? selectScaleLiveBounds ??
-          unionSelectionBounds(
-            paintedCommands,
-            selectedIds,
-            widthPx,
-            heightPx,
-            deadIndicesForSelect,
-          )
-        : null
-
-    const showScaleHandles =
-      isSelect && hasSelection && editingId == null && !marqueeRect && selectionUnionBounds != null
-
-    const showRotationHandle =
-      showScaleHandles && selectionHasRotatableShapes(paintedCommands, selectedIds)
-
-    const selectionHandleFrame =
-      showScaleHandles && selectionUnionBounds
-        ? resolveSelectionHandleFrame(
-            paintedCommands,
-            selectedIds,
-            widthPx,
-            heightPx,
-            selectionUnionBounds,
-            selectRotationLiveDelta,
-            selectRotationStartFrameRef.current,
-          )
-        : null
-
-    if (widthPx <= 0 || heightPx <= 0) return null
-
-    const trailingEraser = trailingEraserForSelect
-    const deadIndices = deadIndicesForSelect
+    const deadIndices = deadIndicesForInteraction
     void erasePreviewEpoch
     const renderSlices = buildAnnotationRenderSlices(paintedCommands, deadIndices)
     const cmdCount = paintedCommands.length
@@ -2196,12 +2202,19 @@ export function useBookPageAnnotationLayer(
     /** Let stickies / text fields receive clicks when editing; text tool uses overlay hit-testing. */
     const canvasSelectViaSessionLayer =
       (spreadInkDelegated || whiteboardInkDelegated) && isSelect
+    /** Book spread + whiteboard: text/sticky placement + edit live on BookSpreadSessionLayer. */
+    const domToolsViaSessionLayer = textToolHoverViaSessionLayer
     const pointerEventsOnOverlay =
       !delegatePointerToSpread &&
       !delegatePointerToWhiteboardPen &&
       !canvasSelectViaSessionLayer &&
-      mode !== 'sticky' &&
+      !domToolsViaSessionLayer &&
+      !writableDomTool &&
       !(isSelect && editingId != null)
+
+    const textToolActive = mode === 'text' || writableDomTool
+    const textInputEnabled =
+      (textToolActive && editingId != null) || selectTextEditActive
 
     return {
       widthPx,
@@ -2224,12 +2237,15 @@ export function useBookPageAnnotationLayer(
       isSelect,
       editingId,
       setEditingId,
+      handleEditingIdChange,
       marqueeRect,
       marqueeMode,
       showSelectionChrome,
       selectionOutlineFramesList,
+      hoverOutlineFramesList,
       selectionHandleFrame,
       showScaleHandles,
+      showUnionOutline,
       showRotationHandle,
       draftZ,
       selectChromeZ,
@@ -2244,7 +2260,14 @@ export function useBookPageAnnotationLayer(
       onOverlayPointerUp,
       onOverlayPointerCancel,
       onSelectDoubleClick,
-      setPointerOverSelection,
-      setHoveredScaleHandle,
+      onPointerLeave: () => {
+        clearSelectionHover()
+        setTextToolHoverTargetId(null)
+      },
+      textToolHoverFrames,
+      textToolEditingFrames,
+      textToolActive,
+      textInputEnabled,
+      onEditingTextDraftChange,
     }
 }

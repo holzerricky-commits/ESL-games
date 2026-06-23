@@ -10,23 +10,39 @@ export function isInkSessionDelegatedCanvasCommand(cmd: AnnotationCommand): bool
     cmd.kind === 'arrow' ||
     cmd.kind === 'rect' ||
     cmd.kind === 'ellipse' ||
-    cmd.kind === 'triangle'
+    cmd.kind === 'triangle' ||
+    cmd.kind === 'stamp' ||
+    cmd.kind === 'callout'
   )
 }
 
 /** @deprecated Use isInkSessionDelegatedCanvasCommand */
 export const isSpreadDelegatedCanvasCommand = isInkSessionDelegatedCanvasCommand
 
+/** Commands owned by the book spread session (canvas + text + sticky). */
+export function isSpreadSessionOwnedCommand(cmd: AnnotationCommand): boolean {
+  if (isInkSessionDelegatedCanvasCommand(cmd)) return true
+  return cmd.kind === 'text' || cmd.kind === 'sticky'
+}
+
 /**
  * When spread ink is delegated, page layers still load/persist full storage but only
- * paint DOM + non-session canvas items (text, sticky, stamp, callout).
+ * paint items not owned by the spread session.
  */
-export function pageLayerCanvasCommandsWhenSpreadInkDelegated(
+export function pageLayerCommandsWhenSpreadDelegated(
   commands: readonly AnnotationCommand[],
   spreadInkDelegated: boolean,
 ): AnnotationCommand[] {
   if (!spreadInkDelegated) return [...commands]
-  return commands.filter((c) => !isInkSessionDelegatedCanvasCommand(c))
+  return commands.filter((c) => !isSpreadSessionOwnedCommand(c))
+}
+
+/** @deprecated Use pageLayerCommandsWhenSpreadDelegated */
+export function pageLayerCanvasCommandsWhenSpreadInkDelegated(
+  commands: readonly AnnotationCommand[],
+  spreadInkDelegated: boolean,
+): AnnotationCommand[] {
+  return pageLayerCommandsWhenSpreadDelegated(commands, spreadInkDelegated)
 }
 
 /** Phase 1 whiteboard: pen only on session (superseded when full ink delegated). */
@@ -34,7 +50,7 @@ export function isWhiteboardPenDelegatedCanvasCommand(cmd: AnnotationCommand): b
   return cmd.kind === 'stroke' && cmd.tool === 'pen'
 }
 
-/** Whiteboard session: strokes + shapes on session layer; text/sticky/stamp on page layer. */
+/** Whiteboard session: strokes + shapes + stamp/callout on session layer; text/sticky on page layer (book spread migrates text/sticky to spread session). */
 export function isWhiteboardDelegatedCanvasCommand(cmd: AnnotationCommand): boolean {
   return isInkSessionDelegatedCanvasCommand(cmd)
 }
@@ -51,5 +67,8 @@ export function pageLayerCanvasCommandsWhenWhiteboardInkDelegated(
   whiteboardInkDelegated: boolean,
 ): AnnotationCommand[] {
   if (!whiteboardInkDelegated) return [...commands]
-  return commands.filter((c) => !isWhiteboardDelegatedCanvasCommand(c))
+  return commands.filter(
+    (c) =>
+      !isWhiteboardDelegatedCanvasCommand(c) && c.kind !== 'text' && c.kind !== 'sticky',
+  )
 }

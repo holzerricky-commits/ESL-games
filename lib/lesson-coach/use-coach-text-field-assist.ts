@@ -32,6 +32,9 @@ export function useCoachTextFieldAssist({
   onFieldBlur: () => void
   ghost: ReturnType<typeof useWritingAssist>['ghost']
   ghostPartial: string
+  ghostCandidates: ReturnType<typeof useWritingAssist>['ghostCandidates']
+  ghostIndex: number
+  spellMirrorEnabled: boolean
 } {
   const {
     dictationMode,
@@ -40,7 +43,7 @@ export function useCoachTextFieldAssist({
     registerActiveTextSink,
     setTextFieldFocused,
   } = useLessonCoachSyncActions()
-  const { bindTextarea, ghost, ghostPartial, clearGhost } = useWritingAssist()
+  const { bindTextarea, ghost, ghostPartial, ghostCandidates, ghostIndex, clearGhost } = useWritingAssist()
   const valueRef = useRef(value)
   valueRef.current = value
 
@@ -88,5 +91,8 @@ export function useCoachTextFieldAssist({
     onFieldBlur: onBlur,
     ghost: dictationMode ? null : ghost,
     ghostPartial: dictationMode ? '' : ghostPartial,
+    ghostCandidates: dictationMode ? [] : ghostCandidates,
+    ghostIndex: dictationMode ? 0 : ghostIndex,
+    spellMirrorEnabled: !dictationMode,
   }
 }

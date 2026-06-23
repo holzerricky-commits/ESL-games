@@ -1,12 +1,21 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createMemorySpreadSessionStorage } from '@/lib/books/spread-session-storage'
 import { loadSpreadSession } from '@/lib/books/spread-session-storage'
 import {
   checkpointSpreadSessionDocument,
   flushSpreadSessionDocumentToPageStorage,
+  isLastPageSpreadKey,
 } from '@/lib/books/spread-session-persist'
 import { createEmptySpreadSession, spreadSessionDocId } from '@/lib/books/spread-session-types'
 import { projectSpreadSessionToOwnerPages } from '@/lib/books/spread-session-commit'
+
+vi.mock('@/lib/books/annotation-storage', () => ({
+  setAnnotationsForPage: vi.fn(),
+}))
+
+import { setAnnotationsForPage } from '@/lib/books/annotation-storage'
+
+const mockedSetAnnotationsForPage = vi.mocked(setAnnotationsForPage)
 
 const key = {
   studentId: 's1',
@@ -47,6 +56,7 @@ describe('spread-session-persist', () => {
   })
 
   it('flushSpreadSessionDocumentToPageStorage uses page projection helper', () => {
+    mockedSetAnnotationsForPage.mockClear()
     const doc = createEmptySpreadSession(key)
     doc.commands = [
       {
@@ -71,5 +81,68 @@ describe('spread-session-persist', () => {
         unitId: key.unitId,
       }),
     ).not.toThrow()
+    expect(mockedSetAnnotationsForPage).toHaveBeenCalledTimes(2)
+  })
+
+  it('isLastPageSpreadKey detects lone last-page spread session key', () => {
+    expect(isLastPageSpreadKey({ leftPage: 6, rightPage: 6 })).toBe(true)
+    expect(isLastPageSpreadKey({ leftPage: 6, rightPage: 7 })).toBe(false)
+  })
+
+  it('flushSpreadSessionDocumentToPageStorage writes left page only on last-page spread', () => {
+    mockedSetAnnotationsForPage.mockClear()
+    const lastPageKey = { leftPage: 6, rightPage: 6 }
+    const doc = createEmptySpreadSession({ ...key, ...lastPageKey })
+    doc.commands = [
+      {
+        kind: 'text',
+        id: 'text-1',
+        x: 0.2,
+        y: 0.3,
+        text: 'last',
+        color: '#111827',
+        fontSizeNorm: 0.02,
+      },
+    ]
+    flushSpreadSessionDocumentToPageStorage({
+      doc,
+      key: lastPageKey,
+      layout,
+      studentId: key.studentId,
+      bookId: key.bookId,
+      unitId: key.unitId,
+    })
+    expect(mockedSetAnnotationsForPage).toHaveBeenCalledTimes(1)
+    expect(mockedSetAnnotationsForPage).toHaveBeenCalledWith(
+      key.studentId,
+      key.bookId,
+      key.unitId,
+      6,
+      expect.any(Array),
+      'pdf',
+    )
+  })
+
+  it('flushSpreadSessionDocumentToPageStorage clears left only when last-page spread is empty', () => {
+    mockedSetAnnotationsForPage.mockClear()
+    const lastPageKey = { leftPage: 6, rightPage: 6 }
+    const doc = createEmptySpreadSession({ ...key, ...lastPageKey })
+    flushSpreadSessionDocumentToPageStorage({
+      doc,
+      key: lastPageKey,
+      layout,
+      studentId: key.studentId,
+      bookId: key.bookId,
+      unitId: key.unitId,
+    })
+    expect(mockedSetAnnotationsForPage).toHaveBeenCalledTimes(1)
+    expect(mockedSetAnnotationsForPage).toHaveBeenCalledWith(
+      key.studentId,
+      key.bookId,
+      key.unitId,
+      6,
+      [],
+      'pdf',
+    )
   })
 })

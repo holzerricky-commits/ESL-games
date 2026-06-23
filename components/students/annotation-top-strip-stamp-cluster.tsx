@@ -13,13 +13,9 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { cn } from '@/lib/utils'
 import type { ReactNode } from 'react'
 
-const STAMP_LABEL: Record<StampVariant, string> = {
-  check: 'Check',
-  cross: 'Cross',
-  question: 'Question',
-  star: 'Star',
-  heart: 'Heart',
-}
+import { STICKER_QUICK_LABEL } from '@/lib/books/sticker-tool'
+
+const STAMP_LABEL = STICKER_QUICK_LABEL
 
 export function TopStripStampCluster({
   stampVariant,

@@ -3,7 +3,14 @@ import type {
   ShapeFillMode,
   StampVariant,
   TextAnnotationVisualStyle,
+  WritableStickerVariant,
 } from '@/lib/books/annotation-command-types'
+import {
+  isStickerQuickVariant,
+  isWritableStickerVariant,
+  resolveStickerKindFromLegacyMode,
+  type StickerKind,
+} from '@/lib/books/sticker-tool'
 import type { MarqueeSelectRule } from '@/lib/books/annotation-select'
 import {
   type AnnotationColorSource,
@@ -22,6 +29,8 @@ import {
   DEFAULT_TEXT_COLOR,
   getPenSwatch,
   isKnownPenSwatchId,
+  isKnownMarkerColor,
+  migrateMarkerColor,
   migratePenSwatchId,
   isValidStickyFillColor,
   isValidTextStrokeColor,
@@ -94,11 +103,13 @@ export type StudentAnnotationToolPrefs = {
   stampVariant?: StampVariant
   stampThicknessStep?: AnnotationStrokeThicknessStep
   stampQuestionColor?: string
+  /** Unified sticker tool: quick symbols vs writable cards. */
+  stickerKind?: StickerKind
+  writableStickerVariant?: WritableStickerVariant
   eyedropperVariant?: EyedropperVariant
 }
 
 const PEN_SWATCH_IDS = new Set(ANNOTATION_PEN_SWATCHES.map((s) => s.id))
-const MARKER_COLORS = new Set(ANNOTATION_MARKER_SWATCHES.map((c) => c.toLowerCase()))
 const LINE_DASH: AnnotationLineDashStyle[] = ['solid', 'dashed', 'dotted']
 
 const ANNOTATION_MODES: BookAnnotationInteractionMode[] = [
@@ -112,6 +123,7 @@ const ANNOTATION_MODES: BookAnnotationInteractionMode[] = [
   'triangle',
   'arrow',
   'stamp',
+  'sticker',
   'text',
   'sticky',
   'callout',
@@ -119,7 +131,17 @@ const ANNOTATION_MODES: BookAnnotationInteractionMode[] = [
   'eyedropper',
 ]
 
-const STAMP_VARIANTS: StampVariant[] = ['check', 'cross', 'question', 'star', 'heart']
+const STAMP_VARIANTS: StampVariant[] = [
+  'check',
+  'cross',
+  'question',
+  'star',
+  'heart',
+  'thumbsUp',
+  'repeat',
+  'yourTurn',
+  'newWord',
+]
 const TEXT_VISUAL_STYLES: TextAnnotationVisualStyle[] = ['plain', 'filled']
 const SHAPE_FILL_MODES: ShapeFillMode[] = ['none', 'transparent', 'solid']
 const MARQUEE_SELECT_RULES: MarqueeSelectRule[] = ['follow-drag', 'crossing', 'window']
@@ -149,11 +171,16 @@ function isAnnotationMode(v: unknown): v is BookAnnotationInteractionMode {
 /** Legacy persisted mode before laser was removed. */
 function migrateAnnotationMode(v: unknown): BookAnnotationInteractionMode {
   if (v === 'laser') return 'select'
+  if (v === 'stamp' || v === 'sticky') return 'sticker'
   return isAnnotationMode(v) ? v : 'pen'
 }
 
+function isStickerKind(v: unknown): v is StickerKind {
+  return v === 'quick' || v === 'writable'
+}
+
 function isStampVariant(v: unknown): v is StampVariant {
-  return typeof v === 'string' && (STAMP_VARIANTS as readonly string[]).includes(v)
+  return isStickerQuickVariant(v)
 }
 
 function isTextVisualStyle(v: unknown): v is TextAnnotationVisualStyle {
@@ -169,7 +196,7 @@ export function isValidPenSwatchId(id: unknown): id is string {
 }
 
 export function isValidMarkerColor(color: unknown): color is string {
-  return typeof color === 'string' && MARKER_COLORS.has(color.toLowerCase())
+  return typeof color === 'string' && isKnownMarkerColor(color)
 }
 
 function isValidShapeFillColor(color: unknown): color is string {
@@ -225,6 +252,10 @@ export function normalizeStudentAnnotationToolPrefs(raw: unknown): StudentAnnota
   if (isStampVariant(o.stampVariant)) out.stampVariant = o.stampVariant
   if (isThicknessStep(o.stampThicknessStep)) out.stampThicknessStep = o.stampThicknessStep
   if (isValidStampQuestionColor(o.stampQuestionColor)) out.stampQuestionColor = o.stampQuestionColor
+  if (isStickerKind(o.stickerKind)) out.stickerKind = o.stickerKind
+  if (isWritableStickerVariant(o.writableStickerVariant)) {
+    out.writableStickerVariant = o.writableStickerVariant
+  }
   if (isEyedropperVariant(o.eyedropperVariant)) out.eyedropperVariant = o.eyedropperVariant
   return out
 }
@@ -348,12 +379,13 @@ export function resolveMarkerToolPrefsFromStorage(studentId: string): {
     saved.markerColorSource === 'custom' && isValidCustomHex(saved.markerCustomHex)
       ? 'custom'
       : 'swatch'
-  const markerColor =
+  const markerColor = migrateMarkerColor(
     markerColorSource === 'custom'
       ? markerCustomHex
       : isValidMarkerColor(saved.markerColor)
         ? saved.markerColor!
-        : paletteDefault
+        : paletteDefault,
+  )
   return {
     markerColor,
     markerColorSource,
@@ -392,6 +424,36 @@ export function resolveStampToolPrefsFromStorage(studentId: string): {
     stampQuestionColor: isValidStampQuestionColor(saved.stampQuestionColor)
       ? saved.stampQuestionColor!
       : DEFAULT_STAMP_QUESTION_COLOR,
+  }
+}
+
+export function resolveStickerToolPrefsFromStorage(studentId: string): {
+  stickerKind: StickerKind
+  stampVariant: StampVariant
+  stampThicknessStep: AnnotationStrokeThicknessStep
+  stampQuestionColor: string
+  stickyFillColor: string
+  stickyThicknessStep: AnnotationStrokeThicknessStep
+  writableStickerVariant: WritableStickerVariant
+} {
+  const saved = readStudentAnnotationToolPrefs(studentId)
+  const legacyMode = saved.annotationMode
+  const stickerKind = resolveStickerKindFromLegacyMode(
+    migrateAnnotationMode(legacyMode),
+    saved.stickerKind,
+  )
+  const sticky = resolveStickyToolPrefsFromStorage(studentId)
+  const stamp = resolveStampToolPrefsFromStorage(studentId)
+  return {
+    stickerKind,
+    stampVariant: stamp.stampVariant,
+    stampThicknessStep: stamp.stampThicknessStep,
+    stampQuestionColor: stamp.stampQuestionColor,
+    stickyFillColor: sticky.stickyFillColor,
+    stickyThicknessStep: sticky.stickyThicknessStep,
+    writableStickerVariant: isWritableStickerVariant(saved.writableStickerVariant)
+      ? saved.writableStickerVariant
+      : 'note',
   }
 }
 
@@ -505,9 +567,8 @@ export function resolveAnnotationToolPrefsFromStorage(studentId: string) {
     ...resolvePenToolPrefsFromStorage(studentId),
     ...resolveMarkerToolPrefsFromStorage(studentId),
     ...resolveEraserToolPrefsFromStorage(studentId),
-    ...resolveStampToolPrefsFromStorage(studentId),
+    ...resolveStickerToolPrefsFromStorage(studentId),
     ...resolveTextToolPrefsFromStorage(studentId),
-    ...resolveStickyToolPrefsFromStorage(studentId),
     ...resolveShapeToolPrefsFromStorage(studentId),
   }
 }

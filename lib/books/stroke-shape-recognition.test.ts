@@ -98,6 +98,21 @@ describe('stroke-shape-recognition', () => {
     expect(shape?.kind).toBe('triangle')
   })
 
+  it('does not recognize a messy freehand scribble', () => {
+    const pts: [number, number][] = [
+      [0.15, 0.2],
+      [0.22, 0.35],
+      [0.18, 0.5],
+      [0.35, 0.42],
+      [0.28, 0.25],
+      [0.45, 0.38],
+      [0.52, 0.22],
+      [0.4, 0.15],
+      [0.55, 0.48],
+    ]
+    expect(recognizeHoldShapeFromStroke(pts)).toBeNull()
+  })
+
   it('updates line draft on pointer move along locked axis', () => {
     const draft = {
       kind: 'line' as const,

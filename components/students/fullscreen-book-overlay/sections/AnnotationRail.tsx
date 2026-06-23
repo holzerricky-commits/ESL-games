@@ -12,7 +12,9 @@ import type {
   ShapeFillMode,
   StampVariant,
   TextAnnotationVisualStyle,
+  WritableStickerVariant,
 } from '@/lib/books/annotation-command-types'
+import type { StickerKind } from '@/lib/books/sticker-tool'
 import type { EyedropperVariant } from '@/lib/books/eyedropper-variant'
 import type { BookCaptureFormat } from '@/lib/books/book-capture'
 import type { BookLibraryPayload } from '@/lib/books/types'
@@ -37,6 +39,10 @@ interface AnnotationRailProps {
   setAnnotationMode: (v: BookAnnotationInteractionMode) => void
   stampVariant: StampVariant
   setStampVariant: (v: StampVariant) => void
+  stickerKind: StickerKind
+  setStickerKind: (k: StickerKind) => void
+  writableStickerVariant: WritableStickerVariant
+  setWritableStickerVariant: (v: WritableStickerVariant) => void
   stampQuestionColor: string
   setStampQuestionColor: (c: string) => void
   penSwatchId: string
@@ -143,6 +149,10 @@ export function AnnotationRail({
   setAnnotationMode,
   stampVariant,
   setStampVariant,
+  stickerKind,
+  setStickerKind,
+  writableStickerVariant,
+  setWritableStickerVariant,
   stampQuestionColor,
   setStampQuestionColor,
   penSwatchId,
@@ -272,6 +282,10 @@ export function AnnotationRail({
               setAnnotationMode={setAnnotationMode}
               stampVariant={stampVariant}
               setStampVariant={setStampVariant}
+              stickerKind={stickerKind}
+              setStickerKind={setStickerKind}
+              writableStickerVariant={writableStickerVariant}
+              setWritableStickerVariant={setWritableStickerVariant}
               stampQuestionColor={stampQuestionColor}
               setStampQuestionColor={setStampQuestionColor}
               penSwatchId={penSwatchId}

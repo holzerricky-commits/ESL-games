@@ -37,8 +37,8 @@ describe('page-numbering helpers', () => {
   })
 
   it('builds spread labels in mapped mode', () => {
-    expect(mapPdfSpreadToDisplayLabel(2, 4, false, book, unit, 10)).toBe('2-3')
-    expect(mapPdfSpreadToDisplayLabel(2, 4, false, book, unit, 10, 'original')).toBe('2-4')
+    expect(mapPdfSpreadToDisplayLabel(2, 4, book, unit, 10)).toBe('2-3')
+    expect(mapPdfSpreadToDisplayLabel(2, 4, book, unit, 10, 'original')).toBe('2-4')
   })
 
   it('resolves aligned anchors with optional original fallback', () => {

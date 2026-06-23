@@ -133,7 +133,10 @@ export function CoachDictationSentenceChrome({
         className={mirrorClassName}
         style={mirrorStyle}
       />
-      <div className="relative z-[1] [&_textarea]:text-transparent [&_textarea]:caret-white [&_[contenteditable=true]]:text-transparent [&_[contenteditable=true]]:caret-[#2f2f2f]">
+      <div
+        className="relative z-[1] [&_textarea]:text-transparent [&_textarea]:caret-current [&_[contenteditable=true]]:text-transparent [&_[contenteditable=true]]:caret-current"
+        style={{ color: mirrorStyle?.color }}
+      >
         {children}
       </div>
     </div>

@@ -9,7 +9,7 @@ import { clampPdfPage, clampPdfPageToVisible, type UnitPageBounds } from '@/lib/
 /** Default ±8 PDF indices kept mounted in the page view pool. */
 export const PAGE_VIEW_POOL_RADIUS = 8
 
-export type PageViewSlotRole = 'left' | 'right' | 'hidden' | 'single'
+export type PageViewSlotRole = 'left' | 'right' | 'hidden'
 
 export interface PageViewLayoutSpec {
   role: PageViewSlotRole
@@ -20,10 +20,8 @@ export interface PageViewLayoutSpec {
 export function getActiveSpreadPageNumbers(args: {
   anchorPage: number
   spreadRightPage: number | null
-  isSinglePageMode: boolean
 }): number[] {
-  const { anchorPage, spreadRightPage, isSinglePageMode } = args
-  if (isSinglePageMode) return [anchorPage]
+  const { anchorPage, spreadRightPage } = args
   if (spreadRightPage != null) return [anchorPage, spreadRightPage]
   return [anchorPage]
 }
@@ -55,12 +53,7 @@ export function resolvePageViewSlotRole(
   pageNumber: number,
   anchorPage: number,
   spreadRightPage: number | null,
-  isSinglePageMode: boolean,
 ): PageViewLayoutSpec {
-  if (isSinglePageMode) {
-    const active = pageNumber === anchorPage
-    return { role: active ? 'single' : 'hidden', isActiveSpread: active }
-  }
   if (pageNumber === anchorPage) {
     return { role: 'left', isActiveSpread: true }
   }

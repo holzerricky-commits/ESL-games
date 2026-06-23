@@ -26,7 +26,7 @@ interface UseCaptureExportControllerArgs {
   numPages: number | null
   pdfFrom: string
   pdfTo: string
-  isSinglePageMode: boolean
+  exportCaptureLayoutActive: boolean
   pageNumber: number
   studentId: string
   hideChromeForCapture: boolean
@@ -41,7 +41,7 @@ interface UseCaptureExportControllerArgs {
   captureFormat: BookCaptureFormat
   jpegQuality: number
   setPageNumber: (v: number) => void
-  setIsSinglePageMode: (v: boolean) => void
+  setExportCaptureLayoutActive: (v: boolean) => void
   setPdfDialogOpen: (v: boolean) => void
   getCurrentPageCaptureEl: () => HTMLElement | null
   leftPageCaptureRef: React.MutableRefObject<HTMLDivElement | null>
@@ -87,7 +87,11 @@ export function useCaptureExportController(args: UseCaptureExportControllerArgs)
         return
       }
 
-      const metaPage = args.isWhiteboardOpen ? args.bookPageAtCapture : args.isSinglePageMode ? args.pageNumber : args.annotationTargetPage
+      const metaPage = args.isWhiteboardOpen
+        ? args.bookPageAtCapture
+        : args.exportCaptureLayoutActive
+          ? args.pageNumber
+          : args.annotationTargetPage
       setCaptureBusy(true)
       const prevSelect = args.annotationMode === 'select'
       if (prevSelect) args.setAnnotationMode('pen')
@@ -156,7 +160,7 @@ export function useCaptureExportController(args: UseCaptureExportControllerArgs)
       toast.error('Select at most 40 pages for one PDF.')
       return
     }
-    const prevSpread = args.isSinglePageMode
+    const prevExportLayout = args.exportCaptureLayoutActive
     const prevPage = args.pageNumber
     const prevSelect = args.annotationMode === 'select'
     if (prevSelect) args.setAnnotationMode('pen')
@@ -169,7 +173,7 @@ export function useCaptureExportController(args: UseCaptureExportControllerArgs)
     const jpegDataUrls: string[] = []
     let pageW = 0, pageH = 0
     try {
-      args.setIsSinglePageMode(true)
+      args.setExportCaptureLayoutActive(true)
       await settleLayout()
       for (let p = from; p <= to; p++) {
         setPdfProgressLabel(`Rendering page ${p} of ${to}…`)
@@ -208,7 +212,7 @@ export function useCaptureExportController(args: UseCaptureExportControllerArgs)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'PDF export failed')
     } finally {
-      args.setIsSinglePageMode(prevSpread)
+      args.setExportCaptureLayoutActive(prevExportLayout)
       args.setPageNumber(prevPage)
       if (args.selectedBookId && args.selectedUnitId && args.numPages != null && args.selectedUnit) {
         const bounds = getUnitReaderBounds(args.selectedUnit, args.numPages, args.selectedBook ?? undefined)

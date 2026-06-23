@@ -6,7 +6,9 @@ import type {
   StampVariant,
   StrokeAnnotationCommand,
   TextAnnotationVisualStyle,
+  WritableStickerVariant,
 } from '@/lib/books/annotation-command-types'
+import type { StickerKind } from '@/lib/books/sticker-tool'
 import type { EyedropperVariant } from '@/lib/books/eyedropper-variant'
 import type {
   AnnotationStorageChannel,
@@ -76,6 +78,12 @@ export type BookPageAnnotationHandle = {
   selectNextInStack?: (direction: 1 | -1) => void
   /** Translate specific commands (used to mirror cross-page moves in spread select mode). */
   translateByIds?: (ids: string[], dx: number, dy: number) => boolean
+  /** Keyboard nudge / programmatic move of the current selection. */
+  moveSelectedBy?: (dx: number, dy: number) => boolean
+  /** Live keyboard nudge preview (cumulative offset from gesture start). */
+  setNudgePreview?: (dx: number, dy: number) => void
+  commitNudgePreview?: () => boolean
+  clearNudgePreview?: () => void
   /** Stop auto-group from merging new pen ink into existing figures (leaving pen tool). */
   lockPenFigureAutoJoin?: () => void
 }
@@ -111,6 +119,9 @@ export interface BookPageAnnotationLayerProps {
   heightPx: number
   mode: BookAnnotationInteractionMode
   eyedropperVariant?: EyedropperVariant
+  /** Unified sticker tool: quick symbols vs writable cards. */
+  stickerKind?: StickerKind
+  writableStickerVariant?: WritableStickerVariant
   stampVariant: StampVariant
   stampQuestionColor?: string
   strokeWidthScale: number
@@ -182,4 +193,6 @@ export interface BookPageAnnotationLayerProps {
   whiteboardSessionStoreRef?: MutableRefObject<WhiteboardSessionStore | null>
   /** Called after select-move commit on this page (spread uses it to mirror same-id move on sibling page). */
   onSelectionMoveCommitted?: (ids: string[], dx: number, dy: number) => void
+  /** When spread ink is delegated, stamp/callout commits go to the spread session (page-norm cmd). */
+  onSpreadCanvasCommandCommit?: (cmd: AnnotationCommand, pageNumber: number) => void
 }

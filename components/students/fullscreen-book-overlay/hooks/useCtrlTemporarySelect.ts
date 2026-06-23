@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { isBookOverlayKeyboardTypingTarget } from '@/lib/books/book-overlay-keyboard-guards'
+import { shouldDeferBookOverlayToolShortcuts } from '@/lib/books/book-overlay-keyboard-guards'
 
 interface UseCtrlTemporarySelectArgs {
   enabled: boolean
@@ -22,7 +22,7 @@ export function useCtrlTemporarySelect({
     }
 
     function blocked(): boolean {
-      return isBookOverlayKeyboardTypingTarget() && !isLessonPaperOpen
+      return shouldDeferBookOverlayToolShortcuts() && !isLessonPaperOpen
     }
 
     function activate(): void {

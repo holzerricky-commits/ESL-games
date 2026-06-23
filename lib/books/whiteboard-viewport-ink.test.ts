@@ -84,4 +84,27 @@ describe('whiteboard-viewport-ink', () => {
       expect(projected[0].points[1]?.[1]).toBeCloseTo((600 - 400) / 800, 5)
     }
   })
+
+  it('projectCommandsForWhiteboardViewport remaps rotationBounds Y with points', () => {
+    const commands = [
+      {
+        kind: 'stroke' as const,
+        id: 's1',
+        tool: 'pen' as const,
+        points: [[0.2, 400 / 2400]],
+        rotationBounds: { x: 0.15, y: 380 / 2400, w: 0.1, h: 40 / 2400 },
+        rotationDeg: 30,
+      },
+    ]
+    const projected = projectCommandsForWhiteboardViewport(commands, config)
+    const stroke = projected[0]
+    expect(stroke?.kind).toBe('stroke')
+    if (stroke?.kind === 'stroke' && stroke.rotationBounds) {
+      const yDoc = 380 / 2400
+      const expectedY = (yDoc * config.contentHeightPx - config.scrollTopPx) / config.viewportHeightPx
+      expect(stroke.rotationBounds.y).toBeCloseTo(expectedY, 4)
+      expect(stroke.rotationBounds.h).toBeGreaterThan(0)
+      expect(stroke.rotationDeg).toBeCloseTo(30, 3)
+    }
+  })
 })

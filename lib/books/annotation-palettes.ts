@@ -107,14 +107,28 @@ export function isValidStickyFillColor(color: unknown): color is string {
   return typeof color === 'string' && STICKY_FILL_COLOR_SET.has(color.toLowerCase())
 }
 
-/** Background + border for sticky note DOM from fill hex. */
-export function stickyNoteChrome(fillHex: string): { backgroundColor: string; borderColor: string } {
+/** Visual tokens for sticky note DOM from fill hex. */
+export function stickyNoteChrome(fillHex: string): {
+  backgroundColor: string
+  headerColor: string
+  borderColor: string
+  textColor: string
+} {
   const r = parseInt(fillHex.slice(1, 3), 16)
   const g = parseInt(fillHex.slice(3, 5), 16)
   const b = parseInt(fillHex.slice(5, 7), 16)
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+  const darken = (factor: number) => ({
+    r: Math.max(0, Math.round(r * (1 - factor))),
+    g: Math.max(0, Math.round(g * (1 - factor))),
+    b: Math.max(0, Math.round(b * (1 - factor))),
+  })
+  const header = darken(luminance > 0.68 ? 0.14 : 0.1)
   return {
-    backgroundColor: `rgba(${r},${g},${b},0.95)`,
-    borderColor: `rgba(${Math.round(r * 0.45)},${Math.round(g * 0.45)},${Math.round(b * 0.45)},0.32)`,
+    backgroundColor: fillHex,
+    headerColor: `rgb(${header.r},${header.g},${header.b})`,
+    borderColor: `rgba(15, 23, 42, ${luminance > 0.72 ? 0.1 : 0.08})`,
+    textColor: luminance > 0.68 ? '#1c1917' : '#fafaf9',
   }
 }
 
@@ -156,7 +170,7 @@ export function getPenSwatchIdForColor(hex: string): string {
 
 /** Highlighter fills — vivid hues for multiply blend over textbook pages. */
 export const ANNOTATION_MARKER_SWATCHES = [
-  '#ffeb3b',
+  '#ffff00',
   '#ff9800',
   '#ff5252',
   '#ff4081',
@@ -168,11 +182,39 @@ export const ANNOTATION_MARKER_SWATCHES = [
   '#ffd740',
 ] as const
 
+/** Retired highlighter hex → current neon-tuned palette. */
+export const LEGACY_MARKER_COLOR_MAP: Readonly<Record<string, string>> = {
+  '#fff59d': '#ffff00',
+  '#ffeb3b': '#ffff00',
+}
+
+const MARKER_SWATCH_COLOR_SET = new Set(
+  ANNOTATION_MARKER_SWATCHES.map((c) => c.toLowerCase()),
+)
+
+/** Map stored marker hex to the current highlighter palette (render + prefs). */
+export function migrateMarkerColor(hex: string): string {
+  const norm = hex.toLowerCase()
+  if (MARKER_SWATCH_COLOR_SET.has(norm)) return hex
+  const legacy = LEGACY_MARKER_COLOR_MAP[norm]
+  if (legacy) return legacy
+  return hex
+}
+
+export function isKnownMarkerColor(hex: string): boolean {
+  const norm = hex.toLowerCase()
+  return MARKER_SWATCH_COLOR_SET.has(norm) || norm in LEGACY_MARKER_COLOR_MAP
+}
+
 /** Fixed stamp symbol colors (check, cross, star, heart). */
 export const STAMP_COLOR_CHECK = '#16a34a'
 export const STAMP_COLOR_CROSS = '#dc2626'
 export const STAMP_COLOR_STAR = '#eab308'
 export const STAMP_COLOR_HEART = '#dc2626'
+export const STAMP_COLOR_THUMBS_UP = '#16a34a'
+export const STAMP_COLOR_REPEAT = '#2563eb'
+export const STAMP_COLOR_YOUR_TURN = '#ea580c'
+export const STAMP_COLOR_NEW_WORD = '#7c3aed'
 export const DEFAULT_STAMP_QUESTION_COLOR = '#1d4ed8'
 
 export function stampColorForVariant(variant: StampVariant, questionColor: string): string {
@@ -180,6 +222,10 @@ export function stampColorForVariant(variant: StampVariant, questionColor: strin
   if (variant === 'cross') return STAMP_COLOR_CROSS
   if (variant === 'star') return STAMP_COLOR_STAR
   if (variant === 'heart') return STAMP_COLOR_HEART
+  if (variant === 'thumbsUp') return STAMP_COLOR_THUMBS_UP
+  if (variant === 'repeat') return STAMP_COLOR_REPEAT
+  if (variant === 'yourTurn') return STAMP_COLOR_YOUR_TURN
+  if (variant === 'newWord') return STAMP_COLOR_NEW_WORD
   return questionColor
 }
 

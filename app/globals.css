@@ -910,3 +910,20 @@
     transform: none;
   }
 }
+
+/* Book annotation labels — never flash scrollbars while auto-sizing. */
+textarea[data-annotation-id] {
+  overflow: hidden !important;
+  scrollbar-width: none;
+}
+
+textarea[data-annotation-id]::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+textarea[data-annotation-id]::placeholder {
+  color: var(--annotation-placeholder-color, rgba(71, 85, 105, 0.62));
+  opacity: 1;
+}

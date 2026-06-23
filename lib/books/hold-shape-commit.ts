@@ -41,6 +41,31 @@ function inkFromStrokeDraft(draft: StrokeAnnotationCommand): {
   }
 }
 
+function holdLineDist(hold: HoldShapeDraft): number {
+  return Math.hypot(hold.current[0] - hold.anchor[0], hold.current[1] - hold.anchor[1])
+}
+
+/** Hold-snap straight line from the highlighter stays a marker stroke (not a thin pen line). */
+export function buildHoldMarkerLineStrokeCommand(
+  hold: HoldShapeDraft,
+  strokeDraft: StrokeAnnotationCommand,
+  id = newAnnotationId(),
+): StrokeAnnotationCommand | null {
+  if (hold.kind !== 'line' || strokeDraft.tool !== 'marker') return null
+  if (holdLineDist(hold) < HOLD_SHAPE_COMMIT_EPS) return null
+  const ink = inkFromStrokeDraft(strokeDraft)
+  return {
+    kind: 'stroke',
+    id,
+    tool: 'marker',
+    points: [hold.anchor, hold.current],
+    color: ink.color,
+    widthScale: ink.widthScale,
+    lineDashStyle: ink.lineDashStyle,
+    ...(strokeDraft.markerDecoratedEdge ? { markerDecoratedEdge: true } : {}),
+  }
+}
+
 /** Build a committed vector shape from a hold-snap draft, using stroke ink color/width. */
 export function buildHoldShapeCommand(
   hold: HoldShapeDraft,
@@ -51,8 +76,9 @@ export function buildHoldShapeCommand(
   const id = newAnnotationId()
 
   if (hold.kind === 'line') {
-    const dist = Math.hypot(hold.current[0] - hold.anchor[0], hold.current[1] - hold.anchor[1])
-    if (dist < HOLD_SHAPE_COMMIT_EPS) return null
+    const markerStroke = buildHoldMarkerLineStrokeCommand(hold, strokeDraft, id)
+    if (markerStroke) return markerStroke
+    if (holdLineDist(hold) < HOLD_SHAPE_COMMIT_EPS) return null
     return {
       kind: 'line',
       id,

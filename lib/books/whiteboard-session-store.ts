@@ -1,4 +1,5 @@
 import { createInkSessionStore, type InkSessionStore } from '@/lib/books/ink-session-store'
+import type { SelectionMoveClampContext } from '@/lib/books/annotation-scale'
 import { INK_SESSION_AUTOSAVE_MS } from '@/lib/books/ink-session-persist-config'
 import {
   appendLessonBoardPage,
@@ -42,6 +43,7 @@ export type CreateWhiteboardSessionStoreOptions = {
   storageKeyCandidates?: readonly string[]
   autosaveMs?: number
   now?: () => number
+  getSelectionMoveClamp?: () => SelectionMoveClampContext | null
 }
 
 function withLessonBoardPageApi(
@@ -124,6 +126,7 @@ export function createWhiteboardSessionStore(
     autosaveMs: options.autosaveMs ?? INK_SESSION_AUTOSAVE_MS,
     persistEnabled: true,
     now: options.now,
+    getSelectionMoveClamp: options.getSelectionMoveClamp,
   })
   return withLessonBoardPageApi(store)
 }

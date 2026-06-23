@@ -1,4 +1,12 @@
 import type { AnnotationCommand, StrokeAnnotationCommand } from '@/lib/books/annotation-command-types'
+import { expandDeadIndicesForFigureGroups } from '@/lib/books/annotation-figure-group'
+import {
+  TEXT_ANNOTATION_LINE_HEIGHT_RATIO,
+  textLabelBlockHeightNorm,
+} from '@/lib/books/text-label-layout'
+import { measureTextLabelBounds, textCommandHeuristicBBox } from '@/lib/books/text-label-measure'
+
+export { TEXT_ANNOTATION_LINE_HEIGHT_RATIO }
 
 /** Base proximity in normalized page space; multiplied by each eraser-line command's `widthScale`. */
 export const ERASER_LINE_BASE_THRESHOLD = 0.026
@@ -163,11 +171,12 @@ function normPointHitByEraserLine(
   return false
 }
 
-/** Normalized line height multiplier for text bbox / anchor math. */
-export const TEXT_ANNOTATION_LINE_HEIGHT_RATIO = 1.4
-
-export function textBlockHeightNorm(fontSizeNorm: number, lineCount: number): number {
-  return fontSizeNorm * TEXT_ANNOTATION_LINE_HEIGHT_RATIO * Math.max(1, lineCount)
+export function textBlockHeightNorm(
+  fontSizeNorm: number,
+  lineCount: number,
+  heightPx?: number,
+): number {
+  return textLabelBlockHeightNorm(fontSizeNorm, lineCount, heightPx)
 }
 
 /** Top `y` when converting a center-anchored single-line box to top anchor (keeps first line fixed). */
@@ -175,27 +184,45 @@ export function textTopYFromCenterAnchor(
   centerY: number,
   fontSizeNorm: number,
   lineCountBeforeMultiline: number,
+  heightPx: number,
 ): number {
-  const h = textBlockHeightNorm(fontSizeNorm, lineCountBeforeMultiline)
+  const h = textLabelBlockHeightNorm(fontSizeNorm, lineCountBeforeMultiline, heightPx)
   return Math.max(0, Math.min(1, centerY - h / 2))
 }
 
-export function textCommandBBox(cmd: Extract<AnnotationCommand, { kind: 'text' }>): {
+export function textCommandBBox(
+  cmd: Extract<AnnotationCommand, { kind: 'text' }>,
+  widthPx: number,
+  heightPx: number,
+  textOverride?: string,
+): {
   x: number
   y: number
   w: number
   h: number
 } {
-  const lines = cmd.text.length > 0 ? cmd.text.split('\n') : ['']
-  const lineCount = lines.length
-  const maxW = cmd.maxWidthNorm ?? 0.88
-  const w = Math.min(
-    maxW,
-    Math.max(0.06, ...lines.map((line) => line.length * cmd.fontSizeNorm * 0.55)),
-  )
-  const h = textBlockHeightNorm(cmd.fontSizeNorm, lineCount)
-  const y = cmd.yAnchor === 'center' ? cmd.y - h / 2 : cmd.y
-  return { x: cmd.x, y, w, h }
+  return measureTextLabelBounds(cmd, widthPx, heightPx, {
+    mode: 'placement',
+    textOverride,
+  })
+}
+
+/** Tighter bounds for text-tool hit testing and selection chrome. */
+export function textCommandTightBBox(
+  cmd: Extract<AnnotationCommand, { kind: 'text' }>,
+  widthPx: number,
+  heightPx: number,
+  textOverride?: string,
+): {
+  x: number
+  y: number
+  w: number
+  h: number
+} {
+  return measureTextLabelBounds(cmd, widthPx, heightPx, {
+    mode: 'tight',
+    textOverride,
+  })
 }
 
 export function penOrMarkerHitByEraserLine(
@@ -248,7 +275,7 @@ export function commandHitByEraserLine(
         thresholdNorm,
       )
     case 'text': {
-      const box = textCommandBBox(cmd)
+      const box = textCommandHeuristicBBox(cmd)
       return normRectHitByEraserLine(eraserPts, box.x, box.y, box.w, box.h, thresholdNorm)
     }
     case 'sticky':
@@ -315,6 +342,7 @@ export function computeEraserLineDeadIndices(
     applyEraserLineToStack(stack, dead, trailingDraftEraser.points, trailingDraftEraser.widthScale)
   }
 
+  expandDeadIndicesForFigureGroups(commands, dead)
   return dead
 }
 

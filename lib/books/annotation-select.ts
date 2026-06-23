@@ -1,8 +1,13 @@
 import type { AnnotationCommand, StrokeAnnotationCommand } from '@/lib/books/annotation-command-types'
-import { connectedComponentsAmongSelectedPenMarker } from '@/lib/books/annotation-connected-strokes'
+import {
+  connectedComponentsAmongSelectedPenMarker,
+  resolvePenMarkerSelectionIds,
+} from '@/lib/books/annotation-connected-strokes'
 import { MARKER_LINE_WIDTH, PEN_LINE_WIDTH } from '@/lib/books/annotation-draw'
 import { idsInFigureGroup } from '@/lib/books/annotation-figure-group'
-import { pointToSegDistSq, textCommandBBox } from '@/lib/books/annotation-geometry'
+import { pointToSegDistSq } from '@/lib/books/annotation-geometry'
+import { textLabelChromeBounds } from '@/lib/books/text-label-chrome-bounds'
+import { SELECTION_BOX_BORDER_WIDTH_PX } from '@/lib/books/annotation-selection-chrome'
 import {
   boxShapeRotatedBounds,
   degToRad,
@@ -11,6 +16,7 @@ import {
   radToDeg,
   rotatePointAroundPivot,
 } from '@/lib/books/annotation-rotation'
+import { penProfileDrawStyle, penProfileWidthScaleMultiplier } from '@/lib/books/pen-stroke-profile'
 
 /** Stamp / callout hit radius as fraction of min(page width, height). */
 export const STAMP_RADIUS_NORM = 0.06
@@ -18,10 +24,67 @@ export const CALLOUT_RADIUS_NORM = 0.04
 
 export type NormRect = { x: number; y: number; w: number; h: number }
 
+function clamp01(n: number): number {
+  return Math.max(0, Math.min(1, n))
+}
+
 /** Selection chrome box that can spin with the shape. */
 export type OrientedSelectionFrame = {
   rect: NormRect
   rotationDeg: number
+}
+
+/** Half stroke width in normalized space (canvas strokes are centered on the path). */
+function halfLineWidthNorm(linePx: number, widthPx: number, heightPx: number): number {
+  const minDim = Math.min(widthPx, heightPx)
+  if (!(minDim > 0)) return 0
+  return linePx / 2 / minDim
+}
+
+/** Extra pad so the selection chrome border does not clip visible ink. */
+export function selectionChromeBorderPadNorm(widthPx: number, heightPx: number): number {
+  return halfLineWidthNorm(SELECTION_BOX_BORDER_WIDTH_PX, widthPx, heightPx)
+}
+
+export function inflateNormRect(rect: NormRect, pad: number): NormRect {
+  if (pad <= 0) return rect
+  return {
+    x: rect.x - pad,
+    y: rect.y - pad,
+    w: Math.max(0, rect.w + pad * 2),
+    h: Math.max(0, rect.h + pad * 2),
+  }
+}
+
+export function shapeStrokePadNorm(
+  cmd: { strokeWidthScale?: number },
+  widthPx: number,
+  heightPx: number,
+): number {
+  const scale = cmd.strokeWidthScale ?? 1
+  const linePx = PEN_LINE_WIDTH * scale
+  return halfLineWidthNorm(linePx, widthPx, heightPx) + selectionChromeBorderPadNorm(widthPx, heightPx)
+}
+
+export function lineStrokePadNorm(
+  cmd: { widthScale?: number },
+  widthPx: number,
+  heightPx: number,
+): number {
+  const scale = cmd.widthScale ?? 1
+  const linePx = PEN_LINE_WIDTH * scale
+  return halfLineWidthNorm(linePx, widthPx, heightPx) + selectionChromeBorderPadNorm(widthPx, heightPx)
+}
+
+function arrowHeadPadNorm(
+  cmd: { headLengthNorm?: number; widthScale?: number },
+  widthPx: number,
+  heightPx: number,
+): number {
+  const headLen = (cmd.headLengthNorm ?? 0.035) * Math.min(widthPx, heightPx)
+  const minDim = Math.min(widthPx, heightPx)
+  if (!(minDim > 0)) return 0
+  return headLen / minDim
 }
 
 export function orientedSelectionFrameForCommand(
@@ -35,22 +98,27 @@ export function orientedSelectionFrameForCommand(
     case 'triangle':
       if (cmd.w <= 0 || cmd.h <= 0) return null
       return {
-        rect: { x: cmd.x, y: cmd.y, w: cmd.w, h: cmd.h },
+        rect: inflateNormRect(
+          { x: cmd.x, y: cmd.y, w: cmd.w, h: cmd.h },
+          shapeStrokePadNorm(cmd, widthPx, heightPx),
+        ),
         rotationDeg: cmd.rotationDeg ?? 0,
       }
     case 'line':
     case 'arrow': {
       const a = cmd.kind === 'line' ? cmd.a : cmd.from
       const b = cmd.kind === 'line' ? cmd.b : cmd.to
+      const pad =
+        lineStrokePadNorm(cmd, widthPx, heightPx) +
+        (cmd.kind === 'arrow' ? arrowHeadPadNorm(cmd, widthPx, heightPx) : 0)
       const minX = Math.min(a[0], b[0])
       const minY = Math.min(a[1], b[1])
       const maxX = Math.max(a[0], b[0])
       const maxY = Math.max(a[1], b[1])
-      const pad = 0.008
       const spanW = maxX - minX
       const spanH = maxY - minY
-      const w = Math.max(spanW, pad)
-      const h = Math.max(spanH, pad)
+      const w = Math.max(spanW, pad * 2)
+      const h = Math.max(spanH, pad * 2)
       return {
         rect: {
           x: minX - (w - spanW) / 2,
@@ -64,6 +132,10 @@ export function orientedSelectionFrameForCommand(
     case 'stroke':
       if (cmd.tool !== 'pen' && cmd.tool !== 'marker') return null
       return strokeOrientedSelectionFrame(cmd, widthPx, heightPx)
+    case 'text': {
+      const rect = textLabelChromeBounds(cmd, widthPx, heightPx, { mode: 'select' })
+      return rect ? { rect, rotationDeg: 0 } : null
+    }
     default: {
       const bounds = getAnnotationBounds(cmd, widthPx, heightPx)
       return bounds && bounds.w > 0 && bounds.h > 0
@@ -107,10 +179,6 @@ export function snapshotStrokeRotationBounds(
 
 const SELECT_POINT_HIT_PAD = 0.014
 
-function clamp01(n: number): number {
-  return Math.max(0, Math.min(1, n))
-}
-
 function normRectFromPoints(pts: [number, number][], pad: number): NormRect | null {
   if (pts.length === 0) return null
   let minX = pts[0]![0]
@@ -124,18 +192,31 @@ function normRectFromPoints(pts: [number, number][], pad: number): NormRect | nu
     maxY = Math.max(maxY, y)
   }
   return {
-    x: clamp01(minX - pad),
-    y: clamp01(minY - pad),
-    w: clamp01(maxX - minX + pad * 2),
-    h: clamp01(maxY - minY + pad * 2),
+    x: minX - pad,
+    y: minY - pad,
+    w: Math.max(0, maxX - minX + pad * 2),
+    h: Math.max(0, maxY - minY + pad * 2),
   }
 }
 
 /** Half-width pad in normalized page space (matches select hit-testing). */
 export function strokePadNorm(cmd: StrokeAnnotationCommand, widthPx: number, heightPx: number): number {
   const scale = cmd.widthScale ?? 1
-  const linePx = cmd.tool === 'marker' ? MARKER_LINE_WIDTH * scale : PEN_LINE_WIDTH * scale
-  return (linePx * 0.55) / Math.min(widthPx, heightPx)
+  let linePx: number
+  let widthFactor = 1
+  if (cmd.tool === 'marker') {
+    linePx = MARKER_LINE_WIDTH * scale
+  } else {
+    linePx = PEN_LINE_WIDTH * scale * penProfileWidthScaleMultiplier(cmd.penStrokeProfile)
+    const style = penProfileDrawStyle(cmd.penStrokeProfile)
+    for (const pass of style.softPasses ?? []) {
+      widthFactor = Math.max(widthFactor, pass.widthFactor)
+    }
+  }
+  return (
+    halfLineWidthNorm(linePx * widthFactor, widthPx, heightPx) +
+    selectionChromeBorderPadNorm(widthPx, heightPx)
+  )
 }
 
 function strokeHitAtPoint(
@@ -171,11 +252,12 @@ function strokeHitAtPoint(
 }
 
 function circleBounds(center: [number, number], radiusNorm: number): NormRect {
+  const d = radiusNorm * 2
   return {
-    x: clamp01(center[0] - radiusNorm),
-    y: clamp01(center[1] - radiusNorm),
-    w: clamp01(radiusNorm * 2),
-    h: clamp01(radiusNorm * 2),
+    x: center[0] - radiusNorm,
+    y: center[1] - radiusNorm,
+    w: d,
+    h: d,
   }
 }
 
@@ -194,23 +276,28 @@ export function getAnnotationBounds(
       }
       return local
     }
-    case 'line':
-      return normRectFromPoints([cmd.a, cmd.b], SELECT_POINT_HIT_PAD)
-    case 'arrow':
-      return normRectFromPoints([cmd.from, cmd.to], SELECT_POINT_HIT_PAD * 2)
+    case 'line': {
+      const pad = lineStrokePadNorm(cmd, widthPx, heightPx)
+      return normRectFromPoints([cmd.a, cmd.b], pad)
+    }
+    case 'arrow': {
+      const pad = lineStrokePadNorm(cmd, widthPx, heightPx) + arrowHeadPadNorm(cmd, widthPx, heightPx)
+      return normRectFromPoints([cmd.from, cmd.to], pad)
+    }
     case 'rect':
     case 'ellipse':
-    case 'triangle':
-      return boxShapeRotatedBounds(cmd)
+    case 'triangle': {
+      const pad = shapeStrokePadNorm(cmd, widthPx, heightPx)
+      const inner = { x: cmd.x, y: cmd.y, w: cmd.w, h: cmd.h, rotationDeg: cmd.rotationDeg }
+      const bounds = boxShapeRotatedBounds(inner)
+      return inflateNormRect(bounds, pad)
+    }
     case 'stamp':
       return circleBounds(cmd.center, (cmd.scale ?? 1) * STAMP_RADIUS_NORM)
     case 'callout':
       return circleBounds(cmd.center, (cmd.scale ?? 1) * CALLOUT_RADIUS_NORM)
-    case 'text': {
-      if (!cmd.text.trim()) return null
-      const box = textCommandBBox(cmd)
-      return { x: box.x, y: box.y, w: box.w, h: box.h }
-    }
+    case 'text':
+      return textLabelChromeBounds(cmd, widthPx, heightPx, { mode: 'select' })
     case 'sticky':
       return { x: cmd.x, y: cmd.y, w: cmd.w, h: cmd.h }
     default:
@@ -261,6 +348,52 @@ function isFigureGroupedPenMarker(
   cmd: AnnotationCommand,
 ): cmd is StrokeAnnotationCommand & { figureGroupId: string } {
   return isPenOrMarkerStroke(cmd) && cmd.figureGroupId != null
+}
+
+const NORM_RECT_MATCH_EPS = 1e-5
+
+export function normRectsMatch(a: NormRect, b: NormRect): boolean {
+  return (
+    Math.abs(a.x - b.x) < NORM_RECT_MATCH_EPS &&
+    Math.abs(a.y - b.y) < NORM_RECT_MATCH_EPS &&
+    Math.abs(a.w - b.w) < NORM_RECT_MATCH_EPS &&
+    Math.abs(a.h - b.h) < NORM_RECT_MATCH_EPS
+  )
+}
+
+/** When every member shares the same `rotationBounds` and `rotationDeg`, return that oriented frame. */
+export function sharedRotationFrameFromStrokeMembers(
+  members: readonly StrokeAnnotationCommand[],
+): OrientedSelectionFrame | null {
+  if (members.length < 2) return null
+  let bounds: NormRect | null = null
+  let deg: number | null = null
+  for (const member of members) {
+    if (!member.rotationBounds) return null
+    const memberDeg = member.rotationDeg ?? 0
+    if (Math.abs(memberDeg) < 1e-6) return null
+    if (bounds == null) {
+      bounds = member.rotationBounds
+      deg = memberDeg
+      continue
+    }
+    if (deg !== memberDeg || !normRectsMatch(bounds, member.rotationBounds)) return null
+  }
+  return bounds && deg != null ? { rect: bounds, rotationDeg: deg } : null
+}
+
+export function sharedRotationFrameFromSelected(
+  commands: readonly AnnotationCommand[],
+  selectedIds: readonly string[],
+): OrientedSelectionFrame | null {
+  const strokes: StrokeAnnotationCommand[] = []
+  for (const id of selectedIds) {
+    const cmd = commands.find((c) => c.id === id)
+    if (!cmd || !isPenOrMarkerStroke(cmd)) return null
+    strokes.push(cmd)
+  }
+  if (strokes.length < 2) return null
+  return sharedRotationFrameFromStrokeMembers(strokes)
 }
 
 /** How grouped pen/marker selection outlines are drawn. */
@@ -412,14 +545,23 @@ export function selectionOrientedOutlineFrames(
       if (handledGroupMember.has(gid)) continue
       handledGroupMember.add(gid)
       const memberIds = idsInFigureGroup(commands as AnnotationCommand[], gid, deadIndices)
+      const memberStrokes: StrokeAnnotationCommand[] = []
       const frames: OrientedSelectionFrame[] = []
       for (const memberId of memberIds) {
         const member = commands.find((c) => c.id === memberId)
         if (!member) continue
+        if (isPenOrMarkerStroke(member)) memberStrokes.push(member)
         const memberFrame = orientedSelectionFrameForCommand(member, widthPx, heightPx)
         if (memberFrame && memberFrame.rect.w > 0 && memberFrame.rect.h > 0) {
           frames.push(memberFrame)
         }
+      }
+      const sharedGroupFrame = sharedRotationFrameFromStrokeMembers(memberStrokes)
+      if (sharedGroupFrame) {
+        const list = groupFrames.get(gid) ?? []
+        list.push(sharedGroupFrame)
+        groupFrames.set(gid, list)
+        continue
       }
       const list = groupFrames.get(gid) ?? []
       list.push(...frames)
@@ -437,6 +579,20 @@ export function selectionOrientedOutlineFrames(
 
   const out: OrientedSelectionFrame[] = []
   for (const frames of groupFrames.values()) {
+    if (frames.length === 1) {
+      const only = frames[0]!
+      if (Math.abs(only.rotationDeg) > 1e-6) {
+        out.push(only)
+      } else {
+        solo.push(only)
+      }
+      continue
+    }
+    const shared = frames.find((f) => Math.abs(f.rotationDeg) > 1e-6)
+    if (shared) {
+      out.push(shared)
+      continue
+    }
     const rects = frames.map((f) => f.rect)
     const u = unionNormRects(rects)
     if (u && u.w > 0 && u.h > 0) out.push({ rect: u, rotationDeg: 0 })
@@ -458,8 +614,16 @@ export function selectionOrientedOutlineFrames(
       if (frames.length === 1) {
         solo.push(frames[0]!)
       } else {
-        const u = unionNormRects(frames.map((f) => f.rect))
-        if (u && u.w > 0 && u.h > 0) out.push({ rect: u, rotationDeg: 0 })
+        const strokeCmds = comp
+          .map((cid) => commands.find((c) => c.id === cid))
+          .filter((c): c is StrokeAnnotationCommand => c != null && isPenOrMarkerStroke(c))
+        const shared = sharedRotationFrameFromStrokeMembers(strokeCmds)
+        if (shared) {
+          out.push(shared)
+        } else {
+          const u = unionNormRects(frames.map((f) => f.rect))
+          if (u && u.w > 0 && u.h > 0) out.push({ rect: u, rotationDeg: 0 })
+        }
       }
     }
   } else {
@@ -492,6 +656,36 @@ export function snapshotRotationBaseCommands(
 }
 
 /**
+ * Prefer live rotation bounds from commands when they match a committed gesture frame.
+ * The committed snapshot only bridges until command data carries rotation metadata.
+ */
+export function preferLiveRotationChromeFrame(
+  commands: readonly AnnotationCommand[],
+  selectedIds: readonly string[],
+  widthPx: number,
+  heightPx: number,
+  committedRotationFrame: OrientedSelectionFrame,
+): OrientedSelectionFrame {
+  const rotIds = selectedIds.filter((id) => {
+    const cmd = commands.find((c) => c.id === id)
+    return cmd != null && isRotatableShapeCommand(cmd)
+  })
+  const committedDeg = committedRotationFrame.rotationDeg
+  const matchesDeg = (deg: number) => Math.abs(deg - committedDeg) < 1e-3
+
+  if (rotIds.length === 1 && selectedIds.length === 1) {
+    const cmd = commands.find((c) => c.id === rotIds[0])
+    const live = cmd ? orientedSelectionFrameForCommand(cmd, widthPx, heightPx) : null
+    if (live && matchesDeg(live.rotationDeg)) return live
+  }
+  if (rotIds.length > 1) {
+    const shared = sharedRotationFrameFromSelected(commands, rotIds)
+    if (shared && matchesDeg(shared.rotationDeg)) return shared
+  }
+  return committedRotationFrame
+}
+
+/**
  * Selection outline boxes for chrome. During live rotate, borders track the same
  * oriented frame as corner handles (pen strokes otherwise stay at rotationDeg 0).
  */
@@ -504,6 +698,7 @@ export function selectionOutlineFramesForChrome(
   deadIndices?: ReadonlySet<number>,
   liveRotationRad: number | null = null,
   rotationStartFrame: OrientedSelectionFrame | null = null,
+  committedRotationFrame: OrientedSelectionFrame | null = null,
 ): OrientedSelectionFrame[] {
   const frames = selectionOrientedOutlineFrames(
     commands,
@@ -514,19 +709,46 @@ export function selectionOutlineFramesForChrome(
     deadIndices,
   )
 
-  if (liveRotationRad == null || !rotationStartFrame) {
-    return frames
+  if (liveRotationRad != null && rotationStartFrame) {
+    const liveDeg = rotationStartFrame.rotationDeg + radToDeg(liveRotationRad)
+    if (frames.length === 1) {
+      return [{ rect: rotationStartFrame.rect, rotationDeg: liveDeg }]
+    }
+    return frames.map((frame) =>
+      frame.rotationDeg === 0 ? { rect: frame.rect, rotationDeg: liveDeg } : frame,
+    )
   }
 
-  const liveDeg = rotationStartFrame.rotationDeg + radToDeg(liveRotationRad)
+  if (committedRotationFrame && Math.abs(committedRotationFrame.rotationDeg) > 1e-6) {
+    const resolved = preferLiveRotationChromeFrame(
+      commands,
+      selectedIds,
+      widthPx,
+      heightPx,
+      committedRotationFrame,
+    )
+    const { rect, rotationDeg } = resolved
 
-  if (frames.length === 1) {
-    return [{ rect: rotationStartFrame.rect, rotationDeg: liveDeg }]
+    if (frames.length === 1) {
+      const frame = frames[0]!
+      if (Math.abs(frame.rotationDeg - rotationDeg) < 1e-3 && Math.abs(frame.rotationDeg) > 1e-6) {
+        return frames
+      }
+      return [{ rect, rotationDeg }]
+    }
+    if (
+      frames.every(
+        (frame) => Math.abs(frame.rotationDeg - rotationDeg) < 1e-3 && Math.abs(frame.rotationDeg) > 1e-6,
+      )
+    ) {
+      return frames
+    }
+    return frames.map((frame) =>
+      frame.rotationDeg === 0 ? { rect, rotationDeg } : frame,
+    )
   }
 
-  return frames.map((frame) =>
-    frame.rotationDeg === 0 ? { rect: frame.rect, rotationDeg: liveDeg } : frame,
-  )
+  return frames
 }
 
 export function rotationStartFrameForGesture(
@@ -545,6 +767,8 @@ export function rotationStartFrameForGesture(
     const frame = cmd ? orientedSelectionFrameForCommand(cmd, widthPx, heightPx) : null
     if (frame) return frame
   }
+  const shared = sharedRotationFrameFromSelected(commands, rotIds)
+  if (shared) return shared
   return { rect: unionBounds, rotationDeg: 0 }
 }
 
@@ -556,12 +780,25 @@ export function resolveSelectionHandleFrame(
   unionBounds: NormRect | null,
   liveRotationRad: number | null,
   rotationStartFrame: OrientedSelectionFrame | null,
+  committedRotationFrame: OrientedSelectionFrame | null = null,
 ): OrientedSelectionFrame | null {
   if (liveRotationRad != null && rotationStartFrame) {
     return {
       rect: rotationStartFrame.rect,
       rotationDeg: rotationStartFrame.rotationDeg + radToDeg(liveRotationRad),
     }
+  }
+  if (
+    committedRotationFrame &&
+    Math.abs(committedRotationFrame.rotationDeg) > 1e-6
+  ) {
+    return preferLiveRotationChromeFrame(
+      commands,
+      selectedIds,
+      widthPx,
+      heightPx,
+      committedRotationFrame,
+    )
   }
   const rotIds = selectedIds.filter((id) => {
     const cmd = commands.find((c) => c.id === id)
@@ -570,6 +807,10 @@ export function resolveSelectionHandleFrame(
   if (rotIds.length === 1 && selectedIds.length === 1) {
     const cmd = commands.find((c) => c.id === rotIds[0])
     if (cmd) return orientedSelectionFrameForCommand(cmd, widthPx, heightPx)
+  }
+  if (rotIds.length > 1) {
+    const shared = sharedRotationFrameFromSelected(commands, rotIds)
+    if (shared) return shared
   }
   return unionBounds ? { rect: unionBounds, rotationDeg: 0 } : null
 }
@@ -630,6 +871,26 @@ function commandHitAtPoint(
   return normRectContainsPoint(bounds, nx, ny)
 }
 
+/** Ids that a select click on `cmd` would toggle (pen cluster, figure group, or single id). */
+export function resolveSelectClickTargetIds(
+  commands: readonly AnnotationCommand[],
+  cmd: AnnotationCommand,
+  widthPx: number,
+  heightPx: number,
+  deadIndices?: ReadonlySet<number>,
+): string[] {
+  if (cmd.kind === 'stroke' && (cmd.tool === 'pen' || cmd.tool === 'marker')) {
+    return resolvePenMarkerSelectionIds(commands, cmd.id, widthPx, heightPx, deadIndices)
+  }
+  return [cmd.id]
+}
+
+export function selectionIdsMatch(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false
+  const set = new Set(a)
+  return b.every((id) => set.has(id))
+}
+
 /** Topmost command index at normalized point (later in array = on top). */
 export function hitTestAnnotationIndex(
   commands: AnnotationCommand[],
@@ -642,6 +903,45 @@ export function hitTestAnnotationIndex(
   for (let i = commands.length - 1; i >= 0; i--) {
     if (skipIndices?.has(i)) continue
     if (commandHitAtPoint(commands[i]!, nx, ny, widthPx, heightPx)) return i
+  }
+  return null
+}
+
+/** Topmost text label at point — tight bounds so nearby clicks can place new text. */
+export function hitTestTextAnnotationIndex(
+  commands: AnnotationCommand[],
+  nx: number,
+  ny: number,
+  widthPx: number,
+  heightPx: number,
+  skipIndices?: Set<number>,
+): number | null {
+  for (let i = commands.length - 1; i >= 0; i--) {
+    if (skipIndices?.has(i)) continue
+    const cmd = commands[i]
+    if (cmd?.kind !== 'text' || !cmd.text.trim()) continue
+    const bounds = textLabelChromeBounds(cmd, widthPx, heightPx, { mode: 'select' })
+    if (bounds && normRectContainsPoint(bounds, nx, ny)) return i
+  }
+  return null
+}
+
+/** Topmost sticky at point (writable sticker tool). */
+export function hitTestStickyAnnotationIndex(
+  commands: AnnotationCommand[],
+  nx: number,
+  ny: number,
+  widthPx: number,
+  heightPx: number,
+  skipIndices?: Set<number>,
+): number | null {
+  for (let i = commands.length - 1; i >= 0; i--) {
+    if (skipIndices?.has(i)) continue
+    const cmd = commands[i]
+    if (cmd?.kind !== 'sticky') continue
+    const bounds = getAnnotationBounds(cmd, widthPx, heightPx)
+    if (!bounds) continue
+    if (normRectContainsPoint(bounds, nx, ny)) return i
   }
   return null
 }
@@ -699,13 +999,13 @@ export function annotationIdsInMarquee(
   return ids
 }
 
-/** Shift every positional field by normalized delta. */
+/** Shift every positional field by normalized delta (no clamp — strokes may extend past page edges). */
 export function translateAnnotationCommand(
   cmd: AnnotationCommand,
   dx: number,
   dy: number,
 ): AnnotationCommand {
-  const tx = (p: [number, number]): [number, number] => [clamp01(p[0] + dx), clamp01(p[1] + dy)]
+  const tx = (p: [number, number]): [number, number] => [p[0] + dx, p[1] + dy]
 
   switch (cmd.kind) {
     case 'stroke':
@@ -715,8 +1015,8 @@ export function translateAnnotationCommand(
         ...(cmd.rotationBounds
           ? {
               rotationBounds: {
-                x: clamp01(cmd.rotationBounds.x + dx),
-                y: clamp01(cmd.rotationBounds.y + dy),
+                x: cmd.rotationBounds.x + dx,
+                y: cmd.rotationBounds.y + dy,
                 w: cmd.rotationBounds.w,
                 h: cmd.rotationBounds.h,
               },
@@ -730,14 +1030,14 @@ export function translateAnnotationCommand(
     case 'rect':
     case 'ellipse':
     case 'triangle':
-      return { ...cmd, x: clamp01(cmd.x + dx), y: clamp01(cmd.y + dy) }
+      return { ...cmd, x: cmd.x + dx, y: cmd.y + dy }
     case 'stamp':
     case 'callout':
       return { ...cmd, center: tx(cmd.center) }
     case 'text':
-      return { ...cmd, x: clamp01(cmd.x + dx), y: clamp01(cmd.y + dy) }
+      return { ...cmd, x: cmd.x + dx, y: cmd.y + dy }
     case 'sticky':
-      return { ...cmd, x: clamp01(cmd.x + dx), y: clamp01(cmd.y + dy) }
+      return { ...cmd, x: cmd.x + dx, y: cmd.y + dy }
     default:
       return cmd
   }

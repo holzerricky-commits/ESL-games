@@ -18,7 +18,7 @@ describe('shape-rounded-corners', () => {
   })
 
   it('scales corner radius with box size', () => {
-    expect(shapeCornerRadiusPx(200, 100)).toBeGreaterThan(4)
-    expect(shapeCornerRadiusPx(200, 100)).toBeLessThanOrEqual(28)
+    expect(shapeCornerRadiusPx(200, 100)).toBeGreaterThan(2)
+    expect(shapeCornerRadiusPx(200, 100)).toBeLessThanOrEqual(14)
   })
 })

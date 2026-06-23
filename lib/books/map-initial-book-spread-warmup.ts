@@ -49,19 +49,16 @@ export async function warmMapInitialBookSpreadPrefetch(args: WarmMapInitialBookS
   const visiblePages = getVisiblePdfPages(unit, numPages, book)
   const readerBounds = getUnitReaderBounds(unit, numPages, book)
   const widthPx = heuristicBookOverlaySpreadPageWidthPx()
-  const isSinglePageMode = false
   setMapAnchorSpreadContext({
     unitId: unit.id,
     anchorPage: sel.pageNumber,
     visiblePages,
-    isSinglePageMode,
     widthPx,
   })
 
   const { immediate, idle } = splitReaderPrefetchPages({
     anchorPage: sel.pageNumber,
     visiblePages,
-    isSinglePageMode,
     readerBounds,
     intent: 'map-warm',
   })

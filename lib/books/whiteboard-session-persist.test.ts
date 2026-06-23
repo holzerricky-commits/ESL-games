@@ -17,15 +17,15 @@ const key = {
 }
 
 describe('whiteboard-session-persist', () => {
-  it('hydrateWhiteboardSessionFromLegacyStorage keeps pen and marker strokes', () => {
+  it('hydrateWhiteboardSessionFromLegacyStorage keeps pen, marker, text, and sticky', () => {
     const legacy = [
       { kind: 'stroke' as const, id: 'p1', tool: 'pen' as const, points: [[0.1, 0.1], [0.2, 0.2]] },
       { kind: 'stroke' as const, id: 'm1', tool: 'marker' as const, points: [[0.3, 0.3], [0.4, 0.4]] },
       { kind: 'text' as const, id: 't1', x: 0.1, y: 0.1, w: 0.2, h: 0.05, text: 'hi', color: '#000', fontSizeNorm: 0.02 },
     ]
     const ink = hydrateWhiteboardSessionFromLegacyStorage(legacy)
-    expect(ink).toHaveLength(2)
-    expect(ink.map((c) => c.id)).toEqual(['p1', 'm1'])
+    expect(ink).toHaveLength(3)
+    expect(ink.map((c) => c.id)).toEqual(['p1', 'm1', 't1'])
   })
 
   it('resolveWhiteboardSessionCommandsOnMount merges session with legacy ink', () => {

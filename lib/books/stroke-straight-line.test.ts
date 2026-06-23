@@ -124,7 +124,7 @@ describe('stroke-straight-line', () => {
     ])
   })
 
-  it('extendStrokeDraftFromMove snaps freehand to straight after hold pause', () => {
+  it('extendStrokeDraftFromMove snaps freehand when straightFromHold is set explicitly', () => {
     const draft = { tool: 'pen' as const, points: [[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]] as [number, number][] }
     extendStrokeDraftFromMove(draft, [[0.9, 0.25]], {
       shiftKey: false,

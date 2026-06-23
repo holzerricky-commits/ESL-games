@@ -13,6 +13,11 @@ export type FlushSpreadSessionToPagesParams = {
   unitId: string
 }
 
+/** Last-page spread uses the same page index for left and right session key slots. */
+export function isLastPageSpreadKey(key: Pick<SpreadSessionKey, 'leftPage' | 'rightPage'>): boolean {
+  return key.rightPage === key.leftPage
+}
+
 /** Tier B: persist spread-normalized commands to `bookSpreadSessionV1` immediately. */
 export function checkpointSpreadSessionDocument(
   doc: SpreadSessionDocument,
@@ -34,12 +39,19 @@ export function flushSpreadSessionDocumentToPageStorage({
   unitId,
 }: FlushSpreadSessionToPagesParams): void {
   const pages = { leftPage: key.leftPage, rightPage: key.rightPage }
+  const lastPageOnly = isLastPageSpreadKey(pages)
+
   if (doc.commands.length === 0) {
     setAnnotationsForPage(studentId, bookId, unitId, pages.leftPage, [], 'pdf')
-    setAnnotationsForPage(studentId, bookId, unitId, pages.rightPage, [], 'pdf')
+    if (!lastPageOnly) {
+      setAnnotationsForPage(studentId, bookId, unitId, pages.rightPage, [], 'pdf')
+    }
     return
   }
+
   const projected = projectSpreadSessionToOwnerPages(doc.commands, layout)
   setAnnotationsForPage(studentId, bookId, unitId, pages.leftPage, projected.left, 'pdf')
-  setAnnotationsForPage(studentId, bookId, unitId, pages.rightPage, projected.right, 'pdf')
+  if (!lastPageOnly) {
+    setAnnotationsForPage(studentId, bookId, unitId, pages.rightPage, projected.right, 'pdf')
+  }
 }

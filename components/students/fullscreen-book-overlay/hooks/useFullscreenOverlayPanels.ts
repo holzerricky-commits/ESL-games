@@ -17,7 +17,6 @@ interface UseFullscreenOverlayPanelsArgs {
   isWhiteboardOpen: boolean
   isPageListOpen: boolean
   pageNumber: number
-  isSinglePageMode: boolean
   numPages: number | null
   library: BookLibraryPayload | null
   selectedBookId: string | null
@@ -38,7 +37,6 @@ export function useFullscreenOverlayPanels({
   isWhiteboardOpen,
   isPageListOpen,
   pageNumber,
-  isSinglePageMode,
   numPages,
   library,
   selectedBookId,

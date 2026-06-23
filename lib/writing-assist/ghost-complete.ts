@@ -100,16 +100,21 @@ export function getPartialWordAtCaret(text: string, caret: number): string {
   return m?.[1] ?? ''
 }
 
+/** Strip whitespace and punctuation after the last completed word. */
+function trimAfterLastWord(text: string): string {
+  return text.replace(/[\s.!?,;:"')\]}]+$/g, '')
+}
+
 export function getPreviousWord(text: string, caret: number): string {
   const partial = getPartialWordAtCaret(text, caret)
-  const before = text.slice(0, caret - partial.length)
-  const m = before.match(/([\w'-]+)\s*$/)
-  return m?.[1] ?? ''
+  const before = trimAfterLastWord(text.slice(0, caret - partial.length))
+  const tokens = before.match(/[\w'-]+/g)
+  return tokens?.[tokens.length - 1] ?? ''
 }
 
 export function getSecondPreviousWord(text: string, caret: number): string {
   const partial = getPartialWordAtCaret(text, caret)
-  const before = text.slice(0, caret - partial.length)
+  const before = trimAfterLastWord(text.slice(0, caret - partial.length))
   const tokens = before.match(/[\w'-]+/g) ?? []
   return tokens.length >= 2 ? tokens[tokens.length - 2]! : ''
 }
@@ -174,6 +179,10 @@ function scoreCandidate(
   const freq = engine?.getWordFrequency(lower) ?? 0
   if (freq > 0) score += Math.log(freq + 1) * 50
 
+  // Prefer full next-word predictions over single-letter ghosts (e.g. "are" not "a").
+  if (part.length === 0 && lower.length > 1) score += 100
+  if (part.length === 0 && lower.length === 1 && source !== 'prefix') score -= 60
+
   return score
 }
 
@@ -214,10 +223,6 @@ export function suggestNextWords(
   const prev = normalizeToken(prevWord)
   const prev2 = normalizeToken(options?.prev2Word ?? '')
   const part = partial.toLowerCase()
-
-  if (part.length >= 1 && engine?.isValidWord(part)) {
-    return []
-  }
 
   const bucket = new Map<string, { score: number; source: CandidateSource }>()
   const sentenceStart =

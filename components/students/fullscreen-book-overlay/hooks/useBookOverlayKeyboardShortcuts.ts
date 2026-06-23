@@ -1,10 +1,16 @@
 import { useEffect, useRef } from 'react'
 import type { AnnotationStrokeThicknessStep, BookAnnotationInteractionMode } from '@/lib/books/annotation-storage'
-import type { StampVariant } from '@/lib/books/annotation-command-types'
+import type { StampVariant, WritableStickerVariant } from '@/lib/books/annotation-command-types'
+import type { StickerKind } from '@/lib/books/sticker-tool'
 import {
   commitBookOverlayTypingTarget,
+  focusBookOverlayAnnotationField,
+  getBookOverlayAnnotationEditSessionId,
+  isBookOverlayAnnotationEditSessionActive,
   isBookOverlayKeyboardTypingTarget,
   isWritingAssistTabActive,
+  setBookOverlayAnnotationEditSessionId,
+  shouldDeferBookOverlayToolShortcuts,
 } from '@/lib/books/book-overlay-keyboard-guards'
 import { requestSpreadSessionFlush } from '@/lib/books/spread-session-events'
 import {
@@ -12,6 +18,8 @@ import {
   BOOK_OVERLAY_ERASER_MODES,
   BOOK_OVERLAY_SHAPE_MODES,
   BOOK_OVERLAY_STAMP_VARIANTS,
+  ANNOTATION_KEYBOARD_NUDGE_NORM,
+  ANNOTATION_KEYBOARD_NUDGE_SHIFT_MULTIPLIER,
   BOOK_OVERLAY_STAMP_VARIANT_BY_DIGIT,
   INITIAL_SHORTCUT_TAP_STATE,
   isBookOverlayShapeMode,
@@ -38,6 +46,10 @@ interface UseBookOverlayKeyboardShortcutsArgs {
   setPenStrokeProfile: (profile: PenStrokeProfile) => void
   stampVariant: StampVariant
   setStampVariant: (v: StampVariant) => void
+  stickerKind: StickerKind
+  setStickerKind: (k: StickerKind) => void
+  writableStickerVariant: WritableStickerVariant
+  setWritableStickerVariant: (v: WritableStickerVariant) => void
   eyedropperVariant: EyedropperVariant
   setEyedropperVariant: (v: EyedropperVariant) => void
   isAnnotationRailVisible: boolean
@@ -75,6 +87,8 @@ interface UseBookOverlayKeyboardShortcutsArgs {
   setEraserPixelThicknessStep: (s: AnnotationStrokeThicknessStep) => void
   toolbarCaps: { canUndo: boolean; canRedo: boolean }
   selectAllOnActivePage: () => void
+  deselectAllOnActivePage: () => void
+  hasAnyAnnotationSelection: () => boolean
   getPageAnnotationRef: () => {
     current: {
       getSelectedIds?: () => string[]
@@ -89,6 +103,9 @@ interface UseBookOverlayKeyboardShortcutsArgs {
       deselectAll?: () => void
       duplicateSelected?: () => boolean
       selectNextInStack?: (direction: 1 | -1) => void
+      setNudgePreview?: (dx: number, dy: number) => void
+      commitNudgePreview?: () => boolean
+      clearNudgePreview?: () => void
     } | null
   }
   getActiveAnnotationRef: () => {
@@ -108,6 +125,9 @@ interface UseBookOverlayKeyboardShortcutsArgs {
       deselectAll?: () => void
       duplicateSelected?: () => boolean
       selectNextInStack?: (direction: 1 | -1) => void
+      setNudgePreview?: (dx: number, dy: number) => void
+      commitNudgePreview?: () => boolean
+      clearNudgePreview?: () => void
     } | null
   }
 }
@@ -122,6 +142,10 @@ export function useBookOverlayKeyboardShortcuts({
   setPenStrokeProfile,
   stampVariant,
   setStampVariant,
+  stickerKind,
+  setStickerKind,
+  writableStickerVariant,
+  setWritableStickerVariant,
   eyedropperVariant,
   setEyedropperVariant,
   isAnnotationRailVisible,
@@ -159,6 +183,8 @@ export function useBookOverlayKeyboardShortcuts({
   setEraserPixelThicknessStep,
   toolbarCaps,
   selectAllOnActivePage,
+  deselectAllOnActivePage,
+  hasAnyAnnotationSelection,
   getPageAnnotationRef,
   getActiveAnnotationRef,
 }: UseBookOverlayKeyboardShortcutsArgs) {
@@ -168,6 +194,99 @@ export function useBookOverlayKeyboardShortcuts({
   const penTapRef = useRef<ShortcutTapState>(INITIAL_SHORTCUT_TAP_STATE)
   const eyedropperTapRef = useRef<ShortcutTapState>(INITIAL_SHORTCUT_TAP_STATE)
   const eraserTapRef = useRef<ShortcutTapState>(INITIAL_SHORTCUT_TAP_STATE)
+  const nudgeOffsetRef = useRef({ dx: 0, dy: 0 })
+  const nudgeKeysDownRef = useRef(new Set<string>())
+  const getPageAnnotationRefNudge = useRef(getPageAnnotationRef)
+  getPageAnnotationRefNudge.current = getPageAnnotationRef
+
+  function isArrowNudgeKey(key: string): boolean {
+    return (
+      key === 'ArrowLeft' ||
+      key === 'ArrowRight' ||
+      key === 'ArrowUp' ||
+      key === 'ArrowDown'
+    )
+  }
+
+  function nudgeStepForEvent(e: KeyboardEvent): number {
+    return (
+      ANNOTATION_KEYBOARD_NUDGE_NORM *
+      (e.shiftKey ? ANNOTATION_KEYBOARD_NUDGE_SHIFT_MULTIPLIER : 1)
+    )
+  }
+
+  function applyArrowStepToOffset(key: string, step: number): void {
+    if (key === 'ArrowLeft') nudgeOffsetRef.current.dx -= step
+    else if (key === 'ArrowRight') nudgeOffsetRef.current.dx += step
+    else if (key === 'ArrowUp') nudgeOffsetRef.current.dy -= step
+    else if (key === 'ArrowDown') nudgeOffsetRef.current.dy += step
+  }
+
+  function syncNudgePreview(): void {
+    const { dx, dy } = nudgeOffsetRef.current
+    getPageAnnotationRefNudge.current().current?.setNudgePreview?.(dx, dy)
+  }
+
+  function commitNudgeGesture(): void {
+    const ann = getPageAnnotationRefNudge.current().current
+    const { dx, dy } = nudgeOffsetRef.current
+    nudgeKeysDownRef.current.clear()
+    nudgeOffsetRef.current = { dx: 0, dy: 0 }
+    if (dx === 0 && dy === 0) {
+      ann?.clearNudgePreview?.()
+      return
+    }
+    ann?.commitNudgePreview?.()
+  }
+
+  useEffect(() => {
+    if (!open) return
+
+    function nudgeTypingBlocksShortcuts(): boolean {
+      return shouldDeferBookOverlayToolShortcuts() && !isLessonPaperOpen
+    }
+
+    function onNudgeKeyDown(e: KeyboardEvent) {
+      if (e.defaultPrevented) return
+      const mod = e.ctrlKey || e.metaKey
+      if (mod || e.altKey || !isArrowNudgeKey(e.key)) return
+      if (nudgeTypingBlocksShortcuts()) return
+      const ann = getPageAnnotationRefNudge.current().current
+      const ids = ann?.getSelectedIds?.() ?? []
+      if (ids.length === 0 || !ann?.setNudgePreview) return
+      if (!e.repeat) nudgeKeysDownRef.current.add(e.key)
+      applyArrowStepToOffset(e.key, nudgeStepForEvent(e))
+      syncNudgePreview()
+      e.preventDefault()
+    }
+
+    function onNudgeKeyUp(e: KeyboardEvent) {
+      if (!isArrowNudgeKey(e.key)) return
+      if (!nudgeKeysDownRef.current.has(e.key)) return
+      nudgeKeysDownRef.current.delete(e.key)
+      if (nudgeKeysDownRef.current.size === 0) {
+        commitNudgeGesture()
+      }
+    }
+
+    function onNudgeWindowBlur() {
+      if (nudgeKeysDownRef.current.size > 0) {
+        commitNudgeGesture()
+      }
+    }
+
+    window.addEventListener('keydown', onNudgeKeyDown, true)
+    window.addEventListener('keyup', onNudgeKeyUp, true)
+    window.addEventListener('blur', onNudgeWindowBlur)
+    return () => {
+      window.removeEventListener('keydown', onNudgeKeyDown, true)
+      window.removeEventListener('keyup', onNudgeKeyUp, true)
+      window.removeEventListener('blur', onNudgeWindowBlur)
+      if (nudgeKeysDownRef.current.size > 0 || nudgeOffsetRef.current.dx !== 0 || nudgeOffsetRef.current.dy !== 0) {
+        commitNudgeGesture()
+      }
+    }
+  }, [open, isLessonPaperOpen])
 
   useEffect(() => {
     if (isBookOverlayShapeMode(annotationMode)) {
@@ -179,14 +298,11 @@ export function useBookOverlayKeyboardShortcuts({
     if (!open) return
 
     function isAnnotationFieldTyping(): boolean {
-      return (
-        isBookOverlayKeyboardTypingTarget() &&
-        !isLessonPaperOpen
-      )
+      return shouldDeferBookOverlayToolShortcuts() && !isLessonPaperOpen
     }
 
     function shouldIgnoreToolShortcuts(): boolean {
-      if (isBookOverlayKeyboardTypingTarget()) return true
+      if (shouldDeferBookOverlayToolShortcuts()) return true
       if (isLessonPaperOpen) return true
       if (pdfDialogOpen || regionSelectOpen || captionDialogOpen) return true
       return false
@@ -280,6 +396,23 @@ export function useBookOverlayKeyboardShortcuts({
       const key = e.key
       const keyLower = key.length === 1 ? key.toLowerCase() : key
       const mod = e.ctrlKey || e.metaKey
+
+      if (
+        !mod &&
+        !e.altKey &&
+        key.length === 1 &&
+        isBookOverlayAnnotationEditSessionActive() &&
+        !isBookOverlayKeyboardTypingTarget()
+      ) {
+        const editId = getBookOverlayAnnotationEditSessionId()
+        if (editId && typeof document !== 'undefined') {
+          const hasLiveField = document.querySelector(
+            `textarea[data-annotation-id="${CSS.escape(editId)}"]`,
+          )
+          if (hasLiveField) focusBookOverlayAnnotationField(editId)
+        }
+      }
+
       const annotationTyping = isAnnotationFieldTyping()
       /** Alt+letter while typing: commit field then run tool (Ctrl is reserved by the browser). */
       const altCommitThenShortcut = annotationTyping && e.altKey && !mod
@@ -297,11 +430,10 @@ export function useBookOverlayKeyboardShortcuts({
 
       if (key === 'Escape') {
         if (pdfDialogOpen || regionSelectOpen || captionDialogOpen) return
-        const annForEsc = getPageAnnotationRef().current
-        const escSel = annForEsc?.getSelectedIds?.() ?? []
-        if (escSel.length > 0) {
+        if (hasAnyAnnotationSelection()) {
           e.preventDefault()
-          annForEsc?.deselectAll?.()
+          commitNudgeGesture()
+          deselectAllOnActivePage()
           return
         }
         if (translateDockOpen) {
@@ -360,9 +492,8 @@ export function useBookOverlayKeyboardShortcuts({
       if (mod && keyLower === 'a') {
         if (shouldIgnoreToolShortcuts()) return
         e.preventDefault()
-        const ann = getPageAnnotationRef().current
         if (e.shiftKey) {
-          ann?.deselectAll?.()
+          deselectAllOnActivePage()
         } else {
           selectAllOnActivePage()
         }
@@ -428,7 +559,8 @@ export function useBookOverlayKeyboardShortcuts({
         e.preventDefault()
         stampTapRef.current = INITIAL_SHORTCUT_TAP_STATE
         setStampVariant(BOOK_OVERLAY_STAMP_VARIANT_BY_DIGIT[key]!)
-        setAnnotationMode('stamp')
+        setStickerKind('quick')
+        setAnnotationMode('sticker')
         return
       }
 
@@ -542,7 +674,8 @@ export function useBookOverlayKeyboardShortcuts({
         e.preventDefault()
         const idx = tapIndex(stampTapRef, BOOK_OVERLAY_STAMP_VARIANTS.length, stampCurrentIndex())
         setStampVariant(BOOK_OVERLAY_STAMP_VARIANTS[idx]!)
-        setAnnotationMode('stamp')
+        setStickerKind('quick')
+        setAnnotationMode('sticker')
         return
       }
       if (keyLower === 't') {
@@ -552,7 +685,8 @@ export function useBookOverlayKeyboardShortcuts({
       }
       if (keyLower === 'n') {
         e.preventDefault()
-        setAnnotationMode('sticky')
+        setStickerKind('writable')
+        setAnnotationMode('sticker')
         return
       }
       if (keyLower === 'k') {
@@ -590,6 +724,10 @@ export function useBookOverlayKeyboardShortcuts({
     setPenStrokeProfile,
     stampVariant,
     setStampVariant,
+    stickerKind,
+    setStickerKind,
+    writableStickerVariant,
+    setWritableStickerVariant,
     eyedropperVariant,
     setEyedropperVariant,
     isAnnotationRailVisible,
@@ -627,6 +765,8 @@ export function useBookOverlayKeyboardShortcuts({
     setEraserPixelThicknessStep,
     toolbarCaps,
     selectAllOnActivePage,
+    deselectAllOnActivePage,
+    hasAnyAnnotationSelection,
     getPageAnnotationRef,
     getActiveAnnotationRef,
   ])

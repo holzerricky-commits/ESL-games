@@ -21,7 +21,6 @@ export interface PageViewPoolProps {
   unitId: string
   anchorPage: number
   spreadRightPage: number | null
-  isSinglePageMode: boolean
   visiblePages: number[]
   readerBounds: UnitPageBounds
   spreadPageWidth: number
@@ -33,11 +32,10 @@ export interface PageViewPoolProps {
   confirmSlotPixelsReady?: boolean
   elevatedSlot?: 'left' | 'right' | null
   onPdfPageLoadSuccess: (page: { originalWidth?: number; originalHeight?: number; width: number; height: number }) => void
-  onSlotPixelsReady?: (pageNumber: number, side: 'left' | 'right' | 'single') => void
+  onSlotPixelsReady?: (pageNumber: number, side: 'left' | 'right') => void
   leftCaptureRef: MutableRefObject<HTMLDivElement | null>
   rightCaptureRef: MutableRefObject<HTMLDivElement | null>
   renderPageChrome: (ctx: PageViewPoolRenderContext) => ReactNode
-  children?: ReactNode
 }
 
 /**
@@ -47,7 +45,6 @@ export function PageViewPool({
   unitId,
   anchorPage,
   spreadRightPage,
-  isSinglePageMode,
   visiblePages,
   readerBounds,
   spreadPageWidth,
@@ -63,7 +60,6 @@ export function PageViewPool({
   leftCaptureRef,
   rightCaptureRef,
   renderPageChrome,
-  children,
 }: PageViewPoolProps) {
   const pooledPages = useMemo(
     () =>
@@ -82,7 +78,6 @@ export function PageViewPool({
           pageNumber,
           anchorPage,
           spreadRightPage,
-          isSinglePageMode,
         )
         const captureRef =
           role === 'left' ? leftCaptureRef : role === 'right' ? rightCaptureRef : undefined
@@ -121,7 +116,6 @@ export function PageViewPool({
           </PageView>
         )
       })}
-      {children}
     </>
   )
 }

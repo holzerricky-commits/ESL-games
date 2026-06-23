@@ -80,6 +80,7 @@ import { resolveSpreadAnchorPages } from '@/lib/books/reader-spread-navigation'
 import type { SpreadTurnSlidePayload } from './useSpreadTurnSlide'
 import { getStudentClassSessionById } from '@/lib/students/selectors'
 import { heuristicBookOverlaySpreadPageWidthPx } from '@/lib/books/spread-viewport-layout'
+import type { SelectionMoveClampContext } from '@/lib/books/annotation-scale'
 import type { SpreadSessionStore } from '@/lib/books/spread-session-store'
 import { requestWhiteboardSessionFlush } from '@/lib/books/whiteboard-session-events'
 import type { WhiteboardSessionStore } from '@/lib/books/whiteboard-session-store'
@@ -132,7 +133,7 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
   const [targetSpreadPageWidth, setTargetSpreadPageWidth] = useState(initialSpreadPageWidthPx)
   const [spreadPageWidth, setSpreadPageWidth] = useState(initialSpreadPageWidthPx)
   const [pageAspectRatio, setPageAspectRatio] = useState(DEFAULT_PAGE_ASPECT_RATIO)
-  const [isSinglePageMode, setIsSinglePageMode] = useState(false)
+  const [exportCaptureLayoutActive, setExportCaptureLayoutActive] = useState(false)
   const [pdfReady, setPdfReady] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
   const [isVisible, setIsVisible] = useState(false)
@@ -468,7 +469,6 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     isWhiteboardOpen,
     isPageListOpen,
     pageNumber,
-    isSinglePageMode,
     numPages,
     library,
     selectedBookId,
@@ -486,7 +486,6 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     pageAreaRef,
     spreadRenderBaseKeyRef,
     setPageAreaSize,
-    setIsSinglePageMode,
     setTargetSpreadPageWidth,
     setSpreadPageWidth,
   })
@@ -539,12 +538,17 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
 
   const spreadSessionStoreRef = useRef<SpreadSessionStore | null>(null)
   const whiteboardSessionStoreRef = useRef<WhiteboardSessionStore | null>(null)
+  const whiteboardSelectionMoveClampRef = useRef<SelectionMoveClampContext | null>(null)
 
   const {
     annotationMode,
     setAnnotationMode,
     stampVariant,
     setStampVariant,
+    stickerKind,
+    setStickerKind,
+    writableStickerVariant,
+    setWritableStickerVariant,
     stampQuestionColor,
     setStampQuestionColor,
     penSwatchId,
@@ -647,11 +651,12 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     getActiveAnnotationRef,
     getPageAnnotationRef,
     selectAllOnActivePage,
+    deselectAllOnActivePage,
+    hasAnyAnnotationSelection,
     effectiveAnnotationMode,
   } = useAnnotationController({
     studentId,
     pageNumber,
-    isSinglePageMode,
     isWhiteboardOpen: isWhiteboardOpen && !isWhiteboardMinimized,
     showSpreadRight: showSpreadRightPage,
     spreadRightPage,
@@ -847,7 +852,6 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
       unitId: selectedUnitId,
       anchorPage: pageNumber,
       visiblePages,
-      isSinglePageMode,
       spreadPageWidthPx: layoutSpreadPageWidth,
     })
   }, [
@@ -855,7 +859,6 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     layoutSpreadPageWidth,
     pageNumber,
     visiblePages,
-    isSinglePageMode,
   ])
 
   const spreadDrawableBypass =
@@ -964,7 +967,6 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
         unitId: selectedUnitId,
         anchorPage: pageNumber,
         visiblePages,
-        isSinglePageMode,
         spreadPageWidthPx: layoutSpreadPageWidth,
       })
     if (!spreadPrimed) {
@@ -978,7 +980,6 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     selectedUnitId,
     layoutSpreadPageWidth,
     visiblePages,
-    isSinglePageMode,
   ])
 
   useEffect(() => {
@@ -1000,7 +1001,6 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     const { immediate, idle } = splitReaderPrefetchPages({
       anchorPage: pageNumber,
       visiblePages,
-      isSinglePageMode,
       readerBounds,
       directionBias: getReaderPrefetchDirectionBias(),
       intent: 'routine',
@@ -1026,7 +1026,7 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
       widthPx: w,
       shouldProceed: () => openRef.current,
     })
-  }, [open, pdfReady, selectedUnit, numPages, selectedBook, pageNumber, visiblePages, layoutSpreadPageWidth, isSinglePageMode])
+  }, [open, pdfReady, selectedUnit, numPages, selectedBook, pageNumber, visiblePages, layoutSpreadPageWidth])
 
   /** Align map cache-readiness checks with measured overlay width. */
   useEffect(() => {
@@ -1107,6 +1107,7 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     storagePageKey: whiteboardStorageKey,
     storagePageKeyCandidates: whiteboardStorageKeyCandidates,
     whiteboardSessionStoreRef,
+    selectionMoveClampRef: whiteboardSelectionMoveClampRef,
     onOverlayCaps: onWhiteboardOverlayCaps,
   })
 
@@ -1277,10 +1278,10 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
   const readerViewportAspectRatio = useMemo(() => {
     const r = pageAspectRatio
     if (!Number.isFinite(r) || r <= 0) {
-      return isSinglePageMode ? DEFAULT_PAGE_ASPECT_RATIO : DEFAULT_PAGE_ASPECT_RATIO * 2
+      return DEFAULT_PAGE_ASPECT_RATIO * 2
     }
-    return isSinglePageMode ? r : r * 2
-  }, [pageAspectRatio, isSinglePageMode])
+    return r * 2
+  }, [pageAspectRatio])
 
   const spreadTurnGridRef = useRef<HTMLDivElement | null>(null)
   const turnSlideSeqRef = useRef(0)
@@ -1292,11 +1293,11 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
       if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
 
       const direction = (toPage > fromPage ? 1 : -1) as 1 | -1
-      const outgoing = resolveSpreadAnchorPages(fromPage, visiblePages, isSinglePageMode)
+      const outgoing = resolveSpreadAnchorPages(fromPage, visiblePages)
       turnSlideSeqRef.current += 1
       setTurnSlide({ captureUrl: null, direction, outgoing, seq: turnSlideSeqRef.current })
     },
-    [visiblePages, isSinglePageMode],
+    [visiblePages],
   )
 
   const handleTurnSlideComplete = useCallback(() => {
@@ -1310,7 +1311,6 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     selectedUnit,
     numPages,
     visiblePages,
-    isSinglePageMode,
     pageNumber,
     pageJumpDraft,
     numberingMode,
@@ -1367,7 +1367,6 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     selectedUnit,
     numPages,
     visiblePages,
-    isSinglePageMode,
     pageNumber,
     setNumPages,
     setPageNumber,
@@ -1379,7 +1378,6 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     activePageRowRef,
     pageNumber,
     numPages,
-    isSinglePageMode,
     pageJumpFocused,
     spreadRightPage,
     pageAlignmentRuntime,
@@ -1392,7 +1390,6 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
   const getCurrentPageCaptureEl = useCurrentPageCaptureEl({
     isWhiteboardOpen,
     wbCaptureRootRef,
-    isSinglePageMode,
     spreadRightPage,
     annotationTargetPage,
     leftPageCaptureRef,
@@ -1440,7 +1437,7 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     numPages,
     pdfFrom: '1',
     pdfTo: '1',
-    isSinglePageMode,
+    exportCaptureLayoutActive,
     pageNumber,
     studentId,
     hideChromeForCapture: true,
@@ -1455,7 +1452,7 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     captureFormat: 'png',
     jpegQuality: 0.88,
     setPageNumber,
-    setIsSinglePageMode,
+    setExportCaptureLayoutActive,
     setPdfDialogOpen: () => undefined,
     getCurrentPageCaptureEl,
     leftPageCaptureRef,
@@ -1472,6 +1469,10 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     setPenStrokeProfile,
     stampVariant,
     setStampVariant,
+    stickerKind,
+    setStickerKind,
+    writableStickerVariant,
+    setWritableStickerVariant,
     eyedropperVariant,
     setEyedropperVariant,
     isAnnotationRailVisible,
@@ -1509,6 +1510,8 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     setEraserPixelThicknessStep,
     toolbarCaps,
     selectAllOnActivePage,
+    deselectAllOnActivePage,
+    hasAnyAnnotationSelection,
     getPageAnnotationRef,
     getActiveAnnotationRef,
   })
@@ -1562,7 +1565,6 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     isLessonPaperOverlayMode,
     lessonPaperViewMode,
     layoutSpreadPageWidth,
-    isSinglePageMode,
     pageNumber,
     spreadRightPage,
     pageAreaSize.w,
@@ -1633,7 +1635,7 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     open,
     isPageListOpen,
     pageListRailTab,
-    isSinglePageMode,
+    exportCaptureLayoutActive,
     isVisible,
     isWhiteboardOpen: isWhiteboardOpen && !isWhiteboardMinimized,
     isWhiteboardSessionOpen: isWhiteboardOpen,
@@ -1779,6 +1781,8 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     setPenThicknessStep,
     setRegionSelectOpen,
     setStampVariant,
+    setStickerKind,
+    setWritableStickerVariant,
     setStampQuestionColor,
     setTextFillColor,
     pickTextFillColor,
@@ -1798,6 +1802,7 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     wbStrokeOverlayRef,
     whiteboardStrokeCaptureEnabled,
     whiteboardSessionStoreRef,
+    whiteboardSelectionMoveClampRef,
     whiteboardSessionDoc,
     appendWhiteboardSessionCommand,
     whiteboardSessionUndo,
@@ -1812,6 +1817,8 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     spreadRightPage,
     stampScale,
     stampVariant,
+    stickerKind,
+    writableStickerVariant,
     stampQuestionColor,
     stickyFontSizeNorm,
     strokeColor,
