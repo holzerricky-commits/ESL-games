@@ -7,26 +7,28 @@ import type { SpreadSessionStore } from '@/lib/books/spread-session-store'
 type PageAnnotationRef = RefObject<BookPageAnnotationHandle | null>
 
 /** Imperative select/undo API for ink session stores (toolbar + keyboard). */
-export type InkSessionSelectProxyHandle = Pick<
-  BookPageAnnotationHandle,
-  | 'getSelectedIds'
-  | 'setSelectedIds'
-  | 'selectAll'
-  | 'deselectAll'
-  | 'deleteSelected'
-  | 'copySelected'
-  | 'pasteFromClipboard'
-  | 'duplicateSelected'
-  | 'toggleGroupSelected'
-  | 'removeFromGroupSelected'
-  | 'selectNextInStack'
-  | 'moveSelectedBy'
-  | 'setNudgePreview'
-  | 'commitNudgePreview'
-  | 'clearNudgePreview'
-  | 'undo'
-  | 'redo'
-  | 'clear'
+export type InkSessionSelectProxyHandle = Required<
+  Pick<
+    BookPageAnnotationHandle,
+    | 'getSelectedIds'
+    | 'setSelectedIds'
+    | 'selectAll'
+    | 'deselectAll'
+    | 'deleteSelected'
+    | 'copySelected'
+    | 'pasteFromClipboard'
+    | 'duplicateSelected'
+    | 'toggleGroupSelected'
+    | 'removeFromGroupSelected'
+    | 'selectNextInStack'
+    | 'moveSelectedBy'
+    | 'setNudgePreview'
+    | 'commitNudgePreview'
+    | 'clearNudgePreview'
+    | 'undo'
+    | 'redo'
+    | 'clear'
+  >
 >
 
 /** @deprecated Use InkSessionSelectProxyHandle */
