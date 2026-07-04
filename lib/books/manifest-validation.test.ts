@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { bookLibraryPayloadSchema } from '@/lib/books/manifest-validation'
+import path from 'node:path'
+import {
+  bookLibraryPayloadSchema,
+  isBookLibraryFilePath,
+  isPathInsideRoot,
+} from '@/lib/books/manifest-validation'
 
 describe('bookLibraryPayloadSchema', () => {
   it('accepts anchored unit, lesson, and part page hints', () => {
@@ -63,5 +68,23 @@ describe('bookLibraryPayloadSchema', () => {
       ],
     }
     expect(bookLibraryPayloadSchema.safeParse(payload).success).toBe(true)
+  })
+})
+
+describe('book library path guards', () => {
+  const cwd = path.resolve('/workspace')
+  const libraryRoot = path.resolve(cwd, 'book-library')
+
+  it('accepts files inside the book library', () => {
+    expect(isBookLibraryFilePath('book-library/book/unit1.pdf', cwd, libraryRoot)).toBe(true)
+  })
+
+  it('rejects sibling folders with the same prefix', () => {
+    expect(isBookLibraryFilePath('book-library-private/secret.pdf', cwd, libraryRoot)).toBe(false)
+    expect(isPathInsideRoot(path.resolve(cwd, 'book-library-private/secret.pdf'), libraryRoot)).toBe(false)
+  })
+
+  it('rejects traversal that resolves outside the book library', () => {
+    expect(isBookLibraryFilePath('book-library/../book-library-private/secret.pdf', cwd, libraryRoot)).toBe(false)
   })
 })
