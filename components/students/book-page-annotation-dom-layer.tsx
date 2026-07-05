@@ -134,8 +134,8 @@ function textBlockPositionStyle(
 /** Grow textarea height to fit all lines; no inner scrollbar. */
 function applyAnnotationTextFieldNoScroll(el: HTMLTextAreaElement): void {
   const noScroll = annotationTextFieldNoScrollCSS()
-  el.style.overflowX = noScroll.overflowX
-  el.style.overflowY = noScroll.overflowY
+  el.style.overflowX = noScroll.overflowX ?? 'hidden'
+  el.style.overflowY = noScroll.overflowY ?? 'hidden'
   el.style.scrollbarWidth = noScroll.scrollbarWidth ?? 'none'
 }
 
