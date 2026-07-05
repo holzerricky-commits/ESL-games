@@ -201,4 +201,29 @@ describe('lesson-board-types', () => {
     expect(loaded.commands).toHaveLength(1)
     expect(loaded.pages[0]?.commands).toHaveLength(1)
   })
+
+  it('loadWhiteboardSessionBestMatch prefers ink over extra blank pages', () => {
+    const storage = createMemoryWhiteboardSessionStorage()
+    const classKey = annotationStorageSessionKey('class-live')
+    const localKey = annotationStorageLocalWhiteboardKey(key.bookId, key.unitId)
+    const emptyClassDoc = createEmptyWhiteboardSession({ ...key, storagePageKey: classKey })
+    emptyClassDoc.pages.push(
+      createLessonBoardPage('standard', { commands: [] }),
+      createLessonBoardPage('standard', { commands: [] }),
+    )
+    const localDoc = createEmptyWhiteboardSession({ ...key, storagePageKey: localKey })
+    localDoc.commands = [stroke]
+
+    storage.writeRoot({
+      [emptyClassDoc.docId]: prepareLessonBoardSessionForPersist(emptyClassDoc) as never,
+      [localDoc.docId]: prepareLessonBoardSessionForPersist(localDoc) as never,
+    })
+
+    const primaryKey = { ...key, storagePageKey: classKey }
+    const loaded = loadWhiteboardSessionBestMatch(primaryKey, [classKey, localKey], storage)
+    expect(loaded.key.storagePageKey).toBe(classKey)
+    expect(loaded.docId).toBe(whiteboardSessionDocId(primaryKey))
+    expect(loaded.commands).toHaveLength(1)
+    expect(loaded.pages[0]?.commands).toHaveLength(1)
+  })
 })

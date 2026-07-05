@@ -659,10 +659,10 @@ export function useAnnotationController({
       }
       return wbAnnRef
     }
+    if (spreadSessionSelectReady()) {
+      return spreadSessionSelectProxyRef
+    }
     if (spreadRightPage != null) {
-      if (spreadSessionSelectReady()) {
-        return spreadSessionSelectProxyRef
-      }
       if (effectiveAnnotationMode === 'select') {
         return legacySpreadSelectProxyRef
       }

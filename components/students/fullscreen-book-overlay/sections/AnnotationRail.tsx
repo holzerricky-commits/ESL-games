@@ -211,8 +211,6 @@ export function AnnotationRail({
   setShapeFillMode,
   shapeFillColor,
   setShapeFillColor,
-  shapeRoundedCorners,
-  setShapeRoundedCorners,
   eyedropperVariant,
   setEyedropperVariant,
   pdfReady,
@@ -342,8 +340,6 @@ export function AnnotationRail({
               setShapeFillMode={setShapeFillMode}
               shapeFillColor={shapeFillColor}
               setShapeFillColor={setShapeFillColor}
-              shapeRoundedCorners={shapeRoundedCorners}
-              setShapeRoundedCorners={setShapeRoundedCorners}
               eyedropperVariant={eyedropperVariant}
               setEyedropperVariant={setEyedropperVariant}
             />

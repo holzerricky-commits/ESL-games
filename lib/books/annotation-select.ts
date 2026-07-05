@@ -893,12 +893,12 @@ export function selectionIdsMatch(a: readonly string[], b: readonly string[]): b
 
 /** Topmost command index at normalized point (later in array = on top). */
 export function hitTestAnnotationIndex(
-  commands: AnnotationCommand[],
+  commands: readonly AnnotationCommand[],
   nx: number,
   ny: number,
   widthPx: number,
   heightPx: number,
-  skipIndices?: Set<number>,
+  skipIndices?: ReadonlySet<number>,
 ): number | null {
   for (let i = commands.length - 1; i >= 0; i--) {
     if (skipIndices?.has(i)) continue
@@ -909,12 +909,12 @@ export function hitTestAnnotationIndex(
 
 /** Topmost text label at point — tight bounds so nearby clicks can place new text. */
 export function hitTestTextAnnotationIndex(
-  commands: AnnotationCommand[],
+  commands: readonly AnnotationCommand[],
   nx: number,
   ny: number,
   widthPx: number,
   heightPx: number,
-  skipIndices?: Set<number>,
+  skipIndices?: ReadonlySet<number>,
 ): number | null {
   for (let i = commands.length - 1; i >= 0; i--) {
     if (skipIndices?.has(i)) continue
@@ -928,12 +928,12 @@ export function hitTestTextAnnotationIndex(
 
 /** Topmost sticky at point (writable sticker tool). */
 export function hitTestStickyAnnotationIndex(
-  commands: AnnotationCommand[],
+  commands: readonly AnnotationCommand[],
   nx: number,
   ny: number,
   widthPx: number,
   heightPx: number,
-  skipIndices?: Set<number>,
+  skipIndices?: ReadonlySet<number>,
 ): number | null {
   for (let i = commands.length - 1; i >= 0; i--) {
     if (skipIndices?.has(i)) continue
@@ -948,13 +948,13 @@ export function hitTestStickyAnnotationIndex(
 
 /** Topmost selected command at point (for move cursor / drag while another tool is active). */
 export function hitTestSelectedAnnotationIndex(
-  commands: AnnotationCommand[],
+  commands: readonly AnnotationCommand[],
   selectedIds: ReadonlySet<string> | readonly string[],
   nx: number,
   ny: number,
   widthPx: number,
   heightPx: number,
-  skipIndices?: Set<number>,
+  skipIndices?: ReadonlySet<number>,
 ): number | null {
   const idSet = selectedIds instanceof Set ? selectedIds : new Set(selectedIds)
   if (idSet.size === 0) return null
@@ -977,12 +977,12 @@ export function normalizeMarqueeRect(a: [number, number], b: [number, number]): 
 
 /** Command ids selected by a marquee using window or crossing rules. */
 export function annotationIdsInMarquee(
-  commands: AnnotationCommand[],
+  commands: readonly AnnotationCommand[],
   marquee: NormRect,
   widthPx: number,
   heightPx: number,
   mode: MarqueeSelectMode,
-  skipIndices?: Set<number>,
+  skipIndices?: ReadonlySet<number>,
 ): string[] {
   const ids: string[] = []
   for (let i = 0; i < commands.length; i++) {

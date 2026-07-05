@@ -1,6 +1,7 @@
 import type { RefObject } from 'react'
 import type { BookPageAnnotationHandle } from '@/components/students/book-page-annotation-layer'
 import type { InkSessionStore } from '@/lib/books/ink-session-store'
+import type { InkSessionDocument } from '@/lib/books/ink-session-types'
 import type { SpreadSessionStore } from '@/lib/books/spread-session-store'
 
 type PageAnnotationRef = RefObject<BookPageAnnotationHandle | null>
@@ -26,13 +27,15 @@ export type InkSessionSelectProxyHandle = Pick<
   | 'undo'
   | 'redo'
   | 'clear'
->
+> extends infer T
+  ? { [K in keyof T]-?: NonNullable<T[K]> }
+  : never
 
 /** @deprecated Use InkSessionSelectProxyHandle */
 export type SpreadSessionSelectProxyHandle = InkSessionSelectProxyHandle
 
-export function createInkSessionSelectProxy(
-  getStore: () => InkSessionStore | null,
+export function createInkSessionSelectProxy<TDoc extends InkSessionDocument = InkSessionDocument>(
+  getStore: () => InkSessionStore<TDoc> | null,
 ): InkSessionSelectProxyHandle {
   return {
     getSelectedIds: () => getStore()?.getState().selectedIds ?? [],
@@ -75,8 +78,8 @@ export function createSpreadSessionSelectProxy(
 }
 
 /** Session ink store plus page-local layers (stamp, text, sticky, callout). */
-export function createCompositeInkSessionSelectProxy(
-  getStore: () => InkSessionStore | null,
+export function createCompositeInkSessionSelectProxy<TDoc extends InkSessionDocument = InkSessionDocument>(
+  getStore: () => InkSessionStore<TDoc> | null,
   pageRefs: readonly PageAnnotationRef[],
 ): InkSessionSelectProxyHandle {
   const session = createInkSessionSelectProxy(getStore)

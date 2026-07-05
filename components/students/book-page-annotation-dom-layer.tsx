@@ -134,8 +134,8 @@ function textBlockPositionStyle(
 /** Grow textarea height to fit all lines; no inner scrollbar. */
 function applyAnnotationTextFieldNoScroll(el: HTMLTextAreaElement): void {
   const noScroll = annotationTextFieldNoScrollCSS()
-  el.style.overflowX = noScroll.overflowX
-  el.style.overflowY = noScroll.overflowY
+  el.style.overflowX = noScroll.overflowX ?? 'hidden'
+  el.style.overflowY = noScroll.overflowY ?? 'hidden'
   el.style.scrollbarWidth = noScroll.scrollbarWidth ?? 'none'
 }
 
@@ -804,10 +804,11 @@ function EditableBlock({
   ])
 
   /** Writable while the edit session is open — focus gates caret visibility, not input handlers. */
-  const canEdit =
+  const canEdit = Boolean(
     showTextarea &&
     editSessionActive &&
-    ((textToolActive && !selectMode) || (selectMode && isEditing === true))
+    ((textToolActive === true && !selectMode) || (selectMode === true && isEditing === true)),
+  )
 
   const isSticky = cmd.kind === 'sticky'
   const labelCapturePointer = shouldBookAnnotationLabelCapturePointer({
