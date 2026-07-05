@@ -256,11 +256,12 @@ export function mergeSpreadSessionPageOwnedFromOwnerPages(
   rightCommands: readonly AnnotationCommand[],
   layout: SpreadInkLayout,
 ): AnnotationCommand[] {
-  const withoutPageOwned = sessionCommands.filter((c) => !isPageOwnedSpreadCommand(c))
+  const sessionIds = new Set(sessionCommands.map((c) => c.id))
   const pageOwnedLeft = leftCommands.filter(isPageOwnedSpreadCommand)
   const pageOwnedRight = rightCommands.filter(isPageOwnedSpreadCommand)
   const mapped = hydrateSpreadSessionFromOwnerPages(pageOwnedLeft, pageOwnedRight, layout)
-  return [...withoutPageOwned, ...mapped]
+    .filter((cmd) => !sessionIds.has(cmd.id))
+  return [...sessionCommands, ...mapped]
 }
 
 /** @deprecated Use mergeSpreadSessionPageOwnedFromOwnerPages */

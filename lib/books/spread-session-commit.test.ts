@@ -208,20 +208,26 @@ describe('mergeSpreadSessionPageOwnedFromOwnerPages', () => {
     seamNormX: 0.5,
   }
 
-  it('merges text from page storage and drops session duplicate', () => {
+  it('keeps checkpoint text and imports page-only items', () => {
     const session: AnnotationCommand[] = [
       { kind: 'line', id: 'l1', a: [0.1, 0.2], b: [0.3, 0.4], color: '#111' },
       { kind: 'text', id: 't1', x: 0.9, y: 0.5, text: 'stale', color: '#111', fontSizeNorm: 0.02 },
     ]
     const left: AnnotationCommand[] = [
       { kind: 'text', id: 't1', x: 0.5, y: 0.4, text: 'fresh', color: '#111', fontSizeNorm: 0.02 },
+      { kind: 'text', id: 't2', x: 0.4, y: 0.2, text: 'page only', color: '#111', fontSizeNorm: 0.02 },
     ]
     const merged = mergeSpreadSessionPageOwnedFromOwnerPages(session, left, [], layout)
-    expect(merged).toHaveLength(2)
-    const text = merged.find((c) => c.kind === 'text')
+    expect(merged).toHaveLength(3)
+    const text = merged.find((c) => c.kind === 'text' && c.id === 't1')
     if (text?.kind === 'text') {
-      expect(text.text).toBe('fresh')
-      expect(text.x).toBeCloseTo(0.25, 6)
+      expect(text.text).toBe('stale')
+      expect(text.x).toBeCloseTo(0.9, 6)
+    }
+    const pageOnly = merged.find((c) => c.kind === 'text' && c.id === 't2')
+    if (pageOnly?.kind === 'text') {
+      expect(pageOnly.text).toBe('page only')
+      expect(pageOnly.x).toBeCloseTo(0.2, 6)
     }
   })
 })
@@ -235,7 +241,7 @@ describe('mergeSpreadSessionStampCalloutsFromOwnerPages', () => {
     seamNormX: 0.5,
   }
 
-  it('replaces checkpoint stamp/callout with page-mapped versions', () => {
+  it('keeps checkpoint stamp/callout and imports page-only items', () => {
     const session: AnnotationCommand[] = [
       {
         kind: 'line',
@@ -260,12 +266,23 @@ describe('mergeSpreadSessionStampCalloutsFromOwnerPages', () => {
         center: [0.5, 0.4],
         color: '#22c55e',
       },
+      {
+        kind: 'callout',
+        id: 'co1',
+        center: [0.5, 0.2],
+        text: 'page only',
+        color: '#111827',
+      },
     ]
     const merged = mergeSpreadSessionStampCalloutsFromOwnerPages(session, left, [], layout)
-    expect(merged).toHaveLength(2)
+    expect(merged).toHaveLength(3)
     const stamp = merged.find((c) => c.kind === 'stamp')
     if (stamp?.kind === 'stamp') {
-      expect(stamp.center[0]).toBeCloseTo(0.25, 6)
+      expect(stamp.center[0]).toBeCloseTo(0.5, 6)
+    }
+    const callout = merged.find((c) => c.kind === 'callout')
+    if (callout?.kind === 'callout') {
+      expect(callout.center[0]).toBeCloseTo(0.25, 6)
     }
   })
 })

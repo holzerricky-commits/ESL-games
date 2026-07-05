@@ -765,6 +765,10 @@ export function BookCanvasStage({
     ],
   )
 
+  const spreadSessionLayoutSnapshotRef = useRef<{
+    key: { leftPage: number; rightPage: number }
+    layout: SpreadInkLayout
+  } | null>(null)
   const [spreadInkLayoutRevision, setSpreadInkLayoutRevision] = useState(0)
 
   const spreadSessionActive = useMemo(
@@ -778,6 +782,18 @@ export function BookCanvasStage({
   )
 
   const sessionRightPage = spreadRightPage ?? pageNumber
+  const activeSpreadSessionKey = spreadSessionKeyRef.current
+  if (
+    spreadSessionActive &&
+    activeSpreadSessionKey &&
+    activeSpreadSessionKey.leftPage === pageNumber &&
+    activeSpreadSessionKey.rightPage === sessionRightPage
+  ) {
+    spreadSessionLayoutSnapshotRef.current = {
+      key: { ...activeSpreadSessionKey },
+      layout: spreadInkLayout,
+    }
+  }
 
   const measurePenInkPatternOrigins = useCallback(() => {
     const spread = spreadGridRef.current?.getBoundingClientRect()
@@ -844,10 +860,17 @@ export function BookCanvasStage({
           ? { leftPage: pageNumber, rightPage: spreadRightPage }
           : { leftPage: pageNumber, rightPage: pageNumber })
       if (!doc || !selectedBookId || !selectedUnitId || !pages) return
+      const layoutSnapshot = spreadSessionLayoutSnapshotRef.current
+      const layout =
+        layoutSnapshot &&
+        layoutSnapshot.key.leftPage === pages.leftPage &&
+        layoutSnapshot.key.rightPage === pages.rightPage
+          ? layoutSnapshot.layout
+          : spreadInkLayoutRef.current
       flushSpreadSessionDocumentToPageStorage({
         doc,
         key: pages,
-        layout: spreadInkLayoutRef.current,
+        layout,
         studentId,
         bookId: selectedBookId,
         unitId: selectedUnitId,
@@ -906,6 +929,10 @@ export function BookCanvasStage({
     spreadSessionKeyRef.current = { leftPage: pageNumber, rightPage: resolvedRightPage }
 
     const layout = spreadInkLayoutRef.current
+    spreadSessionLayoutSnapshotRef.current = {
+      key: { leftPage: pageNumber, rightPage: resolvedRightPage },
+      layout,
+    }
     const leftStored = getAnnotationsForPage(studentId, selectedBookId, selectedUnitId, pageNumber, 'pdf')
     const rightStored =
       spreadRightPage != null
@@ -958,10 +985,17 @@ export function BookCanvasStage({
       const pages = spreadSessionKeyRef.current
       if (doc && pages) {
         store.checkpointNow()
+        const layoutSnapshot = spreadSessionLayoutSnapshotRef.current
+        const layout =
+          layoutSnapshot &&
+          layoutSnapshot.key.leftPage === pages.leftPage &&
+          layoutSnapshot.key.rightPage === pages.rightPage
+            ? layoutSnapshot.layout
+            : spreadInkLayoutRef.current
         flushSpreadSessionDocumentToPageStorage({
           doc,
           key: pages,
-          layout: spreadInkLayoutRef.current,
+          layout,
           studentId,
           bookId: selectedBookId,
           unitId: selectedUnitId,
@@ -971,6 +1005,15 @@ export function BookCanvasStage({
       if (spreadSessionStoreRef.current === store) spreadSessionStoreRef.current = null
       spreadSessionDocRef.current = null
       spreadSessionKeyRef.current = null
+      const layoutSnapshot = spreadSessionLayoutSnapshotRef.current
+      if (
+        pages &&
+        layoutSnapshot &&
+        layoutSnapshot.key.leftPage === pages.leftPage &&
+        layoutSnapshot.key.rightPage === pages.rightPage
+      ) {
+        spreadSessionLayoutSnapshotRef.current = null
+      }
       setSpreadEraserLineDraft(null)
     }
   }, [
