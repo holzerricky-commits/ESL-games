@@ -27,7 +27,9 @@ export type InkSessionSelectProxyHandle = Pick<
   | 'undo'
   | 'redo'
   | 'clear'
->
+> extends infer T
+  ? { [K in keyof T]-?: NonNullable<T[K]> }
+  : never
 
 /** @deprecated Use InkSessionSelectProxyHandle */
 export type SpreadSessionSelectProxyHandle = InkSessionSelectProxyHandle
