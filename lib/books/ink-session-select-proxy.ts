@@ -27,7 +27,7 @@ type InkSessionSelectionStore = Pick<
 >
 
 /** Imperative select/undo API for ink session stores (toolbar + keyboard). */
-export type InkSessionSelectProxyHandle = Pick<
+export type InkSessionSelectProxyHandle = Required<Pick<
   BookPageAnnotationHandle,
   | 'getSelectedIds'
   | 'setSelectedIds'
@@ -47,7 +47,7 @@ export type InkSessionSelectProxyHandle = Pick<
   | 'undo'
   | 'redo'
   | 'clear'
->
+>>
 
 /** @deprecated Use InkSessionSelectProxyHandle */
 export type SpreadSessionSelectProxyHandle = InkSessionSelectProxyHandle
