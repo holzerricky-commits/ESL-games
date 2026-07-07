@@ -1,5 +1,4 @@
 type ClosestCapable = { closest: (selector: string) => unknown | null }
-type ContainsCapable = { contains: (node: unknown) => boolean }
 
 function asClosestCapable(target: unknown): ClosestCapable | null {
   if (target == null || typeof target !== 'object') return null
@@ -31,7 +30,7 @@ export function shouldDismissBookOverlayAnnotationEditOnPointerDown(
   target: unknown,
   ctx: {
     /** @deprecated Kept for call-site compat; dismiss is based on protected targets only. */
-    overlayRoot?: ContainsCapable | null
+    overlayRoot?: unknown
     editingId: string
   },
 ): boolean {
