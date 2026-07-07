@@ -9,25 +9,28 @@ type PageAnnotationRef = RefObject<BookPageAnnotationHandle | null>
 /** Imperative select/undo API for ink session stores (toolbar + keyboard). */
 export type InkSessionSelectProxyHandle = Pick<
   BookPageAnnotationHandle,
-  | 'getSelectedIds'
-  | 'setSelectedIds'
-  | 'selectAll'
-  | 'deselectAll'
-  | 'deleteSelected'
-  | 'copySelected'
-  | 'pasteFromClipboard'
-  | 'duplicateSelected'
-  | 'toggleGroupSelected'
-  | 'removeFromGroupSelected'
-  | 'selectNextInStack'
-  | 'moveSelectedBy'
-  | 'setNudgePreview'
-  | 'commitNudgePreview'
-  | 'clearNudgePreview'
-  | 'undo'
-  | 'redo'
-  | 'clear'
->
+  'undo' | 'redo' | 'clear'
+> &
+  Required<
+    Pick<
+      BookPageAnnotationHandle,
+      | 'getSelectedIds'
+      | 'setSelectedIds'
+      | 'selectAll'
+      | 'deselectAll'
+      | 'deleteSelected'
+      | 'copySelected'
+      | 'pasteFromClipboard'
+      | 'duplicateSelected'
+      | 'toggleGroupSelected'
+      | 'removeFromGroupSelected'
+      | 'selectNextInStack'
+      | 'moveSelectedBy'
+      | 'setNudgePreview'
+      | 'commitNudgePreview'
+      | 'clearNudgePreview'
+    >
+  >
 
 /** @deprecated Use InkSessionSelectProxyHandle */
 export type SpreadSessionSelectProxyHandle = InkSessionSelectProxyHandle
