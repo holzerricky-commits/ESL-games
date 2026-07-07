@@ -1321,7 +1321,7 @@ function EditableBlock({
     writableVariant,
     bodyMinPx,
   )
-  const showStickyEditChrome = canEdit && !textToolActive
+  const showStickyEditChrome = Boolean(canEdit && !textToolActive)
 
   const deleteButton = onDeleteSticky ? (
     <button
