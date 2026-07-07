@@ -893,12 +893,12 @@ export function selectionIdsMatch(a: readonly string[], b: readonly string[]): b
 
 /** Topmost command index at normalized point (later in array = on top). */
 export function hitTestAnnotationIndex(
-  commands: AnnotationCommand[],
+  commands: readonly AnnotationCommand[],
   nx: number,
   ny: number,
   widthPx: number,
   heightPx: number,
-  skipIndices?: Set<number>,
+  skipIndices?: ReadonlySet<number>,
 ): number | null {
   for (let i = commands.length - 1; i >= 0; i--) {
     if (skipIndices?.has(i)) continue
@@ -909,12 +909,12 @@ export function hitTestAnnotationIndex(
 
 /** Topmost text label at point — tight bounds so nearby clicks can place new text. */
 export function hitTestTextAnnotationIndex(
-  commands: AnnotationCommand[],
+  commands: readonly AnnotationCommand[],
   nx: number,
   ny: number,
   widthPx: number,
   heightPx: number,
-  skipIndices?: Set<number>,
+  skipIndices?: ReadonlySet<number>,
 ): number | null {
   for (let i = commands.length - 1; i >= 0; i--) {
     if (skipIndices?.has(i)) continue
@@ -928,12 +928,12 @@ export function hitTestTextAnnotationIndex(
 
 /** Topmost sticky at point (writable sticker tool). */
 export function hitTestStickyAnnotationIndex(
-  commands: AnnotationCommand[],
+  commands: readonly AnnotationCommand[],
   nx: number,
   ny: number,
   widthPx: number,
   heightPx: number,
-  skipIndices?: Set<number>,
+  skipIndices?: ReadonlySet<number>,
 ): number | null {
   for (let i = commands.length - 1; i >= 0; i--) {
     if (skipIndices?.has(i)) continue
