@@ -113,6 +113,7 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     onBookReadyToPresent,
     onBookPaintInvalidated,
     onBookOpenPaintTimeout,
+    onReaderLocationChange,
   } = props
 
   const userPresented = presentedProp ?? true
@@ -516,6 +517,16 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     pageNumber,
     numPages,
   })
+
+  useEffect(() => {
+    if (!userPresented || !selectedBookId || !selectedUnitId) return
+    if (!Number.isFinite(pageNumber) || pageNumber < 1) return
+    onReaderLocationChange?.({
+      bookId: selectedBookId,
+      unitId: selectedUnitId,
+      pdfPage: Math.floor(pageNumber),
+    })
+  }, [onReaderLocationChange, pageNumber, selectedBookId, selectedUnitId, userPresented])
 
   const {
     unitPageBounds,

@@ -6,6 +6,12 @@ export interface BookReaderDocumentReadyMeta {
   pageAspectRatio?: number
 }
 
+export interface BookReaderLocation {
+  bookId: string
+  unitId: string
+  pdfPage: number
+}
+
 export interface FullscreenBookOverlayProps {
   studentId: string
   activeClassSessionId?: string | null
@@ -35,4 +41,6 @@ export interface FullscreenBookOverlayProps {
   onBookPaintInvalidated?: () => void
   /** Fired if first-spread paint exceeds the wait cap while `presented` is still false; parent should disarm `open`. */
   onBookOpenPaintTimeout?: () => void
+  /** Fired while the visible reader is on a book page, so class ending can save the actual last stop. */
+  onReaderLocationChange?: (location: BookReaderLocation) => void
 }
