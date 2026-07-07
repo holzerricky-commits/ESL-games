@@ -1483,7 +1483,6 @@ export function BookCanvasStage({
           rightPenInkPatternOriginXPx={rightPenInkPatternOriginXPx}
           spreadSeamNormX={spreadSeamNormX}
           spreadSessionMode={spreadSessionModeEnabled}
-          spreadSessionCommands={spreadSessionDoc?.commands ?? []}
           onSpreadSessionAppendCommand={appendSpreadSessionCommand}
           spreadSessionUndo={spreadSessionUndo}
           spreadSessionRedo={spreadSessionRedo}
@@ -1929,7 +1928,6 @@ export function BookCanvasStage({
                         rightPenInkPatternOriginXPx={rightPenInkPatternOriginXPx}
                         spreadSeamNormX={spreadSeamNormX}
                         spreadSessionMode={spreadSessionModeEnabled}
-                        spreadSessionCommands={spreadSessionDoc?.commands ?? []}
                         onSpreadSessionAppendCommand={appendSpreadSessionCommand}
                         spreadSessionUndo={spreadSessionUndo}
                         spreadSessionRedo={spreadSessionRedo}
