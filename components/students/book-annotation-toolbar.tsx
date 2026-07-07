@@ -302,6 +302,8 @@ export interface BookAnnotationToolbarProps {
   setShapeFillMode: (v: ShapeFillMode) => void
   shapeFillColor: string
   setShapeFillColor: (c: string) => void
+  shapeRoundedCorners: boolean
+  setShapeRoundedCorners: (v: boolean) => void
   eyedropperVariant: EyedropperVariant
   setEyedropperVariant: (v: EyedropperVariant) => void
   layout?: 'horizontal' | 'vertical'
