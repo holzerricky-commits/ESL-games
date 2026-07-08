@@ -1,9 +1,27 @@
 import type { RefObject } from 'react'
 import type { BookPageAnnotationHandle } from '@/components/students/book-page-annotation-layer'
-import type { InkSessionStore } from '@/lib/books/ink-session-store'
 import type { SpreadSessionStore } from '@/lib/books/spread-session-store'
 
 type PageAnnotationRef = RefObject<BookPageAnnotationHandle | null>
+type InkSessionSelectStore = {
+  getState: () => { selectedIds: string[] }
+  setSelectedIds: (ids: string[]) => void
+  selectAll: () => void
+  deleteSelected: () => boolean
+  copySelected: () => boolean
+  pasteFromClipboard: () => boolean
+  duplicateSelected: () => boolean
+  toggleGroupSelected: () => boolean
+  removeFromGroupSelected: () => boolean
+  selectNextInStack: (direction: 1 | -1) => boolean
+  moveSelectedBy: (dx: number, dy: number) => boolean
+  setNudgePreview: (dx: number, dy: number) => void
+  commitNudgePreview: () => boolean
+  clearNudgePreview: () => void
+  undo: () => boolean
+  redo: () => boolean
+  clearCommands: () => void
+}
 
 /** Imperative select/undo API for ink session stores (toolbar + keyboard). */
 export type InkSessionSelectProxyHandle = Pick<
@@ -32,7 +50,7 @@ export type InkSessionSelectProxyHandle = Pick<
 export type SpreadSessionSelectProxyHandle = InkSessionSelectProxyHandle
 
 export function createInkSessionSelectProxy(
-  getStore: () => InkSessionStore | null,
+  getStore: () => InkSessionSelectStore | null,
 ): InkSessionSelectProxyHandle {
   return {
     getSelectedIds: () => getStore()?.getState().selectedIds ?? [],
@@ -76,7 +94,7 @@ export function createSpreadSessionSelectProxy(
 
 /** Session ink store plus page-local layers (stamp, text, sticky, callout). */
 export function createCompositeInkSessionSelectProxy(
-  getStore: () => InkSessionStore | null,
+  getStore: () => InkSessionSelectStore | null,
   pageRefs: readonly PageAnnotationRef[],
 ): InkSessionSelectProxyHandle {
   const session = createInkSessionSelectProxy(getStore)
