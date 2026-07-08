@@ -100,7 +100,7 @@ export function createCompositeInkSessionSelectProxy(
   const session = createInkSessionSelectProxy(getStore)
 
   const unionSelectedIds = (): string[] => {
-    const ids = new Set(session.getSelectedIds())
+    const ids = new Set(session.getSelectedIds?.() ?? [])
     for (const ref of pageRefs) {
       for (const id of ref.current?.getSelectedIds?.() ?? []) {
         ids.add(id)
@@ -120,40 +120,40 @@ export function createCompositeInkSessionSelectProxy(
     ...session,
     getSelectedIds: unionSelectedIds,
     selectAll: () => {
-      session.selectAll()
+      session.selectAll?.()
       forEachPage((h) => h.selectAll?.())
     },
     deselectAll: () => {
-      session.deselectAll()
+      session.deselectAll?.()
       forEachPage((h) => h.deselectAll?.())
     },
     deleteSelected: () => {
-      let changed = session.deleteSelected()
+      let changed = session.deleteSelected?.() ?? false
       forEachPage((h) => {
         if (h.deleteSelected?.()) changed = true
       })
       return changed
     },
     moveSelectedBy: (dx, dy) => {
-      let moved = session.moveSelectedBy(dx, dy)
+      let moved = session.moveSelectedBy?.(dx, dy) ?? false
       forEachPage((h) => {
         if (h.moveSelectedBy?.(dx, dy)) moved = true
       })
       return moved
     },
     setNudgePreview: (dx, dy) => {
-      session.setNudgePreview(dx, dy)
+      session.setNudgePreview?.(dx, dy)
       forEachPage((h) => h.setNudgePreview?.(dx, dy))
     },
     commitNudgePreview: () => {
-      let committed = session.commitNudgePreview()
+      let committed = session.commitNudgePreview?.() ?? false
       forEachPage((h) => {
         if (h.commitNudgePreview?.()) committed = true
       })
       return committed
     },
     clearNudgePreview: () => {
-      session.clearNudgePreview()
+      session.clearNudgePreview?.()
       forEachPage((h) => h.clearNudgePreview?.())
     },
   }
