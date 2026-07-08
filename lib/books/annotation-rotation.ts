@@ -46,7 +46,9 @@ export function normalizeDeg(deg: number): number {
   return d
 }
 
-function isRotatablePenMarkerStroke(cmd: AnnotationCommand): boolean {
+function isRotatablePenMarkerStroke(
+  cmd: AnnotationCommand,
+): cmd is StrokeAnnotationCommand & { tool: 'pen' | 'marker' } {
   return (
     cmd.kind === 'stroke' && (cmd.tool === 'pen' || cmd.tool === 'marker') && cmd.points.length > 0
   )
