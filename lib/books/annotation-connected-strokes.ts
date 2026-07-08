@@ -42,8 +42,8 @@ export function strokesAreConnected(
 type StrokeEntry = { index: number; cmd: StrokeAnnotationCommand }
 
 function collectPenMarkerStrokes(
-  commands: AnnotationCommand[],
-  skipIndices?: Set<number>,
+  commands: readonly AnnotationCommand[],
+  skipIndices?: ReadonlySet<number>,
 ): StrokeEntry[] {
   const out: StrokeEntry[] = []
   for (let i = 0; i < commands.length; i++) {
@@ -60,11 +60,11 @@ function collectPenMarkerStrokes(
  * All pen/marker stroke ids in the same connected component as `seedId` (BFS, ungrouped geometry only).
  */
 export function connectedPenMarkerStrokeIds(
-  commands: AnnotationCommand[],
+  commands: readonly AnnotationCommand[],
   seedId: string,
   widthPx: number,
   heightPx: number,
-  skipIndices?: Set<number>,
+  skipIndices?: ReadonlySet<number>,
 ): string[] {
   const strokes = collectPenMarkerStrokes(commands, skipIndices)
   const seedIdx = strokes.findIndex((s) => s.cmd.id === seedId)
@@ -147,11 +147,11 @@ export function connectedComponentsAmongSelectedPenMarker(
  * Resolve selection ids for a select click on pen/marker ink (group id or ungrouped BFS).
  */
 export function resolvePenMarkerSelectionIds(
-  commands: AnnotationCommand[],
+  commands: readonly AnnotationCommand[],
   seedId: string,
   widthPx: number,
   heightPx: number,
-  skipIndices?: Set<number>,
+  skipIndices?: ReadonlySet<number>,
 ): string[] {
   const seed = commands.find((c) => c.id === seedId)
   if (!seed || !isPenOrMarkerStroke(seed)) return [seedId]
