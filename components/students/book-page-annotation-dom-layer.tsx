@@ -804,10 +804,11 @@ function EditableBlock({
   ])
 
   /** Writable while the edit session is open — focus gates caret visibility, not input handlers. */
-  const canEdit =
+  const canEdit = Boolean(
     showTextarea &&
     editSessionActive &&
-    ((textToolActive && !selectMode) || (selectMode && isEditing === true))
+    ((textToolActive && !selectMode) || (selectMode && isEditing === true)),
+  )
 
   const isSticky = cmd.kind === 'sticky'
   const labelCapturePointer = shouldBookAnnotationLabelCapturePointer({
