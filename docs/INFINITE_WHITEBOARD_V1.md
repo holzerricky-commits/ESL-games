@@ -107,7 +107,7 @@ interface WhiteboardPlacementPrefs {
 
 - [ ] Draw on board, turn book pages → same ink visible.
 - [ ] Change unit → new storage key (empty board), old unit ink unchanged when returning.
-- [ ] Two class sessions → separate boards.
+- [x] ~~Two class sessions → separate boards.~~ Superseded: lasting board per student/book unit (see `LESSON_BOARD_PRODUCT.md`).
 
 #### Tests
 
@@ -352,7 +352,7 @@ Each PR should be shippable without breaking book annotations.
 | Move side | Header right (`ArrowLeftRight`, slot mode) | Snap board to other spread slot |
 | Clear | Header right (`Trash2`) | Clears all board ink |
 | Fullscreen | Header right (`Maximize2` / `Minimize2`) | Toggle fullscreen layout |
-| Minimize | Header right (`Minus`) | Collapses to `WhiteboardCollapsedTab` on spread edge |
+| Minimize | Header right (`Minus`) | Hides the board entirely; restore via left-bar board button or `W` |
 
 Panel shell: `rounded-xl`, light border (`#e5e2dc`), soft shadow; dot-grid canvas below header separator.
 
@@ -367,7 +367,6 @@ Panel shell: `rounded-xl`, light border (`#e5e2dc`), soft shadow; dot-grid canva
 ### Files
 
 - `sections/WhiteboardChrome.tsx` — exports `WhiteboardHeader` (persistent header bar)
-- `sections/WhiteboardCollapsedTab.tsx` — minimized edge tab
 - `hooks/useWhiteboardSlotMotion.ts` — header grip drag + slot snap animation
 - `hooks/useWhiteboardToolbarLaunch.ts` — FLIP enter/exit from annotation-rail button
 - `hooks/useFullscreenBookOverlayController.ts` — `isWhiteboardMinimized`, launch helpers, keyboard `W`
