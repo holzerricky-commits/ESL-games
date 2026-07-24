@@ -41,11 +41,8 @@ export function flushSpreadSessionDocumentToPageStorage({
   const pages = { leftPage: key.leftPage, rightPage: key.rightPage }
   const lastPageOnly = isLastPageSpreadKey(pages)
 
+  // Empty spread session must not wipe per-page notes/stickers that live outside the session.
   if (doc.commands.length === 0) {
-    setAnnotationsForPage(studentId, bookId, unitId, pages.leftPage, [], 'pdf')
-    if (!lastPageOnly) {
-      setAnnotationsForPage(studentId, bookId, unitId, pages.rightPage, [], 'pdf')
-    }
     return
   }
 
