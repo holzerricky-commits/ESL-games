@@ -1,5 +1,5 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import type { VocabularySet, VocabularySetStatus, VocabularySourceContext } from '@/lib/vocabulary/types'
 import type { VocabularyStore } from '@/lib/vocabulary/store'
 import { createContextKey } from '@/lib/vocabulary/utils'
@@ -7,12 +7,32 @@ import { getVocabularyRiskScore } from '@/lib/vocabulary/risk'
 
 const DATA_DIR = join(/* turbopackIgnore: true */ process.cwd(), 'data')
 const VOCAB_DIR = join(DATA_DIR, 'vocabulary')
+const SAFE_SET_ID_RE = /^[A-Za-z0-9_-]{1,128}$/
+
+export function isSafeVocabularySetId(setId: string): boolean {
+  return SAFE_SET_ID_RE.test(setId.trim())
+}
+
+function isVocabularySet(value: unknown): value is VocabularySet {
+  const set = value as Partial<VocabularySet> | null
+  return (
+    !!set &&
+    typeof set.id === 'string' &&
+    (set.status === 'draft' || set.status === 'approved' || set.status === 'published') &&
+    !!set.context &&
+    typeof set.context === 'object' &&
+    Array.isArray(set.entries) &&
+    typeof set.generationVersion === 'string' &&
+    typeof set.createdAt === 'string' &&
+    typeof set.updatedAt === 'string'
+  )
+}
 
 async function readJson(path: string): Promise<VocabularySet | null> {
   try {
     const raw = await readFile(path, 'utf8')
-    const parsed = JSON.parse(raw) as VocabularySet
-    return parsed && typeof parsed.id === 'string' ? parsed : null
+    const parsed = JSON.parse(raw) as unknown
+    return isVocabularySet(parsed) ? parsed : null
   } catch {
     return null
   }
@@ -51,8 +71,13 @@ function sanitizeSet(set: VocabularySet): VocabularySet {
 export class FileVocabularyStore implements VocabularyStore {
   private writeQueue = Promise.resolve()
 
-  private setPath(setId: string): string {
-    return join(VOCAB_DIR, `${setId}.json`)
+  private setPath(setId: string): string | null {
+    const safeId = setId.trim()
+    if (!isSafeVocabularySetId(safeId)) return null
+    const target = resolve(VOCAB_DIR, `${safeId}.json`)
+    const root = resolve(VOCAB_DIR)
+    const prefix = root.endsWith(sep) ? root : `${root}${sep}`
+    return target.startsWith(prefix) ? target : null
   }
 
   private indexPath(): string {
@@ -79,7 +104,8 @@ export class FileVocabularyStore implements VocabularyStore {
   }
 
   async getSet(setId: string): Promise<VocabularySet | null> {
-    return readJson(this.setPath(setId))
+    const path = this.setPath(setId)
+    return path ? readJson(path) : null
   }
 
   async getSetByContext(context: VocabularySourceContext): Promise<VocabularySet | null> {
@@ -93,11 +119,13 @@ export class FileVocabularyStore implements VocabularyStore {
   async saveDraftSet(set: VocabularySet): Promise<VocabularySet> {
     const next = sanitizeSet(set)
     return this.enqueueWrite(async () => {
+      const setPath = this.setPath(next.id)
+      if (!setPath) throw new Error('Invalid vocabulary set id.')
       await mkdir(VOCAB_DIR, { recursive: true })
       const index = await this.readIndex()
       index[createContextKey(next.context)] = next.id
       await Promise.all([
-        writeJson(this.setPath(next.id), next),
+        writeJson(setPath, next),
         writeFile(this.indexPath(), JSON.stringify(index, null, 2), 'utf8'),
       ])
       return next
@@ -106,7 +134,9 @@ export class FileVocabularyStore implements VocabularyStore {
 
   async updateEntry(setId: string, entryId: string, patch: Partial<VocabularySet['entries'][number]>): Promise<VocabularySet | null> {
     return this.enqueueWrite(async () => {
-      const set = await this.getSet(setId)
+      const setPath = this.setPath(setId)
+      if (!setPath) return null
+      const set = await readJson(setPath)
       if (!set) return null
       const now = new Date().toISOString()
       const entries = set.entries.map((entry) => {
@@ -118,21 +148,23 @@ export class FileVocabularyStore implements VocabularyStore {
         }
       })
       const next = sanitizeSet({ ...set, entries, updatedAt: now })
-      await writeJson(this.setPath(setId), next)
+      await writeJson(setPath, next)
       return next
     })
   }
 
   async removeEntry(setId: string, entryId: string): Promise<VocabularySet | null> {
     return this.enqueueWrite(async () => {
-      const set = await this.getSet(setId)
+      const setPath = this.setPath(setId)
+      if (!setPath) return null
+      const set = await readJson(setPath)
       if (!set) return null
       const next = {
         ...set,
         entries: set.entries.filter((entry) => entry.id !== entryId),
         updatedAt: new Date().toISOString(),
       }
-      await writeJson(this.setPath(setId), next)
+      await writeJson(setPath, next)
       return next
     })
   }
@@ -143,7 +175,9 @@ export class FileVocabularyStore implements VocabularyStore {
     patch: Partial<VocabularySet['entries'][number]>,
   ): Promise<VocabularySet | null> {
     return this.enqueueWrite(async () => {
-      const set = await this.getSet(setId)
+      const setPath = this.setPath(setId)
+      if (!setPath) return null
+      const set = await readJson(setPath)
       if (!set) return null
       const now = new Date().toISOString()
       const entries = set.entries.map((entry) => {
@@ -151,7 +185,7 @@ export class FileVocabularyStore implements VocabularyStore {
         return { ...entry, ...patch, updatedAt: now }
       })
       const next = sanitizeSet({ ...set, entries, updatedAt: now })
-      await writeJson(this.setPath(setId), next)
+      await writeJson(setPath, next)
       return next
     })
   }
@@ -179,10 +213,12 @@ export class FileVocabularyStore implements VocabularyStore {
 
   async setStatus(setId: string, status: VocabularySetStatus): Promise<VocabularySet | null> {
     return this.enqueueWrite(async () => {
-      const set = await this.getSet(setId)
+      const setPath = this.setPath(setId)
+      if (!setPath) return null
+      const set = await readJson(setPath)
       if (!set) return null
       const next = { ...set, status, updatedAt: new Date().toISOString() }
-      await writeJson(this.setPath(setId), next)
+      await writeJson(setPath, next)
       return next
     })
   }

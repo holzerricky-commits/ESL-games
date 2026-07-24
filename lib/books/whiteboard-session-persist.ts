@@ -7,6 +7,7 @@ import {
   hydrateWhiteboardSessionFromLegacyStorage,
   legacyStorageCommandsWithoutDelegatedInk,
 } from '@/lib/books/whiteboard-session-hydrate'
+import { isWhiteboardDelegatedCanvasCommand } from '@/lib/books/ink-session-page-layer'
 import {
   saveWhiteboardSessionCheckpoint,
   type WhiteboardSessionStorageAdapter,
@@ -55,8 +56,10 @@ export function mergeWhiteboardLegacyWithSession(
   pageLayerCommands: readonly AnnotationCommand[],
   sessionCommands: readonly AnnotationCommand[],
 ): AnnotationCommand[] {
-  if (sessionCommands.length === 0) return [...pageLayerCommands]
-  return [...pageLayerCommands, ...sessionCommands]
+  // Page storage may already include a prior flush of session ink; strip those before re-appending.
+  const pageLayerOnly = pageLayerCommands.filter((c) => !isWhiteboardDelegatedCanvasCommand(c))
+  if (sessionCommands.length === 0) return pageLayerOnly
+  return [...pageLayerOnly, ...sessionCommands]
 }
 
 export function resolveWhiteboardSessionCommandsOnMount(

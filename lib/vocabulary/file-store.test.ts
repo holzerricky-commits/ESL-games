@@ -1,3 +1,5 @@
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { FileVocabularyStore } from '@/lib/vocabulary/file-store'
 import type { VocabularySet } from '@/lib/vocabulary/types'
@@ -102,5 +104,34 @@ describe('FileVocabularyStore', () => {
     )
     expect(updated?.entries.find((entry) => entry.id === `${setId}-safe`)?.approved).toBe(true)
     expect(updated?.entries.find((entry) => entry.id === `${setId}-offscope`)?.approved).toBe(false)
+  })
+
+  it('rejects set ids that try to leave the vocabulary folder', async () => {
+    const store = new FileVocabularyStore()
+    const attackId = `vocab-path-attack-${Date.now()}`
+    const contextDir = join(process.cwd(), 'data', 'context')
+    const contextPath = join(contextDir, `${attackId}.json`)
+    const original = JSON.stringify(
+      {
+        id: attackId,
+        kind: 'unit',
+        bookId: 'book-1',
+        unitId: 'unit-1',
+      },
+      null,
+      2,
+    )
+
+    await mkdir(contextDir, { recursive: true })
+    await writeFile(contextPath, original, 'utf8')
+
+    try {
+      const unsafeSetId = `../context/${attackId}`
+      expect(await store.getSet(unsafeSetId)).toBeNull()
+      expect(await store.setStatus(unsafeSetId, 'published')).toBeNull()
+      expect(await readFile(contextPath, 'utf8')).toBe(original)
+    } finally {
+      await rm(contextPath, { force: true })
+    }
   })
 })

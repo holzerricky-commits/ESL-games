@@ -123,7 +123,7 @@ describe('spread-session-persist', () => {
     )
   })
 
-  it('flushSpreadSessionDocumentToPageStorage clears left only when last-page spread is empty', () => {
+  it('flushSpreadSessionDocumentToPageStorage skips page writes when spread is empty', () => {
     mockedSetAnnotationsForPage.mockClear()
     const lastPageKey = { leftPage: 6, rightPage: 6 }
     const doc = createEmptySpreadSession({ ...key, ...lastPageKey })
@@ -135,14 +135,6 @@ describe('spread-session-persist', () => {
       bookId: key.bookId,
       unitId: key.unitId,
     })
-    expect(mockedSetAnnotationsForPage).toHaveBeenCalledTimes(1)
-    expect(mockedSetAnnotationsForPage).toHaveBeenCalledWith(
-      key.studentId,
-      key.bookId,
-      key.unitId,
-      6,
-      [],
-      'pdf',
-    )
+    expect(mockedSetAnnotationsForPage).not.toHaveBeenCalled()
   })
 })
