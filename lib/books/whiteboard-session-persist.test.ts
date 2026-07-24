@@ -49,6 +49,17 @@ describe('whiteboard-session-persist', () => {
     expect(merged[1]?.id).toBe('p1')
   })
 
+  it('mergeWhiteboardLegacyWithSession does not duplicate delegated ink already in storage', () => {
+    const page = [
+      { kind: 'text' as const, id: 't1', x: 0, y: 0, w: 0.1, h: 0.05, text: 'x', color: '#000', fontSizeNorm: 0.02 },
+      { kind: 'stroke' as const, id: 'p1', tool: 'pen' as const, points: [[0.2, 0.2], [0.3, 0.3]] },
+    ]
+    const session = [{ kind: 'stroke' as const, id: 'p1', tool: 'pen' as const, points: [[0, 0], [1, 1]] }]
+    const merged = mergeWhiteboardLegacyWithSession(page, session)
+    expect(merged.map((c) => c.id)).toEqual(['t1', 'p1'])
+    expect(merged[1]).toEqual(session[0])
+  })
+
   it('checkpointWhiteboardSessionDocument writes whiteboard session storage', () => {
     const storage = createMemoryWhiteboardSessionStorage()
     const doc = createEmptyWhiteboardSession(key)

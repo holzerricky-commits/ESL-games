@@ -17,6 +17,7 @@ import {
 } from '@/lib/local-data/student-records-client'
 import { isBookOverlayKeyboardTypingTarget } from '@/lib/books/book-overlay-keyboard-guards'
 import { getStudentProfileView } from '@/lib/students/selectors'
+import type { BookReaderLocation } from '@/components/students/fullscreen-book-overlay/types'
 
 /** Opens the spell book from the fullscreen map (outside AppShell — no sidebar conflict). */
 const MAP_SPELL_BOOK_SHORTCUT_KEY = 'b'
@@ -43,6 +44,7 @@ export function StudentFullscreenMapRouteClient({
   const [bookOpenAttempted, setBookOpenAttempted] = useState(false)
   /** User chose to reveal the warmed book overlay. */
   const [bookOpenPresented, setBookOpenPresented] = useState(false)
+  const [readerLocation, setReaderLocation] = useState<BookReaderLocation | null>(null)
 
   const mapBookChromeOpen = bookOpenPresented
 
@@ -55,6 +57,7 @@ export function StudentFullscreenMapRouteClient({
     setBookPagesReady(false)
     setBookOpenAttempted(false)
     setBookOpenPresented(false)
+    setReaderLocation(null)
   }, [isHydrated, recordsReady, studentId])
 
   const handleOpenBook = useCallback(() => {
@@ -229,6 +232,7 @@ export function StudentFullscreenMapRouteClient({
           studentId={student.id}
           session={activeSession}
           assignedBookIds={student.assignedBookIds ?? []}
+          readerLocation={readerLocation}
           elevated={mapBookChromeOpen}
         />
       ) : null}
@@ -263,6 +267,7 @@ export function StudentFullscreenMapRouteClient({
         onBookReadyToPresent={handleBookReadyToPresent}
         onBookPaintInvalidated={handleBookPaintInvalidated}
         onBookOpenPaintTimeout={handleBookOpenPaintTimeout}
+        onReaderLocationChange={setReaderLocation}
         onClose={handleBookClose}
       />
     </div>
