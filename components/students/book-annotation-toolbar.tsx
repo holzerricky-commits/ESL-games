@@ -100,6 +100,7 @@ import {
 } from '@/lib/books/eyedropper-variant'
 import {
   filterPenSwatchesForProfile,
+  normalizeActivePenStrokeProfile,
   penProfileWidthScaleMultiplier,
   PEN_STROKE_PROFILE_LABEL,
   PEN_STROKE_PROFILES,
@@ -725,8 +726,8 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
               aria-expanded={penOpen}
               aria-haspopup="dialog"
               aria-pressed={penActive}
-              aria-label={PEN_STROKE_PROFILE_LABEL[penStrokeProfile]}
-              title={`${PEN_STROKE_PROFILE_LABEL[penStrokeProfile]} (${SC.pen})${railVariantToolTitleSuffix}`}
+              aria-label={PEN_STROKE_PROFILE_LABEL[normalizeActivePenStrokeProfile(penStrokeProfile)]}
+              title={`${PEN_STROKE_PROFILE_LABEL[normalizeActivePenStrokeProfile(penStrokeProfile)]} (${SC.pen})${railVariantToolTitleSuffix}`}
               className={cn(toolBtnClass, (penOpen || penActive) && toolBtnActiveClass)}
               {...penRailPress}
             >
