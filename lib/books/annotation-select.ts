@@ -898,7 +898,7 @@ export function hitTestAnnotationIndex(
   ny: number,
   widthPx: number,
   heightPx: number,
-  skipIndices?: Set<number>,
+  skipIndices?: ReadonlySet<number>,
 ): number | null {
   for (let i = commands.length - 1; i >= 0; i--) {
     if (skipIndices?.has(i)) continue
@@ -914,7 +914,7 @@ export function hitTestTextAnnotationIndex(
   ny: number,
   widthPx: number,
   heightPx: number,
-  skipIndices?: Set<number>,
+  skipIndices?: ReadonlySet<number>,
 ): number | null {
   for (let i = commands.length - 1; i >= 0; i--) {
     if (skipIndices?.has(i)) continue
@@ -933,7 +933,7 @@ export function hitTestStickyAnnotationIndex(
   ny: number,
   widthPx: number,
   heightPx: number,
-  skipIndices?: Set<number>,
+  skipIndices?: ReadonlySet<number>,
 ): number | null {
   for (let i = commands.length - 1; i >= 0; i--) {
     if (skipIndices?.has(i)) continue
@@ -954,7 +954,7 @@ export function hitTestSelectedAnnotationIndex(
   ny: number,
   widthPx: number,
   heightPx: number,
-  skipIndices?: Set<number>,
+  skipIndices?: ReadonlySet<number>,
 ): number | null {
   const idSet = selectedIds instanceof Set ? selectedIds : new Set(selectedIds)
   if (idSet.size === 0) return null
@@ -982,7 +982,7 @@ export function annotationIdsInMarquee(
   widthPx: number,
   heightPx: number,
   mode: MarqueeSelectMode,
-  skipIndices?: Set<number>,
+  skipIndices?: ReadonlySet<number>,
 ): string[] {
   const ids: string[] = []
   for (let i = 0; i < commands.length; i++) {

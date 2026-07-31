@@ -1,38 +1,41 @@
 import type { RefObject } from 'react'
 import type { BookPageAnnotationHandle } from '@/components/students/book-page-annotation-layer'
 import type { InkSessionStore } from '@/lib/books/ink-session-store'
+import type { InkSessionDocument } from '@/lib/books/ink-session-types'
 import type { SpreadSessionStore } from '@/lib/books/spread-session-store'
 
 type PageAnnotationRef = RefObject<BookPageAnnotationHandle | null>
 
 /** Imperative select/undo API for ink session stores (toolbar + keyboard). */
-export type InkSessionSelectProxyHandle = Pick<
-  BookPageAnnotationHandle,
-  | 'getSelectedIds'
-  | 'setSelectedIds'
-  | 'selectAll'
-  | 'deselectAll'
-  | 'deleteSelected'
-  | 'copySelected'
-  | 'pasteFromClipboard'
-  | 'duplicateSelected'
-  | 'toggleGroupSelected'
-  | 'removeFromGroupSelected'
-  | 'selectNextInStack'
-  | 'moveSelectedBy'
-  | 'setNudgePreview'
-  | 'commitNudgePreview'
-  | 'clearNudgePreview'
-  | 'undo'
-  | 'redo'
-  | 'clear'
+export type InkSessionSelectProxyHandle = Required<
+  Pick<
+    BookPageAnnotationHandle,
+    | 'getSelectedIds'
+    | 'setSelectedIds'
+    | 'selectAll'
+    | 'deselectAll'
+    | 'deleteSelected'
+    | 'copySelected'
+    | 'pasteFromClipboard'
+    | 'duplicateSelected'
+    | 'toggleGroupSelected'
+    | 'removeFromGroupSelected'
+    | 'selectNextInStack'
+    | 'moveSelectedBy'
+    | 'setNudgePreview'
+    | 'commitNudgePreview'
+    | 'clearNudgePreview'
+    | 'undo'
+    | 'redo'
+    | 'clear'
+  >
 >
 
 /** @deprecated Use InkSessionSelectProxyHandle */
 export type SpreadSessionSelectProxyHandle = InkSessionSelectProxyHandle
 
-export function createInkSessionSelectProxy(
-  getStore: () => InkSessionStore | null,
+export function createInkSessionSelectProxy<TDoc extends InkSessionDocument>(
+  getStore: () => InkSessionStore<TDoc> | null,
 ): InkSessionSelectProxyHandle {
   return {
     getSelectedIds: () => getStore()?.getState().selectedIds ?? [],
@@ -75,8 +78,8 @@ export function createSpreadSessionSelectProxy(
 }
 
 /** Session ink store plus page-local layers (stamp, text, sticky, callout). */
-export function createCompositeInkSessionSelectProxy(
-  getStore: () => InkSessionStore | null,
+export function createCompositeInkSessionSelectProxy<TDoc extends InkSessionDocument>(
+  getStore: () => InkSessionStore<TDoc> | null,
   pageRefs: readonly PageAnnotationRef[],
 ): InkSessionSelectProxyHandle {
   const session = createInkSessionSelectProxy(getStore)

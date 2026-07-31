@@ -11,7 +11,7 @@ type UseSpreadSessionPersistGuardsOptions = {
 }
 
 /**
- * Phase 3 — immediate spread checkpoint when tab hides; checkpoint + page flush before unload.
+ * Phase 3 — checkpoint + page flush when the tab may be discarded.
  */
 export function useSpreadSessionPersistGuards({
   enabled,
@@ -29,6 +29,7 @@ export function useSpreadSessionPersistGuards({
     const onVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
         checkpointRef.current()
+        flushRef.current()
       }
     }
 
@@ -39,6 +40,7 @@ export function useSpreadSessionPersistGuards({
 
     const onPageHide = () => {
       checkpointRef.current()
+      flushRef.current()
     }
 
     document.addEventListener('visibilitychange', onVisibilityChange)

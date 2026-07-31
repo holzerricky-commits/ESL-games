@@ -6,6 +6,12 @@
 import type { CSSProperties } from 'react'
 import type { WritableStickerVariant } from '@/lib/books/annotation-command-types'
 
+type AnnotationTextFieldNoScrollCSS = {
+  overflowX: NonNullable<CSSProperties['overflowX']>
+  overflowY: NonNullable<CSSProperties['overflowY']>
+  scrollbarWidth: NonNullable<CSSProperties['scrollbarWidth']>
+}
+
 /** Line-height multiplier for each text line in bbox / field layout. */
 export const TEXT_LABEL_LINE_HEIGHT_RATIO = 1.3
 
@@ -185,10 +191,7 @@ export function filledTextEmptyTrayColor(fillHex: string): string {
 }
 
 /** Never show scrollbars inside on-page annotation text fields. */
-export function annotationTextFieldNoScrollCSS(): Pick<
-  CSSProperties,
-  'overflowX' | 'overflowY' | 'scrollbarWidth'
-> {
+export function annotationTextFieldNoScrollCSS(): AnnotationTextFieldNoScrollCSS {
   return {
     overflowX: 'hidden',
     overflowY: 'hidden',

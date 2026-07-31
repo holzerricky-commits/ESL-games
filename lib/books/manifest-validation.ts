@@ -59,13 +59,18 @@ export const bookLibraryPayloadSchema = z.object({
   books: z.array(bookRecordSchema),
 })
 
+export function isPathInsideRoot(absTargetPath: string, rootPath: string): boolean {
+  const absTarget = path.resolve(absTargetPath)
+  const root = path.resolve(rootPath)
+  const prefix = root.endsWith(path.sep) ? root : `${root}${path.sep}`
+  return absTarget === root || absTarget.startsWith(prefix)
+}
+
 /**
  * True if resolved file path is inside book-library (same rules as /api/book-file).
  */
 export function isBookLibraryFilePath(filePath: string, cwd: string, libraryRoot: string): boolean {
   const normalizedRelative = filePath.replaceAll('\\', '/').replace(/^\/+/, '')
   const absTarget = path.resolve(/* turbopackIgnore: true */ cwd, normalizedRelative)
-  const root = path.resolve(libraryRoot)
-  const prefix = root.endsWith(path.sep) ? root : `${root}${path.sep}`
-  return absTarget === root || absTarget.startsWith(prefix)
+  return isPathInsideRoot(absTarget, libraryRoot)
 }

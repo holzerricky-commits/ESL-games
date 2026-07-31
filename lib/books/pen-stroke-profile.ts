@@ -21,10 +21,12 @@ export type PenStrokeProfile = ActivePenStrokeProfile | LegacyPenStrokeProfile
 
 export const DEFAULT_PEN_STROKE_PROFILE: ActivePenStrokeProfile = 'pen'
 
-export const PEN_STROKE_PROFILE_LABEL: Record<ActivePenStrokeProfile, string> = {
+export const PEN_STROKE_PROFILE_LABEL: Record<PenStrokeProfile, string> = {
   pen: 'Pen',
   brush: 'Brush',
   effects: 'Effects',
+  pencil: 'Pencil',
+  'fine-liner': 'Fine liner',
 }
 
 const ALL_PEN_STROKE_PROFILES = [...PEN_STROKE_PROFILES, ...LEGACY_PEN_STROKE_PROFILES] as const
