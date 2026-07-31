@@ -1,5 +1,5 @@
 type ClosestCapable = { closest: (selector: string) => unknown | null }
-type ContainsCapable = { contains: (node: unknown) => boolean }
+type ContainsCapable = { contains: (node: Node | null) => boolean }
 
 function asClosestCapable(target: unknown): ClosestCapable | null {
   if (target == null || typeof target !== 'object') return null

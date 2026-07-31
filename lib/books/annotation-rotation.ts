@@ -46,7 +46,9 @@ export function normalizeDeg(deg: number): number {
   return d
 }
 
-function isRotatablePenMarkerStroke(cmd: AnnotationCommand): boolean {
+function isRotatablePenMarkerStroke(
+  cmd: AnnotationCommand,
+): cmd is StrokeAnnotationCommand & { tool: 'pen' | 'marker' } {
   return (
     cmd.kind === 'stroke' && (cmd.tool === 'pen' || cmd.tool === 'marker') && cmd.points.length > 0
   )
@@ -295,14 +297,14 @@ export function rotateAnnotationCommand(
 }
 
 export function rotateAnnotationCommands(
-  commands: AnnotationCommand[],
+  commands: readonly AnnotationCommand[],
   ids: ReadonlySet<string>,
   pivot: [number, number],
   deltaRad: number,
   layout?: RotateAnnotationLayout,
   groupRotationFrame?: OrientedSelectionFrame | null,
 ): AnnotationCommand[] {
-  if (Math.abs(deltaRad) < 1e-9) return commands
+  if (Math.abs(deltaRad) < 1e-9) return [...commands]
   const rotateAsRigidGroup = ids.size > 1
   return commands.map((c) => {
     if (!ids.has(c.id)) return c

@@ -100,6 +100,7 @@ import {
 } from '@/lib/books/eyedropper-variant'
 import {
   filterPenSwatchesForProfile,
+  normalizeActivePenStrokeProfile,
   penProfileWidthScaleMultiplier,
   PEN_STROKE_PROFILE_LABEL,
   PEN_STROKE_PROFILES,
@@ -301,6 +302,8 @@ export interface BookAnnotationToolbarProps {
   setShapeFillMode: (v: ShapeFillMode) => void
   shapeFillColor: string
   setShapeFillColor: (c: string) => void
+  shapeRoundedCorners: boolean
+  setShapeRoundedCorners: (v: boolean) => void
   eyedropperVariant: EyedropperVariant
   setEyedropperVariant: (v: EyedropperVariant) => void
   layout?: 'horizontal' | 'vertical'
@@ -443,6 +446,10 @@ function penProfileLucideIcon(profile: PenStrokeProfile) {
 function penProfileIcon(profile: PenStrokeProfile, className = iconCls) {
   const Icon = penProfileLucideIcon(profile)
   return <Icon className={className} strokeWidth={1.75} aria-hidden />
+}
+
+function penProfileLabel(profile: PenStrokeProfile) {
+  return PEN_STROKE_PROFILE_LABEL[normalizeActivePenStrokeProfile(profile)]
 }
 
 const PEN_PROFILE_OPTIONS = PEN_STROKE_PROFILES.map((profile) => ({
@@ -725,8 +732,8 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
               aria-expanded={penOpen}
               aria-haspopup="dialog"
               aria-pressed={penActive}
-              aria-label={PEN_STROKE_PROFILE_LABEL[penStrokeProfile]}
-              title={`${PEN_STROKE_PROFILE_LABEL[penStrokeProfile]} (${SC.pen})${railVariantToolTitleSuffix}`}
+              aria-label={penProfileLabel(penStrokeProfile)}
+              title={`${penProfileLabel(penStrokeProfile)} (${SC.pen})${railVariantToolTitleSuffix}`}
               className={cn(toolBtnClass, (penOpen || penActive) && toolBtnActiveClass)}
               {...penRailPress}
             >
