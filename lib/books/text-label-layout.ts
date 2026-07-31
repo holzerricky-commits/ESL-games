@@ -185,10 +185,10 @@ export function filledTextEmptyTrayColor(fillHex: string): string {
 }
 
 /** Never show scrollbars inside on-page annotation text fields. */
-export function annotationTextFieldNoScrollCSS(): Pick<
+export function annotationTextFieldNoScrollCSS(): Required<Pick<
   CSSProperties,
   'overflowX' | 'overflowY' | 'scrollbarWidth'
-> {
+>> {
   return {
     overflowX: 'hidden',
     overflowY: 'hidden',

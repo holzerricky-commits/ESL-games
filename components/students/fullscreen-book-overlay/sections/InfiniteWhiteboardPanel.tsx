@@ -661,7 +661,6 @@ export function InfiniteWhiteboardPanel({
                 rightPenInkPatternOriginXPx={0}
                 spreadSeamNormX={1}
                 spreadSessionMode
-                spreadSessionCommands={whiteboardSessionDoc.commands}
                 onSpreadSessionAppendCommand={appendWhiteboardSessionCommandWithAutoGroup}
                 spreadSessionUndo={whiteboardSessionUndo}
                 spreadSessionRedo={whiteboardSessionRedo}

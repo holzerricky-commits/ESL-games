@@ -5,8 +5,29 @@ import type { SpreadSessionStore } from '@/lib/books/spread-session-store'
 
 type PageAnnotationRef = RefObject<BookPageAnnotationHandle | null>
 
+type InkSessionSelectionStore = Pick<
+  InkSessionStore,
+  | 'getState'
+  | 'setSelectedIds'
+  | 'selectAll'
+  | 'deleteSelected'
+  | 'copySelected'
+  | 'pasteFromClipboard'
+  | 'duplicateSelected'
+  | 'toggleGroupSelected'
+  | 'removeFromGroupSelected'
+  | 'selectNextInStack'
+  | 'moveSelectedBy'
+  | 'setNudgePreview'
+  | 'commitNudgePreview'
+  | 'clearNudgePreview'
+  | 'undo'
+  | 'redo'
+  | 'clearCommands'
+>
+
 /** Imperative select/undo API for ink session stores (toolbar + keyboard). */
-export type InkSessionSelectProxyHandle = Pick<
+export type InkSessionSelectProxyHandle = Required<Pick<
   BookPageAnnotationHandle,
   | 'getSelectedIds'
   | 'setSelectedIds'
@@ -26,13 +47,13 @@ export type InkSessionSelectProxyHandle = Pick<
   | 'undo'
   | 'redo'
   | 'clear'
->
+>>
 
 /** @deprecated Use InkSessionSelectProxyHandle */
 export type SpreadSessionSelectProxyHandle = InkSessionSelectProxyHandle
 
 export function createInkSessionSelectProxy(
-  getStore: () => InkSessionStore | null,
+  getStore: () => InkSessionSelectionStore | null,
 ): InkSessionSelectProxyHandle {
   return {
     getSelectedIds: () => getStore()?.getState().selectedIds ?? [],
@@ -76,7 +97,7 @@ export function createSpreadSessionSelectProxy(
 
 /** Session ink store plus page-local layers (stamp, text, sticky, callout). */
 export function createCompositeInkSessionSelectProxy(
-  getStore: () => InkSessionStore | null,
+  getStore: () => InkSessionSelectionStore | null,
   pageRefs: readonly PageAnnotationRef[],
 ): InkSessionSelectProxyHandle {
   const session = createInkSessionSelectProxy(getStore)

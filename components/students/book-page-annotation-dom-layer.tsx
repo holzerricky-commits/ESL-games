@@ -807,7 +807,7 @@ function EditableBlock({
   const canEdit =
     showTextarea &&
     editSessionActive &&
-    ((textToolActive && !selectMode) || (selectMode && isEditing === true))
+    ((textToolActive === true && selectMode !== true) || (selectMode === true && isEditing === true))
 
   const isSticky = cmd.kind === 'sticky'
   const labelCapturePointer = shouldBookAnnotationLabelCapturePointer({

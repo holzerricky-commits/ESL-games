@@ -34,7 +34,7 @@ export function expandDeadIndicesForFigureGroups(
 
 /** All pen/marker stroke ids on the page with this figure group id. */
 export function idsInFigureGroup(
-  commands: AnnotationCommand[],
+  commands: readonly AnnotationCommand[],
   figureGroupId: string,
   skipIndices?: ReadonlySet<number>,
 ): string[] {

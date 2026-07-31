@@ -42,10 +42,6 @@ export function flushSpreadSessionDocumentToPageStorage({
   const lastPageOnly = isLastPageSpreadKey(pages)
 
   if (doc.commands.length === 0) {
-    setAnnotationsForPage(studentId, bookId, unitId, pages.leftPage, [], 'pdf')
-    if (!lastPageOnly) {
-      setAnnotationsForPage(studentId, bookId, unitId, pages.rightPage, [], 'pdf')
-    }
     return
   }
 
