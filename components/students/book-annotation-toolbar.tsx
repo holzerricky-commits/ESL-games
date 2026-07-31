@@ -100,6 +100,7 @@ import {
 } from '@/lib/books/eyedropper-variant'
 import {
   filterPenSwatchesForProfile,
+  normalizeActivePenStrokeProfile,
   penProfileWidthScaleMultiplier,
   PEN_STROKE_PROFILE_LABEL,
   PEN_STROKE_PROFILES,
@@ -301,6 +302,8 @@ export interface BookAnnotationToolbarProps {
   setShapeFillMode: (v: ShapeFillMode) => void
   shapeFillColor: string
   setShapeFillColor: (c: string) => void
+  shapeRoundedCorners: boolean
+  setShapeRoundedCorners: (v: boolean) => void
   eyedropperVariant: EyedropperVariant
   setEyedropperVariant: (v: EyedropperVariant) => void
   layout?: 'horizontal' | 'vertical'
@@ -539,6 +542,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
   const [textOpen, setTextOpen] = useState(false)
   const [eraserSubMode, setEraserSubMode] = useState<'rubber' | 'line'>('line')
   const [eyedropperOpen, setEyedropperOpen] = useState(false)
+  const activePenStrokeProfile = normalizeActivePenStrokeProfile(penStrokeProfile)
   const eyedropperLongPressRef = useRef<{ timer: ReturnType<typeof setTimeout> | null; fired: boolean }>({
     timer: null,
     fired: false,
@@ -725,13 +729,13 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
               aria-expanded={penOpen}
               aria-haspopup="dialog"
               aria-pressed={penActive}
-              aria-label={PEN_STROKE_PROFILE_LABEL[penStrokeProfile]}
-              title={`${PEN_STROKE_PROFILE_LABEL[penStrokeProfile]} (${SC.pen})${railVariantToolTitleSuffix}`}
+              aria-label={PEN_STROKE_PROFILE_LABEL[activePenStrokeProfile]}
+              title={`${PEN_STROKE_PROFILE_LABEL[activePenStrokeProfile]} (${SC.pen})${railVariantToolTitleSuffix}`}
               className={cn(toolBtnClass, (penOpen || penActive) && toolBtnActiveClass)}
               {...penRailPress}
             >
               <ToolbarIcon
-                icon={penProfileLucideIcon(penStrokeProfile)}
+                icon={penProfileLucideIcon(activePenStrokeProfile)}
                 colorDot={penColorSource === 'custom' ? penCustomHex : penSwatch.color}
               />
             </Button>
@@ -745,7 +749,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
               label="Pen"
               labelHidden
               surface="rail"
-              value={penStrokeProfile}
+              value={activePenStrokeProfile}
               onChange={(v) => {
                 setPenStrokeProfile(v as PenStrokeProfile)
                 setPenOpen(false)
@@ -790,7 +794,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
             <div className={popoverStackClass}>
               <PopoverIconSegmentRow
                 label="Pen type"
-                value={penStrokeProfile}
+                value={activePenStrokeProfile}
                 onChange={(v) => setPenStrokeProfile(v as PenStrokeProfile)}
                 idPrefix="pen-profile"
                 options={PEN_PROFILE_OPTIONS}

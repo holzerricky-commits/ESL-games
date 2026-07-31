@@ -28,7 +28,11 @@ import {
   type ShortcutTapState,
 } from '@/lib/books/book-overlay-keyboard-shortcuts'
 import { EYEDROPPER_VARIANTS, type EyedropperVariant } from '@/lib/books/eyedropper-variant'
-import { PEN_STROKE_PROFILES, type PenStrokeProfile } from '@/lib/books/pen-stroke-profile'
+import {
+  normalizeActivePenStrokeProfile,
+  PEN_STROKE_PROFILES,
+  type PenStrokeProfile,
+} from '@/lib/books/pen-stroke-profile'
 
 const MAX_THICKNESS_STEP = 6 satisfies AnnotationStrokeThicknessStep
 
@@ -344,7 +348,7 @@ export function useBookOverlayKeyboardShortcuts({
     }
 
     function penCurrentIndex(): number {
-      const idx = PEN_STROKE_PROFILES.indexOf(penStrokeProfile)
+      const idx = PEN_STROKE_PROFILES.indexOf(normalizeActivePenStrokeProfile(penStrokeProfile))
       return idx >= 0 ? idx : 0
     }
 

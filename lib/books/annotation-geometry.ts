@@ -317,7 +317,7 @@ function isStackableEraserTarget(cmd: AnnotationCommand): boolean {
  * @param trailingDraftEraser Optional in-progress eraser-line for live preview while dragging.
  */
 export function computeEraserLineDeadIndices(
-  commands: AnnotationCommand[],
+  commands: readonly AnnotationCommand[],
   trailingDraftEraser?: Pick<StrokeAnnotationCommand, 'tool' | 'points' | 'widthScale'> | null,
 ): Set<number> {
   const dead = new Set<number>()
@@ -348,7 +348,7 @@ export function computeEraserLineDeadIndices(
 
 /** @deprecated Use {@link computeEraserLineDeadIndices} — name kept for call sites. */
 export function computeEraserLineDeadStrokeIndices(
-  commands: AnnotationCommand[],
+  commands: readonly AnnotationCommand[],
   trailingDraftEraser?: Pick<StrokeAnnotationCommand, 'tool' | 'points' | 'widthScale'> | null,
 ): Set<number> {
   return computeEraserLineDeadIndices(commands, trailingDraftEraser)
