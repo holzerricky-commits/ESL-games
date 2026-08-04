@@ -1,5 +1,9 @@
+import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { bookLibraryPayloadSchema } from '@/lib/books/manifest-validation'
+import {
+  bookLibraryPayloadSchema,
+  resolveBookLibraryFolderName,
+} from '@/lib/books/manifest-validation'
 
 describe('bookLibraryPayloadSchema', () => {
   it('accepts anchored unit, lesson, and part page hints', () => {
@@ -63,5 +67,29 @@ describe('bookLibraryPayloadSchema', () => {
       ],
     }
     expect(bookLibraryPayloadSchema.safeParse(payload).success).toBe(true)
+  })
+})
+
+describe('resolveBookLibraryFolderName', () => {
+  const cwd = process.cwd()
+  const libraryRoot = path.resolve(cwd, 'book-library')
+
+  it('returns the book folder for a normal unit path', () => {
+    expect(resolveBookLibraryFolderName('book-library/MyBook/unit.pdf', cwd, libraryRoot)).toBe('MyBook')
+  })
+
+  it('derives the folder from the resolved path, not raw ../ segments', () => {
+    expect(
+      resolveBookLibraryFolderName('book-library/../book-library/MyBook/unit.pdf', cwd, libraryRoot),
+    ).toBe('MyBook')
+  })
+
+  it('rejects paths that resolve outside book-library', () => {
+    expect(resolveBookLibraryFolderName('book-library/../outside/x.pdf', cwd, libraryRoot)).toBeNull()
+  })
+
+  it('rejects a bare .. segment extracted from an otherwise accepted library path', () => {
+    // Old regex `book-library/([^/]+)/` would return ".." here.
+    expect(resolveBookLibraryFolderName('book-library/../book-library/foo.pdf', cwd, libraryRoot)).toBeNull()
   })
 })

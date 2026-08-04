@@ -69,3 +69,26 @@ export function isBookLibraryFilePath(filePath: string, cwd: string, libraryRoot
   const prefix = root.endsWith(path.sep) ? root : `${root}${path.sep}`
   return absTarget === root || absTarget.startsWith(prefix)
 }
+
+/**
+ * Book folder name under book-library for a unit file path.
+ * Uses the resolved path (not raw `../` segments) so materials APIs cannot escape the library.
+ */
+export function resolveBookLibraryFolderName(
+  filePath: string,
+  cwd: string,
+  libraryRoot: string,
+): string | null {
+  if (!isBookLibraryFilePath(filePath, cwd, libraryRoot)) return null
+  const normalizedRelative = filePath.replaceAll('\\', '/').replace(/^\/+/, '')
+  const absTarget = path.resolve(/* turbopackIgnore: true */ cwd, normalizedRelative)
+  const root = path.resolve(libraryRoot)
+  const rel = path.relative(root, absTarget).replaceAll('\\', '/')
+  if (!rel || rel === '.' || rel.startsWith('..') || path.isAbsolute(rel)) return null
+  const parts = rel.split('/').filter((segment) => segment.length > 0)
+  // Need at least bookFolder/file (same shape the materials APIs historically required).
+  if (parts.length < 2) return null
+  const folder = parts[0]
+  if (!folder || folder === '.' || folder === '..') return null
+  return folder
+}
