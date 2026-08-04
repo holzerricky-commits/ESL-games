@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import { z } from 'zod'
 import type { BookRecord } from '@/lib/books/types'
+import { resolveBookLibraryFolderName } from '@/lib/books/manifest-validation'
 import { getBookLibraryRoot, loadBookLibrary } from '@/lib/books/server'
 import { resolveGeminiApiKey } from '@/lib/gemini'
 
@@ -120,9 +121,8 @@ function tokenOverlapScore(a: string, b: string): number {
 }
 
 function resolveBookFolderFromUnitPath(filePath: string): string | null {
-  const normalized = filePath.replaceAll('\\', '/')
-  const match = normalized.match(/^book-library\/([^/]+)\//)
-  return match?.[1] ?? null
+  const cwd = /* turbopackIgnore: true */ process.cwd()
+  return resolveBookLibraryFolderName(filePath, cwd, getBookLibraryRoot())
 }
 
 function indexPathFor(bookFolder: string): string {
