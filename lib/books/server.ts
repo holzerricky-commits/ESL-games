@@ -1,5 +1,6 @@
 import path from 'node:path'
 import { promises as fs } from 'node:fs'
+import { isBookLessonPartTag } from '@/lib/books/part-structure-tag'
 import { clampSpreadGutterPullRatio } from '@/lib/books/spread-gutter'
 import type { BookLibraryPayload, BookRecord } from '@/lib/books/types'
 
@@ -31,7 +32,8 @@ function compareNaturalFileNames(a: string, b: string): number {
   })
 }
 
-function optionalStartPageHint(value: unknown): number | null {
+/** Shared for startPageHint / endPageHint (positive printed page ints). */
+function optionalPageHint(value: unknown): number | null {
   if (typeof value !== 'number' || !Number.isFinite(value)) return null
   const asInt = Math.floor(value)
   return asInt >= 1 ? asInt : null
@@ -102,78 +104,126 @@ async function fileExists(absPath: string): Promise<boolean> {
   }
 }
 
+/**
+ * Hydrate books.json rows into BookRecord shapes.
+ * Must keep endPageHint / structureTag — save schema accepts them and TOC import writes them.
+ */
+export function normalizeManifestBooks(books: unknown[]): BookRecord[] {
+  return books.map((bookRaw, bi) => {
+    const book = (bookRaw ?? {}) as Partial<BookRecord> & {
+      units?: Array<Partial<BookRecord['units'][number]> & {
+        lessons?: Array<
+          Partial<NonNullable<BookRecord['units'][number]['lessons']>[number]> & {
+            parts?: Array<Partial<NonNullable<NonNullable<BookRecord['units'][number]['lessons']>[number]['parts']>[number]>>
+          }
+        >
+      }>
+    }
+    const pageAlignmentByFile = normalizePageAlignmentByFile(book?.pageAlignmentByFile)
+    const spreadGutterPullRatio = normalizeSpreadGutterPullRatio(book?.spreadGutterPullRatio)
+    const spreadGutterByFile = normalizeSpreadGutterByFile(book?.spreadGutterByFile)
+    return {
+      id: typeof book?.id === 'string' && book.id ? book.id : `book-${bi + 1}`,
+      title: typeof book?.title === 'string' && book.title ? book.title : `Book ${bi + 1}`,
+      ...(typeof book?.description === 'string' ? { description: book.description } : {}),
+      ...(pageAlignmentByFile ? { pageAlignmentByFile } : {}),
+      ...(spreadGutterPullRatio != null ? { spreadGutterPullRatio } : {}),
+      ...(spreadGutterByFile ? { spreadGutterByFile } : {}),
+      units: Array.isArray(book?.units)
+        ? book.units.map((unit, ui) => {
+            const unitStart = optionalPageHint(unit?.startPageHint)
+            const unitEnd = optionalPageHint(unit?.endPageHint)
+            return {
+              id: typeof unit?.id === 'string' && unit.id ? unit.id : `unit-${ui + 1}`,
+              title: typeof unit?.title === 'string' && unit.title ? unit.title : `Unit ${ui + 1}`,
+              filePath: typeof unit?.filePath === 'string' ? unit.filePath : '',
+              ...(unitStart != null ? { startPageHint: unitStart } : {}),
+              ...(unitEnd != null ? { endPageHint: unitEnd } : {}),
+              ...(optionalAnchorConfidence(unit?.anchorConfidence)
+                ? { anchorConfidence: optionalAnchorConfidence(unit?.anchorConfidence) as 'high' | 'medium' | 'low' }
+                : {}),
+              ...(optionalAnchorSource(unit?.anchorSource)
+                ? { anchorSource: optionalAnchorSource(unit?.anchorSource) as 'toc' | 'heading' | 'fallback' }
+                : {}),
+              ...(Array.isArray(unit?.lessons)
+                ? {
+                    lessons: unit.lessons
+                      .map((lesson, li) => {
+                        const lessonStart = optionalPageHint(lesson?.startPageHint)
+                        const lessonEnd = optionalPageHint(lesson?.endPageHint)
+                        return {
+                          id: typeof lesson?.id === 'string' && lesson.id ? lesson.id : `lesson-${li + 1}`,
+                          title: typeof lesson?.title === 'string' ? lesson.title : `Lesson ${li + 1}`,
+                          ...(lessonStart != null ? { startPageHint: lessonStart } : {}),
+                          ...(lessonEnd != null ? { endPageHint: lessonEnd } : {}),
+                          ...(optionalAnchorConfidence(lesson?.anchorConfidence)
+                            ? {
+                                anchorConfidence: optionalAnchorConfidence(lesson?.anchorConfidence) as
+                                  | 'high'
+                                  | 'medium'
+                                  | 'low',
+                              }
+                            : {}),
+                          ...(optionalAnchorSource(lesson?.anchorSource)
+                            ? {
+                                anchorSource: optionalAnchorSource(lesson?.anchorSource) as
+                                  | 'toc'
+                                  | 'heading'
+                                  | 'fallback',
+                              }
+                            : {}),
+                          ...(Array.isArray(lesson?.parts)
+                            ? {
+                                parts: lesson.parts.map((part, pi) => {
+                                  const partStart = optionalPageHint(part?.startPageHint)
+                                  const partEnd = optionalPageHint(part?.endPageHint)
+                                  return {
+                                    id: typeof part?.id === 'string' && part.id ? part.id : `part-${pi + 1}`,
+                                    title: typeof part?.title === 'string' ? part.title : `Part ${pi + 1}`,
+                                    ...(partStart != null ? { startPageHint: partStart } : {}),
+                                    ...(partEnd != null ? { endPageHint: partEnd } : {}),
+                                    ...(optionalAnchorConfidence(part?.anchorConfidence)
+                                      ? {
+                                          anchorConfidence: optionalAnchorConfidence(part?.anchorConfidence) as
+                                            | 'high'
+                                            | 'medium'
+                                            | 'low',
+                                        }
+                                      : {}),
+                                    ...(optionalAnchorSource(part?.anchorSource)
+                                      ? {
+                                          anchorSource: optionalAnchorSource(part?.anchorSource) as
+                                            | 'toc'
+                                            | 'heading'
+                                            | 'fallback',
+                                        }
+                                      : {}),
+                                    ...(isBookLessonPartTag(part?.structureTag)
+                                      ? { structureTag: part.structureTag }
+                                      : {}),
+                                  }
+                                }),
+                              }
+                            : {}),
+                        }
+                      })
+                      .filter((lesson) => lesson.title.trim().length > 0),
+                  }
+                : {}),
+            }
+          })
+        : [],
+    }
+  })
+}
+
 async function loadManifestIfPresent(): Promise<BookLibraryPayload | null> {
   const manifestPath = path.resolve(BOOK_LIBRARY_ROOT, MANIFEST_FILE_NAME)
   if (!(await fileExists(manifestPath))) return null
   const raw = await fs.readFile(manifestPath, 'utf8')
   const parsed = JSON.parse(raw) as Partial<BookLibraryPayload>
   const books = Array.isArray(parsed.books) ? parsed.books : []
-  const migrated: BookRecord[] = books.map((book, bi) => {
-    const pageAlignmentByFile = normalizePageAlignmentByFile(book?.pageAlignmentByFile)
-    const spreadGutterPullRatio = normalizeSpreadGutterPullRatio(book?.spreadGutterPullRatio)
-    const spreadGutterByFile = normalizeSpreadGutterByFile(book?.spreadGutterByFile)
-    return {
-    id: typeof book?.id === 'string' && book.id ? book.id : `book-${bi + 1}`,
-    title: typeof book?.title === 'string' && book.title ? book.title : `Book ${bi + 1}`,
-    ...(typeof book?.description === 'string' ? { description: book.description } : {}),
-    ...(pageAlignmentByFile ? { pageAlignmentByFile } : {}),
-    ...(spreadGutterPullRatio != null ? { spreadGutterPullRatio } : {}),
-    ...(spreadGutterByFile ? { spreadGutterByFile } : {}),
-    units: Array.isArray(book?.units)
-      ? book.units.map((unit, ui) => ({
-          id: typeof unit?.id === 'string' && unit.id ? unit.id : `unit-${ui + 1}`,
-          title: typeof unit?.title === 'string' && unit.title ? unit.title : `Unit ${ui + 1}`,
-          filePath: typeof unit?.filePath === 'string' ? unit.filePath : '',
-          ...(optionalStartPageHint(unit?.startPageHint) != null
-            ? { startPageHint: optionalStartPageHint(unit?.startPageHint) as number }
-            : {}),
-          ...(optionalAnchorConfidence(unit?.anchorConfidence)
-            ? { anchorConfidence: optionalAnchorConfidence(unit?.anchorConfidence) as 'high' | 'medium' | 'low' }
-            : {}),
-          ...(optionalAnchorSource(unit?.anchorSource)
-            ? { anchorSource: optionalAnchorSource(unit?.anchorSource) as 'toc' | 'heading' | 'fallback' }
-            : {}),
-          ...(Array.isArray(unit?.lessons)
-            ? {
-                lessons: unit.lessons
-                  .map((lesson, li) => ({
-                    id: typeof lesson?.id === 'string' && lesson.id ? lesson.id : `lesson-${li + 1}`,
-                    title: typeof lesson?.title === 'string' ? lesson.title : `Lesson ${li + 1}`,
-                    ...(optionalStartPageHint(lesson?.startPageHint) != null
-                      ? { startPageHint: optionalStartPageHint(lesson?.startPageHint) as number }
-                      : {}),
-                    ...(optionalAnchorConfidence(lesson?.anchorConfidence)
-                      ? { anchorConfidence: optionalAnchorConfidence(lesson?.anchorConfidence) as 'high' | 'medium' | 'low' }
-                      : {}),
-                    ...(optionalAnchorSource(lesson?.anchorSource)
-                      ? { anchorSource: optionalAnchorSource(lesson?.anchorSource) as 'toc' | 'heading' | 'fallback' }
-                      : {}),
-                    ...(Array.isArray(lesson?.parts)
-                      ? {
-                          parts: lesson.parts.map((part, pi) => ({
-                            id: typeof part?.id === 'string' && part.id ? part.id : `part-${pi + 1}`,
-                            title: typeof part?.title === 'string' ? part.title : `Part ${pi + 1}`,
-                            ...(optionalStartPageHint(part?.startPageHint) != null
-                              ? { startPageHint: optionalStartPageHint(part?.startPageHint) as number }
-                              : {}),
-                            ...(optionalAnchorConfidence(part?.anchorConfidence)
-                              ? { anchorConfidence: optionalAnchorConfidence(part?.anchorConfidence) as 'high' | 'medium' | 'low' }
-                              : {}),
-                            ...(optionalAnchorSource(part?.anchorSource)
-                              ? { anchorSource: optionalAnchorSource(part?.anchorSource) as 'toc' | 'heading' | 'fallback' }
-                              : {}),
-                          })),
-                        }
-                      : {}),
-                  }))
-                  .filter((lesson) => lesson.title.trim().length > 0),
-              }
-            : {}),
-        }))
-      : [],
-    }
-  })
-  return { books: migrated }
+  return { books: normalizeManifestBooks(books) }
 }
 
 async function autoDiscoverBooks(): Promise<BookLibraryPayload> {
