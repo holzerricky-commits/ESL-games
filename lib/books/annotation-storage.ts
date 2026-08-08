@@ -111,8 +111,17 @@ export const ANNOTATION_STROKE_WIDTH_SCALES = ANNOTATION_STROKE_WIDTH_STEPS
 /** @deprecated use AnnotationStrokeThicknessStep */
 export type AnnotationStrokeWidthPreset = AnnotationStrokeThicknessStep
 
-const ANNOTATION_STORAGE_KEY_V1 = 'esl_book_annotations_v1'
-const ANNOTATION_STORAGE_KEY_V2 = 'esl_book_annotations_v2'
+export const ANNOTATION_STORAGE_KEY_V1 = 'esl_book_annotations_v1'
+export const ANNOTATION_STORAGE_KEY_V2 = 'esl_book_annotations_v2'
+/** Set after a successful V1→V2 migrate so an empty v2 is not treated as a failed migrate. */
+export const ANNOTATION_STORAGE_V2_MIGRATED_FLAG = 'esl_book_annotations_v2_migrated'
+
+/** Minimal storage surface for V1→V2 migration (browser localStorage or test double). */
+export type AnnotationStorageLike = {
+  getItem: (key: string) => string | null
+  setItem: (key: string, value: string) => void
+  removeItem: (key: string) => void
+}
 
 const ANNOTATION_TEXT_MAX_CHARS = 4000
 
@@ -618,25 +627,104 @@ function deepMigrateV1RootToV2(v1: unknown): BookAnnotationsRoot {
   return out
 }
 
-function migrateV1StorageToV2Once(): void {
-  if (typeof window === 'undefined') return
-  try {
-    if (localStorage.getItem(ANNOTATION_STORAGE_KEY_V2) != null) return
-    const v1raw = localStorage.getItem(ANNOTATION_STORAGE_KEY_V1)
-    if (!v1raw) {
-      localStorage.setItem(ANNOTATION_STORAGE_KEY_V2, '{}')
+/**
+ * Migrate legacy `esl_book_annotations_v1` into v2.
+ *
+ * Critical: never write an empty v2 marker on failure — that permanently orphans
+ * still-valid v1 data (v2 presence short-circuits future retries). Also free v1
+ * only after v2 is written successfully so a quota failure cannot wipe ink.
+ */
+export function migrateAnnotationsStorageV1ToV2(storage: AnnotationStorageLike): void {
+  const migratedFlag = storage.getItem(ANNOTATION_STORAGE_V2_MIGRATED_FLAG) === '1'
+  const v2existing = storage.getItem(ANNOTATION_STORAGE_KEY_V2)
+  if (v2existing != null) {
+    const v1stillPresent = storage.getItem(ANNOTATION_STORAGE_KEY_V1)
+    let v2Empty = false
+    let v2Corrupt = false
+    try {
+      const parsed = JSON.parse(v2existing) as unknown
+      v2Empty = !!parsed && typeof parsed === 'object' && Object.keys(parsed as object).length === 0
+    } catch {
+      v2Corrupt = true
+    }
+
+    // Older builds wrote `{}` on migrate failure while leaving v1 intact — remove the poison
+    // marker and fall through so v1 can be migrated again (only when we never recorded success).
+    if (v1stillPresent && !migratedFlag && (v2Empty || v2Corrupt)) {
+      try {
+        storage.removeItem(ANNOTATION_STORAGE_KEY_V2)
+      } catch {
+        return
+      }
+    } else {
+      // Successful migrate left v1 behind — free the duplicate copy.
+      if (v1stillPresent && !v2Corrupt) {
+        try {
+          storage.removeItem(ANNOTATION_STORAGE_KEY_V1)
+        } catch {
+          /* ignore */
+        }
+      }
+      if (!migratedFlag) {
+        try {
+          storage.setItem(ANNOTATION_STORAGE_V2_MIGRATED_FLAG, '1')
+        } catch {
+          /* ignore */
+        }
+      }
       return
     }
-    const parsed = JSON.parse(v1raw) as unknown
-    const v2 = deepMigrateV1RootToV2(parsed)
-    localStorage.setItem(ANNOTATION_STORAGE_KEY_V2, JSON.stringify(v2))
-  } catch {
+  }
+
+  const v1raw = storage.getItem(ANNOTATION_STORAGE_KEY_V1)
+  if (!v1raw) {
     try {
-      localStorage.setItem(ANNOTATION_STORAGE_KEY_V2, '{}')
+      storage.setItem(ANNOTATION_STORAGE_KEY_V2, '{}')
+    } catch {
+      /* quota — leave unset so a later load can retry */
+      return
+    }
+    try {
+      storage.setItem(ANNOTATION_STORAGE_V2_MIGRATED_FLAG, '1')
     } catch {
       /* ignore */
     }
+    return
   }
+
+  let v2json: string
+  try {
+    const parsed = JSON.parse(v1raw) as unknown
+    const v2 = deepMigrateV1RootToV2(parsed)
+    v2json = JSON.stringify(v2)
+  } catch {
+    // Corrupt v1: do not poison v2 with {}. Keep v1 for manual recovery.
+    return
+  }
+
+  // Free v1 first so nearly-full localStorage can accept v2, then restore v1 if v2 write fails.
+  storage.removeItem(ANNOTATION_STORAGE_KEY_V1)
+  try {
+    storage.setItem(ANNOTATION_STORAGE_KEY_V2, v2json)
+  } catch {
+    try {
+      storage.setItem(ANNOTATION_STORAGE_KEY_V1, v1raw)
+    } catch {
+      /* last resort: both writes failed; caller still has in-memory session */
+    }
+    // Leave v2 unset so the next read retries migration.
+    return
+  }
+  try {
+    storage.setItem(ANNOTATION_STORAGE_V2_MIGRATED_FLAG, '1')
+  } catch {
+    /* v2 is durable; flag can be filled in on a later load */
+  }
+}
+
+function migrateV1StorageToV2Once(): void {
+  if (typeof window === 'undefined') return
+  migrateAnnotationsStorageV1ToV2(window.localStorage)
 }
 
 export function readAnnotationsRoot(): BookAnnotationsRoot {
@@ -644,7 +732,16 @@ export function readAnnotationsRoot(): BookAnnotationsRoot {
   migrateV1StorageToV2Once()
   try {
     const raw = localStorage.getItem(ANNOTATION_STORAGE_KEY_V2)
-    if (!raw) return {}
+    if (!raw) {
+      // Migration may have restored v1 after a failed v2 write — surface v1 so ink still loads.
+      const v1raw = localStorage.getItem(ANNOTATION_STORAGE_KEY_V1)
+      if (!v1raw) return {}
+      try {
+        return deepMigrateV1RootToV2(JSON.parse(v1raw) as unknown)
+      } catch {
+        return {}
+      }
+    }
     const parsed = JSON.parse(raw) as unknown
     if (!parsed || typeof parsed !== 'object') return {}
     return parsed as BookAnnotationsRoot
