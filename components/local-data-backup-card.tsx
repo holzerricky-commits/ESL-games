@@ -68,7 +68,16 @@ export function LocalDataBackupCard() {
         setPendingJson(null)
         return
       }
-      const { keysWritten } = await applyBackupPayloadAsync(payload)
+      const { keysWritten, diskStudentRecords } = await applyBackupPayloadAsync(payload)
+      if (diskStudentRecords.attempted && !diskStudentRecords.ok) {
+        toast.error(
+          diskStudentRecords.error ??
+            'Browser data was written, but student records could not be saved to disk. Fix the local save error and restore again before reloading.',
+        )
+        setConfirmOpen(false)
+        setPendingJson(null)
+        return
+      }
       toast.success(`Restored ${keysWritten} storage keys. Reloading…`)
       setConfirmOpen(false)
       setPendingJson(null)
