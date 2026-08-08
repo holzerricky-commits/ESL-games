@@ -101,44 +101,69 @@ export function applyBackupPayload(payload: LocalDataBackupPayload): { keysWritt
   return { keysWritten }
 }
 
-async function applyDiskStudentRecordsFromBackup(payload: LocalDataBackupPayload): Promise<void> {
-  const studentsRaw = payload.localStorage.esl_students
-  if (studentsRaw) {
-    try {
-      const students = JSON.parse(studentsRaw) as unknown[]
-      if (Array.isArray(students)) {
-        await fetch('/api/local-data/students', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ students }),
-        })
-      }
-    } catch {
-      /* ignore */
-    }
+export type DiskStudentRecordsRestoreResult = {
+  attempted: boolean
+  ok: boolean
+  error?: string
+}
+
+async function putJson(url: string, body: unknown): Promise<void> {
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const payload = (await res.json().catch(() => ({}))) as { error?: string }
+    throw new Error(payload.error ?? `Save failed (${res.status})`)
   }
+}
+
+/**
+ * Mirror restored students/progress onto disk. Must succeed when the backup includes those keys —
+ * after reload, hydration prefers nonempty disk over localStorage, so a silent disk miss would
+ * discard the restored roster.
+ */
+export async function applyDiskStudentRecordsFromBackup(
+  payload: LocalDataBackupPayload,
+): Promise<DiskStudentRecordsRestoreResult> {
+  const studentsRaw = payload.localStorage.esl_students
   const progressRaw = payload.localStorage.esl_student_progress
-  if (progressRaw) {
-    try {
-      const progress = JSON.parse(progressRaw) as Record<string, unknown>
-      if (progress && typeof progress === 'object' && !Array.isArray(progress)) {
-        await fetch('/api/local-data/student-progress', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ progress }),
-        })
+  const hasStudents = typeof studentsRaw === 'string'
+  const hasProgress = typeof progressRaw === 'string'
+  if (!hasStudents && !hasProgress) {
+    return { attempted: false, ok: true }
+  }
+
+  try {
+    if (hasStudents) {
+      const students = JSON.parse(studentsRaw) as unknown
+      if (!Array.isArray(students)) {
+        throw new Error('Backup esl_students is not an array.')
       }
-    } catch {
-      /* ignore */
+      await putJson('/api/local-data/students', { students })
     }
+    if (hasProgress) {
+      const progress = JSON.parse(progressRaw) as unknown
+      if (!progress || typeof progress !== 'object' || Array.isArray(progress)) {
+        throw new Error('Backup esl_student_progress is not an object.')
+      }
+      await putJson('/api/local-data/student-progress', { progress })
+    }
+    return { attempted: true, ok: true }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Could not restore student records to disk.'
+    return { attempted: true, ok: false, error: message }
   }
 }
 
 /** Writes backup to browser storage and to on-disk student files when the local API is available. */
-export async function applyBackupPayloadAsync(payload: LocalDataBackupPayload): Promise<{ keysWritten: number }> {
+export async function applyBackupPayloadAsync(
+  payload: LocalDataBackupPayload,
+): Promise<{ keysWritten: number; diskStudentRecords: DiskStudentRecordsRestoreResult }> {
   const result = applyBackupPayload(payload)
-  await applyDiskStudentRecordsFromBackup(payload)
-  return result
+  const diskStudentRecords = await applyDiskStudentRecordsFromBackup(payload)
+  return { ...result, diskStudentRecords }
 }
 
 export function downloadBackupJson(filename?: string): void {
