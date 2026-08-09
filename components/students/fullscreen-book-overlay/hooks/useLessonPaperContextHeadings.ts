@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from 'react'
 import type { MutableRefObject } from 'react'
+import { buildLessonPaperContextHeadingHtml, escapeHtml } from '@/lib/books/lesson-paper-context-heading'
 import { ensureStudentClassLessonNotebookPageSpanSection } from '@/lib/students/selectors'
 
 interface UseLessonPaperContextHeadingsArgs {
@@ -62,20 +63,23 @@ export function useLessonPaperContextHeadings(args: UseLessonPaperContextHeading
       options?: { scrollIntoView?: boolean },
     ) => {
       if (!contextKey.trim()) return
-      const marker = `data-notebook-context="${contextKey}"`
       const markerId = contextKey.toLowerCase().replace(/[^a-z0-9_-]+/g, '-')
       const editor = args.lessonPaperEditorRef.current
       const currentHtml = editor?.innerHTML ?? args.lessonPaperHtmlRef.current
-      if (currentHtml.includes(marker)) {
+      // Match either raw or HTML-escaped context keys from older/newer heading writers.
+      const alreadyPresent =
+        currentHtml.includes(`data-notebook-context="${contextKey}"`) ||
+        currentHtml.includes(`data-notebook-context="${escapeHtml(contextKey)}"`)
+      if (alreadyPresent) {
         scrollLessonPaperHeadingIntoFocus(markerId)
         return
       }
-      const headingTitle = title.trim() || pageSpanKey
-      const pageLabel = pageSpanKey.replace(/^p/i, '')
-      const safePageSpan = pageSpanKey.replace(/"/g, '')
-      const safeSessionKey = (args.activeClassSessionId ?? '').replace(/"/g, '')
-      const sessionAttr = safeSessionKey ? ` data-session-key="${safeSessionKey}"` : ''
-      const headingHtml = `<p><br/></p><p><br/></p><div ${marker} data-notebook-marker="${markerId}" data-page-span="${safePageSpan}"${sessionAttr} style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:6px 0 12px 0;padding:0 0 6px 0;border-bottom:1px dashed rgba(74,59,42,0.22);"><h3 style="margin:0;font-size:1.55rem;line-height:1.2;font-weight:700;letter-spacing:0.01em;color:rgba(72,92,139,0.72);">${headingTitle}</h3><span style="font-size:0.86rem;line-height:1.2;font-weight:600;letter-spacing:0.03em;color:rgba(74,59,42,0.58);white-space:nowrap;">${pageLabel}</span></div><p><br/></p>`
+      const headingHtml = buildLessonPaperContextHeadingHtml({
+        contextKey,
+        title,
+        pageSpanKey,
+        activeClassSessionId: args.activeClassSessionId,
+      })
       const firstMarkerIndex = currentHtml.search(/data-notebook-context="part::/i)
       const nextHtml =
         insertionMode === 'prependBeforeFirstHeading' && firstMarkerIndex >= 0
