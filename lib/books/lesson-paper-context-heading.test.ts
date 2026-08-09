@@ -18,8 +18,7 @@ describe('buildLessonPaperContextHeadingHtml', () => {
       activeClassSessionId: 'session-1',
     })
 
-    expect(html).not.toContain('<img')
-    expect(html).not.toContain('onerror=')
+    expect(html).not.toMatch(/<img\b/i)
     expect(html).toContain('&lt;img src=x onerror=&quot;alert(\'xss\')&quot;&gt;')
     expect(html).toContain('data-notebook-context="part::vocab"')
     expect(html).toContain('data-session-key="session-1"')
