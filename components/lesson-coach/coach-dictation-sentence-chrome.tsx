@@ -67,7 +67,8 @@ function HighlightedMirror({
   return (
     <div
       className={cn(
-        'pointer-events-none absolute inset-0 z-[2] box-border overflow-hidden whitespace-pre-wrap break-words',
+        'pointer-events-none absolute inset-0 z-[2] box-border overflow-hidden text-transparent',
+        style?.whiteSpace === 'pre' ? 'whitespace-pre' : 'whitespace-pre-wrap break-words',
         className,
       )}
       style={style}

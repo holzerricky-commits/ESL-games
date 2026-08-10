@@ -74,7 +74,7 @@ export function WritingAssistInlineGhost({
   return (
     <div
       className={cn(
-        'pointer-events-none absolute inset-0 z-[3] box-border overflow-x-visible overflow-y-hidden whitespace-pre-wrap break-words',
+        'pointer-events-none absolute inset-0 z-[3] box-border overflow-x-hidden overflow-y-hidden whitespace-pre-wrap break-words',
         className,
       )}
       style={style}
@@ -126,14 +126,17 @@ export function WritingAssistPredictionStrip({
   partial = '',
   className,
   style,
+  minCandidates = 2,
 }: {
   candidates: GhostSuggestion[]
   activeIndex: number
   partial?: string
   className?: string
   style?: CSSProperties
+  /** Show strip when candidate count reaches this (use 1 for strip-only fields). */
+  minCandidates?: number
 }) {
-  if (candidates.length <= 1) return null
+  if (candidates.length < minCandidates) return null
 
   const visible = candidates.slice(0, 5)
 
@@ -165,6 +168,7 @@ function WritingAssistPredictionStripPortal({
   partial,
   anchorRevision = '',
   stripOffsetPx = 6,
+  minCandidates = 2,
 }: {
   anchorRef: RefObject<HTMLElement | null>
   candidates: GhostSuggestion[]
@@ -172,8 +176,9 @@ function WritingAssistPredictionStripPortal({
   partial?: string
   anchorRevision?: string
   stripOffsetPx?: number
+  minCandidates?: number
 }) {
-  const active = candidates.length > 1
+  const active = candidates.length >= minCandidates
   const revisionKey = `${anchorRevision}:${activeIndex}:${partial}:${candidates.map((c) => c.word).join('\0')}`
   const rect = useAnchorRect(anchorRef, active, revisionKey)
   const [mounted, setMounted] = useState(false)
@@ -202,6 +207,7 @@ function WritingAssistPredictionStripPortal({
       activeIndex={activeIndex}
       partial={partial}
       style={style}
+      minCandidates={minCandidates}
     />,
     document.body,
   )
@@ -217,6 +223,8 @@ export function WritingAssistGhostUi({
   mirrorClassName,
   mirrorStyle,
   stripOffsetPx = 6,
+  showInlineGhost = true,
+  minCandidatesForStrip = 2,
 }: {
   text: string
   ghost: GhostSuggestion | null
@@ -228,27 +236,47 @@ export function WritingAssistGhostUi({
   /** @deprecated Strip is portaled; offset is controlled by stripOffsetPx. */
   stripClassName?: string
   stripOffsetPx?: number
+  /** Filled labels: strip above only — no faded suffix after the caret. */
+  showInlineGhost?: boolean
+  /** Use 1 for strip-only mode so a single suggestion still shows as a chip above. */
+  minCandidatesForStrip?: number
 }) {
   const anchorRef = useRef<HTMLDivElement>(null)
 
-  if (text.length === 0 || !ghost?.suffix) return null
+  if (text.length === 0) return null
+  const hasStrip = candidates.length >= minCandidatesForStrip
+  if (showInlineGhost) {
+    if (!ghost?.suffix) return null
+  } else if (!hasStrip && !ghost?.suffix) {
+    return null
+  }
+
+  const stripCandidates =
+    candidates.length >= minCandidatesForStrip
+      ? candidates
+      : ghost?.suffix
+        ? [ghost]
+        : []
 
   return (
     <>
       <div ref={anchorRef} className="pointer-events-none absolute inset-0 z-[2]" aria-hidden />
-      <WritingAssistInlineGhost
-        text={text}
-        ghost={ghost}
-        className={mirrorClassName}
-        style={mirrorStyle}
-      />
+      {showInlineGhost ? (
+        <WritingAssistInlineGhost
+          text={text}
+          ghost={ghost}
+          className={mirrorClassName}
+          style={mirrorStyle}
+        />
+      ) : null}
       <WritingAssistPredictionStripPortal
         anchorRef={anchorRef}
-        candidates={candidates}
+        candidates={stripCandidates}
         activeIndex={candidateIndex}
         partial={partial}
         anchorRevision={text}
         stripOffsetPx={stripOffsetPx}
+        minCandidates={minCandidatesForStrip}
       />
     </>
   )

@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import { getThumbnailDataUrl, PDF_THUMB_WIDTH, peekCachedThumbnailDataUrl } from '@/lib/books/pdf-thumbnail-cache'
+import { PDF_THUMB_WIDTH } from '@/lib/books/pdf-thumbnail-cache'
+import { usePdfPageThumbnail } from '@/components/students/use-pdf-page-thumbnail'
 import { cn } from '@/lib/utils'
 
 export interface PdfPageThumbnailProps {
@@ -10,11 +10,15 @@ export interface PdfPageThumbnailProps {
   pageNumber: number
   width?: number
   fitHeight?: boolean
+  /** How the page image fills the box when fitHeight is true. Default cover. */
+  objectFit?: 'cover' | 'contain'
   /** When null or omitted, the observer uses the viewport as root. */
   scrollRoot?: HTMLElement | null
   pdfReady: boolean
   label: string
   className?: string
+  /** Load immediately without waiting for scroll visibility. */
+  eager?: boolean
 }
 
 export function PdfPageThumbnail({
@@ -23,61 +27,25 @@ export function PdfPageThumbnail({
   pageNumber,
   width = PDF_THUMB_WIDTH,
   fitHeight = false,
+  objectFit = 'cover',
   scrollRoot,
   pdfReady,
   label,
   className,
+  eager = false,
 }: PdfPageThumbnailProps) {
-  const [phase, setPhase] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
-  const [dataUrl, setDataUrl] = useState<string | null>(null)
-  const containerRef = useRef<HTMLDivElement | null>(null)
-  const genRef = useRef(0)
-
-  useEffect(() => {
-    if (!pdfReady) return
-    const el = containerRef.current
-    if (!el) return
-
-    let cancelled = false
-    const obs = new IntersectionObserver(
-      (entries) => {
-        const hit = entries.some((e) => e.isIntersecting)
-        if (!hit) return
-        const cached = peekCachedThumbnailDataUrl(unitId, pageNumber, width)
-        if (cached) {
-          setDataUrl(cached)
-          setPhase('ready')
-          return
-        }
-        const gen = ++genRef.current
-        setPhase('loading')
-        void getThumbnailDataUrl(fileUrl, unitId, pageNumber, width)
-          .then((url) => {
-            if (cancelled || gen !== genRef.current) return
-            setDataUrl(url)
-            setPhase('ready')
-          })
-          .catch(() => {
-            if (cancelled || gen !== genRef.current) return
-            setPhase('error')
-          })
-      },
-      { root: scrollRoot ?? null, rootMargin: '200px 0px', threshold: 0 },
-    )
-    obs.observe(el)
-    return () => {
-      cancelled = true
-      obs.disconnect()
-    }
-  }, [fileUrl, unitId, pageNumber, width, scrollRoot, pdfReady])
-
-  useEffect(() => {
-    genRef.current += 1
-    setPhase('idle')
-    setDataUrl(null)
-  }, [fileUrl, unitId, pageNumber, width])
+  const { containerRef, phase, dataUrl } = usePdfPageThumbnail({
+    fileUrl,
+    unitId,
+    pageNumber,
+    width,
+    pdfReady,
+    scrollRoot,
+    eager,
+  })
 
   const showErrorFallback = phase === 'error'
+  const imgFit = fitHeight ? objectFit : 'contain'
 
   return (
     <div
@@ -90,11 +58,16 @@ export function PdfPageThumbnail({
       style={fitHeight ? undefined : { width, aspectRatio: '1 / 1.414' }}
     >
       {phase === 'loading' && pdfReady ? (
-        <div className="absolute inset-0 animate-pulse bg-[#c4a574]/22" aria-hidden />
+        <div className="absolute inset-0 z-[1] animate-pulse bg-[#c4a574]/22" aria-hidden />
       ) : null}
-      {dataUrl && phase === 'ready' ? (
+      {dataUrl && (phase === 'ready' || phase === 'loading') ? (
         // eslint-disable-next-line @next/next/no-img-element -- data URL from pdf.js canvas
-        <img src={dataUrl} alt="" className={`h-full w-full ${fitHeight ? 'object-cover' : 'object-contain'}`} draggable={false} />
+        <img
+          src={dataUrl}
+          alt=""
+          className={cn('h-full w-full', imgFit === 'contain' ? 'object-contain' : 'object-cover')}
+          draggable={false}
+        />
       ) : null}
       {showErrorFallback ? (
         <div className="flex h-full w-full flex-col items-center justify-center gap-0.5 p-1 text-center">

@@ -4,6 +4,14 @@ import { createHash } from 'node:crypto'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { resolveGeminiApiKeyFromEnv } from '@/lib/gemini-api-key'
+import { buildDurationAwareFallbackBlocks, normalizeAiTimeBlocks } from '@/lib/students/class-prep-outline'
+import type {
+  ClassPrepContextFlags,
+  ClassPrepContextMode,
+  ClassPrepNamedIssue,
+  ClassPrepReadingPosition,
+  ClassPrepVocabSignals,
+} from '@/lib/students/class-prep-signals'
 import { getVocabSuggestions } from '@/lib/helpers'
 import {
   getSuggestionFetchCount,
@@ -1258,7 +1266,14 @@ export interface ClassPrepSuggestionInput {
     reviewedWords: string[]
     learnedWords: string[]
     notes?: string
+    sessionNote?: string
+    dueReviewWords?: string[]
   }>
+  readingPosition?: ClassPrepReadingPosition
+  vocabSignals?: ClassPrepVocabSignals
+  namedRecurringIssues?: ClassPrepNamedIssue[]
+  prepContextMode?: ClassPrepContextMode
+  prepContextFlags?: ClassPrepContextFlags
 }
 
 export interface ClassPrepSuggestionResult {
@@ -1307,7 +1322,12 @@ Rules:
 - HomeworkOrCarryOver: 1-3 actionable next-step tasks.
 - WordsToRevisit: include important words that need reinforcement based on history.
 - Summary: 1-2 sentences, max 300 characters.
-- Use plain ASCII text only.`
+- Use plain ASCII text only.
+
+Prep context modes (follow strictly):
+- clean_start: No completed classes and no student-specific vocab signals. Do NOT reference prior classes, last session, or invented review history. wordsToRevisit: 0-3 max, only from section target vocabulary, with reasons like "introduce in this lesson". Use shorter warm-up; emphasize rapport, scaffolding, and first exposure to today's section.
+- returning: Completed classes and/or a saved reading position exist. Use reading position in time blocks when provided. wordsToRevisit must prefer words needing practice and due review words from provided signals only. Do not invent words.
+- mixed: No completed classes but saved notebook words or other vocab signals exist. Treat notebook words as practice candidates. Still do NOT invent class history.`
 
 function normalizeSuggestionLines(values: unknown, max: number): string[] {
   if (!Array.isArray(values)) return []
@@ -1418,64 +1438,90 @@ function parseClassPrepSuggestion(text: string): ClassPrepSuggestionResult | nul
   }
 }
 
-export async function generateClassPrepSuggestion(
-  input: ClassPrepSuggestionInput,
-): Promise<ClassPrepSuggestionResult> {
-  const key = await resolveGeminiApiKey()
-  if (!key) {
+function emptyClassPrepVocabSignals(): ClassPrepVocabSignals {
+  return { strongWords: [], needsPracticeWords: [], savedNotebookWords: [] }
+}
+
+function resolvePrepContextMode(input: ClassPrepSuggestionInput): ClassPrepContextMode {
+  if (input.prepContextMode) return input.prepContextMode
+  const completed = input.recentHistory.filter((entry) => entry.status === 'completed').length
+  return completed > 0 ? 'returning' : 'clean_start'
+}
+
+function buildClassPrepFallback(input: ClassPrepSuggestionInput): ClassPrepSuggestionResult {
+  const mode = resolvePrepContextMode(input)
+  if (mode === 'clean_start') {
     return {
-      priorities: ['Review key words from previous classes.', 'Keep speaking practice in short loops.'],
-      activities: ['3-minute warm-up recap', 'Pair sentence building with target words'],
-      timeBlocks: [
-        {
-          label: 'Warm-up review',
-          minutes: 6,
-          objective: 'Activate previous vocabulary.',
-          activityType: 'review',
-          teacherMoves: ['Prompt open speaking with 2 easy questions.'],
-          studentOutput: '2-3 spoken responses using known words.',
-          checkForUnderstanding: 'Can student answer without heavy prompting?',
-        },
-        {
-          label: 'Guided practice',
-          minutes: 14,
-          objective: 'Practice target section skills.',
-          activityType: 'practice',
-          teacherMoves: ['Model one item, then guide two examples.'],
-          studentOutput: 'Reads and uses key words in short sentences.',
-          checkForUnderstanding: '1 quick comprehension check at midpoint.',
-        },
-        {
-          label: 'Quick check and close',
-          minutes: 5,
-          objective: 'Check understanding and set next step.',
-          activityType: 'checkpoint',
-          teacherMoves: ['Ask one transfer question and summarize next step.'],
-          studentOutput: 'One short recap statement.',
-          checkForUnderstanding: 'Exit ticket: one correct answer and one sentence.',
-        },
+      priorities: [
+        'Build rapport and set clear expectations for the lesson.',
+        'Introduce today’s book section with light scaffolding.',
       ],
-      checkpointMoments: ['Midpoint comprehension check with one multiple-choice question.'],
-      differentiationTips: ['Use sentence frames if the student needs scaffolding.'],
-      homeworkOrCarryOver: ['Review five key words and create one sentence per word.'],
-      wordsToRevisit: [],
-      summary: 'Use a short review cycle and reinforce words that appeared recently but are not stable yet.',
+      activities: ['Short section preview', 'Guided first read or vocab walk-through'],
+      timeBlocks: buildDurationAwareFallbackBlocks(input.classDurationMin),
+      checkpointMoments: ['One quick check that the student understands the section goal.'],
+      differentiationTips: ['Model one example before asking the student to try.'],
+      homeworkOrCarryOver: ['Note one word or idea to revisit next time.'],
+      wordsToRevisit: (input.sectionContext?.sectionVocabulary ?? []).slice(0, 3).map((word) => ({
+        word,
+        reason: 'Introduce in this lesson',
+      })),
+      summary: 'First lesson with this student — focus on the selected section with clear scaffolding.',
     }
   }
 
-  const modelCandidates = await resolveModelCandidates(key)
-  const prompt = `Student: ${input.studentName}
+  const revisitWords = [
+    ...(input.vocabSignals?.needsPracticeWords ?? []),
+    ...(input.vocabSignals?.savedNotebookWords ?? []),
+  ]
+    .slice(0, 5)
+    .map((word) => ({ word, reason: 'Needs more practice' }))
+
+  return {
+    priorities: ['Review high-value words from recent sessions.', 'Prioritize speaking output over passive recognition.'],
+    activities: ['Target-word role-play', 'Quick exit ticket with 3 sentences'],
+    timeBlocks: buildDurationAwareFallbackBlocks(input.classDurationMin),
+    checkpointMoments: ['Ask one key comprehension question after the main task.'],
+    differentiationTips: ['Increase support by modeling one answer before independent work.'],
+    homeworkOrCarryOver: ['Prepare three sentences using today’s target words.'],
+    wordsToRevisit: revisitWords,
+    summary: 'Run a review-aware class and keep students producing target vocabulary in context.',
+  }
+}
+
+function buildClassPrepUserPrompt(input: ClassPrepSuggestionInput): string {
+  const mode = resolvePrepContextMode(input)
+  const vocab = input.vocabSignals ?? emptyClassPrepVocabSignals()
+  const reading = input.readingPosition
+  const pageRange =
+    input.sectionContext?.startPageHint !== undefined || input.sectionContext?.endPageHint !== undefined
+      ? `${input.sectionContext?.startPageHint ?? '?'}–${input.sectionContext?.endPageHint ?? '?'}`
+      : '(none)'
+
+  return `Student: ${input.studentName}
 Class: ${input.classTitle}
 Scheduled: ${input.scheduledFor}
 Class duration (minutes): ${input.classDurationMin}
+Prep context mode: ${mode}
 Planned vocabulary: ${input.plannedVocabulary.join(', ') || '(none)'}
 Goals: ${input.goals.join(' | ') || '(none)'}
 Planned activities: ${input.activities.join(' | ') || '(none)'}
 Selected section: ${input.selectedSection ? `${input.selectedSection.title} [${input.selectedSection.type}]` : '(none)'}
 Selected section path: ${input.sectionContext?.pathLabel || '(none)'}
+Section page range (PDF hints): ${pageRange}
 Section content summary: ${input.sectionContext?.contentSummary || '(none)'}
 Section target vocabulary: ${input.sectionContext?.sectionVocabulary.join(', ') || '(none)'}
 Section checkpoint ideas: ${input.sectionContext?.checkpointIdeas.join(' | ') || '(none)'}
+Reading position: ${reading ? `${reading.label} [${reading.source}]` : '(none)'}
+Strong words: ${vocab.strongWords.join(', ') || '(none)'}
+Words needing practice: ${vocab.needsPracticeWords.join(', ') || '(none)'}
+Saved notebook words: ${vocab.savedNotebookWords.join(', ') || '(none)'}
+Named recurring issues: ${
+    (input.namedRecurringIssues ?? []).length
+      ? (input.namedRecurringIssues ?? [])
+          .map((issue) => `${issue.label}: ${issue.description}`)
+          .join(' | ')
+      : '(none)'
+  }
 Book context summary: ${input.bookContext?.summary || '(none)'}
 Book goals: ${input.bookContext?.goals.join(' | ') || '(none)'}
 Book pacing guidance: ${input.bookContext?.pacing.join(' | ') || '(none)'}
@@ -1487,122 +1533,57 @@ Student motivation: ${input.studentSnapshot.motivation}
 First or early classes: ${input.studentSnapshot.firstOrEarlyClasses ? 'yes' : 'no'}
 
 Recent class history:
-${input.recentHistory
-  .map(
-    (entry, idx) =>
-      `${idx + 1}) ${entry.title} [${entry.status}] ${entry.scheduledFor}
+${
+  input.recentHistory.length
+    ? input.recentHistory
+        .map(
+          (entry, idx) =>
+            `${idx + 1}) ${entry.title} [${entry.status}] ${entry.scheduledFor}
 section: ${entry.selectedSectionTitle || '(none)'}
 introduced: ${entry.introducedWords.join(', ') || '(none)'}
 practiced: ${entry.practicedWords.join(', ') || '(none)'}
 reviewed: ${entry.reviewedWords.join(', ') || '(none)'}
 learned: ${entry.learnedWords.join(', ') || '(none)'}
-notes: ${entry.notes || '(none)'}`,
-  )
-  .join('\n\n')}`
+due review: ${(entry.dueReviewWords ?? []).join(', ') || '(none)'}
+session note: ${entry.sessionNote || entry.notes || '(none)'}`,
+        )
+        .join('\n\n')
+    : '(none)'
+}`
+}
+
+export async function generateClassPrepSuggestion(
+  input: ClassPrepSuggestionInput,
+): Promise<ClassPrepSuggestionResult> {
+  const key = await resolveGeminiApiKey()
+  if (!key) {
+    return finalizeClassPrepSuggestion(buildClassPrepFallback(input), input.classDurationMin)
+  }
+
+  const modelCandidates = await resolveModelCandidates(key)
+  const prompt = buildClassPrepUserPrompt(input)
 
   const result = await callGeminiWithFallback(key, prompt, modelCandidates, CLASS_PREP_SYSTEM_PROMPT)
   if (!result.ok) {
-    return {
-      priorities: ['Review high-value words from recent sessions.', 'Prioritize speaking output over passive recognition.'],
-      activities: ['Target-word role-play', 'Quick exit ticket with 3 sentences'],
-      timeBlocks: [
-        {
-          label: 'Warm-up',
-          minutes: 8,
-          objective: 'Reactivate previous learning.',
-          activityType: 'review',
-          teacherMoves: ['Lead free speaking around previous lesson keywords.'],
-          studentOutput: 'Short spoken answers with target vocabulary.',
-          checkForUnderstanding: 'Quick recall check on 3 prior words.',
-        },
-        {
-          label: 'Main section task',
-          minutes: 18,
-          objective: 'Practice the selected section actively.',
-          activityType: 'guided-practice',
-          teacherMoves: ['Model, then shift to student-led responses.'],
-          studentOutput: 'Reads and produces target language in context.',
-          checkForUnderstanding: 'MCQ or prompt question after key chunk.',
-        },
-        {
-          label: 'Mini challenge',
-          minutes: 8,
-          objective: 'Apply skills in a short challenge.',
-          activityType: 'challenge',
-          teacherMoves: ['Run time-boxed challenge and give immediate feedback.'],
-          studentOutput: 'Completes challenge task with minimal help.',
-          checkForUnderstanding: 'Score or correctness check at challenge end.',
-        },
-        {
-          label: 'Wrap-up',
-          minutes: 6,
-          objective: 'Assess understanding and set carry-over.',
-          activityType: 'reflection',
-          teacherMoves: ['Prompt recap and assign one carry-over task.'],
-          studentOutput: 'States one key takeaway and one next action.',
-          checkForUnderstanding: 'Exit prompt in one sentence.',
-        },
-      ],
-      checkpointMoments: ['Ask one key comprehension question after the main task.'],
-      differentiationTips: ['Increase support by modeling one answer before independent work.'],
-      homeworkOrCarryOver: ['Prepare three sentences using today’s target words.'],
-      wordsToRevisit: [],
-      summary: 'Run a review-heavy class and keep students producing target vocabulary in context.',
-    }
+    return finalizeClassPrepSuggestion(buildClassPrepFallback(input), input.classDurationMin)
   }
 
   try {
     const parsed = parseClassPrepSuggestion(result.text)
-    if (parsed) return parsed
+    if (parsed) return finalizeClassPrepSuggestion(parsed, input.classDurationMin)
   } catch {
     /* fall through */
   }
+  return finalizeClassPrepSuggestion(buildClassPrepFallback(input), input.classDurationMin)
+}
+
+function finalizeClassPrepSuggestion(
+  result: ClassPrepSuggestionResult,
+  durationMin: number,
+): ClassPrepSuggestionResult {
   return {
-    priorities: ['Review high-value words from recent sessions.', 'Prioritize speaking output over passive recognition.'],
-    activities: ['Target-word role-play', 'Quick exit ticket with 3 sentences'],
-    timeBlocks: [
-      {
-        label: 'Warm-up',
-        minutes: 8,
-        objective: 'Reactivate previous learning.',
-        activityType: 'review',
-        teacherMoves: ['Lead free speaking around previous lesson keywords.'],
-        studentOutput: 'Short spoken answers with target vocabulary.',
-        checkForUnderstanding: 'Quick recall check on 3 prior words.',
-      },
-      {
-        label: 'Main section task',
-        minutes: 18,
-        objective: 'Practice the selected section actively.',
-        activityType: 'guided-practice',
-        teacherMoves: ['Model, then shift to student-led responses.'],
-        studentOutput: 'Reads and produces target language in context.',
-        checkForUnderstanding: 'MCQ or prompt question after key chunk.',
-      },
-      {
-        label: 'Mini challenge',
-        minutes: 8,
-        objective: 'Apply skills in a short challenge.',
-        activityType: 'challenge',
-        teacherMoves: ['Run time-boxed challenge and give immediate feedback.'],
-        studentOutput: 'Completes challenge task with minimal help.',
-        checkForUnderstanding: 'Score or correctness check at challenge end.',
-      },
-      {
-        label: 'Wrap-up',
-        minutes: 6,
-        objective: 'Assess understanding and set carry-over.',
-        activityType: 'reflection',
-        teacherMoves: ['Prompt recap and assign one carry-over task.'],
-        studentOutput: 'States one key takeaway and one next action.',
-        checkForUnderstanding: 'Exit prompt in one sentence.',
-      },
-    ],
-    checkpointMoments: ['Ask one key comprehension question after the main task.'],
-    differentiationTips: ['Increase support by modeling one answer before independent work.'],
-    homeworkOrCarryOver: ['Prepare three sentences using today’s target words.'],
-    wordsToRevisit: [],
-    summary: 'Run a review-heavy class and keep students producing target vocabulary in context.',
+    ...result,
+    timeBlocks: normalizeAiTimeBlocks(result.timeBlocks, durationMin),
   }
 }
 

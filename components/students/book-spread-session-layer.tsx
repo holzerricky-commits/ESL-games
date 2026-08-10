@@ -8,9 +8,11 @@ import type { AnnotationCommand, StrokeAnnotationCommand } from '@/lib/books/ann
 import { eraserLineTrailingForReplay } from '@/lib/books/annotation-live-paint'
 import { computeEraserLineDeadIndices } from '@/lib/books/annotation-geometry'
 import { buildAnnotationRenderSlices } from '@/lib/books/annotation-render-slices'
-import type { InkSessionNudgePreview } from '@/lib/books/ink-session-store'
+import type { InkSessionNudgePreview, InkSessionStore } from '@/lib/books/ink-session-store'
+import { inkSessionReactBoundaryEnabled } from '@/lib/books/feature-flags'
 import {
   resolveSelectClickTargetIds,
+  translateAnnotationCommands,
   type OrientedSelectionFrame,
 } from '@/lib/books/annotation-select'
 import { clampSelectionMoveDelta } from '@/lib/books/annotation-scale'
@@ -28,6 +30,9 @@ import {
 } from '@/lib/books/annotation-selection-chrome'
 import { SelectionBoundsChrome } from '@/components/students/selection-bounds-chrome'
 import { useInkSessionCanvasPaint } from '@/components/students/ink-session-selection/useInkSessionCanvasPaint'
+import { useInkSessionEraserLivePreview } from '@/components/students/ink-session-selection/useInkSessionEraserLivePreview'
+import { inkEraserLivePreviewEnabled, inkPaintEngineEnabled } from '@/lib/books/feature-flags'
+import { INK_PAINT_SLICE_BATCH_SIZE } from '@/lib/books/annotation-render-slices'
 import { useInkSessionSelectionInteraction } from '@/components/students/ink-session-selection/useInkSessionSelectionInteraction'
 import {
   clientToWhiteboardDocumentNorm,
@@ -42,18 +47,30 @@ import { BookPageAnnotationDomLayer } from '@/components/students/book-page-anno
 import { BookOverlayFocusSink } from '@/components/students/book-overlay-focus-sink'
 import {
   DOM_ABOVE_INK_SESSION_Z_BOOST,
+  bookSpreadSessionLayerStackZ,
+  domSliceZBoostForCommandKind,
   sliceStackZ,
 } from '@/components/students/book-page-annotation-layer/constants'
 import {
   type SpreadSessionDomConfig,
   useSpreadSessionDomInteraction,
 } from '@/components/students/fullscreen-book-overlay/hooks/useSpreadSessionDomInteraction'
+import { figureGroupToggleLabelForSelection } from '@/lib/books/annotation-figure-group'
+import { DEFAULT_ANNOTATION_TEXT_FONT_ID } from '@/lib/books/annotation-text-fonts'
+import { SelectionContextBarLayer } from '@/components/students/selection-context-bar/SelectionContextBarLayer'
+import { useBoardPasteReveal } from '@/components/students/book-page-annotation-layer/hooks/useBoardPasteReveal'
 import { cn } from '@/lib/utils'
+
+const EMPTY_DEAD_INDICES = new Set<number>()
 
 type BookSpreadSessionLayerProps = {
   widthPx: number
   heightPx: number
-  commands: AnnotationCommand[]
+  /** Legacy: full command list from parent React state. Omit when `sessionStoreRef` is set (R4). */
+  commands?: AnnotationCommand[]
+  /** R4: pull commands from store on `commandsRevision` bumps — avoids parent re-render on pen lift. */
+  sessionStoreRef?: MutableRefObject<InkSessionStore | null>
+  commandsRevision?: number
   /** When set, `commands` are document-space; tall runway uses scroll paint, not viewport projection. */
   viewportInk?: WhiteboardViewportInkConfig
   /** Scroll container for pointer → document coords when painting the full runway. */
@@ -64,6 +81,8 @@ type BookSpreadSessionLayerProps = {
   /** Whiteboard live highlighter; book spread uses per-page multiply layers. */
   trailingMarkerStrokeDraft?: LiveStrokeDraft | null
   selectEnabled?: boolean
+  /** Hide object style bar while a text-range translate/review session is active. */
+  hideSelectionContextBar?: boolean
   selectedIds?: string[]
   onSelectedIdsChange?: (ids: string[]) => void
   onMoveSelectedBy?: (dx: number, dy: number) => void
@@ -79,18 +98,25 @@ type BookSpreadSessionLayerProps = {
   nudgePreview?: InkSessionNudgePreview | null
   /** Book spread: text/sticky on session layer (omit on whiteboard until parity). */
   domConfig?: SpreadSessionDomConfig | null
+  /** Route empty select clicks to native PDF text when move tool is active. */
+  pdfTextRoutingEnabled?: boolean
+  /** Lesson board panel is open — keep spread ink below it (no z-40 selection lift). */
+  lessonBoardObscures?: boolean
 }
 
 export function BookSpreadSessionLayer({
   widthPx,
   heightPx,
-  commands,
+  commands: commandsProp = [],
+  sessionStoreRef,
+  commandsRevision = 0,
   viewportInk,
   scrollportRef,
   contentCaptureRef,
   trailingEraserLineDraft = null,
   trailingMarkerStrokeDraft = null,
   selectEnabled = false,
+  hideSelectionContextBar = false,
   selectedIds = [],
   onSelectedIdsChange,
   onMoveSelectedBy,
@@ -98,7 +124,19 @@ export function BookSpreadSessionLayer({
   onRotateSelectedBy,
   nudgePreview = null,
   domConfig = null,
+  pdfTextRoutingEnabled = false,
+  lessonBoardObscures = false,
 }: BookSpreadSessionLayerProps) {
+  const useStoreBoundary =
+    inkSessionReactBoundaryEnabled && sessionStoreRef != null
+
+  const commands = useMemo((): AnnotationCommand[] => {
+    if (useStoreBoundary) {
+      return [...(sessionStoreRef!.current?.getState().doc.commands ?? [])]
+    }
+    return commandsProp
+  }, [useStoreBoundary, sessionStoreRef, commandsRevision, commandsProp])
+
   const documentScrollPaint = Boolean(
     viewportInk && isWhiteboardDocumentScrollPaint(viewportInk, heightPx),
   )
@@ -136,6 +174,7 @@ export function BookSpreadSessionLayer({
   const markersOnSessionLayer = Boolean(viewportInk)
   const zoomRepaintRevision = useBrowserZoomRepaintRevision()
   const [repaintEpoch, setRepaintEpoch] = useState(0)
+  const { pasteRevealIds, pasteRevealTick } = useBoardPasteReveal()
 
   const trailingEraser = useMemo(
     () => eraserLineTrailingForReplay(null, trailingEraserLineDraft),
@@ -146,6 +185,25 @@ export function BookSpreadSessionLayer({
     [selectCommands, trailingEraser],
   )
   const deadKey = useMemo(() => [...deadIndices].sort((a, b) => a - b).join(','), [deadIndices])
+  const eraserLiveActive = inkEraserLivePreviewEnabled && trailingEraser != null
+
+  const prevEraserLiveRef = useRef(false)
+  const commandCountWhenEraserStartedRef = useRef(0)
+
+  useEffect(() => {
+    const wasLive = prevEraserLiveRef.current
+    prevEraserLiveRef.current = eraserLiveActive
+    if (eraserLiveActive && !wasLive) {
+      commandCountWhenEraserStartedRef.current = selectCommands.length
+    }
+    if (wasLive && !eraserLiveActive) {
+      // Cancelled gesture: preview punched holes in canvases — restore once.
+      // Commit path: command count dropped; paint effect follows new `commands` prop.
+      if (selectCommands.length === commandCountWhenEraserStartedRef.current) {
+        setRepaintEpoch((n) => n + 1)
+      }
+    }
+  }, [eraserLiveActive, selectCommands.length])
 
   const toNorm = useCallback(
     (el: HTMLDivElement, clientX: number, clientY: number): [number, number] | null => {
@@ -188,8 +246,11 @@ export function BookSpreadSessionLayer({
   )
 
   const domConfigWithNorm = useMemo(
-    () => (domConfig ? { ...domConfig, toNorm } : null),
-    [domConfig, toNorm],
+    () =>
+      domConfig
+        ? { ...domConfig, commands, toNorm }
+        : null,
+    [commands, domConfig, toNorm],
   )
   const dom = useSpreadSessionDomInteraction(domConfigWithNorm)
 
@@ -206,7 +267,7 @@ export function BookSpreadSessionLayer({
       onClearEditing: dom.clearActiveEdit,
       rotateCommitFrame,
       nudgePreview,
-      clearSelectionOnEmptyClick: false,
+      clearSelectionOnEmptyClick: true,
       marqueeSelectRule: 'follow-drag',
       onSelectedIdsChange: (ids) => onSelectedIdsChange?.(ids),
       onMoveCommitted: (dx, dy) => onMoveSelectedBy?.(dx, dy),
@@ -240,6 +301,7 @@ export function BookSpreadSessionLayer({
         clampSelectionMoveDelta(selectCommands, moveIds, dx, dy, widthPx, heightPx, {
           deadIndices,
         }),
+      pdfTextRoutingEnabled: pdfTextRoutingEnabled && selectEnabled,
     },
     toNorm,
   )
@@ -251,6 +313,7 @@ export function BookSpreadSessionLayer({
     marqueeMode,
     selectScaleLiveFrame,
     selectDragLive,
+    activeGesture,
     effectiveCursor,
     onPointerDown,
     onPointerMove,
@@ -268,21 +331,65 @@ export function BookSpreadSessionLayer({
     showRotationHandle,
   } = chrome
 
+  const textToolLiveCommands = useMemo(() => {
+    const live = dom.textToolDragLive
+    if (!live || selectedIds.length === 0) return paintDisplayCommands
+    if (live.dx === 0 && live.dy === 0) return paintDisplayCommands
+    return translateAnnotationCommands(
+      paintDisplayCommands,
+      new Set(selectedIds),
+      live.dx,
+      live.dy,
+    )
+  }, [dom.textToolDragLive, paintDisplayCommands, selectedIds])
+
+  const selectionOutlineFramesLive = useMemo(() => {
+    const live = dom.textToolDragLive
+    if (!live || (live.dx === 0 && live.dy === 0)) return selectionOutlineFramesList
+    return selectionOutlineFramesList.map((frame) => ({
+      ...frame,
+      rect: {
+        ...frame.rect,
+        x: frame.rect.x + live.dx,
+        y: frame.rect.y + live.dy,
+      },
+    }))
+  }, [dom.textToolDragLive, selectionOutlineFramesList])
+
   const { inkSliceRefs, markerSliceRefs, trailingMarkerCanvasRef } = useInkSessionCanvasPaint({
     widthPx,
     heightPx,
     paintDisplayCommands,
-    deadIndices,
-    deadKey,
+    deadIndices: eraserLiveActive ? EMPTY_DEAD_INDICES : deadIndices,
+    deadKey: eraserLiveActive ? '' : deadKey,
     markersOnSessionLayer,
     trailingMarkerStrokeDraft,
     selectScaleLiveFrame,
     selectDragLive,
     zoomRepaintRevision,
     repaintEpoch,
+    pasteRevealTick,
   })
 
-  const renderSlices = buildAnnotationRenderSlices(selectCommands, deadIndices)
+  useInkSessionEraserLivePreview({
+    active: eraserLiveActive,
+    widthPx,
+    heightPx,
+    paintDisplayCommands,
+    deadIndices,
+    markersOnSessionLayer,
+    inkSliceRefs,
+    markerSliceRefs,
+  })
+
+  const renderSliceOptions = inkPaintEngineEnabled
+    ? { inkBatchSize: INK_PAINT_SLICE_BATCH_SIZE }
+    : undefined
+  const renderSlices = buildAnnotationRenderSlices(
+    selectCommands,
+    EMPTY_DEAD_INDICES,
+    renderSliceOptions,
+  )
   let inkIdx = 0
   let markerIdx = 0
   const domZBoost = domConfig?.enabled ? DOM_ABOVE_INK_SESSION_Z_BOOST : 0
@@ -293,6 +400,10 @@ export function BookSpreadSessionLayer({
     (domMode === 'sticker' && isWritableStickerInteraction(domMode, domConfig?.stickerKind ?? 'writable'))
 
   const hasSelection = selectedIds.length > 0
+  const strokeGroupToggleLabel = useMemo((): 'group' | 'ungroup' | undefined => {
+    if (!selectEnabled) return undefined
+    return figureGroupToggleLabelForSelection(selectCommands, selectedIds)
+  }, [selectCommands, selectEnabled, selectedIds])
   const showTextToolHover = dom.textToolHoverFrames.length > 0 && !selectEnabled
   const showTextToolEditing =
     dom.textToolEditingFrames.length > 0 && dom.toolPointerEnabled && !selectEnabled
@@ -306,17 +417,19 @@ export function BookSpreadSessionLayer({
   const interactPointerActive = selectEnabled || dom.toolPointerEnabled
   /** Lift ink + chrome above live-draw overlay when something is selected (still pass-through unless select tool). */
   const elevateForSelectionChrome = selectEnabled || hasSelection || dom.toolPointerEnabled
+  const spreadSessionStackZ = bookSpreadSessionLayerStackZ({
+    elevateForSelectionChrome,
+    lessonBoardObscures,
+  })
 
   return (
     <div
       ref={dom.overlayRef}
-      className={cn(
-        'absolute inset-0 touch-none',
-        elevateForSelectionChrome ? 'z-[40]' : 'z-[24]',
-      )}
+      className={cn('absolute inset-0 touch-none')}
       style={{
         width: widthPx > 0 ? widthPx : undefined,
         height: heightPx > 0 ? heightPx : undefined,
+        zIndex: spreadSessionStackZ,
         pointerEvents: interactPointerActive ? 'auto' : 'none',
         cursor: selectEnabled
           ? effectiveCursor
@@ -337,7 +450,13 @@ export function BookSpreadSessionLayer({
         selectEnabled ? clearSelectionHover : dom.toolPointerEnabled ? dom.clearToolHover : undefined
       }
       onDoubleClick={
-        domConfig?.enabled && selectEnabled ? dom.onSelectDoubleClick : undefined
+        domConfig?.enabled && selectEnabled
+          ? dom.onSelectDoubleClick
+          : domConfig?.enabled && domTextTool
+            ? dom.onTextToolDoubleClick
+            : domConfig?.enabled && domWritableStickerTool
+              ? dom.onStickyToolDoubleClick
+              : undefined
       }
     >
       <BookOverlayFocusSink />
@@ -354,6 +473,7 @@ export function BookSpreadSessionLayer({
                 'pointer-events-none absolute',
                 useDocumentCanvasLayout ? 'left-0 top-0' : 'inset-0',
               )}
+              style={{ zIndex: sliceStackZ(slice.zIndex) }}
             />
           )
         }
@@ -369,19 +489,28 @@ export function BookSpreadSessionLayer({
                 'pointer-events-none absolute',
                 useDocumentCanvasLayout ? 'left-0 top-0' : 'inset-0',
               )}
-              style={{ mixBlendMode: 'multiply' }}
+              style={{ zIndex: sliceStackZ(slice.zIndex), mixBlendMode: 'multiply' }}
             />
           )
         }
-        if (slice.kind === 'dom' && domConfig?.enabled) {
-          const sliceCommands = slice.indices.map((i) => selectCommands[i]!)
+        if (slice.kind === 'dom') {
+          const sliceCommands = slice.indices
+            .filter((i) => !eraserLiveActive || !deadIndices.has(i))
+            .map((i) => textToolLiveCommands[i]!)
+          if (sliceCommands.length === 0) return null
+          const sliceCmd = sliceCommands[0]!
+          const isTextOrSticky = sliceCmd.kind === 'text' || sliceCmd.kind === 'sticky'
+          if (isTextOrSticky && !domConfig?.enabled) return null
           return (
             <BookPageAnnotationDomLayer
               key={`spread-dom-${slice.zIndex}`}
               widthPx={widthPx}
               heightPx={heightPx}
-              zIndex={sliceStackZ(slice.zIndex) + domZBoost}
-              defaultTextFontId={domConfig.textFontId}
+              zIndex={
+                sliceStackZ(slice.zIndex) +
+                domSliceZBoostForCommandKind(sliceCmd.kind, domZBoost > 0)
+              }
+              defaultTextFontId={domConfig?.textFontId ?? DEFAULT_ANNOTATION_TEXT_FONT_ID}
               commands={sliceCommands}
               onUpdateCommand={dom.patchCommand}
               onDeleteSticky={dom.deleteStickyCommand}
@@ -395,6 +524,7 @@ export function BookSpreadSessionLayer({
               onEditingIdChange={dom.setEditingId}
               onEditingTextDraftChange={dom.onEditingTextDraftChange}
               coachField={viewportInk ? 'whiteboard' : 'label'}
+              pasteRevealIds={pasteRevealIds}
             />
           )
         }
@@ -433,7 +563,7 @@ export function BookSpreadSessionLayer({
           ) : null}
           {hasSelection ? (
             <SelectionBoundsChrome
-              outlineFrames={selectionOutlineFramesList}
+              outlineFrames={selectionOutlineFramesLive}
               handleFrame={selectionHandleFrame}
               showHandles={showScaleHandles}
               showUnionOutline={showUnionOutline}
@@ -473,6 +603,33 @@ export function BookSpreadSessionLayer({
             />
           ) : null}
         </div>
+      ) : null}
+      {domConfig?.enabled ? (
+        <SelectionContextBarLayer
+          commands={paintDisplayCommands}
+          selectedIds={selectedIds}
+          widthPx={widthPx}
+          heightPx={heightPx}
+          editingId={dom.editingId}
+          deadIndices={deadIndices}
+          selectEnabled={selectEnabled}
+          hidden={activeGesture === 'move' || hideSelectionContextBar}
+          textToolActive={domTextTool && !selectEnabled}
+          stickyToolActive={domWritableStickerTool && !selectEnabled}
+          onPatchSelectedText={domConfig.onPatchSelectedText}
+          onPatchSelectedSticky={domConfig.onPatchSelectedSticky}
+          onPatchSelectedShape={domConfig.onPatchSelectedShape}
+          onPatchSelectedImage={domConfig.onPatchSelectedImage}
+          onPatchSelectedStroke={domConfig.onPatchSelectedStroke}
+          onMoveSelectedForward={domConfig.onMoveSelectedForward}
+          onMoveSelectedBackward={domConfig.onMoveSelectedBackward}
+          onToggleGroupSelected={domConfig.onToggleGroupSelected}
+          strokeGroupToggleLabel={strokeGroupToggleLabel}
+          onDeleteSelected={domConfig.onDeleteSelected}
+          onDuplicateSelected={domConfig.onDuplicateSelected}
+          onArrangeSelected={domConfig.onArrangeSelected}
+          onDistributeVerticalSelected={domConfig.onDistributeVerticalSelected}
+        />
       ) : null}
     </div>
   )

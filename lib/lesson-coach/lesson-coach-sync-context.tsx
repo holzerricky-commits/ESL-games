@@ -48,7 +48,7 @@ const SHARED_TEXT_DEBOUNCE_MS = 400
 
 
 
-export type CoachActiveField = 'lesson-paper' | 'label' | 'whiteboard'
+export type CoachActiveField = 'lesson-board' | 'label' | 'whiteboard'
 
 
 

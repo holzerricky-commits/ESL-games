@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   computeStructureTagFromTitleAndIndex,
+  computeStructureTagsForParts,
   effectivePartStructureTag,
   inferStructureTagFromTitle,
   normalizeLessonsStructureTags,
@@ -21,6 +22,43 @@ describe('part-structure-tag', () => {
 
   it('infers main story from standalone story title', () => {
     expect(inferStructureTagFromTitle('The River Story')).toBe('main_story')
+  })
+
+  it('infers Literature post-read rows as non-story', () => {
+    expect(inferStructureTagFromTitle('Respond to the Text')).toBe('your_turn')
+    expect(inferStructureTagFromTitle('Respond')).toBe('your_turn')
+    expect(inferStructureTagFromTitle('About the Illustrator')).toBe('your_turn')
+    expect(inferStructureTagFromTitle('About the Author')).toBe('your_turn')
+    expect(inferStructureTagFromTitle('Connect to the Theme')).toBe('making_connections')
+  })
+
+  it('infers Wonders Workshop skill rows without mistaking vocab strategy for word list', () => {
+    expect(inferStructureTagFromTitle('Vocabulary')).toBe('vocabulary_in_context')
+    expect(inferStructureTagFromTitle('Vocabulary Strategy: Paragraph Clues')).toBe('vocabulary_strategy')
+    expect(inferStructureTagFromTitle('Genre: Expository Text')).toBe('genre')
+    expect(inferStructureTagFromTitle('Writing: Word Choice')).toBe('writing_narrate')
+    expect(inferStructureTagFromTitle('Literary Element: Rhyme')).toBe('literary_element')
+  })
+
+  it('uses Wonders Literature template for bare selection titles', () => {
+    expect(computeStructureTagFromTitleAndIndex({ title: 'My Light' }, 0, 'wonders_literature')).toBe(
+      'main_story',
+    )
+    expect(
+      computeStructureTagFromTitleAndIndex({ title: 'The Power of Water' }, 1, 'wonders_literature'),
+    ).toBe('paired_story')
+  })
+
+  it('assigns Literature main/paired by story ordinal when Respond sits between titles', () => {
+    const tags = computeStructureTagsForParts(
+      [
+        { title: 'My Light' },
+        { title: 'Respond to the Text' },
+        { title: 'The Power of Water' },
+      ],
+      'wonders_literature',
+    )
+    expect(tags).toEqual(['main_story', 'your_turn', 'paired_story'])
   })
 
   it('effective uses saved tag when set', () => {
@@ -52,6 +90,7 @@ describe('part-structure-tag', () => {
     expect(templateTagForPartIndex(0)).toBe('vocabulary_in_context')
     expect(templateTagForPartIndex(1)).toBe('comprehension')
     expect(computeStructureTagFromTitleAndIndex({ title: 'Part 1' }, 0)).toBe('vocabulary_in_context')
+    expect(templateTagForPartIndex(1, 'wonders_workshop')).toBe('main_story')
   })
 
   it('resolvePartStructureTag prefers saved tag', () => {

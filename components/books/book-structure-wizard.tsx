@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
@@ -16,12 +16,20 @@ import {
   Pointer,
   Pencil,
   Trash2,
-  Wand2,
 } from 'lucide-react'
+import { BookCoverThumbnail } from '@/components/books/book-cover-thumbnail'
+import {
+  StructureWizardField,
+  StructureWizardFieldRow,
+  StructureWizardStepPanel,
+} from '@/components/books/structure-wizard-step-panel'
+import { StructureWizardStepper } from '@/components/books/structure-wizard-stepper'
 import { PdfPageThumbnail } from '@/components/students/pdf-page-thumbnail'
+import { bookHasCustomCover } from '@/lib/books/book-cover-display'
 import { toast } from 'sonner'
 import type { BookLessonPartRecord, BookLessonRecord, BookLibraryPayload, BookRecord } from '@/lib/books/types'
 import { captureTocRangeAsJpegs } from '@/lib/books/capture-toc-images-client'
+import { detectTocPdfRangeFromFileUrl } from '@/lib/books/detect-toc-range-client'
 import { BOOK_OUTLINE_PAGE_BADGE_CLASS, bookOutlinePartStoryShellClass } from '@/components/books/book-outline-part-row'
 import { getPartPrimaryLabel } from '@/lib/books/part-section-display'
 import {
@@ -30,13 +38,21 @@ import {
 } from '@/lib/books/book-part-visual-kind'
 import { normalizeLessonsStructureTags, resolvePartStructureTag } from '@/lib/books/part-structure-tag'
 import { draftsToUnits, type TocUnitDraft } from '@/lib/books/toc-import'
-import { formatLessonTitleWithNumber } from '@/lib/books/lesson-title'
+import { formatTocChunkTitle } from '@/lib/books/lesson-title'
+import { resolveTocExtractProfileForBook, tocChunkLabelStyleForProfile } from '@/lib/books/toc-extract-profile'
+import { pageRangeForIndex } from '@/lib/books/toc-page-range'
 import { bookHasTocMapping, stripBookTocMapping } from '@/lib/books/strip-book-toc-mapping'
+import {
+  ManualStoryReconcileDialog,
+  type ManualStoryReconcileCandidateRow,
+  type ManualStoryReconcileDecisionRow,
+} from '@/components/books/manual-story-reconcile-dialog'
 import {
   buildPageAlignmentRuntime,
   mergeCoverIntoHiddenPages,
   resolveEffectiveAnchorToPdfPage,
 } from '@/lib/books/page-alignment-runtime'
+import { resolveStoryTitleThumbPdfPage } from '@/lib/books/story-thumb-pdf-page'
 import { SpreadPageCluster } from '@/components/books/spread-page-cluster'
 import {
   computeSpreadClusterMetrics,
@@ -48,33 +64,23 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } f
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
-  bookSpreadGutterPullRatioForSave,
-  buildSpreadGutterByFileForSave,
-  clampSpreadGutterPullRatio,
   DEFAULT_SPREAD_GUTTER_PULL_RATIO,
   resolveSpreadGutterPullRatio,
-  spreadSidePullPx,
 } from '@/lib/books/spread-gutter'
 import {
-  estimateSpreadGutterPullRatioFromPdf,
-  pickSpreadPairsForAutoAnalysis,
-} from '@/lib/books/spread-gutter-auto-client'
+  advanceFurthestStructureWizardStep,
+  canContinueFromToc,
+  canEnterReview,
+  initialStructureWizardStep,
+  isStructureWizardStepReachable,
+  type StructureWizardStep,
+} from '@/lib/books/structure-wizard-steps'
 import { cn } from '@/lib/utils'
 
 const PdfDocument = dynamic(() => import('react-pdf').then((mod) => mod.Document), { ssr: false })
 const PdfPage = dynamic(() => import('react-pdf').then((mod) => mod.Page), { ssr: false })
 const PDF_DOCUMENT_OPTIONS = { wasmUrl: '/wasm/' } as const
 const DEFAULT_PREVIEW_PAGE_ASPECT_RATIO = 1 / 1.414
-/** Slider permille: 0–200 → 0%–20% page-width overlap at the seam. */
-const SPREAD_GUTTER_SLIDER_MAX = 200
-
-function ratioToSliderPermille(ratio: number): number {
-  return Math.round(clampSpreadGutterPullRatio(ratio) * 1000)
-}
-
-function sliderPermilleToRatio(permille: number): number {
-  return clampSpreadGutterPullRatio(permille / 1000)
-}
 
 function parsePositiveInt(raw: string): number | null {
   const n = Math.floor(Number.parseInt(raw.trim(), 10))
@@ -133,27 +139,6 @@ function parsePageListInput(raw: string): number[] {
 
 function stringifyPageListInput(pages: number[]): string {
   return [...new Set(pages)].sort((a, b) => a - b).join(', ')
-}
-
-function pageRangeForIndex<T extends { startPageHint?: number }>(
-  items: T[],
-  index: number,
-  fallbackStart: number | null,
-  fallbackEnd: number | null,
-): { start: number | null; end: number | null } {
-  const current = items[index]
-  const start =
-    typeof current?.startPageHint === 'number' && Number.isFinite(current.startPageHint)
-      ? Math.round(current.startPageHint)
-      : fallbackStart
-  const next = items
-    .slice(index + 1)
-    .find((item) => typeof item.startPageHint === 'number' && Number.isFinite(item.startPageHint))
-  const nextStart = typeof next?.startPageHint === 'number' ? Math.round(next.startPageHint) : null
-  return {
-    start,
-    end: nextStart != null ? Math.max(start ?? 1, nextStart - 1) : fallbackEnd,
-  }
 }
 
 function chunkArray<T>(items: T[], size: number): T[][] {
@@ -219,11 +204,47 @@ function newBookChildId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`
 }
 
+function stampDraftsFilePath(drafts: TocUnitDraft[], filePath: string): TocUnitDraft[] {
+  const path = filePath.trim()
+  if (!path) return drafts
+  return drafts.map((d) => ({ ...d, filePath: path }))
+}
+
+function restoreOutlineDraftsFromBook(book: BookRecord): {
+  drafts: TocUnitDraft[]
+  lessonsByUnitIndex: BookLessonRecord[][]
+  hasMapping: boolean
+} {
+  const hasMapping = bookHasTocMapping(book)
+  if (!hasMapping) {
+    return { drafts: [], lessonsByUnitIndex: [], hasMapping: false }
+  }
+  const drafts: TocUnitDraft[] = book.units.map((unit) => ({
+    id: unit.id,
+    title: unit.title,
+    needsReview: false,
+    filePath: unit.filePath,
+    ...(typeof unit.startPageHint === 'number' ? { startPageHint: unit.startPageHint } : {}),
+    ...(typeof unit.endPageHint === 'number' ? { endPageHint: unit.endPageHint } : {}),
+    ...(unit.anchorConfidence ? { anchorConfidence: unit.anchorConfidence } : {}),
+    ...(unit.anchorSource ? { anchorSource: unit.anchorSource } : {}),
+  }))
+  const lessonsByUnitIndex = book.units.map((unit) =>
+    normalizeLessonsStructureTags(structuredClone(unit.lessons ?? [])),
+  )
+  return { drafts, lessonsByUnitIndex, hasMapping: true }
+}
+
+export type BookStructureManifestSaveMeta = {
+  bookId: string
+  focusUnitId?: string
+}
+
 export interface BookStructureWizardProps {
   library: BookLibraryPayload
   preferredBookId: string | null
   preferredFilePath: string | null
-  onManifestSaved: (payload: BookLibraryPayload) => void
+  onManifestSaved: (payload: BookLibraryPayload, meta?: BookStructureManifestSaveMeta) => void
   open?: boolean
   onOpenChange?: (open: boolean) => void
 }
@@ -244,31 +265,117 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
   const [drafts, setDrafts] = useState<TocUnitDraft[]>([])
   const [lessonsByUnitIndex, setLessonsByUnitIndex] = useState<BookLessonRecord[][]>([])
   const [aiExtracting, setAiExtracting] = useState(false)
-  const [aiExtractionCompleted, setAiExtractionCompleted] = useState(false)
+  const [wizardStep, setWizardStep] = useState<StructureWizardStep>('toc')
+  const [furthestStep, setFurthestStep] = useState<StructureWizardStep>('toc')
+  const [tocRangeAtExtract, setTocRangeAtExtract] = useState<{ from: number; to: number } | null>(null)
+  const [reconcileOpen, setReconcileOpen] = useState(false)
+  const [reconcileBusy, setReconcileBusy] = useState(false)
+  const [reconcileCandidates, setReconcileCandidates] = useState<ManualStoryReconcileCandidateRow[]>([])
+  const [reconcilePending, setReconcilePending] = useState(false)
   const [aiMessage, setAiMessage] = useState<string | null>(null)
   const [stagedExtractionEnabled, setStagedExtractionEnabled] = useState(false)
+  const [tocDetectStatus, setTocDetectStatus] = useState<'idle' | 'scanning' | 'ready' | 'failed'>('idle')
+  const [tocDetectMessage, setTocDetectMessage] = useState<string | null>(null)
+  const [tocDetectSuggestion, setTocDetectSuggestion] = useState<{
+    from: number
+    to: number
+    confidence: 'high' | 'medium' | 'low'
+  } | null>(null)
+  const tocDetectRunIdRef = useRef(0)
+  const tocAutoDetectPathRef = useRef<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [lastNumPages, setLastNumPages] = useState<number | null>(null)
   const [structureUnitIdx, setStructureUnitIdx] = useState(0)
-  const [bookSpreadGutterPullRatio, setBookSpreadGutterPullRatio] = useState(DEFAULT_SPREAD_GUTTER_PULL_RATIO)
-  const [fileGutterOverrideEnabled, setFileGutterOverrideEnabled] = useState(false)
-  const [fileSpreadGutterPullRatio, setFileSpreadGutterPullRatio] = useState(DEFAULT_SPREAD_GUTTER_PULL_RATIO)
-  const [gutterAutoBusy, setGutterAutoBusy] = useState(false)
   const [previewPageAspectRatio, setPreviewPageAspectRatio] = useState(DEFAULT_PREVIEW_PAGE_ASPECT_RATIO)
   const [previewViewportSize, setPreviewViewportSize] = useState({ w: 0, h: 0 })
   const previewViewportRef = useRef<HTMLDivElement | null>(null)
+  const previewViewportRoRef = useRef<ResizeObserver | null>(null)
+
+  const attachPreviewViewport = useCallback((el: HTMLDivElement | null) => {
+    previewViewportRoRef.current?.disconnect()
+    previewViewportRoRef.current = null
+    previewViewportRef.current = el
+    if (!el) {
+      setPreviewViewportSize({ w: 0, h: 0 })
+      return
+    }
+    const sync = () => {
+      const bounds = el.getBoundingClientRect()
+      if (!(bounds.width > 0) || !(bounds.height > 0)) return
+      setPreviewViewportSize({ w: bounds.width, h: bounds.height })
+    }
+    sync()
+    requestAnimationFrame(sync)
+    const ro = new ResizeObserver(sync)
+    ro.observe(el)
+    previewViewportRoRef.current = ro
+  }, [])
+
   const [selectedUnitIndicesForMerge, setSelectedUnitIndicesForMerge] = useState<Set<number>>(() => new Set())
   const [openLessonId, setOpenLessonId] = useState<string | null>(null)
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null)
   const [unitTocRangeById, setUnitTocRangeById] = useState<Record<string, { from: string; to: string }>>({})
   const open = controlledOpen ?? internalOpen
   const setOpen = onOpenChange ?? setInternalOpen
+  const libraryRef = useRef(library)
+  libraryRef.current = library
 
   const selectedBook = useMemo(() => library.books.find((b) => b.id === bookId) ?? null, [library.books, bookId])
   const sourcePathsForBook = useMemo(
     () => (selectedBook ? uniqueSortedFilePaths(selectedBook) : []),
     [selectedBook],
   )
+
+  const resetWizardChrome = useCallback(() => {
+    setSelectedUnitIndicesForMerge(new Set())
+    setOpenLessonId(null)
+    setEditingFieldId(null)
+    setUnitTocRangeById({})
+    setTocFrom('1')
+    setTocTo('3')
+    setAiMessage(null)
+    setStagedExtractionEnabled(false)
+    setTocDetectStatus('idle')
+    setTocDetectMessage(null)
+    setTocDetectSuggestion(null)
+    tocDetectRunIdRef.current += 1
+    tocAutoDetectPathRef.current = null
+  }, [])
+
+  const applyBookSession = useCallback(
+    (book: BookRecord, preferredFile: string | null | undefined) => {
+      setBookId(book.id)
+      const paths = uniqueSortedFilePaths(book)
+      const nextPath =
+        (preferredFile && paths.includes(preferredFile) ? preferredFile : null) ?? paths[0] ?? ''
+      setSourceFilePath(nextPath)
+      const restored = restoreOutlineDraftsFromBook(book)
+      setDrafts(restored.drafts)
+      setLessonsByUnitIndex(restored.lessonsByUnitIndex)
+      setStructureUnitIdx(0)
+      const startStep = initialStructureWizardStep(restored.hasMapping)
+      setWizardStep(startStep)
+      setFurthestStep(startStep)
+      setTocRangeAtExtract(null)
+      setReconcilePending(false)
+      setReconcileCandidates([])
+      setReconcileOpen(false)
+      resetWizardChrome()
+    },
+    [resetWizardChrome],
+  )
+
+  // Load the preferred book when the wizard opens — do not reload on every library refresh
+  // (that was wiping in-progress AI drafts / wrong-book drafts).
+  useEffect(() => {
+    if (!open) return
+    const books = libraryRef.current.books
+    const first = books[0]
+    const initialBook = (preferredBookId && books.find((b) => b.id === preferredBookId)) ?? first
+    if (!initialBook) return
+    applyBookSession(initialBook, preferredFilePath)
+  }, [open, preferredBookId, preferredFilePath, applyBookSession])
+
   const tocRange = useMemo(() => {
     const from = parsePositiveInt(tocFrom)
     const to = parsePositiveInt(tocTo)
@@ -288,6 +395,78 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
   }, [tocRange])
   const recommendStagedExtraction = tocPageCount >= 6
   const previewUrl = sourceFilePath ? makeUnitFileUrl(sourceFilePath) : null
+
+  const runTocAutoDetect = useCallback(
+    async (options?: { applyRange?: boolean }) => {
+      if (!previewUrl) {
+        setTocDetectStatus('failed')
+        setTocDetectSuggestion(null)
+        setTocDetectMessage('Add a PDF source file before detecting contents pages.')
+        return
+      }
+      const runId = ++tocDetectRunIdRef.current
+      setTocDetectStatus('scanning')
+      setTocDetectMessage('Scanning early pages for a table of contents…')
+      setTocDetectSuggestion(null)
+      try {
+        const result = await detectTocPdfRangeFromFileUrl(previewUrl, {
+          onProgress: (message) => {
+            if (runId !== tocDetectRunIdRef.current) return
+            setTocDetectMessage(message)
+          },
+        })
+        if (runId !== tocDetectRunIdRef.current) return
+        if (!result.ok) {
+          setTocDetectStatus('failed')
+          setTocDetectSuggestion(null)
+          if (result.reason === 'no_text') {
+            setTocDetectMessage(
+              'No selectable text in early pages (common with scans). Set the PDF range by hand and check the preview.',
+            )
+          } else if (result.reason === 'no_file') {
+            setTocDetectMessage('No PDF loaded yet.')
+          } else {
+            setTocDetectMessage(
+              'Couldn’t spot a contents section automatically. Set From/To by hand and confirm in the preview.',
+            )
+          }
+          return
+        }
+        const { proposal } = result
+        setTocDetectSuggestion({
+          from: proposal.from,
+          to: proposal.to,
+          confidence: proposal.confidence,
+        })
+        setTocDetectStatus('ready')
+        const confidenceLabel =
+          proposal.confidence === 'high' ? 'Strong match' : proposal.confidence === 'medium' ? 'Likely match' : 'Weak match'
+        setTocDetectMessage(
+          `${confidenceLabel}: PDF pages ${proposal.from}–${proposal.to}. Check the preview, then continue.`,
+        )
+        if (options?.applyRange !== false) {
+          setTocFrom(String(proposal.from))
+          setTocTo(String(proposal.to))
+          setPreviewPage(proposal.from)
+          setPreviewPageJumpDraft(String(proposal.from))
+        }
+      } catch {
+        if (runId !== tocDetectRunIdRef.current) return
+        setTocDetectStatus('failed')
+        setTocDetectSuggestion(null)
+        setTocDetectMessage('Detection failed. Set the PDF range by hand.')
+      }
+    },
+    [previewUrl],
+  )
+
+  useEffect(() => {
+    if (!open || wizardStep !== 'toc' || !previewUrl || !sourceFilePath) return
+    if (tocAutoDetectPathRef.current === sourceFilePath) return
+    tocAutoDetectPathRef.current = sourceFilePath
+    void runTocAutoDetect({ applyRange: true })
+  }, [open, wizardStep, previewUrl, sourceFilePath, runTocAutoDetect])
+
   const alignmentRuntime = useMemo(
     () => buildPageAlignmentRuntime(previewNumPages, hiddenPdfPagesParsed, notCountedPdfPages),
     [previewNumPages, hiddenPdfPagesParsed, notCountedPdfPages],
@@ -378,43 +557,6 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
 
   useEffect(() => {
     if (!open) return
-    const first = library.books[0]
-    const initialBook = (preferredBookId && library.books.find((b) => b.id === preferredBookId)) ?? first
-    if (!initialBook) return
-    const hasExistingMapping = bookHasTocMapping(initialBook)
-    setBookId(initialBook.id)
-    const paths = uniqueSortedFilePaths(initialBook)
-    setSourceFilePath((preferredFilePath && paths.includes(preferredFilePath) ? preferredFilePath : null) ?? paths[0] ?? '')
-    if (hasExistingMapping) {
-      const restoredDrafts: TocUnitDraft[] = initialBook.units.map((unit) => ({
-        id: unit.id,
-        title: unit.title,
-        needsReview: false,
-        ...(typeof unit.startPageHint === 'number' ? { startPageHint: unit.startPageHint } : {}),
-        ...(unit.anchorConfidence ? { anchorConfidence: unit.anchorConfidence } : {}),
-        ...(unit.anchorSource ? { anchorSource: unit.anchorSource } : {}),
-      }))
-      const restoredLessons = initialBook.units.map((unit) => normalizeLessonsStructureTags(structuredClone(unit.lessons ?? [])))
-      setDrafts(restoredDrafts)
-      setLessonsByUnitIndex(restoredLessons)
-    } else {
-      setDrafts([])
-      setLessonsByUnitIndex([])
-    }
-    setStructureUnitIdx(0)
-    setSelectedUnitIndicesForMerge(new Set())
-    setOpenLessonId(null)
-    setEditingFieldId(null)
-    setUnitTocRangeById({})
-    setTocFrom('1')
-    setTocTo('3')
-    setAiMessage(null)
-    setStagedExtractionEnabled(false)
-    setAiExtractionCompleted(hasExistingMapping)
-  }, [open, library.books, preferredBookId, preferredFilePath])
-
-  useEffect(() => {
-    if (!open) return
     if (recommendStagedExtraction) setStagedExtractionEnabled(true)
   }, [open, recommendStagedExtraction])
 
@@ -456,83 +598,26 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
     setHiddenPdfPagesInput(stringifyPageListInput(mergeCoverIntoHiddenPages(saved?.hiddenPdfPages)))
   }, [selectedBook, sourceFilePath])
 
-  useEffect(() => {
-    if (!selectedBook) {
-      setBookSpreadGutterPullRatio(DEFAULT_SPREAD_GUTTER_PULL_RATIO)
-      setFileGutterOverrideEnabled(false)
-      setFileSpreadGutterPullRatio(DEFAULT_SPREAD_GUTTER_PULL_RATIO)
-      return
-    }
-    const bookDefault =
-      selectedBook.spreadGutterPullRatio ?? DEFAULT_SPREAD_GUTTER_PULL_RATIO
-    setBookSpreadGutterPullRatio(bookDefault)
-    const fileOverride =
-      sourceFilePath && selectedBook.spreadGutterByFile?.[sourceFilePath]
-    if (typeof fileOverride === 'number' && Number.isFinite(fileOverride)) {
-      setFileGutterOverrideEnabled(true)
-      setFileSpreadGutterPullRatio(fileOverride)
-    } else {
-      setFileGutterOverrideEnabled(false)
-      setFileSpreadGutterPullRatio(bookDefault)
-    }
-  }, [selectedBook, sourceFilePath])
-
-  /** Drop unsaved per-PDF overlap when preview spread changes; keep saved overrides. */
-  useEffect(() => {
-    if (!selectedBook || !sourceFilePath) return
-    const fileOverride = selectedBook.spreadGutterByFile?.[sourceFilePath]
-    if (typeof fileOverride === 'number' && Number.isFinite(fileOverride)) {
-      setFileGutterOverrideEnabled(true)
-      setFileSpreadGutterPullRatio(fileOverride)
-    } else {
-      setFileGutterOverrideEnabled(false)
-      setFileSpreadGutterPullRatio(bookSpreadGutterPullRatio)
-    }
-  }, [previewLeftPage, selectedBook, sourceFilePath, bookSpreadGutterPullRatio])
-
+  /** Preview only — seam overlap editing retired from structure wizard. */
   const previewSpreadGutterPullRatio = useMemo(() => {
     if (!selectedBook) return DEFAULT_SPREAD_GUTTER_PULL_RATIO
-    const draftBook: BookRecord = {
-      ...selectedBook,
-      spreadGutterPullRatio: bookSpreadGutterPullRatio,
-      spreadGutterByFile:
-        fileGutterOverrideEnabled && sourceFilePath
-          ? {
-              ...(selectedBook.spreadGutterByFile ?? {}),
-              [sourceFilePath]: fileSpreadGutterPullRatio,
-            }
-          : selectedBook.spreadGutterByFile,
-    }
-    return resolveSpreadGutterPullRatio(draftBook, sourceFilePath || null)
-  }, [
-    selectedBook,
-    sourceFilePath,
-    bookSpreadGutterPullRatio,
-    fileGutterOverrideEnabled,
-    fileSpreadGutterPullRatio,
-  ])
+    return resolveSpreadGutterPullRatio(selectedBook, sourceFilePath || null)
+  }, [selectedBook, sourceFilePath])
 
   useEffect(() => {
     setPreviewPageAspectRatio(DEFAULT_PREVIEW_PAGE_ASPECT_RATIO)
   }, [sourceFilePath])
 
-  useEffect(() => {
-    const el = previewViewportRef.current
-    if (!el) return
-    const sync = () => {
-      const bounds = el.getBoundingClientRect()
-      setPreviewViewportSize({ w: bounds.width, h: bounds.height })
-    }
-    sync()
-    const ro = new ResizeObserver(sync)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [open, previewUrl, pdfReady])
+  useEffect(() => () => {
+    previewViewportRoRef.current?.disconnect()
+    previewViewportRoRef.current = null
+  }, [])
 
   const previewSpreadPageWidth = useMemo(() => {
     const { w, h } = previewViewportSize
     if (!(w > 0) || !(h > 0)) return 320
-    return computeSpreadPageWidth(w, h, previewPageAspectRatio)
+    // Wizard preview: size pages only (no open-book frame chrome) so more of the PDF is visible.
+    return computeSpreadPageWidth(w, h, previewPageAspectRatio, 1, false)
   }, [previewViewportSize, previewPageAspectRatio])
 
   const previewCluster = useMemo(
@@ -547,6 +632,7 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
         previewViewportSize.h,
         previewCluster.spreadOverlayWidthPx,
         previewCluster.pageCanvasHeightPx,
+        false,
       ),
     [previewViewportSize, previewCluster.spreadOverlayWidthPx, previewCluster.pageCanvasHeightPx],
   )
@@ -607,39 +693,6 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
     goToPreviewPage(nextPage)
   }
 
-  const canAutoAdjustGutter = Boolean(
-    previewUrl && pdfReady && previewRightPage != null && !gutterAutoBusy,
-  )
-
-  const runAutoGutterAdjustForPdf = useCallback(async () => {
-    if (!previewUrl || previewRightPage == null) {
-      toast.error('Open a two-page spread in the preview first.')
-      return
-    }
-    const spreads = pickSpreadPairsForAutoAnalysis(visiblePreviewPages, previewLeftPage)
-    if (!spreads.length) {
-      toast.error('No spread available to analyze.')
-      return
-    }
-    setGutterAutoBusy(true)
-    try {
-      const ratio = await estimateSpreadGutterPullRatioFromPdf(previewUrl, spreads)
-      const pct = (ratio * 100).toFixed(1)
-      setFileGutterOverrideEnabled(true)
-      setFileSpreadGutterPullRatio(ratio)
-      toast.success(`PDF overlap set to ${pct}%`, {
-        description:
-          spreads.length > 1
-            ? `Median of ${spreads.length} spreads; use “Save structure” to keep.`
-            : 'Use “Save structure” to keep this PDF override.',
-      })
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Auto-adjust failed')
-    } finally {
-      setGutterAutoBusy(false)
-    }
-  }, [previewUrl, previewRightPage, visiblePreviewPages, previewLeftPage])
-
   function onPreviewDocumentLoadSuccess(meta: { numPages: number }) {
     setPreviewNumPages(meta.numPages)
     setLastNumPages(meta.numPages)
@@ -661,6 +714,11 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
   useEffect(() => {
     setPreviewPageJumpFocused(false)
   }, [sourceFilePath])
+
+  const tocExtractProfile = useMemo(
+    () => (selectedBook ? resolveTocExtractProfileForBook(selectedBook) : 'journeys'),
+    [selectedBook],
+  )
 
   const extractBatchesWithAi = useCallback(async (
     images: Array<{ pdfPage: number; mimeType: string; base64: string }>,
@@ -693,6 +751,7 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
             images: chunks[i],
             totalPdfPages: numPages,
             notCountedPdfPages,
+            profile: tocExtractProfile,
           }),
         })
         body = (await res.json()) as {
@@ -716,7 +775,94 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
     const merged = mergeExtractedStructureBatches(extractedBatches)
     if (!merged.drafts.length) throw new Error('AI extraction produced no units.')
     return merged
-  }, [notCountedPdfPages, stagedExtractionEnabled])
+  }, [notCountedPdfPages, stagedExtractionEnabled, tocExtractProfile])
+
+  const maybeOfferManualStoryReconcile = useCallback(
+    async (
+      nextDrafts: TocUnitDraft[],
+      nextLessons: BookLessonRecord[][],
+      filePath: string,
+    ) => {
+      if (!selectedBook || !nextDrafts.length) return
+      try {
+        const res = await fetch('/api/reading-stories/reconcile-after-outline', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'preview',
+            bookId: selectedBook.id,
+            drafts: nextDrafts,
+            lessonsByUnit: nextLessons,
+            fallbackFilePath: filePath,
+          }),
+        })
+        const body = (await res.json()) as {
+          ok?: boolean
+          needed?: boolean
+          candidates?: ManualStoryReconcileCandidateRow[]
+          error?: string
+        }
+        if (!res.ok || !body.ok) return
+        if (body.needed && body.candidates?.length) {
+          setReconcileCandidates(body.candidates)
+          setReconcilePending(true)
+          setReconcileOpen(true)
+        } else {
+          setReconcileCandidates([])
+          setReconcilePending(false)
+        }
+      } catch {
+        // Non-blocking — outline still works without reconcile.
+      }
+    },
+    [selectedBook],
+  )
+
+  const applyManualStoryReconcile = useCallback(
+    async (decisions: ManualStoryReconcileDecisionRow[]) => {
+      if (!selectedBook || !decisions.length) return
+      setReconcileBusy(true)
+      try {
+        const res = await fetch('/api/reading-stories/reconcile-after-outline', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'apply',
+            bookId: selectedBook.id,
+            decisions,
+          }),
+        })
+        const body = (await res.json()) as {
+          ok?: boolean
+          merged?: number
+          kept?: number
+          deleted?: number
+          errors?: string[]
+          error?: string
+        }
+        if (!res.ok || !body.ok) {
+          toast.error(body.error ?? 'Could not update manual stories.')
+          return
+        }
+        const bits: string[] = []
+        if (body.merged) bits.push(`merged ${body.merged}`)
+        if (body.kept) bits.push(`kept ${body.kept}`)
+        if (body.deleted) bits.push(`deleted ${body.deleted}`)
+        toast.success(bits.length ? `Stories: ${bits.join(', ')}.` : 'Manual stories updated.')
+        if (body.errors?.length) {
+          toast.message(`Some stories need a look (${body.errors.length}).`)
+        }
+        setReconcilePending(false)
+        setReconcileOpen(false)
+        setReconcileCandidates([])
+      } catch {
+        toast.error('Could not update manual stories.')
+      } finally {
+        setReconcileBusy(false)
+      }
+    },
+    [selectedBook],
+  )
 
   const runExtractWithAi = useCallback(async () => {
     if (!tocRange || !sourceFilePath) return
@@ -729,15 +875,22 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
       })
       setLastNumPages(numPages)
       const merged = await extractBatchesWithAi(images, numPages)
-      setDrafts(merged.drafts)
-      setLessonsByUnitIndex(merged.lessonsByUnit.map((lessons) => normalizeLessonsStructureTags(lessons)))
+      const stamped = stampDraftsFilePath(merged.drafts, sourceFilePath)
+      const normalizedLessons = merged.lessonsByUnit.map((lessons) =>
+        normalizeLessonsStructureTags(lessons, tocExtractProfile),
+      )
+      setDrafts(stamped)
+      setLessonsByUnitIndex(normalizedLessons)
       setStructureUnitIdx(0)
       setSelectedUnitIndicesForMerge(new Set())
       setOpenLessonId(null)
       setEditingFieldId(null)
       setAiMessage(`Extracted ${merged.drafts.length} units.`)
-      setAiExtractionCompleted(true)
+      if (tocRange) setTocRangeAtExtract({ from: tocRange.from, to: tocRange.to })
+      setFurthestStep((prev) => advanceFurthestStructureWizardStep(prev, 'extract'))
+      setWizardStep('review')
       toast.success(`Extracted ${merged.drafts.length} units.`)
+      void maybeOfferManualStoryReconcile(stamped, normalizedLessons, sourceFilePath)
     } catch (e) {
       const message = e instanceof Error ? e.message : 'AI extraction failed.'
       setAiMessage(message)
@@ -745,7 +898,13 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
     } finally {
       setAiExtracting(false)
     }
-  }, [extractBatchesWithAi, sourceFilePath, tocRange])
+  }, [
+    extractBatchesWithAi,
+    maybeOfferManualStoryReconcile,
+    sourceFilePath,
+    tocExtractProfile,
+    tocRange,
+  ])
 
   const runExtractForUnit = useCallback(async (unitIndex: number) => {
     const unit = drafts[unitIndex]
@@ -783,16 +942,42 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
       const replacementDraft = merged.drafts[bestIndex]
       const replacementLessons = merged.lessonsByUnit[bestIndex] ?? []
       if (!replacementDraft) throw new Error('Unit extraction returned no units.')
-      setDrafts((prev) => prev.map((draft, i) => (i === unitIndex ? { ...draft, ...replacementDraft, id: draft.id } : draft)))
+      setDrafts((prev) =>
+        prev.map((draft, i) =>
+          i === unitIndex
+            ? {
+                ...draft,
+                ...replacementDraft,
+                id: draft.id,
+                filePath: sourceFilePath || draft.filePath,
+              }
+            : draft,
+        ),
+      )
       setLessonsByUnitIndex((prev) =>
-        prev.map((lessons, i) => (i === unitIndex ? normalizeLessonsStructureTags(replacementLessons) : lessons)),
+        prev.map((lessons, i) =>
+          i === unitIndex ? normalizeLessonsStructureTags(replacementLessons, tocExtractProfile) : lessons,
+        ),
       )
       setStructureUnitIdx(unitIndex)
       setOpenLessonId(null)
       setEditingFieldId(null)
-      setAiExtractionCompleted(true)
       setAiMessage(`Re-extracted Unit ${unitIndex + 1}.`)
       toast.success(`Re-extracted Unit ${unitIndex + 1}.`)
+      const nextDrafts = drafts.map((draft, i) =>
+        i === unitIndex
+          ? {
+              ...draft,
+              ...replacementDraft,
+              id: draft.id,
+              filePath: sourceFilePath || draft.filePath,
+            }
+          : draft,
+      )
+      const nextLessons = lessonsByUnitIndex.map((lessons, i) =>
+        i === unitIndex ? normalizeLessonsStructureTags(replacementLessons, tocExtractProfile) : lessons,
+      )
+      void maybeOfferManualStoryReconcile(nextDrafts, nextLessons, sourceFilePath)
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Unit extraction failed.'
       setAiMessage(message)
@@ -800,7 +985,16 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
     } finally {
       setAiExtracting(false)
     }
-  }, [drafts, extractBatchesWithAi, resolveAnchorToPdfPage, sourceFilePath, unitTocRangeById])
+  }, [
+    drafts,
+    extractBatchesWithAi,
+    lessonsByUnitIndex,
+    maybeOfferManualStoryReconcile,
+    resolveAnchorToPdfPage,
+    sourceFilePath,
+    tocExtractProfile,
+    unitTocRangeById,
+  ])
 
   function addUnit() {
     const unitIndex = drafts.length
@@ -809,6 +1003,7 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
       title: `Unit ${unitIndex + 1}`,
       needsReview: false,
       startPageHint: effectiveHintForNewAnchors,
+      ...(sourceFilePath ? { filePath: sourceFilePath } : {}),
     }
     setDrafts((prev) => [...prev, nextDraft])
     setLessonsByUnitIndex((prev) => [...prev, []])
@@ -845,7 +1040,7 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
     let writeIndex = 0
     for (let readIndex = 0; readIndex < drafts.length; readIndex++) {
       if (readIndex === keepIndex) {
-        nextLessonsByUnit[writeIndex] = normalizeLessonsStructureTags(mergedLessons)
+        nextLessonsByUnit[writeIndex] = normalizeLessonsStructureTags(mergedLessons, tocExtractProfile)
         writeIndex += 1
         continue
       }
@@ -871,8 +1066,35 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
     toast.success(`Unit ${unitIndex + 1} cover starts at printed page ${nextCoverHint}.`)
   }
 
+  const canEditAlignment = wizardStep === 'align' || wizardStep === 'extract' || wizardStep === 'review'
+  const tocRangeDirtyAfterExtract = Boolean(
+    tocRangeAtExtract &&
+      tocRange &&
+      (tocRange.from !== tocRangeAtExtract.from || tocRange.to !== tocRangeAtExtract.to) &&
+      drafts.length > 0,
+  )
+
+  function goToWizardStep(step: StructureWizardStep) {
+    if (!isStructureWizardStepReachable(step, furthestStep)) return
+    setWizardStep(step)
+  }
+
+  function continueFromToc() {
+    if (!canContinueFromToc(Boolean(tocRange))) {
+      toast.error('Enter a valid TOC from–to range.')
+      return
+    }
+    setFurthestStep((prev) => advanceFurthestStructureWizardStep(prev, 'toc'))
+    setWizardStep('align')
+  }
+
+  function continueFromAlign() {
+    setFurthestStep((prev) => advanceFurthestStructureWizardStep(prev, 'align'))
+    setWizardStep('extract')
+  }
+
   function toggleCurrentPageIgnored() {
-    if (!aiExtractionCompleted) return
+    if (!canEditAlignment) return
     const current = new Set(notCountedPdfPages)
     if (current.has(previewLeftPage)) current.delete(previewLeftPage)
     else current.add(previewLeftPage)
@@ -880,7 +1102,7 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
   }
 
   function toggleIgnoredPage(page: number) {
-    if (!aiExtractionCompleted) return
+    if (!canEditAlignment) return
     const current = new Set(notCountedPdfPages)
     if (current.has(page)) current.delete(page)
     else current.add(page)
@@ -888,7 +1110,7 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
   }
 
   function toggleHiddenPage(page: number) {
-    if (!aiExtractionCompleted) return
+    if (!canEditAlignment) return
     if (page === 1) return
     const current = new Set(hiddenPdfPages)
     if (current.has(page)) current.delete(page)
@@ -897,13 +1119,19 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
   }
 
   function addLesson(unitIndex: number) {
+    const chunkStyle = tocChunkLabelStyleForProfile(tocExtractProfile)
     setLessonsByUnitIndex((prev) => {
       const next = [...prev]
       while (next.length <= unitIndex) next.push([])
       const n = (next[unitIndex] ?? []).length + 1
       next[unitIndex] = [
         ...(next[unitIndex] ?? []),
-        { id: newBookChildId('lesson'), title: formatLessonTitleWithNumber(n, ''), startPageHint: effectiveHintForNewAnchors, parts: [] },
+        {
+          id: newBookChildId('lesson'),
+          title: formatTocChunkTitle(n, '', chunkStyle),
+          startPageHint: effectiveHintForNewAnchors,
+          parts: [],
+        },
       ]
       return next
     })
@@ -1036,9 +1264,23 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
   function saveManifest() {
     void (async () => {
       if (!selectedBook || !sourceFilePath || !drafts?.length) return
+      if (tocRangeDirtyAfterExtract) {
+        toast.error('TOC range changed after extract. Re-extract the outline before saving.')
+        setWizardStep('extract')
+        return
+      }
+      if (!canEnterReview(drafts.length > 0)) {
+        toast.error('Extract an outline before saving.')
+        return
+      }
+      if (reconcilePending && reconcileCandidates.length > 0) {
+        setReconcileOpen(true)
+        toast.message('Choose what to do with your manual stories — or Decide later, then Save again.')
+      }
       setSaving(true)
       try {
         const units = draftsToUnits(sourceFilePath, drafts, lessonsByUnitIndex)
+        const focusUnitId = drafts[structureUnitIdx]?.id
         const nextPayload: BookLibraryPayload = {
           books: library.books.map((b) => {
             if (b.id !== selectedBook.id) return b
@@ -1053,24 +1295,11 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
                   }
                 : {}),
             }
-            const nextSpreadGutterByFile = sourceFilePath
-              ? buildSpreadGutterByFileForSave(
-                  selectedBook.spreadGutterByFile,
-                  sourceFilePath,
-                  bookSpreadGutterPullRatio,
-                  fileGutterOverrideEnabled,
-                  fileSpreadGutterPullRatio,
-                )
-              : selectedBook.spreadGutterByFile
-            const nextSpreadGutterPullRatio = bookSpreadGutterPullRatioForSave(bookSpreadGutterPullRatio)
-            const { spreadGutterPullRatio: _omitBookGutter, spreadGutterByFile: _omitFileGutter, ...bookRest } =
-              selectedBook
+            // Seam overlap retired from this wizard — preserve existing book gutter fields.
             return {
-              ...bookRest,
+              ...selectedBook,
               units,
               pageAlignmentByFile: nextPageAlignmentByFile,
-              ...(nextSpreadGutterPullRatio != null ? { spreadGutterPullRatio: nextSpreadGutterPullRatio } : {}),
-              ...(nextSpreadGutterByFile ? { spreadGutterByFile: nextSpreadGutterByFile } : {}),
             }
           }),
         }
@@ -1081,9 +1310,14 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
         })
         const body = (await res.json()) as BookLibraryPayload | { error?: string }
         if (!res.ok) throw new Error('error' in body && body.error ? body.error : 'Save failed.')
-        onManifestSaved(body as BookLibraryPayload)
+        onManifestSaved(body as BookLibraryPayload, {
+          bookId: selectedBook.id,
+          ...(focusUnitId ? { focusUnitId } : {}),
+        })
         setOpen(false)
-        toast.success('Saved structure.')
+        toast.success(
+          `Saved outline for ${selectedBook.title}: ${units.length} unit${units.length === 1 ? '' : 's'}.`,
+        )
       } catch (e) {
         toast.error(e instanceof Error ? e.message : 'Save failed.')
       } finally {
@@ -1096,274 +1330,304 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
     setOpenLessonId((prev) => (prev === lessonId ? null : lessonId))
   }
 
+  const isReviewLayout = wizardStep === 'review'
+
   return (
+    <>
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="flex h-[94vh] w-[98vw] max-h-[94vh] flex-col gap-4 overflow-hidden p-5 sm:max-w-[min(1800px,98vw)] sm:p-6">
+      <DialogContent
+        className={cn(
+          'flex flex-col overflow-hidden',
+          isReviewLayout
+            ? 'h-[94vh] w-[98vw] max-h-[94vh] gap-3 p-4 sm:max-w-[min(1800px,98vw)] sm:p-5'
+            : 'h-[min(860px,92vh)] w-[min(1100px,96vw)] gap-2 p-3 sm:max-w-[1100px] sm:p-4',
+        )}
+      >
         <DialogTitle className="sr-only">Structure-first book mapping</DialogTitle>
         <DialogDescription className="sr-only">
-          Review extracted units, lessons, parts, and editable PDF page anchors before saving.
+          Map book structure: find TOC, align pages, extract outline, then review.
         </DialogDescription>
 
-        <div className="flex min-h-0 min-w-0 shrink-0 gap-4 border-b border-border/50 pb-4 sm:gap-5">
-          <div className="flex shrink-0 flex-col justify-center">
-            {previewUrl && pdfReady ? (
-              <PdfPageThumbnail
-                fileUrl={previewUrl}
+        <div className="flex min-h-0 min-w-0 shrink-0 flex-col gap-1.5 border-b border-border/50 pb-2">
+          <div className="flex min-w-0 items-center gap-2">
+            {selectedBook && (bookHasCustomCover(selectedBook) || (previewUrl && pdfReady)) ? (
+              <BookCoverThumbnail
+                book={selectedBook}
                 unitId={`${bookId}-structure-map-cover`}
-                pageNumber={1}
-                width={100}
+                width={32}
                 pdfReady={pdfReady}
                 label="Cover"
-                className="shadow-md ring-1 ring-border/50"
+                className="shadow-sm ring-1 ring-border/50"
               />
-            ) : (
-              <div
-                className="flex w-[100px] shrink-0 flex-col items-center justify-center rounded-md border border-dashed border-muted-foreground/30 bg-muted/25 px-2 text-center text-[10px] font-medium text-muted-foreground"
-                style={{ aspectRatio: '1 / 1.414' }}
-              >
-                PDF preview
-              </div>
-            )}
-          </div>
-          <div className="flex min-w-0 flex-1 flex-col justify-center gap-1.5">
-            <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground/80">Structure-first mapping</p>
-            <h2 className="text-balance text-3xl font-semibold leading-[1.06] tracking-tight sm:text-4xl lg:text-5xl">
-              {selectedBook?.title ?? 'Book'}
-            </h2>
-            <p className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[12px] text-muted-foreground">
-              <span className="whitespace-nowrap">Books</span>
-              <ChevronRight className="size-3.5 shrink-0 opacity-40" aria-hidden />
-              <span className="min-w-0 max-w-[min(100%,28rem)] truncate font-medium text-foreground/80">{selectedBook?.title ?? '—'}</span>
-              <ChevronRight className="size-3.5 shrink-0 opacity-40" aria-hidden />
-              <span className="min-w-0 max-w-[min(100%,36rem)] truncate font-mono text-[11px] text-muted-foreground/95" title={sourceFilePath || undefined}>
-                {sourceFilePath ? fileBasename(sourceFilePath) : 'No source file'}
-              </span>
-            </p>
-            {(library.books.length > 1 || sourcePathsForBook.length > 1) ? (
-              <div className="mt-2 flex flex-col gap-2.5 pt-0.5">
-                {library.books.length > 1 ? (
-                  <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/75">Switch book</span>
-                    <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
-                      {library.books.map((b) => (
-                        <button
-                          key={b.id}
-                          type="button"
-                          onClick={() => {
-                            setBookId(b.id)
-                            const paths = uniqueSortedFilePaths(b)
-                            setSourceFilePath(paths[0] ?? '')
-                          }}
-                          className={cn(
-                            'max-w-full truncate rounded-full border px-2.5 py-0.5 text-left text-xs font-medium transition-colors',
-                            b.id === bookId
-                              ? 'border-primary/35 bg-primary/12 text-foreground'
-                              : 'border-border/60 bg-background/80 text-muted-foreground hover:bg-muted/60 hover:text-foreground',
-                          )}
-                        >
-                          {b.title}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-                {sourcePathsForBook.length > 1 ? (
-                  <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/75">Source PDF</span>
-                    <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
-                      {sourcePathsForBook.map((p) => (
-                        <button
-                          key={p}
-                          type="button"
-                          onClick={() => setSourceFilePath(p)}
-                          className={cn(
-                            'max-w-full truncate rounded-full border px-2.5 py-0.5 text-left font-mono text-[11px] font-medium transition-colors',
-                            p === sourceFilePath
-                              ? 'border-primary/35 bg-primary/12 text-foreground'
-                              : 'border-border/60 bg-background/80 text-muted-foreground hover:bg-muted/60 hover:text-foreground',
-                          )}
-                          title={p}
-                        >
-                          {fileBasename(p)}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
             ) : null}
+            <div className="min-w-0 flex-1">
+              <h2 className="truncate text-sm font-semibold tracking-tight">
+                {selectedBook?.title ?? 'Book'}
+              </h2>
+              <p className="truncate font-mono text-[10px] text-muted-foreground" title={sourceFilePath || undefined}>
+                {sourceFilePath ? fileBasename(sourceFilePath) : 'No source file'}
+                {lastNumPages != null ? ` · ${lastNumPages} PDF pages` : ''}
+              </p>
+            </div>
           </div>
+          <StructureWizardStepper current={wizardStep} furthest={furthestStep} onSelect={goToWizardStep} />
         </div>
 
-        <div className="grid min-h-0 min-w-0 flex-1 gap-4 overflow-hidden xl:grid-cols-[minmax(0,1fr)_minmax(520px,44vw)]">
-          <div className="space-y-4 overflow-y-auto pr-1">
-            <div className="grid gap-4 rounded-xl border border-border/60 bg-muted/20 p-4 shadow-sm">
-              <div className="flex flex-wrap items-end gap-3">
-                <div className="grid flex-1 gap-1.5 sm:min-w-[7rem] sm:max-w-[10rem]">
-                  <Label className="text-xs font-medium text-muted-foreground">TOC from</Label>
-                  <Input type="number" min={1} className="h-9" value={tocFrom} onChange={(e) => setTocFrom(e.target.value)} />
-                </div>
-                <div className="grid flex-1 gap-1.5 sm:min-w-[7rem] sm:max-w-[10rem]">
-                  <Label className="text-xs font-medium text-muted-foreground">TOC to</Label>
-                  <Input type="number" min={1} className="h-9" value={tocTo} onChange={(e) => setTocTo(e.target.value)} />
-                </div>
-                <Button type="button" className="h-9 shrink-0" onClick={() => void runExtractWithAi()} disabled={!canRunAi}>
-                  {aiExtracting ? 'Extracting…' : 'Extract with AI'}
-                </Button>
-              </div>
-              <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                <input
-                  type="checkbox"
-                  className="h-3.5 w-3.5 rounded border-border"
-                  checked={stagedExtractionEnabled}
-                  onChange={(e) => setStagedExtractionEnabled(e.target.checked)}
-                />
-                Use staged extraction for long TOCs (safer, slower)
-                {recommendStagedExtraction ? <span className="rounded bg-amber-100/60 px-1.5 py-0.5 text-[10px] font-medium text-amber-900">recommended</span> : null}
-              </label>
-              <div className="grid gap-3 border-t border-border/40 pt-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-muted-foreground">Not counted PDF pages</Label>
-                  <Input
-                    className="h-9 font-mono text-xs"
-                    placeholder="e.g. 8,9, 120-122"
-                    value={notCountedPdfPagesInput}
-                    onChange={(e) => setNotCountedPdfPagesInput(e.target.value)}
-                    disabled={!aiExtractionCompleted}
-                  />
-                  <p className="text-[11px] leading-snug text-muted-foreground">
-                    Visible in preview but skipped for printed-page numbering.
-                  </p>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-muted-foreground">Hidden PDF pages</Label>
-                  <Input
-                    className="h-9 font-mono text-xs"
-                    placeholder="e.g. 12,13 or 120-121"
-                    value={hiddenPdfPagesInput}
-                    onChange={(e) => setHiddenPdfPagesInput(e.target.value)}
-                    disabled={!aiExtractionCompleted}
-                  />
-                  <p className="text-[11px] leading-snug text-muted-foreground">
-                    Removed from spread navigation in the reader. Page 1 (cover) is always omitted from previews but still counts as page 1 so the first shown spread can start at 2 (left).
-                  </p>
-                </div>
-              </div>
-              {selectedBook ? (
-                <div className="space-y-3 border-t border-border/40 pt-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-medium text-muted-foreground">
-                      Spread seam overlap (whole book)
-                    </Label>
-                    <input
-                      type="range"
-                      min={0}
-                      max={SPREAD_GUTTER_SLIDER_MAX}
-                      step={1}
-                      value={ratioToSliderPermille(bookSpreadGutterPullRatio)}
-                      onChange={(e) =>
-                        setBookSpreadGutterPullRatio(sliderPermilleToRatio(Number(e.target.value)))
-                      }
-                      className="h-2 w-full accent-[var(--brand-primary)]"
-                      aria-label="Book spread seam overlap"
-                    />
-                    <p className="text-[11px] tabular-nums text-muted-foreground">
-                      {(bookSpreadGutterPullRatio * 100).toFixed(1)}% ·{' '}
-                      {spreadSidePullPx(previewSpreadPageWidth, bookSpreadGutterPullRatio)}px at preview width
-                    </p>
-                  </div>
-                  {sourceFilePath ? (
-                    <div className="space-y-1.5">
-                      <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                        <input
-                          type="checkbox"
-                          className="h-3.5 w-3.5 rounded border-border"
-                          checked={fileGutterOverrideEnabled}
-                          onChange={(e) => {
-                            const enabled = e.target.checked
-                            setFileGutterOverrideEnabled(enabled)
-                            if (enabled) {
-                              setFileSpreadGutterPullRatio(
-                                selectedBook.spreadGutterByFile?.[sourceFilePath]
-                                  ?? bookSpreadGutterPullRatio,
-                              )
-                            }
-                          }}
-                        />
-                        Custom overlap for this PDF ({fileBasename(sourceFilePath)})
-                      </label>
-                      {fileGutterOverrideEnabled ? (
-                        <>
-                          <input
-                            type="range"
-                            min={0}
-                            max={SPREAD_GUTTER_SLIDER_MAX}
-                            step={1}
-                            value={ratioToSliderPermille(fileSpreadGutterPullRatio)}
-                            onChange={(e) =>
-                              setFileSpreadGutterPullRatio(sliderPermilleToRatio(Number(e.target.value)))
-                            }
-                            className="h-2 w-full accent-[var(--brand-primary)]"
-                            aria-label="PDF spread seam overlap override"
-                          />
-                          <p className="text-[11px] tabular-nums text-muted-foreground">
-                            This file: {(fileSpreadGutterPullRatio * 100).toFixed(1)}%
-                          </p>
-                        </>
-                      ) : (
-                        <p className="text-[11px] leading-snug text-muted-foreground">
-                          Units using this PDF inherit the book default unless overridden here.
-                        </p>
-                      )}
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-8 gap-1.5"
-                        disabled={!canAutoAdjustGutter}
-                        onClick={() => void runAutoGutterAdjustForPdf()}
-                      >
-                        <Wand2 className={cn('h-3.5 w-3.5', gutterAutoBusy && 'animate-pulse')} aria-hidden />
-                        {gutterAutoBusy ? 'Analyzing…' : 'Auto-adjust this PDF'}
-                      </Button>
-                    </div>
+        <div
+          className={cn(
+            'grid min-h-0 min-w-0 flex-1 gap-3 overflow-hidden',
+            isReviewLayout
+              ? 'xl:grid-cols-[minmax(0,1fr)_minmax(520px,44vw)]'
+              : 'grid-cols-1 grid-rows-[auto_minmax(0,1fr)] sm:grid-cols-[minmax(220px,280px)_minmax(0,1fr)] sm:grid-rows-none',
+          )}
+        >
+          <div
+            className={cn(
+              'min-h-0 overflow-y-auto',
+              isReviewLayout ? 'flex flex-col overflow-hidden pr-1' : 'max-h-[40vh] pr-0.5 sm:max-h-none',
+            )}
+          >
+            {wizardStep === 'toc' ? (
+              <StructureWizardStepPanel
+                stepNumber={1}
+                title="Find the table of contents"
+                description="We scan early PDF pages and suggest a range. Confirm in the preview, or edit From/To."
+                className="w-full"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="h-8"
+                    disabled={!previewUrl || tocDetectStatus === 'scanning'}
+                    onClick={() => {
+                      tocAutoDetectPathRef.current = sourceFilePath || null
+                      void runTocAutoDetect({ applyRange: true })
+                    }}
+                  >
+                    {tocDetectStatus === 'scanning' ? 'Scanning…' : 'Find contents pages'}
+                  </Button>
+                  {tocDetectSuggestion ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8"
+                      disabled={tocDetectStatus === 'scanning'}
+                      onClick={() => {
+                        setTocFrom(String(tocDetectSuggestion.from))
+                        setTocTo(String(tocDetectSuggestion.to))
+                        setPreviewPage(tocDetectSuggestion.from)
+                        setPreviewPageJumpDraft(String(tocDetectSuggestion.from))
+                        toast.success(
+                          `Using suggested PDF pages ${tocDetectSuggestion.from}–${tocDetectSuggestion.to}.`,
+                        )
+                      }}
+                    >
+                      Use suggestion ({tocDetectSuggestion.from}–{tocDetectSuggestion.to})
+                    </Button>
                   ) : null}
-                  <p className="text-[11px] leading-snug text-muted-foreground">
-                    Preview uses {(previewSpreadGutterPullRatio * 100).toFixed(1)}% overlap (
-                    {previewCluster.gutterPullPx}px at {previewSpreadPageWidth}px page width). Tune on spreads with art
-                    across the seam.
-                  </p>
                 </div>
-              ) : null}
-              {!aiExtractionCompleted ? (
-                <p className="text-[11px] text-muted-foreground">Run AI extraction once to unlock page alignment fields.</p>
-              ) : null}
-              {aiMessage ? <p className="rounded-md bg-background/60 px-2 py-1.5 font-mono text-[11px] text-muted-foreground">{aiMessage}</p> : null}
-            </div>
-
-            {lastNumPages != null ? (
-              <p className="text-[11px] font-medium tabular-nums text-muted-foreground">PDF page count: {lastNumPages}</p>
+                {tocDetectMessage ? (
+                  <p
+                    className={
+                      tocDetectStatus === 'failed'
+                        ? 'rounded-md border border-amber-500/30 bg-amber-50/80 px-2.5 py-1.5 text-[11px] leading-snug text-amber-950'
+                        : tocDetectStatus === 'ready'
+                          ? 'rounded-md border border-emerald-500/25 bg-emerald-50/70 px-2.5 py-1.5 text-[11px] leading-snug text-emerald-950'
+                          : 'text-[11px] leading-snug text-muted-foreground'
+                    }
+                  >
+                    {tocDetectMessage}
+                  </p>
+                ) : null}
+                <StructureWizardFieldRow>
+                  <StructureWizardField label="From" htmlFor="structure-toc-from">
+                    <Input
+                      id="structure-toc-from"
+                      type="number"
+                      min={1}
+                      className="h-8 tabular-nums"
+                      value={tocFrom}
+                      onChange={(e) => setTocFrom(e.target.value)}
+                    />
+                  </StructureWizardField>
+                  <span className="pb-2 text-sm text-muted-foreground" aria-hidden>
+                    –
+                  </span>
+                  <StructureWizardField label="To" htmlFor="structure-toc-to">
+                    <Input
+                      id="structure-toc-to"
+                      type="number"
+                      min={1}
+                      className="h-8 tabular-nums"
+                      value={tocTo}
+                      onChange={(e) => setTocTo(e.target.value)}
+                    />
+                  </StructureWizardField>
+                  <span className="pb-2 text-[11px] text-muted-foreground">PDF pages</span>
+                </StructureWizardFieldRow>
+                {recommendStagedExtraction ? (
+                  <label className="flex items-start gap-2 rounded-md border border-border/60 bg-muted/25 px-2.5 py-2 text-[11px] leading-snug text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-border"
+                      checked={stagedExtractionEnabled}
+                      onChange={(e) => setStagedExtractionEnabled(e.target.checked)}
+                    />
+                    <span>
+                      Staged extraction for long TOCs
+                      <span className="ml-1.5 rounded bg-amber-100/70 px-1 py-px text-[10px] font-medium text-amber-950">
+                        recommended
+                      </span>
+                    </span>
+                  </label>
+                ) : null}
+                {tocRangeDirtyAfterExtract ? (
+                  <p className="rounded-md border border-amber-500/30 bg-amber-50/80 px-2.5 py-1.5 text-[11px] leading-snug text-amber-950">
+                    TOC range changed since the last extract. Re-extract before saving.
+                  </p>
+                ) : null}
+              </StructureWizardStepPanel>
             ) : null}
 
-            {drafts?.length ? (
-              <div className="grid gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-                <div className="space-y-2 rounded-xl border border-border/50 bg-background/40 p-3">
-                  <div className="flex items-center justify-between gap-2 border-b border-border/40 pb-2">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Units</span>
+            {wizardStep === 'align' ? (
+              <StructureWizardStepPanel
+                stepNumber={2}
+                title="Align PDF to book pages"
+                description="Mark cover or roman pages so TOC page 6 is the real page 6. Use ghost / trash on the preview, or type lists."
+                className="w-full"
+                footer={
+                  <Button type="button" variant="ghost" size="sm" className="h-8 px-2" onClick={continueFromAlign}>
+                    Pages already match — skip
+                  </Button>
+                }
+              >
+                <div className="grid gap-3">
+                  <StructureWizardField
+                    label="Not counted"
+                    htmlFor="structure-not-counted"
+                    hint="Visible in preview, skipped for printed numbering."
+                    widthClassName="w-full"
+                  >
+                    <Input
+                      id="structure-not-counted"
+                      className="h-8 font-mono text-xs"
+                      placeholder="e.g. 8,9, 120-122"
+                      value={notCountedPdfPagesInput}
+                      onChange={(e) => setNotCountedPdfPagesInput(e.target.value)}
+                    />
+                  </StructureWizardField>
+                  <StructureWizardField
+                    label="Hidden"
+                    htmlFor="structure-hidden"
+                    hint="Removed from spread navigation. Cover (page 1) stays omitted."
+                    widthClassName="w-full"
+                  >
+                    <Input
+                      id="structure-hidden"
+                      className="h-8 font-mono text-xs"
+                      placeholder="e.g. 12,13 or 120-121"
+                      value={hiddenPdfPagesInput}
+                      onChange={(e) => setHiddenPdfPagesInput(e.target.value)}
+                    />
+                  </StructureWizardField>
+                </div>
+              </StructureWizardStepPanel>
+            ) : null}
+
+            {wizardStep === 'extract' ? (
+              <StructureWizardStepPanel
+                stepNumber={3}
+                title="Extract outline"
+                description={
+                  tocRange
+                    ? `AI reads TOC pages ${tocRange.from}–${tocRange.to} and builds units and sections.`
+                    : 'AI reads your TOC pages and builds units and sections.'
+                }
+                className="w-full"
+                footer={
+                  drafts.length > 0 && !tocRangeDirtyAfterExtract ? (
+                    <Button type="button" variant="ghost" size="sm" className="h-8 px-2" onClick={() => goToWizardStep('review')}>
+                      Continue to review
+                    </Button>
+                  ) : null
+                }
+              >
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="rounded-md border border-border/70 bg-muted/40 px-2 py-0.5 text-[11px] font-medium text-foreground">
+                    {tocExtractProfile === 'wonders_workshop'
+                      ? 'Wonders Workshop rules'
+                      : tocExtractProfile === 'wonders_literature'
+                        ? 'Wonders Literature rules'
+                        : 'Journeys lesson rules'}
+                  </span>
+                  {tocRange ? (
+                    <span className="text-[11px] tabular-nums text-muted-foreground">
+                      Pages {tocRange.from}–{tocRange.to}
+                    </span>
+                  ) : null}
+                </div>
+                {recommendStagedExtraction ? (
+                  <label className="flex items-start gap-2 text-[11px] leading-snug text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-border"
+                      checked={stagedExtractionEnabled}
+                      onChange={(e) => setStagedExtractionEnabled(e.target.checked)}
+                    />
+                    Staged extraction (safer for long TOCs)
+                  </label>
+                ) : null}
+                <Button
+                  type="button"
+                  className="h-9 w-full sm:w-auto sm:min-w-[10rem]"
+                  onClick={() => void runExtractWithAi()}
+                  disabled={!canRunAi}
+                >
+                  {aiExtracting ? 'Extracting…' : drafts.length ? 'Re-extract outline' : 'Extract outline'}
+                </Button>
+                {aiMessage ? (
+                  <p className="rounded-md border border-border/50 bg-muted/30 px-2.5 py-1.5 font-mono text-[11px] leading-snug text-muted-foreground">
+                    {aiMessage}
+                  </p>
+                ) : null}
+                {tocRangeDirtyAfterExtract ? (
+                  <p className="text-[11px] leading-snug text-amber-800">
+                    TOC range changed — run extract again before saving.
+                  </p>
+                ) : null}
+              </StructureWizardStepPanel>
+            ) : null}
+
+            {wizardStep === 'review' && drafts?.length ? (
+              <div className="grid min-h-0 flex-1 gap-3 overflow-hidden lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+                <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border/70 bg-background shadow-sm">
+                  <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/55 bg-muted/35 px-3 py-2">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                        Step 4 of 4
+                      </p>
+                      <span className="text-[13px] font-semibold text-foreground">Units</span>
+                    </div>
                     <div className="flex items-center gap-1.5">
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="h-8"
+                        className="h-7 text-xs"
                         onClick={mergeSelectedUnits}
                         disabled={selectedUnitIndicesForMerge.size < 2}
                       >
-                        Merge selected
+                        Merge
                       </Button>
-                      <Button type="button" variant="outline" size="sm" className="h-8" onClick={addUnit}>Add unit</Button>
+                      <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={addUnit}>
+                        Add
+                      </Button>
                     </div>
                   </div>
+                  <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
                   {drafts.map((draft, unitIndex) => {
                     const range = pageRangeForIndex(drafts, unitIndex, 1, lastNumPages)
                     const thumbEffective = range.start ?? 1
@@ -1524,14 +1788,18 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
                       </div>
                     )
                   })}
+                  </div>
                 </div>
 
-                <div className="space-y-2 rounded-xl border border-border/50 bg-background/40 p-3">
-                  <div className="flex items-start justify-between gap-3 border-b border-border/40 pb-2">
+                <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border/70 bg-background shadow-sm">
+                  <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border/55 bg-muted/35 px-3 py-2">
                     <div className="min-w-0 space-y-0.5">
-                      <p className="text-xs font-medium text-foreground">
+                      <p className="text-[13px] font-semibold text-foreground">
                         Unit {structureUnitIdx + 1}
-                        <span className="font-normal text-muted-foreground"> · {formatPageSpan(selectedUnitPageRange.start, selectedUnitPageRange.end)}</span>
+                        <span className="font-normal text-muted-foreground">
+                          {' '}
+                          · {formatPageSpan(selectedUnitPageRange.start, selectedUnitPageRange.end)}
+                        </span>
                       </p>
                       {selectedUnitCoverRange.start != null && selectedUnitCoverRange.end != null ? (
                         <p className="text-[11px] leading-snug text-muted-foreground">
@@ -1539,9 +1807,17 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
                         </p>
                       ) : null}
                     </div>
-                    <Button type="button" size="sm" variant="secondary" className="h-8 shrink-0" onClick={() => addLesson(structureUnitIdx)}>Add lesson</Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      className="h-7 shrink-0 text-xs"
+                      onClick={() => addLesson(structureUnitIdx)}
+                    >
+                      Add lesson
+                    </Button>
                   </div>
-                  <div className="space-y-2">
+                  <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-2">
                     {(lessonsByUnitIndex[structureUnitIdx] ?? []).map((lesson, lessonIndex, lessons) => {
                       const lessonRange = pageRangeForIndex(lessons, lessonIndex, selectedUnitPageRange.start, selectedUnitPageRange.end)
                       const isExpanded = openLessonId === lesson.id
@@ -1608,17 +1884,23 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
                                   const partStartFieldId = `part-start-${part.id}`
                                   const partKind = partVisualKindFromStructureTag(part, part.title, partIndex)
                                   const isStory = partKind === 'longStory' || partKind === 'shortStory'
-                                  const tocAnchored =
-                                    typeof part.startPageHint === 'number' || typeof lesson.startPageHint === 'number'
-                                  const partStartPdf =
-                                    partRange.start != null
-                                      ? tocAnchored
-                                        ? resolveEffectiveAnchorToPdfPage(partRange.start, alignmentRuntime) ??
-                                          partRange.start
-                                        : partRange.start
-                                      : null
-                                  const storyThumbPage =
-                                    isStory && partStartPdf != null ? clampPreviewPage(Math.floor(partStartPdf) + 1) : null
+                                  const activeDraft = drafts?.[structureUnitIdx]
+                                  const storyThumbPage = isStory
+                                    ? resolveStoryTitleThumbPdfPage({
+                                        book: selectedBook ?? { id: bookId, title: '', units: [] },
+                                        unit: {
+                                          id: activeDraft?.id ?? `unit-${structureUnitIdx}`,
+                                          title: activeDraft?.title ?? '',
+                                          filePath: activeDraft?.filePath ?? sourceFilePath ?? '',
+                                          startPageHint: activeDraft?.startPageHint,
+                                        },
+                                        lesson,
+                                        part,
+                                        partRangeStart: partRange.start,
+                                        totalPdfPages: previewNumPages,
+                                        alignmentRuntime,
+                                      })
+                                    : null
                                   const PartIcon = (() => {
                                     switch (partKind) {
                                       case 'vocabulary': return Languages
@@ -1755,163 +2037,170 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
                   </div>
               </div>
             ) : null}
+
+            {wizardStep === 'review' && !drafts.length ? (
+              <StructureWizardStepPanel
+                stepNumber={4}
+                title="No outline yet"
+                description="Go back to Extract and run the outline first."
+                footer={
+                  <Button type="button" variant="outline" size="sm" className="h-8" onClick={() => goToWizardStep('extract')}>
+                    Back to extract
+                  </Button>
+                }
+              >
+                <p className="text-[12px] text-muted-foreground">Nothing to edit until an outline exists.</p>
+              </StructureWizardStepPanel>
+            ) : null}
           </div>
 
-          <div className="flex min-h-0 flex-col overflow-y-auto rounded-xl border border-border/60 bg-muted/10 p-3 shadow-inner">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-border/70 bg-muted/15 p-1.5 shadow-inner sm:flex-auto">
             {previewUrl && pdfReady ? (
-              <div className="flex min-h-0 flex-1 flex-col gap-3">
-                <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-border/50 bg-background/70 px-2 py-1.5">
-                  <div className="flex items-center gap-2">
+              <div className="flex min-h-0 flex-1 flex-col gap-1">
+                <div className="flex shrink-0 flex-wrap items-center gap-1 rounded-md border border-border/50 bg-background/80 px-1.5 py-0.5">
+                  <Button
+                    type="button"
+                    variant={notCountedPdfPages.includes(previewLeftPage) ? 'secondary' : 'outline'}
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={toggleCurrentPageIgnored}
+                    aria-label={`Toggle not-counted for left page ${previewLeftPage}`}
+                    title={`Not counted · left page ${previewLeftPage}`}
+                    disabled={!canEditAlignment}
+                  >
+                    <Ghost size={14} />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={hiddenPdfPages.includes(previewLeftPage) ? 'secondary' : 'outline'}
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => toggleHiddenPage(previewLeftPage)}
+                    aria-label={`Toggle hidden for left page ${previewLeftPage}`}
+                    title={`Hidden · left page ${previewLeftPage}`}
+                    disabled={!canEditAlignment}
+                  >
+                    <Trash2 size={14} />
+                  </Button>
+                  {previewRightPage != null ? (
                     <Button
                       type="button"
-                      variant={notCountedPdfPages.includes(previewLeftPage) ? 'secondary' : 'outline'}
+                      variant={notCountedPdfPages.includes(previewRightPage) ? 'secondary' : 'outline'}
                       size="icon"
-                      onClick={toggleCurrentPageIgnored}
-                      aria-label={`Toggle not-counted for left page ${previewLeftPage}`}
-                      title={`Toggle not-counted for left page ${previewLeftPage}`}
-                      disabled={!aiExtractionCompleted}
+                      className="h-7 w-7"
+                      onClick={() => toggleIgnoredPage(previewRightPage)}
+                      aria-label={`Toggle not-counted for right page ${previewRightPage}`}
+                      title={`Not counted · right page ${previewRightPage}`}
+                      disabled={!canEditAlignment}
                     >
-                      <Ghost size={16} />
+                      <Ghost size={14} />
                     </Button>
+                  ) : null}
+                  {previewRightPage != null ? (
                     <Button
                       type="button"
-                      variant={hiddenPdfPages.includes(previewLeftPage) ? 'secondary' : 'outline'}
+                      variant={hiddenPdfPages.includes(previewRightPage) ? 'secondary' : 'outline'}
                       size="icon"
-                      onClick={() => toggleHiddenPage(previewLeftPage)}
-                      aria-label={`Toggle hidden for left page ${previewLeftPage}`}
-                      title={`Toggle hidden for left page ${previewLeftPage}`}
-                      disabled={!aiExtractionCompleted}
+                      className="h-7 w-7"
+                      onClick={() => toggleHiddenPage(previewRightPage)}
+                      aria-label={`Toggle hidden for right page ${previewRightPage}`}
+                      title={`Hidden · right page ${previewRightPage}`}
+                      disabled={!canEditAlignment}
                     >
-                      <Trash2 size={16} />
+                      <Trash2 size={14} />
                     </Button>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {previewRightPage != null ? (
-                      <Button
-                        type="button"
-                        variant={notCountedPdfPages.includes(previewRightPage) ? 'secondary' : 'outline'}
-                        size="icon"
-                        onClick={() => toggleIgnoredPage(previewRightPage)}
-                        aria-label={`Toggle not-counted for right page ${previewRightPage}`}
-                        title={`Toggle not-counted for right page ${previewRightPage}`}
-                        disabled={!aiExtractionCompleted}
-                      >
-                        <Ghost size={16} />
-                      </Button>
-                    ) : null}
-                    {previewRightPage != null ? (
-                      <Button
-                        type="button"
-                        variant={hiddenPdfPages.includes(previewRightPage) ? 'secondary' : 'outline'}
-                        size="icon"
-                        onClick={() => toggleHiddenPage(previewRightPage)}
-                        aria-label={`Toggle hidden for right page ${previewRightPage}`}
-                        title={`Toggle hidden for right page ${previewRightPage}`}
-                        disabled={!aiExtractionCompleted}
-                      >
-                        <Trash2 size={16} />
-                      </Button>
-                    ) : null}
-                  </div>
-                </div>
-                <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
-                  <span className="text-xs font-medium tabular-nums text-muted-foreground">
-                    Preview {previewRightPage != null
+                  ) : null}
+                  <span className="mx-0.5 hidden h-4 w-px bg-border sm:block" aria-hidden />
+                  <span className="min-w-0 flex-1 truncate text-[11px] font-medium tabular-nums text-muted-foreground">
+                    {previewRightPage != null
                       ? `${previewLeftEffective ?? '—'}–${previewRightEffective ?? '—'}`
                       : `${previewLeftEffective ?? '—'}`}
                     {previewNumPages != null ? (
                       <span className="text-muted-foreground/70"> · {alignmentRuntime.effectiveTotal} counted</span>
                     ) : null}
                   </span>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {drafts.length ? (
-                      <>
+                  {drafts.length > 0 ? (
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => setUnitCoverFromPreview(structureUnitIdx, previewLeftPage)}
+                        title={`Set unit ${structureUnitIdx + 1} thumbnail from left page`}
+                        aria-label={`Set unit ${structureUnitIdx + 1} thumbnail from left page`}
+                      >
+                        <BookMarked size={14} />
+                      </Button>
+                      {previewRightPage != null ? (
                         <Button
                           type="button"
                           variant="outline"
                           size="icon"
-                          className="h-8 w-8"
-                          onClick={() => setUnitCoverFromPreview(structureUnitIdx, previewLeftPage)}
-                          title={`Set unit ${structureUnitIdx + 1} cover to left page`}
-                          aria-label="Set unit cover from left page"
+                          className="h-7 w-7"
+                          onClick={() => setUnitCoverFromPreview(structureUnitIdx, previewRightPage)}
+                          title={`Set unit ${structureUnitIdx + 1} thumbnail from right page`}
+                          aria-label={`Set unit ${structureUnitIdx + 1} thumbnail from right page`}
                         >
                           <BookMarked size={14} />
                         </Button>
-                        {previewRightPage != null ? (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => setUnitCoverFromPreview(structureUnitIdx, previewRightPage)}
-                            title={`Set unit ${structureUnitIdx + 1} cover to right page`}
-                            aria-label="Set unit cover from right page"
-                          >
-                            <BookMarked size={14} />
-                          </Button>
-                        ) : null}
-                      </>
-                    ) : null}
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-8"
-                      onClick={() => goToPreviewSpread(-1)}
-                      disabled={visiblePreviewPages.indexOf(previewLeftPage) <= 0}
-                      aria-label="Previous preview spread"
-                    >
-                      <ChevronLeft size={16} />
-                      Prev
-                    </Button>
-                    <Input
-                      type="text"
-                      inputMode="numeric"
-                      className="h-8 w-[3.25rem] px-1 text-center font-mono text-xs tabular-nums"
-                      value={previewPageJumpDraft}
-                      onChange={(e) => setPreviewPageJumpDraft(e.target.value)}
-                      onFocus={() => setPreviewPageJumpFocused(true)}
-                      onBlur={() => {
-                        setPreviewPageJumpFocused(false)
-                        commitPreviewPageJump()
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault()
-                          ;(e.target as HTMLInputElement).blur()
-                        }
-                      }}
-                      disabled={!visiblePreviewPages.length}
-                      aria-label="Go to counted page"
-                      title="Counted page (same as Preview label). Enter to go."
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-8"
-                      onClick={() => goToPreviewSpread(1)}
-                      disabled={
-                        visiblePreviewPages.length <= 1 ||
-                        visiblePreviewPages.indexOf(previewLeftPage) >= visiblePreviewPages.length - 1
+                      ) : null}
+                    </>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 gap-0.5 px-2"
+                    onClick={() => goToPreviewSpread(-1)}
+                    disabled={visiblePreviewPages.length <= 1 || visiblePreviewPages.indexOf(previewLeftPage) <= 0}
+                    aria-label="Previous preview spread"
+                  >
+                    <ChevronLeft size={14} />
+                    Prev
+                  </Button>
+                  <Input
+                    className="h-7 w-12 px-1 text-center text-xs tabular-nums"
+                    value={previewPageJumpDraft}
+                    onChange={(e) => setPreviewPageJumpDraft(e.target.value)}
+                    onBlur={() => commitPreviewPageJump()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        ;(e.target as HTMLInputElement).blur()
                       }
-                      aria-label="Next preview spread"
-                    >
-                      Next
-                      <ChevronRight size={16} />
-                    </Button>
-                  </div>
+                    }}
+                    disabled={!visiblePreviewPages.length}
+                    aria-label="Go to counted page"
+                    title="Counted page. Enter to go."
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 gap-0.5 px-2"
+                    onClick={() => goToPreviewSpread(1)}
+                    disabled={
+                      visiblePreviewPages.length <= 1 ||
+                      visiblePreviewPages.indexOf(previewLeftPage) >= visiblePreviewPages.length - 1
+                    }
+                    aria-label="Next preview spread"
+                  >
+                    Next
+                    <ChevronRight size={14} />
+                  </Button>
                 </div>
                 <PdfDocument
                   file={previewUrl}
                   options={PDF_DOCUMENT_OPTIONS}
                   onLoadSuccess={onPreviewDocumentLoadSuccess}
-                  loading={<p className="p-6 text-sm text-muted-foreground">Loading PDF preview...</p>}
-                  error={<p className="p-6 text-sm text-[var(--brand-red)]">Could not open this PDF preview.</p>}
+                  loading={<p className="p-4 text-sm text-muted-foreground">Loading PDF preview...</p>}
+                  error={<p className="p-4 text-sm text-[var(--brand-red)]">Could not open this PDF preview.</p>}
+                  className="flex min-h-0 flex-1 flex-col"
                 >
                   <div
-                    ref={previewViewportRef}
-                    className="flex min-h-[280px] flex-1 items-center justify-center overflow-hidden rounded-lg bg-[var(--surface-2)] p-2"
+                    ref={attachPreviewViewport}
+                    className="flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-md bg-[var(--surface-2)] p-1.5"
                   >
                     <div
                       className="relative flex w-max max-w-full items-center justify-center leading-none"
@@ -1923,7 +2212,9 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
                       <SpreadPageCluster
                         spreadOverlayWidthPx={previewCluster.spreadOverlayWidthPx}
                         pageCanvasHeightPx={previewCluster.pageCanvasHeightPx}
+                        spreadPageWidthPx={previewSpreadPageWidth}
                         gutterPullPx={previewCluster.gutterPullPx}
+                        showBookFrame={false}
                         leftPage={
                           <PdfPage
                             pageNumber={previewLeftPage}
@@ -1950,9 +2241,9 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
                 </PdfDocument>
               </div>
             ) : (
-              <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-muted-foreground/25 bg-muted/15 p-8 text-center">
+              <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1.5 rounded-md border border-dashed border-muted-foreground/25 bg-muted/20 px-4 py-6 text-center">
                 <p className="text-sm font-medium text-muted-foreground">No PDF preview</p>
-                <p className="max-w-sm text-xs leading-relaxed text-muted-foreground/90">
+                <p className="max-w-xs text-xs leading-snug text-muted-foreground/90">
                   {!sourceFilePath
                     ? 'Add at least one unit with a PDF file to this book so a source path exists.'
                     : !pdfReady
@@ -1964,18 +2255,94 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
           </div>
         </div>
 
-        <DialogFooter className="gap-2 border-t border-border/50 pt-2 sm:justify-end">
-          {selectedBook && bookHasTocMapping(selectedBook) && (
-            <Button type="button" variant="outline" onClick={async () => {
-              const nextPayload: BookLibraryPayload = { books: library.books.map((b) => (b.id === selectedBook.id ? stripBookTocMapping(selectedBook) : b)) }
-              const res = await fetch('/api/books/manifest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(nextPayload) })
-              const body = (await res.json()) as BookLibraryPayload
-              if (res.ok) onManifestSaved(body)
-            }}>Clear structure</Button>
-          )}
-          <Button type="button" onClick={saveManifest} disabled={saving || !drafts?.length}>Save structure</Button>
+        <DialogFooter className="gap-2 border-t border-border/50 pt-2 sm:justify-between">
+          <div className="flex flex-wrap gap-2">
+            {wizardStep !== 'toc' ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  const order: StructureWizardStep[] = ['toc', 'align', 'extract', 'review']
+                  const idx = order.indexOf(wizardStep)
+                  if (idx > 0) setWizardStep(order[idx - 1]!)
+                }}
+              >
+                Back
+              </Button>
+            ) : null}
+            {wizardStep === 'review' && selectedBook && bookHasTocMapping(selectedBook) ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={async () => {
+                  const nextPayload: BookLibraryPayload = {
+                    books: library.books.map((b) =>
+                      b.id === selectedBook.id ? stripBookTocMapping(selectedBook) : b,
+                    ),
+                  }
+                  const res = await fetch('/api/books/manifest', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(nextPayload),
+                  })
+                  const body = (await res.json()) as BookLibraryPayload
+                  if (res.ok) {
+                    onManifestSaved(body, { bookId: selectedBook.id })
+                    setDrafts([])
+                    setLessonsByUnitIndex([])
+                    setWizardStep('toc')
+                    setFurthestStep('toc')
+                    setTocRangeAtExtract(null)
+                  }
+                }}
+              >
+                Clear structure
+              </Button>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap justify-end gap-2">
+            {wizardStep === 'toc' ? (
+              <Button type="button" onClick={continueFromToc} disabled={!tocRange}>
+                Continue to align
+              </Button>
+            ) : null}
+            {wizardStep === 'align' ? (
+              <Button type="button" onClick={continueFromAlign}>
+                Continue to extract
+              </Button>
+            ) : null}
+            {wizardStep === 'extract' ? (
+              <Button type="button" onClick={() => void runExtractWithAi()} disabled={!canRunAi}>
+                {aiExtracting ? 'Extracting…' : drafts.length ? 'Re-extract outline' : 'Extract outline'}
+              </Button>
+            ) : null}
+            {wizardStep === 'review' ? (
+              <Button type="button" onClick={saveManifest} disabled={saving || !drafts?.length || tocRangeDirtyAfterExtract}>
+                {saving ? 'Saving…' : 'Save structure'}
+              </Button>
+            ) : null}
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <ManualStoryReconcileDialog
+      open={reconcileOpen}
+      bookTitle={selectedBook?.title ?? 'This book'}
+      candidates={reconcileCandidates}
+      busy={reconcileBusy}
+      onOpenChange={(next) => {
+        if (reconcileBusy) return
+        setReconcileOpen(next)
+      }}
+      onSkip={() => {
+        setReconcileOpen(false)
+        toast.message('You can still merge or delete manuals from Stories later.')
+      }}
+      onConfirm={(decisions) => {
+        void applyManualStoryReconcile(decisions)
+      }}
+    />
+    </>
   )
 }

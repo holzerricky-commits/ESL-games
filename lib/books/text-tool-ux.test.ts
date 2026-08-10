@@ -1,15 +1,27 @@
 import { describe, expect, it } from 'vitest'
 import {
+  isBookAnnotationTextCommitShortcut,
   shouldBookAnnotationLabelCapturePointer,
   shouldShowBookAnnotationTextarea,
 } from './text-tool-ux'
 
 describe('shouldBookAnnotationLabelCapturePointer', () => {
-  it('captures pointer for committed plain text while the text tool is active', () => {
+  it('lets committed plain text click through while the text tool is active', () => {
     expect(
       shouldBookAnnotationLabelCapturePointer({
         isSticky: false,
         showTextarea: false,
+        textToolActive: true,
+        selectMode: false,
+      }),
+    ).toBe(false)
+  })
+
+  it('captures pointer while the text edit session is open', () => {
+    expect(
+      shouldBookAnnotationLabelCapturePointer({
+        isSticky: false,
+        showTextarea: true,
         textToolActive: true,
         selectMode: false,
       }),
@@ -23,6 +35,43 @@ describe('shouldBookAnnotationLabelCapturePointer', () => {
         showTextarea: false,
         textToolActive: true,
         selectMode: true,
+      }),
+    ).toBe(false)
+  })
+})
+
+describe('isBookAnnotationTextCommitShortcut', () => {
+  it('commits on Ctrl+Enter or Cmd+Enter only', () => {
+    expect(
+      isBookAnnotationTextCommitShortcut({
+        key: 'Enter',
+        ctrlKey: true,
+        metaKey: false,
+        altKey: false,
+      }),
+    ).toBe(true)
+    expect(
+      isBookAnnotationTextCommitShortcut({
+        key: 'Enter',
+        ctrlKey: false,
+        metaKey: true,
+        altKey: false,
+      }),
+    ).toBe(true)
+    expect(
+      isBookAnnotationTextCommitShortcut({
+        key: 'Enter',
+        ctrlKey: false,
+        metaKey: false,
+        altKey: false,
+      }),
+    ).toBe(false)
+    expect(
+      isBookAnnotationTextCommitShortcut({
+        key: 'Enter',
+        ctrlKey: true,
+        metaKey: false,
+        altKey: true,
       }),
     ).toBe(false)
   })

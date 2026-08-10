@@ -24,6 +24,11 @@ export interface PageViewProps {
   onSlotPixelsReady?: (pageNumber: number) => void
   className?: string
   style?: CSSProperties
+  bookTextSelectActive?: boolean
+  pageHasSelectableText?: boolean
+  screenScale?: number
+  /** When false, rectangular bare pages (no bulge, stacks, or page chrome shadow). */
+  showBookFrame?: boolean
   children: ReactNode
 }
 
@@ -48,6 +53,10 @@ export function PageView({
   onSlotPixelsReady,
   className,
   style,
+  bookTextSelectActive = false,
+  pageHasSelectableText = false,
+  screenScale = 1,
+  showBookFrame = true,
   children,
 }: PageViewProps) {
   const localCaptureRef = useRef<HTMLDivElement | null>(null)
@@ -60,39 +69,53 @@ export function PageView({
 
   const warmHidden = slotRole === 'hidden'
   const layoutStyle = useMemo((): CSSProperties => {
+    const rigidPageBox: CSSProperties = {
+      boxSizing: 'border-box',
+      width: spreadPageWidth,
+      minWidth: spreadPageWidth,
+      maxWidth: spreadPageWidth,
+      flexShrink: 0,
+      flexGrow: 0,
+    }
+
     if (warmHidden) {
       return {
         position: 'absolute',
         left: -9999,
         top: 0,
-        width: spreadPageWidth,
         minHeight: pageCanvasHeightPx,
         visibility: 'hidden',
         pointerEvents: 'none',
+        ...rigidPageBox,
         ...style,
       }
     }
     if (slotRole === 'right') {
       return {
         position: 'relative',
-        flexShrink: 0,
-        marginLeft: style?.marginLeft,
+        zIndex: 0,
+        ...rigidPageBox,
         ...style,
       }
     }
     if (slotRole === 'left') {
       return {
         position: 'relative',
-        flexShrink: 0,
+        zIndex: 1,
+        ...rigidPageBox,
         ...style,
       }
     }
-    return style ?? {}
+    return { ...rigidPageBox, ...(style ?? {}) }
   }, [warmHidden, slotRole, spreadPageWidth, pageCanvasHeightPx, style])
 
   return (
     <div
-      className={cn(warmHidden && 'overflow-hidden', className)}
+      className={cn(
+        warmHidden && 'overflow-hidden',
+        (slotRole === 'left' || slotRole === 'right') && 'overflow-visible',
+        className,
+      )}
       style={layoutStyle}
       aria-hidden={warmHidden ? true : undefined}
       data-page-view={pageNumber}
@@ -111,6 +134,14 @@ export function PageView({
         captureRef={resolvedCaptureRef}
         onSlotPixelsReady={handleSlotPixelsReady}
         confirmSlotPixelsReady={isActiveSpread ? confirmSlotPixelsReady : false}
+        pageBulgeSide={
+          showBookFrame && (slotRole === 'left' || slotRole === 'right')
+            ? slotRole
+            : undefined
+        }
+        bookTextSelectActive={bookTextSelectActive}
+        pageHasSelectableText={pageHasSelectableText}
+        screenScale={screenScale}
       >
         {isActiveSpread ? children : null}
       </ReaderPageSlot>

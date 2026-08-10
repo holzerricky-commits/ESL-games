@@ -48,6 +48,11 @@ import {
 import { createRafCoalescer } from '@/lib/books/raf-coalesce'
 import { stampPenStrokeOnCommit } from '@/lib/books/annotation-pen-auto-group'
 import { attachPenInkPatternPhase } from '@/lib/books/pen-ink'
+import { inkEraserLivePreviewEnabled } from '@/lib/books/feature-flags'
+import {
+  markReaderPrefetchInkPointerDown,
+  markReaderPrefetchInkPointerUp,
+} from '@/lib/books/reader-prefetch-ink-coordinator'
 import { clientToSpreadNorm } from '@/lib/books/spread-canvas-coords'
 import {
   clientToWhiteboardDocumentNorm,
@@ -382,6 +387,17 @@ function liveMarkerDraftFromStroke(draft: StrokeAnnotationCommand): LiveStrokeDr
   }
 }
 
+function liveEraserLineDraftFromStroke(
+  draft: StrokeAnnotationCommand,
+): LiveEraserLineDraft | null {
+  if (draft.tool !== 'eraser-line' || draft.points.length < 2) return null
+  return {
+    tool: 'eraser-line',
+    points: draft.points.map((p) => [p[0], p[1]] as [number, number]),
+    widthScale: draft.widthScale,
+  }
+}
+
 /** Live pen/marker/eraser: one continuous stroke on the spread overlay; eraser-line still splits to pages. */
 function pushLiveStrokeDraftsForSpread(
   draft: StrokeAnnotationCommand,
@@ -397,6 +413,7 @@ function pushLiveStrokeDraftsForSpread(
   markerLiveOnPageMultiplyLayers: boolean,
   spreadSessionInkActive: boolean,
   onSpreadMarkerStrokeDraftChange?: (draft: LiveStrokeDraft | null) => void,
+  onSpreadEraserLineDraftChange?: (draft: LiveEraserLineDraft | null) => void,
 ): void {
   if (spreadSessionInkActive) {
     onSpreadMarkerStrokeDraftChange?.(
@@ -492,6 +509,8 @@ export interface BookSpreadStrokeOverlayProps {
   onSpreadEraserLineDraftChange?: (draft: LiveEraserLineDraft | null) => void
   /** Live marker preview on session multiply stack (crossings darken while dragging). */
   onSpreadMarkerStrokeDraftChange?: (draft: LiveStrokeDraft | null) => void
+  /** Close rail tool settings when the user starts drawing on the spread. */
+  onAnnotationToolUseOnSpread?: () => void
 }
 
 export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, BookSpreadStrokeOverlayProps>(
@@ -542,6 +561,7 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
       spreadSessionClear,
       onSpreadEraserLineDraftChange,
       onSpreadMarkerStrokeDraftChange,
+      onAnnotationToolUseOnSpread,
     },
     ref,
   ) {
@@ -595,6 +615,19 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
     )
 
     const gestureRef = useRef<'stroke' | 'two' | null>(null)
+    const inkPrefetchPointerActiveRef = useRef(false)
+
+    const markInkPrefetchPointerDownOnce = useCallback(() => {
+      if (inkPrefetchPointerActiveRef.current) return
+      inkPrefetchPointerActiveRef.current = true
+      markReaderPrefetchInkPointerDown()
+    }, [])
+
+    const markInkPrefetchPointerUpOnce = useCallback(() => {
+      if (!inkPrefetchPointerActiveRef.current) return
+      inkPrefetchPointerActiveRef.current = false
+      markReaderPrefetchInkPointerUp()
+    }, [])
     const straightStrokeAxisRef = useRef<StraightStrokeAxis | null>(null)
     const holdStraightRef = useRef(createStrokeHoldStraightTracker())
     const holdShapeDraftRef = useRef<HoldShapeDraft | null>(null)
@@ -718,9 +751,11 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
         markerLiveOnPageMultiplyLayers,
         spreadSessionMode,
         onSpreadMarkerStrokeDraftChange,
+        onSpreadEraserLineDraftChange,
       )
     }, [
       leftAnnRef,
+      onSpreadEraserLineDraftChange,
       onSpreadMarkerStrokeDraftChange,
       rightAnnRef,
       spreadCanvasHeightPx,
@@ -824,6 +859,7 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
           markerLiveOnPageMultiplyLayers,
           spreadSessionMode,
           onSpreadMarkerStrokeDraftChange,
+          onSpreadEraserLineDraftChange,
         )
         return
       }
@@ -1417,16 +1453,9 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
         )
         if (spreadSessionMode) {
           onSpreadMarkerStrokeDraftChange?.(null)
-          const pts = draft.points
-          onSpreadEraserLineDraftChange?.(
-            pts.length >= 2
-              ? {
-                  tool: 'eraser-line',
-                  points: pts.map((p) => [p[0], p[1]] as [number, number]),
-                  widthScale: draft.widthScale,
-                }
-              : null,
-          )
+          if (inkEraserLivePreviewEnabled) {
+            onSpreadEraserLineDraftChange?.(liveEraserLineDraftFromStroke(draft))
+          }
           return
         }
         const leftEl = leftPageCaptureRef.current
@@ -1487,6 +1516,7 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
       }
 
       if (strokeTool) {
+        onAnnotationToolUseOnSpread?.()
         gestureRef.current = 'stroke'
         straightStrokeAxisRef.current = null
         holdShapeDraftRef.current = null
@@ -1500,11 +1530,13 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
         draftStrokeRef.current = makeStrokeDraft(strokeTool, p0, [e.clientX, e.clientY])
         e.preventDefault()
         e.currentTarget.setPointerCapture(e.pointerId)
+        markInkPrefetchPointerDownOnce()
         flushLiveSpreadStrokePaint()
         return
       }
 
       if (isTwoPointShapeMode(annotationMode)) {
+        onAnnotationToolUseOnSpread?.()
         gestureRef.current = 'two'
         clearLiveEraserDraftsBothPages(leftAnnRef, rightAnnRef)
         clearLiveStrokeDraftsBothPages(leftAnnRef, rightAnnRef)
@@ -1514,6 +1546,7 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
         twoDraftRef.current = { kind: annotationMode, anchor: p0, current: p0 }
         e.preventDefault()
         e.currentTarget.setPointerCapture(e.pointerId)
+        markInkPrefetchPointerDownOnce()
         syncSpreadShapePreview()
         return
       }
@@ -1585,10 +1618,15 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
         straightStrokeAxis: straightStrokeAxisRef.current,
       })
 
+      if (spreadSessionMode && draft.tool === 'eraser-line' && inkEraserLivePreviewEnabled) {
+        onSpreadEraserLineDraftChange?.(liveEraserLineDraftFromStroke(draft))
+      }
+
       scheduleLiveSpreadStrokePaint()
     }
 
     function onPointerUp(e: React.PointerEvent<HTMLDivElement>) {
+      markInkPrefetchPointerUpOnce()
       if (e.currentTarget.hasPointerCapture(e.pointerId)) {
         e.currentTarget.releasePointerCapture(e.pointerId)
       }
@@ -1664,6 +1702,7 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
     }
 
     function onPointerCancel(e: React.PointerEvent<HTMLDivElement>) {
+      markInkPrefetchPointerUpOnce()
       if (e.currentTarget.hasPointerCapture(e.pointerId)) {
         e.currentTarget.releasePointerCapture(e.pointerId)
       }

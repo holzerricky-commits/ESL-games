@@ -1,8 +1,10 @@
 import type { AnnotationCommand } from '@/lib/books/annotation-command-types'
+import { remapAnnotationCommandsForContentHeightChange } from '@/lib/books/remap-annotation-commands-content-height'
 import type { WhiteboardSessionDocument } from '@/lib/books/whiteboard-session-types'
 import {
   createLessonBoardPage,
   getLessonBoardActivePage,
+  lessonBoardMaxContentHeightPx,
   lessonBoardMinContentHeightPx,
   syncLessonBoardActivePageToCommands,
   syncLessonBoardCommandsToActivePage,
@@ -27,10 +29,26 @@ export function setLessonBoardActivePageContentHeight(
   contentHeightPx: number,
 ): WhiteboardSessionDocument {
   const synced = syncLessonBoardCommandsToActivePage(doc)
+  const active = getLessonBoardActivePage(synced.pages, synced.activePageId)
+  if (!active) return synced
+  const nextHeight = Math.max(1, Math.round(contentHeightPx))
+  if (nextHeight === active.contentHeightPx) return synced
+
+  let commands = synced.commands
+  if (nextHeight !== active.contentHeightPx && active.contentHeightPx > 0 && commands.length > 0) {
+    commands = remapAnnotationCommandsForContentHeightChange(
+      commands,
+      active.contentHeightPx,
+      nextHeight,
+    )
+  }
+
   const pages = synced.pages.map((p) =>
-    p.id === synced.activePageId ? { ...p, contentHeightPx } : p,
+    p.id === synced.activePageId
+      ? { ...p, contentHeightPx: nextHeight, commands: [...commands] }
+      : p,
   )
-  return { ...synced, pages }
+  return { ...synced, pages, commands }
 }
 
 export function setLessonBoardActivePageId(
@@ -112,7 +130,7 @@ export function lessonBoardActivePageSummary(
   return { index, total, page }
 }
 
-/** Grow runway height from commands on the active page only. */
+/** Grow runway height from commands on the active page only (not from empty scroll). */
 export function growLessonBoardActivePageContentHeight(
   doc: WhiteboardSessionDocument,
   viewportHeightPx: number,
@@ -125,19 +143,50 @@ export function growLessonBoardActivePageContentHeight(
   const maxY = maxNormY(commands)
   if (maxY < growthBandThreshold) return doc
   const min = lessonBoardMinContentHeightPx(active.orientation, 320, viewportHeightPx)
+  const max = lessonBoardMaxContentHeightPx(viewportHeightPx)
   const needed = Math.ceil(maxY * active.contentHeightPx + viewportHeightPx)
-  const nextHeight = Math.max(active.contentHeightPx, min, needed)
+  const nextHeight = Math.min(max, Math.max(active.contentHeightPx, min, needed))
   if (nextHeight === active.contentHeightPx) return doc
   return setLessonBoardActivePageContentHeight(doc, nextHeight)
 }
 
+/**
+ * @deprecated Prefer content-driven growth. Kept for store API; remaps ink so notes do not stretch.
+ */
 export function extendLessonBoardActivePageContentHeight(
   doc: WhiteboardSessionDocument,
   viewportHeightPx: number,
 ): WhiteboardSessionDocument {
   const active = getLessonBoardActivePage(doc.pages, doc.activePageId)
   if (!active || viewportHeightPx <= 0) return doc
-  return setLessonBoardActivePageContentHeight(doc, active.contentHeightPx + viewportHeightPx)
+  const max = lessonBoardMaxContentHeightPx(viewportHeightPx)
+  const nextHeight = Math.min(max, active.contentHeightPx + viewportHeightPx)
+  if (nextHeight === active.contentHeightPx) return doc
+  return setLessonBoardActivePageContentHeight(doc, nextHeight)
+}
+
+/** Remove one board page; keeps at least one page. Switches active page when deleting the current one. */
+export function deleteLessonBoardPage(
+  doc: WhiteboardSessionDocument,
+  pageId: string,
+): WhiteboardSessionDocument | null {
+  const flushed = syncLessonBoardCommandsToActivePage(doc)
+  if (flushed.pages.length <= 1) return null
+  const deleteIndex = flushed.pages.findIndex((p) => p.id === pageId)
+  if (deleteIndex < 0) return null
+
+  const pages = flushed.pages.filter((p) => p.id !== pageId)
+  let activePageId = flushed.activePageId
+  if (activePageId === pageId) {
+    const fallbackIndex = deleteIndex > 0 ? deleteIndex - 1 : 0
+    activePageId = pages[fallbackIndex]?.id ?? pages[0]!.id
+  }
+
+  return syncLessonBoardActivePageToCommands({
+    ...flushed,
+    pages,
+    activePageId,
+  })
 }
 
 export function setLessonBoardPageTitle(
@@ -159,8 +208,42 @@ export function setLessonBoardPageTitle(
   return { ...flushed, pages }
 }
 
+export function setLessonBoardPageBookPageHint(
+  doc: WhiteboardSessionDocument,
+  pageId: string,
+  bookPageHint: number,
+): WhiteboardSessionDocument | null {
+  const flushed = syncLessonBoardCommandsToActivePage(doc)
+  if (!flushed.pages.some((p) => p.id === pageId)) return null
+  const hint = Math.floor(bookPageHint)
+  if (!Number.isFinite(hint) || hint < 1) return null
+  const current = flushed.pages.find((p) => p.id === pageId)
+  if (current?.bookPageHint === hint) return null
+  const pages = flushed.pages.map((p) =>
+    p.id === pageId ? { ...p, bookPageHint: hint } : p,
+  )
+  return { ...flushed, pages }
+}
+
 export function lessonBoardPageDisplayLabel(page: LessonBoardPage, index: number): string {
   const trimmed = page.title?.trim()
   if (trimmed) return trimmed
   return `Page ${index + 1}`
+}
+
+/**
+ * TOC display order: titled pages first, then original order.
+ * Returns original indices so “Page N” labels stay stable.
+ */
+export function orderLessonBoardPagesForToc<T extends { title?: string }>(
+  pages: readonly T[],
+): Array<{ page: T; index: number }> {
+  return pages
+    .map((page, index) => ({ page, index }))
+    .sort((a, b) => {
+      const aTitled = Boolean(a.page.title?.trim())
+      const bTitled = Boolean(b.page.title?.trim())
+      if (aTitled !== bTitled) return aTitled ? -1 : 1
+      return a.index - b.index
+    })
 }

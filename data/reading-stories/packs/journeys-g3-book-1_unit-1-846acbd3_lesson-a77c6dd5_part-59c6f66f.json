@@ -1,0 +1,92 @@
+{
+  "storyId": "journeys-g3-book-1::unit-1-846acbd3::lesson-a77c6dd5::part-59c6f66f",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-1-846acbd3",
+  "status": "draft",
+  "stops": [
+    {
+      "id": "stop-522c15ad",
+      "label": "Tillie's Week",
+      "displayPage": 23,
+      "midPageNote": null,
+      "questions": [
+        {
+          "id": "q-8735c81b",
+          "kind": "mcq",
+          "prompt": "What did Tillie do on the weekends?",
+          "choices": [
+            "Go to school",
+            "Climb her favorite tree",
+            "Learn shapes and colors",
+            "Read and write"
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "On the weekends—Saturday and Sunday—Tillie climbed her favorite tree, and she took Beans on walks and threw him sticks, and she pushed her brother on a swing and tried to teach him how to skip.",
+          "evidenceHighlight": "Tillie climbed her favorite tree"
+        }
+      ]
+    },
+    {
+      "id": "stop-5c8606bc",
+      "label": "More School!",
+      "displayPage": 25,
+      "midPageNote": null,
+      "questions": [
+        {
+          "id": "q-d2d9a16e",
+          "kind": "true_false",
+          "prompt": "True or False: The teachers and students were happy to have school on Saturdays and Sundays.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "The teachers and the students did not want to go to school on Saturdays, but no one knew how to tell Mr. Keene that. He was so proud of the children and the teachers, of all the learning they were doing every day.",
+          "evidenceHighlight": "did not want to go to school"
+        }
+      ]
+    },
+    {
+      "id": "stop-b59d480c",
+      "label": "Summer School Too",
+      "displayPage": 27,
+      "midPageNote": null,
+      "questions": [
+        {
+          "id": "q-eac2f20f",
+          "kind": "mcq",
+          "prompt": "Why did Mr. Keene want school all summer long?",
+          "choices": [
+            "To give the teachers more work",
+            "So everyone could learn everything",
+            "Because he didn't like summer",
+            "To make Tillie's brother sad"
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "\"How much we will learn!\" he said. \"We can learn everything! We will learn all about numbers and letters, colors and shapes, the Romans and the Egyptians and the Greeks. We will learn about dinosaurs and castles and—and—everything! We will learn everything!\"",
+          "evidenceHighlight": "We can learn everything!"
+        }
+      ]
+    },
+    {
+      "id": "stop-02db6f53",
+      "label": "Tillie's Talk",
+      "displayPage": 29,
+      "midPageNote": null,
+      "questions": [
+        {
+          "id": "q-12532b6a",
+          "kind": "true_false",
+          "prompt": "True or False: Tillie told Mr. Keene that her dog, Beans, had learned how to sit.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "\"My dog, Beans, hasn't learned how to sit,\" Tillie said. \"And he hasn't learned how to jump over the creek.\"",
+          "evidenceHighlight": "Beans, hasn't learned how to sit"
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-08-03T23:31:10.368Z",
+  "approvedAt": null
+}

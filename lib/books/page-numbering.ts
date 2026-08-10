@@ -1,8 +1,46 @@
 import type { BookRecord, BookUnitRecord } from '@/lib/books/types'
-import { buildPageAlignmentRuntime, resolveEffectiveAnchorToPdfPage } from '@/lib/books/page-alignment-runtime'
+import {
+  buildPageAlignmentRuntime,
+  resolveEffectiveAnchorToPdfPage,
+  type PageAlignmentRuntime,
+} from '@/lib/books/page-alignment-runtime'
 import { getFileAlignment } from '@/lib/books/page-range'
 
 export type PageNumberingMode = 'mapped' | 'original'
+
+export function getPageAlignmentRuntime(
+  book: BookRecord | null | undefined,
+  unit: BookUnitRecord | null | undefined,
+  totalPdfPages: number | null,
+): PageAlignmentRuntime {
+  if (!book || !unit) return buildPageAlignmentRuntime(null, [], [])
+  const { notCountedPdfPages, hiddenPdfPages } = getFileAlignment(book, unit.filePath)
+  return buildPageAlignmentRuntime(totalPdfPages, hiddenPdfPages, notCountedPdfPages)
+}
+
+export function getEffectivePageTotal(
+  book: BookRecord | null | undefined,
+  unit: BookUnitRecord | null | undefined,
+  totalPdfPages: number | null,
+): number {
+  if (!book || !unit) return Math.max(1, totalPdfPages ?? 1)
+  const { notCountedPdfPages, hiddenPdfPages } = getFileAlignment(book, unit.filePath)
+  if (!notCountedPdfPages.length && !hiddenPdfPages.length) {
+    return Math.max(1, totalPdfPages ?? 1)
+  }
+  const runtime = getPageAlignmentRuntime(book, unit, totalPdfPages)
+  if (runtime.effectiveTotal > 0) return runtime.effectiveTotal
+  return Math.max(1, totalPdfPages ?? 1)
+}
+
+export function resolveMappedPageToPdfPage(
+  mappedPage: number | null | undefined,
+  book: BookRecord | null | undefined,
+  unit: BookUnitRecord | null | undefined,
+  totalPdfPages: number | null,
+): number | null {
+  return resolveAlignedAnchorPage(mappedPage, book, unit, totalPdfPages, 'mapped')
+}
 
 export function mapPdfPageToDisplayLabel(
   pdfPage: number,

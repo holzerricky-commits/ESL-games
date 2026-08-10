@@ -2,12 +2,14 @@ import type {
   AnnotationLineDashStyle,
   ShapeFillMode,
   StampVariant,
+  TextAnnotationAlign,
   TextAnnotationVisualStyle,
   WritableStickerVariant,
 } from '@/lib/books/annotation-command-types'
 import {
   isStickerQuickVariant,
   isWritableStickerVariant,
+  normalizeWritableStickerVariant,
   resolveStickerKindFromLegacyMode,
   type StickerKind,
 } from '@/lib/books/sticker-tool'
@@ -24,6 +26,7 @@ import {
   DEFAULT_TEXT_FILL_COLOR,
   migrateTextFillColor,
   DEFAULT_PEN_SWATCH_ID,
+  DEFAULT_SHAPE_FILL_COLOR,
   DEFAULT_STAMP_QUESTION_COLOR,
   DEFAULT_STICKY_FILL_COLOR,
   DEFAULT_TEXT_COLOR,
@@ -75,6 +78,8 @@ export type StudentAnnotationToolPrefs = {
   textThicknessStep?: AnnotationStrokeThicknessStep
   textFontId?: AnnotationTextFontId
   textVisualStyle?: TextAnnotationVisualStyle
+  bookTextVisualStyle?: TextAnnotationVisualStyle
+  textAlign?: TextAnnotationAlign
   textFillColor?: string
   shapeStrokeSwatchId?: string
   shapeThicknessStep?: AnnotationStrokeThicknessStep
@@ -91,6 +96,7 @@ export type StudentAnnotationToolPrefs = {
   markerCustomHex?: string
   markerThicknessStep?: AnnotationStrokeThicknessStep
   markerLineDashStyle?: AnnotationLineDashStyle
+  /** Highlighter: snap to horizontal underlines. Default on when omitted. */
   markerStraightStroke?: boolean
   /** Themed ornaments along the upper edge of highlighter strokes. Default off. */
   markerDecoratedEdge?: boolean
@@ -103,6 +109,8 @@ export type StudentAnnotationToolPrefs = {
   stampVariant?: StampVariant
   stampThicknessStep?: AnnotationStrokeThicknessStep
   stampQuestionColor?: string
+  /** Quick stamp placement animation + sound. Default on when omitted. */
+  stampEffectsEnabled?: boolean
   /** Unified sticker tool: quick symbols vs writable cards. */
   stickerKind?: StickerKind
   writableStickerVariant?: WritableStickerVariant
@@ -137,12 +145,9 @@ const STAMP_VARIANTS: StampVariant[] = [
   'question',
   'star',
   'heart',
-  'thumbsUp',
-  'repeat',
-  'yourTurn',
-  'newWord',
 ]
 const TEXT_VISUAL_STYLES: TextAnnotationVisualStyle[] = ['plain', 'filled']
+const TEXT_ALIGNS: TextAnnotationAlign[] = ['left', 'center', 'right']
 const SHAPE_FILL_MODES: ShapeFillMode[] = ['none', 'transparent', 'solid']
 const MARQUEE_SELECT_RULES: MarqueeSelectRule[] = ['follow-drag', 'crossing', 'window']
 
@@ -171,6 +176,7 @@ function isAnnotationMode(v: unknown): v is BookAnnotationInteractionMode {
 /** Legacy persisted mode before laser was removed. */
 function migrateAnnotationMode(v: unknown): BookAnnotationInteractionMode {
   if (v === 'laser') return 'select'
+  if (v === 'book-text') return 'select'
   if (v === 'stamp' || v === 'sticky') return 'sticker'
   return isAnnotationMode(v) ? v : 'pen'
 }
@@ -187,6 +193,10 @@ function isTextVisualStyle(v: unknown): v is TextAnnotationVisualStyle {
   return typeof v === 'string' && (TEXT_VISUAL_STYLES as readonly string[]).includes(v)
 }
 
+function isTextAlign(v: unknown): v is TextAnnotationAlign {
+  return typeof v === 'string' && (TEXT_ALIGNS as readonly string[]).includes(v)
+}
+
 function isShapeFillMode(v: unknown): v is ShapeFillMode {
   return typeof v === 'string' && (SHAPE_FILL_MODES as readonly string[]).includes(v)
 }
@@ -200,7 +210,7 @@ export function isValidMarkerColor(color: unknown): color is string {
 }
 
 function isValidShapeFillColor(color: unknown): color is string {
-  return isValidMarkerColor(color)
+  return isValidTextStrokeColor(color) || isValidMarkerColor(color)
 }
 
 function isValidStampQuestionColor(color: unknown): color is string {
@@ -212,6 +222,7 @@ export function normalizeStudentAnnotationToolPrefs(raw: unknown): StudentAnnota
   const o = raw as Record<string, unknown>
   const out: StudentAnnotationToolPrefs = {}
   if (isAnnotationMode(o.annotationMode)) out.annotationMode = o.annotationMode
+  else if (o.annotationMode === 'book-text') out.annotationMode = 'select'
   if (isValidPenSwatchId(o.penSwatchId)) out.penSwatchId = migratePenSwatchId(o.penSwatchId)
   if (isPenStrokeProfile(o.penStrokeProfile)) out.penStrokeProfile = o.penStrokeProfile
   if (isAnnotationColorSource(o.penColorSource)) out.penColorSource = o.penColorSource
@@ -223,6 +234,8 @@ export function normalizeStudentAnnotationToolPrefs(raw: unknown): StudentAnnota
   if (isThicknessStep(o.textThicknessStep)) out.textThicknessStep = o.textThicknessStep
   if (isAnnotationTextFontId(o.textFontId)) out.textFontId = o.textFontId
   if (isTextVisualStyle(o.textVisualStyle)) out.textVisualStyle = o.textVisualStyle
+  if (isTextVisualStyle(o.bookTextVisualStyle)) out.bookTextVisualStyle = o.bookTextVisualStyle
+  if (isTextAlign(o.textAlign)) out.textAlign = o.textAlign
   if (typeof o.textFillColor === 'string') out.textFillColor = migrateTextFillColor(o.textFillColor)
   if (isValidPenSwatchId(o.shapeStrokeSwatchId)) {
     out.shapeStrokeSwatchId = migratePenSwatchId(o.shapeStrokeSwatchId)
@@ -249,12 +262,12 @@ export function normalizeStudentAnnotationToolPrefs(raw: unknown): StudentAnnota
   }
   if (isThicknessStep(o.eraserPixelThicknessStep)) out.eraserPixelThicknessStep = o.eraserPixelThicknessStep
   if (isThicknessStep(o.eraserLineThicknessStep)) out.eraserLineThicknessStep = o.eraserLineThicknessStep
-  if (isStampVariant(o.stampVariant)) out.stampVariant = o.stampVariant
   if (isThicknessStep(o.stampThicknessStep)) out.stampThicknessStep = o.stampThicknessStep
   if (isValidStampQuestionColor(o.stampQuestionColor)) out.stampQuestionColor = o.stampQuestionColor
+  if (typeof o.stampEffectsEnabled === 'boolean') out.stampEffectsEnabled = o.stampEffectsEnabled
   if (isStickerKind(o.stickerKind)) out.stickerKind = o.stickerKind
-  if (isWritableStickerVariant(o.writableStickerVariant)) {
-    out.writableStickerVariant = o.writableStickerVariant
+  if (typeof o.writableStickerVariant === 'string') {
+    out.writableStickerVariant = normalizeWritableStickerVariant(o.writableStickerVariant)
   }
   if (isEyedropperVariant(o.eyedropperVariant)) out.eyedropperVariant = o.eyedropperVariant
   return out
@@ -323,7 +336,6 @@ export function removeStudentAnnotationToolPrefs(studentId: string): void {
 
 const DEFAULT_PEN_CUSTOM_HEX = getPenSwatch(DEFAULT_PEN_SWATCH_ID).color
 const DEFAULT_MARKER_CUSTOM_HEX = ANNOTATION_MARKER_SWATCHES[0]
-const DEFAULT_SHAPE_FILL_COLOR = ANNOTATION_MARKER_SWATCHES[0]
 
 /** Resolved pen defaults for toolbar hydration. */
 export function resolvePenToolPrefsFromStorage(studentId: string): {
@@ -392,7 +404,7 @@ export function resolveMarkerToolPrefsFromStorage(studentId: string): {
     markerCustomHex,
     markerThicknessStep: isThicknessStep(saved.markerThicknessStep) ? saved.markerThicknessStep : 3,
     markerLineDashStyle: isLineDash(saved.markerLineDashStyle) ? saved.markerLineDashStyle : 'solid',
-    markerStraightStroke: saved.markerStraightStroke === true,
+    markerStraightStroke: saved.markerStraightStroke !== false,
     markerDecoratedEdge: saved.markerDecoratedEdge === true,
   }
 }
@@ -416,15 +428,21 @@ export function resolveStampToolPrefsFromStorage(studentId: string): {
   stampVariant: StampVariant
   stampThicknessStep: AnnotationStrokeThicknessStep
   stampQuestionColor: string
+  stampEffectsEnabled: boolean
 } {
   const saved = readStudentAnnotationToolPrefs(studentId)
   return {
-    stampVariant: isStampVariant(saved.stampVariant) ? saved.stampVariant : 'check',
+    stampVariant: 'check',
     stampThicknessStep: resolveThicknessStep(saved.stampThicknessStep, saved.markerThicknessStep),
     stampQuestionColor: isValidStampQuestionColor(saved.stampQuestionColor)
       ? saved.stampQuestionColor!
       : DEFAULT_STAMP_QUESTION_COLOR,
+    stampEffectsEnabled: saved.stampEffectsEnabled !== false,
   }
+}
+
+export function resolveStampEffectsEnabledFromStorage(studentId: string): boolean {
+  return resolveStampToolPrefsFromStorage(studentId).stampEffectsEnabled
 }
 
 export function resolveStickerToolPrefsFromStorage(studentId: string): {
@@ -432,6 +450,7 @@ export function resolveStickerToolPrefsFromStorage(studentId: string): {
   stampVariant: StampVariant
   stampThicknessStep: AnnotationStrokeThicknessStep
   stampQuestionColor: string
+  stampEffectsEnabled: boolean
   stickyFillColor: string
   stickyThicknessStep: AnnotationStrokeThicknessStep
   writableStickerVariant: WritableStickerVariant
@@ -449,11 +468,13 @@ export function resolveStickerToolPrefsFromStorage(studentId: string): {
     stampVariant: stamp.stampVariant,
     stampThicknessStep: stamp.stampThicknessStep,
     stampQuestionColor: stamp.stampQuestionColor,
+    stampEffectsEnabled: stamp.stampEffectsEnabled,
     stickyFillColor: sticky.stickyFillColor,
     stickyThicknessStep: sticky.stickyThicknessStep,
-    writableStickerVariant: isWritableStickerVariant(saved.writableStickerVariant)
-      ? saved.writableStickerVariant
-      : 'note',
+    writableStickerVariant:
+      typeof saved.writableStickerVariant === 'string'
+        ? normalizeWritableStickerVariant(saved.writableStickerVariant)
+        : 'note',
   }
 }
 
@@ -465,6 +486,8 @@ export function resolveTextToolPrefsFromStorage(studentId: string): {
   textThicknessStep: AnnotationStrokeThicknessStep
   textFontId: AnnotationTextFontId
   textVisualStyle: TextAnnotationVisualStyle
+  bookTextVisualStyle: TextAnnotationVisualStyle
+  textAlign: TextAnnotationAlign
   textFillColor: string
 } {
   const saved = readStudentAnnotationToolPrefs(studentId)
@@ -483,6 +506,10 @@ export function resolveTextToolPrefsFromStorage(studentId: string): {
       ? saved.textFontId
       : DEFAULT_ANNOTATION_TEXT_FONT_ID,
     textVisualStyle: isTextVisualStyle(saved.textVisualStyle) ? saved.textVisualStyle : 'plain',
+    bookTextVisualStyle: isTextVisualStyle(saved.bookTextVisualStyle)
+      ? saved.bookTextVisualStyle
+      : 'filled',
+    textAlign: isTextAlign(saved.textAlign) ? saved.textAlign : 'left',
     textFillColor:
       typeof saved.textFillColor === 'string'
         ? migrateTextFillColor(saved.textFillColor)
@@ -517,9 +544,12 @@ export function resolveShapeToolPrefsFromStorage(studentId: string): {
     ? migratePenSwatchId(saved.penSwatchId!)
     : DEFAULT_PEN_SWATCH_ID
   return {
-    shapeStrokeSwatchId: isValidPenSwatchId(saved.shapeStrokeSwatchId)
-      ? migratePenSwatchId(saved.shapeStrokeSwatchId!)
-      : penFallback,
+    shapeStrokeSwatchId: coercePenSwatchIdForProfile(
+      isValidPenSwatchId(saved.shapeStrokeSwatchId)
+        ? migratePenSwatchId(saved.shapeStrokeSwatchId!)
+        : penFallback,
+      'pen',
+    ),
     shapeThicknessStep: resolveThicknessStep(saved.shapeThicknessStep, saved.markerThicknessStep),
     shapeLineDashStyle: isLineDash(saved.shapeLineDashStyle) ? saved.shapeLineDashStyle : 'solid',
     shapeStrokeEnabled:

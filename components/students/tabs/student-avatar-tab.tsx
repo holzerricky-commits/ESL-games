@@ -1,4 +1,8 @@
+'use client'
+
+import { useState } from 'react'
 import { Badge } from '@/components/ui/badge'
+import { resolveStudentAvatarUrl } from '@/lib/students/student-avatar-url'
 import type { StudentProfileView } from '@/lib/students/types'
 
 interface StudentAvatarTabProps {
@@ -14,7 +18,18 @@ const ACCESSORY_PLACEHOLDERS = [
   { id: 'wand-1', emoji: '🪄', name: 'Magic Wand', price: 140, unlocked: true },
 ]
 
+function getInitials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '?'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+}
+
 export function StudentAvatarTab({ student }: StudentAvatarTabProps) {
+  const [imageFailed, setImageFailed] = useState(false)
+  const avatarSrc = resolveStudentAvatarUrl(student.id, student.avatarUrl)
+  const showImage = !imageFailed
+
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
@@ -23,13 +38,22 @@ export function StudentAvatarTab({ student }: StudentAvatarTabProps) {
           <Badge variant="outline">Builder: coming soon</Badge>
         </div>
         <p className="mt-2 text-sm text-muted-foreground">{student.avatarSummary}</p>
-        <div className="mt-3 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface-2)]">
-          {/* Placeholder art until avatar builder is implemented */}
-          <img
-            src="/Avatar example.png"
-            alt="Placeholder avatar scene preview while avatar builder is in development."
-            className="h-[22rem] w-full object-cover object-center md:h-[25rem] xl:h-[30rem]"
-          />
+        <div className="mt-3 flex justify-center rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-6 py-10">
+          <div className="relative h-44 w-44 overflow-hidden rounded-full border-4 border-[var(--border)] bg-[var(--surface-3)] shadow-lg md:h-52 md:w-52">
+            {showImage ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={avatarSrc}
+                alt={`${student.name} avatar`}
+                className="h-full w-full object-cover"
+                onError={() => setImageFailed(true)}
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-5xl font-black tracking-wide text-foreground">
+                {getInitials(student.name)}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

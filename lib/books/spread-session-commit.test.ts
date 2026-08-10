@@ -224,6 +224,20 @@ describe('mergeSpreadSessionPageOwnedFromOwnerPages', () => {
       expect(text.x).toBeCloseTo(0.25, 6)
     }
   })
+
+  it('keeps session text when page storage has no page-owned rows', () => {
+    const session: AnnotationCommand[] = [
+      { kind: 'line', id: 'l1', a: [0.1, 0.2], b: [0.3, 0.4], color: '#111' },
+      { kind: 'text', id: 't1', x: 0.25, y: 0.4, text: 'keep me', color: '#111', fontSizeNorm: 0.02 },
+    ]
+    const merged = mergeSpreadSessionPageOwnedFromOwnerPages(session, [], [], layout)
+    expect(merged).toHaveLength(2)
+    const text = merged.find((c) => c.kind === 'text')
+    if (text?.kind === 'text') {
+      expect(text.text).toBe('keep me')
+      expect(text.x).toBeCloseTo(0.25, 6)
+    }
+  })
 })
 
 describe('mergeSpreadSessionStampCalloutsFromOwnerPages', () => {

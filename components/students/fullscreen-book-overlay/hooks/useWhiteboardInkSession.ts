@@ -16,12 +16,22 @@ import {
   mergeLegacyInkIntoLessonBoardSession,
 } from '@/lib/books/whiteboard-session-persist'
 import { INK_SESSION_AUTOSAVE_MS } from '@/lib/books/ink-session-persist-config'
+import { inkSessionReactBoundaryEnabled } from '@/lib/books/feature-flags'
+import {
+  whiteboardSessionStructureKey,
+} from '@/lib/books/ink-session-store-subscription'
 import type { WhiteboardSessionDocument } from '@/lib/books/whiteboard-session-types'
 import type { SelectionMoveClampContext } from '@/lib/books/annotation-scale'
 import {
   createWhiteboardSessionStore,
   type WhiteboardSessionStore,
 } from '@/lib/books/whiteboard-session-store'
+import { invalidateWhiteboardSessionRootCache } from '@/lib/books/whiteboard-session-storage'
+import {
+  BOOK_ANNOTATIONS_HYDRATED_EVENT,
+  ensureBookAnnotationsHydrated,
+  isBookAnnotationsDiskActive,
+} from '@/lib/local-data/book-annotations-disk-client'
 
 export type UseWhiteboardInkSessionArgs = {
   enabled: boolean
@@ -29,7 +39,7 @@ export type UseWhiteboardInkSessionArgs = {
   bookId: string | null
   unitId: string | null
   storagePageKey: string | null
-  /** Class + local keys tried on reload so ink is not lost when session id differs. */
+  /** Local + legacy class keys tried on reload so older session boards can migrate in. */
   storagePageKeyCandidates?: readonly string[]
   whiteboardSessionStoreRef: MutableRefObject<WhiteboardSessionStore | null>
   selectionMoveClampRef?: MutableRefObject<SelectionMoveClampContext | null>
@@ -49,7 +59,12 @@ export function useWhiteboardInkSession({
 }: UseWhiteboardInkSessionArgs) {
   const [whiteboardSessionDoc, setWhiteboardSessionDoc] = useState<WhiteboardSessionDocument | null>(null)
   const whiteboardSessionDocRef = useRef<WhiteboardSessionDocument | null>(null)
+  const [whiteboardInkRevision, setWhiteboardInkRevision] = useState(0)
   const sessionKeyRef = useRef<string | null>(null)
+  const [annotationsStorageReady, setAnnotationsStorageReady] = useState(() =>
+    typeof window === 'undefined' ? false : isBookAnnotationsDiskActive(),
+  )
+  const [annotationsStorageEpoch, setAnnotationsStorageEpoch] = useState(0)
 
   const flushWhiteboardSessionToLegacy = useCallback(() => {
     const doc = whiteboardSessionDocRef.current
@@ -84,8 +99,38 @@ export function useWhiteboardInkSession({
   }, [enabled, flushWhiteboardSessionToLegacy])
 
   useEffect(() => {
-    if (!enabled || !bookId || !unitId) {
+    let cancelled = false
+
+    const markReady = () => {
+      if (cancelled) return
+      invalidateWhiteboardSessionRootCache()
+      setAnnotationsStorageReady(true)
+      setAnnotationsStorageEpoch((n) => n + 1)
+    }
+
+    if (isBookAnnotationsDiskActive()) {
+      setAnnotationsStorageReady(true)
+    } else {
+      void ensureBookAnnotationsHydrated().then((ok) => {
+        if (cancelled || ok) return
+        // Hydrate failed — allow browser fallback without waiting forever.
+        invalidateWhiteboardSessionRootCache()
+        setAnnotationsStorageReady(true)
+        setAnnotationsStorageEpoch((n) => n + 1)
+      })
+    }
+
+    window.addEventListener(BOOK_ANNOTATIONS_HYDRATED_EVENT, markReady)
+    return () => {
+      cancelled = true
+      window.removeEventListener(BOOK_ANNOTATIONS_HYDRATED_EVENT, markReady)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!enabled || !annotationsStorageReady || !bookId || !unitId) {
       setWhiteboardSessionDoc(null)
+      setWhiteboardInkRevision(0)
       whiteboardSessionDocRef.current = null
       sessionKeyRef.current = null
       return
@@ -94,6 +139,7 @@ export function useWhiteboardInkSession({
     const trimmedKey = storagePageKey?.trim() ?? ''
     if (!trimmedKey) {
       setWhiteboardSessionDoc(null)
+      setWhiteboardInkRevision(0)
       whiteboardSessionDocRef.current = null
       sessionKeyRef.current = null
       return
@@ -136,8 +182,14 @@ export function useWhiteboardInkSession({
     }
 
     const initialState = store.getState()
-    setWhiteboardSessionDoc(initialState.doc)
-    whiteboardSessionDocRef.current = initialState.doc
+    if (inkSessionReactBoundaryEnabled) {
+      whiteboardSessionDocRef.current = initialState.doc
+      setWhiteboardSessionDoc(initialState.doc)
+      setWhiteboardInkRevision(initialState.doc.meta.revision)
+    } else {
+      setWhiteboardSessionDoc(initialState.doc)
+      whiteboardSessionDocRef.current = initialState.doc
+    }
     onOverlayCaps?.({
       canUndo: initialState.canUndo,
       canRedo: initialState.canRedo,
@@ -147,17 +199,39 @@ export function useWhiteboardInkSession({
       canUndo: initialState.canUndo,
       canRedo: initialState.canRedo,
     }
-    const unsub = store.subscribe((state) => {
-      setWhiteboardSessionDoc(state.doc)
-      whiteboardSessionDocRef.current = state.doc
-      if (
-        state.canUndo !== lastOverlayCaps.canUndo ||
-        state.canRedo !== lastOverlayCaps.canRedo
-      ) {
-        lastOverlayCaps = { canUndo: state.canUndo, canRedo: state.canRedo }
-        onOverlayCaps?.(lastOverlayCaps)
-      }
-    })
+    let lastStructureKey = whiteboardSessionStructureKey(initialState.doc)
+    let lastInkRevision = initialState.doc.meta.revision
+    const unsub = inkSessionReactBoundaryEnabled
+      ? store.subscribe((state) => {
+          whiteboardSessionDocRef.current = state.doc
+          const nextStructureKey = whiteboardSessionStructureKey(state.doc)
+          if (nextStructureKey !== lastStructureKey) {
+            lastStructureKey = nextStructureKey
+            setWhiteboardSessionDoc(state.doc)
+          }
+          if (state.doc.meta.revision !== lastInkRevision) {
+            lastInkRevision = state.doc.meta.revision
+            setWhiteboardInkRevision(lastInkRevision)
+          }
+          if (
+            state.canUndo !== lastOverlayCaps.canUndo ||
+            state.canRedo !== lastOverlayCaps.canRedo
+          ) {
+            lastOverlayCaps = { canUndo: state.canUndo, canRedo: state.canRedo }
+            onOverlayCaps?.(lastOverlayCaps)
+          }
+        })
+      : store.subscribe((state) => {
+          setWhiteboardSessionDoc(state.doc)
+          whiteboardSessionDocRef.current = state.doc
+          if (
+            state.canUndo !== lastOverlayCaps.canUndo ||
+            state.canRedo !== lastOverlayCaps.canRedo
+          ) {
+            lastOverlayCaps = { canUndo: state.canUndo, canRedo: state.canRedo }
+            onOverlayCaps?.(lastOverlayCaps)
+          }
+        })
 
     return () => {
       unsub()
@@ -179,8 +253,11 @@ export function useWhiteboardInkSession({
       whiteboardSessionDocRef.current = null
       sessionKeyRef.current = null
       setWhiteboardSessionDoc(null)
+      setWhiteboardInkRevision(0)
     }
   }, [
+    annotationsStorageEpoch,
+    annotationsStorageReady,
     bookId,
     enabled,
     onOverlayCaps,
@@ -255,8 +332,20 @@ export function useWhiteboardInkSession({
     [whiteboardSessionStoreRef],
   )
 
+  const deleteLessonBoardPage = useCallback(
+    (pageId: string) => whiteboardSessionStoreRef.current?.deleteLessonBoardPage(pageId) ?? false,
+    [whiteboardSessionStoreRef],
+  )
+
+  const setLessonBoardPageBookPageHint = useCallback(
+    (pageId: string, bookPageHint: number) =>
+      whiteboardSessionStoreRef.current?.setLessonBoardPageBookPageHint(pageId, bookPageHint) ?? false,
+    [whiteboardSessionStoreRef],
+  )
+
   return {
     whiteboardSessionDoc,
+    whiteboardInkRevision,
     flushWhiteboardSessionToLegacy,
     appendWhiteboardSessionCommand,
     whiteboardSessionUndo,
@@ -268,5 +357,7 @@ export function useWhiteboardInkSession({
     setActiveLessonBoardContentHeightPx,
     extendActiveLessonBoardRunway,
     setLessonBoardPageTitle,
+    deleteLessonBoardPage,
+    setLessonBoardPageBookPageHint,
   }
 }

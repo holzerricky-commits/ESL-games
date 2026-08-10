@@ -27,6 +27,17 @@ export const PEN_STROKE_PROFILE_LABEL: Record<ActivePenStrokeProfile, string> = 
   effects: 'Effects',
 }
 
+const LEGACY_PEN_STROKE_PROFILE_LABEL: Record<LegacyPenStrokeProfile, string> = {
+  pencil: 'Pencil',
+  'fine-liner': 'Fine liner',
+}
+
+/** Display label for any stored profile, including retired toolbar choices. */
+export function penStrokeProfileLabel(profile: PenStrokeProfile): string {
+  if (isActivePenStrokeProfile(profile)) return PEN_STROKE_PROFILE_LABEL[profile]
+  return LEGACY_PEN_STROKE_PROFILE_LABEL[profile]
+}
+
 const ALL_PEN_STROKE_PROFILES = [...PEN_STROKE_PROFILES, ...LEGACY_PEN_STROKE_PROFILES] as const
 
 export function isPenStrokeProfile(v: unknown): v is PenStrokeProfile {

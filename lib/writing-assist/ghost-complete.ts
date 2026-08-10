@@ -50,31 +50,22 @@ const COMMON_BIGRAMS: Record<string, string[]> = {
   not: ['a', 'the', 'very', 'sure', 'good'],
 }
 
-const TEACHING_STARTERS = [
-  'the',
-  'a',
-  'this',
-  'my',
-  'your',
-  'please',
-  'let',
-  'read',
-  'write',
-  'listen',
-  'repeat',
-  'what',
-  'how',
-  'can',
-  'today',
-  'hello',
-]
+/** Minimum characters typed in the current word before inline completion appears. */
+export const GHOST_MIN_PARTIAL_LENGTH = 2
+
+const GLUE_WORDS = new Set(['the', 'a', 'an', 'is', 'to'])
 
 const SCORE_LESSON = 1200
 const SCORE_SESSION = 900
 const SCORE_NGRAM = 600
 const SCORE_STATIC_BIGRAM = 400
-const SCORE_STARTER = 350
 const SCORE_PREFIX = 80
+
+/** Suppress ultra-common glue words unless the student is typing them. */
+export function isBlockedGlueSuggestion(word: string, partial: string): boolean {
+  if (partial.length > 0) return false
+  return GLUE_WORDS.has(word.toLowerCase())
+}
 
 export function buildSessionBigrams(words: string[]): Map<string, string[]> {
   const map = new Map<string, string[]>()
@@ -152,7 +143,7 @@ function collectPrefixMatches(
   return out
 }
 
-type CandidateSource = 'lesson' | 'session' | 'ngram' | 'static' | 'starter' | 'prefix'
+type CandidateSource = 'lesson' | 'session' | 'ngram' | 'static' | 'prefix'
 
 function scoreCandidate(
   word: string,
@@ -169,7 +160,6 @@ function scoreCandidate(
   if (source === 'session') score += SCORE_SESSION
   else if (source === 'ngram') score += SCORE_NGRAM
   else if (source === 'static') score += SCORE_STATIC_BIGRAM
-  else if (source === 'starter') score += SCORE_STARTER
   else if (source === 'prefix') score += SCORE_PREFIX * 0.5
 
   if (part.length > 0 && lower.startsWith(part)) {
@@ -178,10 +168,6 @@ function scoreCandidate(
 
   const freq = engine?.getWordFrequency(lower) ?? 0
   if (freq > 0) score += Math.log(freq + 1) * 50
-
-  // Prefer full next-word predictions over single-letter ghosts (e.g. "are" not "a").
-  if (part.length === 0 && lower.length > 1) score += 100
-  if (part.length === 0 && lower.length === 1 && source !== 'prefix') score -= 60
 
   return score
 }
@@ -224,16 +210,14 @@ export function suggestNextWords(
   const prev2 = normalizeToken(options?.prev2Word ?? '')
   const part = partial.toLowerCase()
 
-  const bucket = new Map<string, { score: number; source: CandidateSource }>()
-  const sentenceStart =
-    options?.text != null && options?.caret != null
-      ? isSentenceStart(options.text, options.caret, partial)
-      : !prev && !part
+  if (part.length < GHOST_MIN_PARTIAL_LENGTH) {
+    return []
+  }
 
-  if (part.length >= 1) {
-    for (const w of collectPrefixMatches(part, lessonWords, engine)) {
-      addScored(bucket, w, partial, lessonWords.has(w) ? 'lesson' : 'prefix', lessonWords, engine)
-    }
+  const bucket = new Map<string, { score: number; source: CandidateSource }>()
+
+  for (const w of collectPrefixMatches(part, lessonWords, engine)) {
+    addScored(bucket, w, partial, lessonWords.has(w) ? 'lesson' : 'prefix', lessonWords, engine)
   }
 
   const session = sessionBigrams.get(prev)
@@ -252,16 +236,6 @@ export function suggestNextWords(
     }
   }
 
-  if (sentenceStart && !part.length) {
-    for (const w of TEACHING_STARTERS) addScored(bucket, w, partial, 'starter', lessonWords, engine)
-  }
-
-  if (!part.length && !prev) {
-    for (const w of lessonWords) {
-      if (w.length > 2) addScored(bucket, w, partial, 'lesson', lessonWords, engine)
-    }
-  }
-
   const ranked = [...bucket.entries()]
     .sort((a, b) => b[1].score - a[1].score)
     .map(([word]) => word)
@@ -269,7 +243,7 @@ export function suggestNextWords(
   const out: GhostSuggestion[] = []
   const seen = new Set<string>()
   for (const word of ranked) {
-    if (seen.has(word)) continue
+    if (seen.has(word) || isBlockedGlueSuggestion(word, partial)) continue
     seen.add(word)
     out.push(toGhostSuggestion(word, partial))
     if (out.length >= 3) break

@@ -49,6 +49,8 @@ type BindTextareaArgs = {
   onKeyDown?: (e: KeyboardEvent<HTMLTextAreaElement>) => void
   /** Verbatim student speech — no autocorrect, ghost, or Tab complete. */
   dictationMode?: boolean
+  /** Inline ghost + Tab complete (autocorrect still runs when false). */
+  ghostEnabled?: boolean
 }
 
 type BindContentEditableArgs = {
@@ -129,7 +131,10 @@ export function useWritingAssist() {
       onChange: userOnChange,
       onKeyDown: userKeyDown,
       dictationMode = false,
+      ghostEnabled = true,
     }: BindTextareaArgs): WritingAssistTextareaBind => {
+      const ghostOn = !dictationMode && ghostEnabled
+
       const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
         const el = e.currentTarget
 
@@ -138,20 +143,20 @@ export function useWritingAssist() {
           return
         }
 
-        if (e.key === 'Tab' && activeGhost?.suffix) {
+        if (ghostOn && e.key === 'Tab' && activeGhost?.suffix) {
           e.preventDefault()
           e.stopPropagation()
           acceptGhostTextarea(el, setValue, onAfterChange)
           return
         }
 
-        if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && ghostCandidates.length > 1) {
+        if (ghostOn && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && ghostCandidates.length > 1) {
           e.preventDefault()
           cycleGhost(e.key === 'ArrowUp' ? -1 : 1)
           return
         }
 
-        if (e.key === 'Escape') {
+        if (ghostOn && e.key === 'Escape') {
           if (activeGhost) {
             e.preventDefault()
             clearGhost()
@@ -172,7 +177,9 @@ export function useWritingAssist() {
               queueMicrotask(() => {
                 setTextareaValueAndCaret(el, result.state.value, result.state.selectionStart)
                 onAfterChange?.()
-                refreshGhostAfterWordBoundary(result.state.value, result.state.selectionStart)
+                if (ghostOn) {
+                  refreshGhostAfterWordBoundary(result.state.value, result.state.selectionStart)
+                }
               })
             }
             userKeyDown?.(e)
@@ -192,7 +199,9 @@ export function useWritingAssist() {
               queueMicrotask(() => {
                 setTextareaValueAndCaret(el, undo.state.value, undo.state.selectionStart)
                 onAfterChange?.()
-                updateGhostFromText(undo.state.value, undo.state.selectionStart)
+                if (ghostOn) {
+                  updateGhostFromText(undo.state.value, undo.state.selectionStart)
+                }
               })
               userKeyDown?.(e)
               return
@@ -205,15 +214,17 @@ export function useWritingAssist() {
         }
 
         userKeyDown?.(e)
-        queueMicrotask(() => {
-          updateGhostFromText(el.value, el.selectionStart)
-        })
+        if (ghostOn) {
+          queueMicrotask(() => {
+            updateGhostFromText(el.value, el.selectionStart)
+          })
+        }
       }
 
       const onInput = (e: FormEvent<HTMLTextAreaElement>) => {
         const el = e.currentTarget
         userOnChange?.(e as ChangeEvent<HTMLTextAreaElement>)
-        if (!dictationMode) {
+        if (ghostOn) {
           queueMicrotask(() => updateGhostFromText(el.value, el.selectionStart))
         }
       }
@@ -378,5 +389,6 @@ export function useWritingAssist() {
     bindContentEditable,
     clearGhost,
     updateGhostFromText,
+    flushGhostFromText,
   }
 }

@@ -5,14 +5,20 @@ import {
   resolveInitialBookReaderSelection,
   type BookReaderCurriculumHistoryEntry,
 } from '@/lib/books/resolve-initial-book-reader-selection'
+import { getStudentOpenTargetForBook, getStudentTeachingOpenPdfPageForBookUnit } from '@/lib/students/selectors'
 
 export type { BookReaderCurriculumHistoryEntry as CurriculumHistoryEntry } from '@/lib/books/resolve-initial-book-reader-selection'
 
 interface UseBookLibraryLoaderArgs {
   open: boolean
+  studentId?: string | null
   assignedBookIds: string[]
   assignedUnitRefs: Array<{ bookId: string; unitId: string }>
   curriculumHistory: BookReaderCurriculumHistoryEntry[]
+  preferBookId?: string | null
+  preferUnitId?: string | null
+  /** Optional precomputed page; teaching open is recomputed with the loaded library when student+book+unit are set. */
+  preferResumePage?: number | null
   setLoading: (v: boolean) => void
   setError: (v: string | null) => void
   setLibrary: (v: BookLibraryPayload | null) => void
@@ -24,9 +30,13 @@ interface UseBookLibraryLoaderArgs {
 
 export function useBookLibraryLoader({
   open,
+  studentId = null,
   assignedBookIds,
   assignedUnitRefs,
   curriculumHistory,
+  preferBookId,
+  preferUnitId,
+  preferResumePage,
   setLoading,
   setError,
   setLibrary,
@@ -35,7 +45,7 @@ export function useBookLibraryLoader({
   setPageNumber,
   setNumPages,
 }: UseBookLibraryLoaderArgs) {
-  /** Avoid clearing `numPages` on every reopen when book/unit unchanged — keeps spread model + B2 gate stable (see reopen UX). */
+  /** Avoid clearing `numPages` / reseeding page on every reopen when book/unit unchanged — keeps spread model + live page stable (see reopen UX). */
   const lastAppliedSelectionRef = useRef<{ bookId: string | null; unitId: string | null } | null>(null)
 
   useEffect(() => {
@@ -50,11 +60,28 @@ export function useBookLibraryLoader({
         if (!active) return
 
         setLibrary(lib)
+        const sid = studentId?.trim() ?? ''
+        const bid = preferBookId?.trim() ?? ''
+        let uid = preferUnitId?.trim() ?? ''
+        let teachingPage: number | null = null
+        if (sid && bid && !uid) {
+          const openTarget = getStudentOpenTargetForBook(sid, bid, lib)
+          if (openTarget) {
+            uid = openTarget.unitId
+            teachingPage = openTarget.pdfPage
+          }
+        }
+        if (teachingPage == null && sid && bid && uid) {
+          teachingPage = getStudentTeachingOpenPdfPageForBookUnit(sid, bid, uid, lib)
+        }
         const { selectedBookId, selectedUnitId, pageNumber } = resolveInitialBookReaderSelection({
           library: lib,
           assignedBookIds,
           assignedUnitRefs,
           curriculumHistory,
+          preferBookId: bid || preferBookId,
+          preferUnitId: uid || preferUnitId,
+          preferResumePage: teachingPage ?? preferResumePage,
         })
         const nextBookId = selectedBookId ?? null
         const nextUnitId = selectedUnitId ?? null
@@ -64,8 +91,8 @@ export function useBookLibraryLoader({
 
         setSelectedBookId(selectedBookId)
         setSelectedUnitId(selectedUnitId)
-        setPageNumber(pageNumber)
         if (selectionChanged) {
+          setPageNumber(pageNumber)
           setNumPages(null)
         }
         lastAppliedSelectionRef.current = { bookId: nextBookId, unitId: nextUnitId }
@@ -82,5 +109,14 @@ export function useBookLibraryLoader({
     }
     // setters from useState are stable
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only refetch when curriculum/open inputs change
-  }, [assignedBookIds, assignedUnitRefs, curriculumHistory, open])
+  }, [
+    assignedBookIds,
+    assignedUnitRefs,
+    curriculumHistory,
+    open,
+    preferBookId,
+    preferUnitId,
+    preferResumePage,
+    studentId,
+  ])
 }

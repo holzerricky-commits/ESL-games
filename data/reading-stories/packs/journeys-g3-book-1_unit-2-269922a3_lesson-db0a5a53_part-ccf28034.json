@@ -1,0 +1,227 @@
+{
+  "storyId": "journeys-g3-book-1::unit-2-269922a3::lesson-db0a5a53::part-ccf28034",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-2-269922a3",
+  "status": "approved",
+  "stops": [
+    {
+      "id": "stop-767f4627",
+      "label": "Young Al's early life",
+      "displayPage": 329,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 336,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-38026177",
+          "kind": "true_false",
+          "prompt": "True or False: Young Al lived in a time with electric lights and telephones.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "Thomas, who was called Young Al by his family, lived in an era very different from ours. There was no electric light, no telephone, no radio or CD player; not even a movie theater.",
+          "evidenceHighlight": "There was no electric light, no telephone"
+        }
+      ]
+    },
+    {
+      "id": "stop-0a0e0849",
+      "label": "Al's home laboratory",
+      "displayPage": 331,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 338,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-b73c32c5",
+          "kind": "mcq",
+          "prompt": "What did Young Al do in his family's cellar?",
+          "choices": [
+            "He played with his siblings.",
+            "He turned it into a laboratory.",
+            "He stored food there.",
+            "He read books quietly."
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "In 1856, at the age of nine, he turned his family's cellar into a laboratory complete with test tubes, beakers, and whatever chemicals he could buy.",
+          "evidenceHighlight": "he turned his family's cellar into a laboratory"
+        }
+      ]
+    },
+    {
+      "id": "stop-d1e9a51b",
+      "label": "Al's schooling",
+      "displayPage": 334,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 341,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-33d33900",
+          "kind": "true_false",
+          "prompt": "True or False: Al's mother taught him at home because he loved asking questions at school.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "A bout of scarlet fever left Al hard of hearing, which made school difficult. While Al asked many questions at home, he did not ask any at school. Instead he spent his time there daydreaming about his next experiment. Al's mother, a former teacher, took him out of school after only three months. From then on, she taught him at home.",
+          "evidenceHighlight": "A bout of scarlet fever left Al hard of hearing, which made school difficult."
+        }
+      ]
+    },
+    {
+      "id": "stop-c96122ff",
+      "label": "Al's first job",
+      "displayPage": 334,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 341,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-3e0fdacc",
+          "kind": "mcq",
+          "prompt": "After Al got his first job, what did he do every day?",
+          "choices": [
+            "He went to school and then played.",
+            "He sold newspapers and read at the library.",
+            "He stayed home and did experiments.",
+            "He helped his mother with chores."
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "Every morning from 7 A.M. to 10 A.M. Al sold newspapers. Then he spent all day at the Detroit library, reading and dreaming about his next experiment. At night he took the train home and sold papers again.",
+          "evidenceHighlight": "Al sold newspapers. Then he spent all day at the Detroit library, reading and dreaming about his next experiment."
+        }
+      ]
+    },
+    {
+      "id": "stop-bb81fc41",
+      "label": "Lab on the train",
+      "displayPage": 338,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 340,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-c9d45542",
+          "kind": "mcq",
+          "prompt": "What happened that made Al get thrown off the train?",
+          "choices": [
+            "He fell asleep on the job.",
+            "He lost his newspapers.",
+            "A chemical bottle burst into flames.",
+            "He argued with the conductor."
+          ],
+          "correctIndex": 2,
+          "correctTrue": null,
+          "evidenceSnippet": "Things were going well until one day when the train made a sudden lurch. Bottles, books, newspapers, candies, and fruits went flying—along with Al. A bottle of phosphorus burst into flames.",
+          "evidenceHighlight": "A bottle of phosphorus burst into flames."
+        }
+      ]
+    },
+    {
+      "id": "stop-8c72b147",
+      "label": "Soaked up information",
+      "displayPage": 338,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 344,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-d25e44f3",
+          "kind": "mcq",
+          "prompt": "When the story says Al 'soaked up' information about telegraphy, what does it mean?",
+          "choices": [
+            "He got wet while learning.",
+            "He learned a lot very quickly.",
+            "He didn't understand anything.",
+            "He only learned a little bit."
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "For weeks, he soaked up all the information he could about telegraphy.",
+          "evidenceHighlight": "soaked up all the information he could about telegraphy."
+        }
+      ]
+    },
+    {
+      "id": "stop-e0954807",
+      "label": "Signal 6 invention",
+      "displayPage": 341,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 348,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-cfa78160",
+          "kind": "mcq",
+          "prompt": "Why did Al invent a device to send the signal 6 for him?",
+          "choices": [
+            "He wanted to impress his boss.",
+            "He was too busy with other experiments.",
+            "He sometimes fell asleep on the job.",
+            "He wanted to make the job harder."
+          ],
+          "correctIndex": 2,
+          "correctTrue": null,
+          "evidenceSnippet": "One of Al's duties as the operator was to send the signal 6 every hour on the hour to show the dispatcher at the next station that he was awake. But the long hours sometimes caught up with him and he would fall asleep, so the scientist in him had an idea.",
+          "evidenceHighlight": "But the long hours sometimes caught up with him and he would fall asleep"
+        }
+      ]
+    },
+    {
+      "id": "stop-0fc52ff4",
+      "label": "The Wizard",
+      "displayPage": 348,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 355,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-dd80dd9b",
+          "kind": "true_false",
+          "prompt": "True or False: People called Thomas 'The Wizard' because he invented so many amazing things.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": true,
+          "evidenceSnippet": "Such strange, incredible inventions were coming out of his laboratory that people started to call Thomas 'The Wizard.'",
+          "evidenceHighlight": "Such strange, incredible inventions were coming out of his laboratory that people started to call Thomas 'The Wizard.'"
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-08-07T14:03:43.041Z",
+  "approvedAt": "2026-08-07T14:03:43.041Z"
+}

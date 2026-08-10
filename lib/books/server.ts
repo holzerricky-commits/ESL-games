@@ -1,5 +1,6 @@
 import path from 'node:path'
 import { promises as fs } from 'node:fs'
+import { dedupeBookLibraryPayload } from '@/lib/books/dedupe-book-library'
 import { clampSpreadGutterPullRatio } from '@/lib/books/spread-gutter'
 import type { BookLibraryPayload, BookRecord } from '@/lib/books/types'
 
@@ -116,9 +117,18 @@ async function loadManifestIfPresent(): Promise<BookLibraryPayload | null> {
     id: typeof book?.id === 'string' && book.id ? book.id : `book-${bi + 1}`,
     title: typeof book?.title === 'string' && book.title ? book.title : `Book ${bi + 1}`,
     ...(typeof book?.description === 'string' ? { description: book.description } : {}),
+    ...(typeof book?.series === 'string' ? { series: book.series } : {}),
+    ...(typeof book?.grade === 'string' ? { grade: book.grade } : {}),
+    ...(typeof book?.role === 'string' ? { role: book.role } : {}),
+    ...(book?.contentFormat === 'presentation' || book?.contentFormat === 'book'
+      ? { contentFormat: book.contentFormat }
+      : {}),
     ...(pageAlignmentByFile ? { pageAlignmentByFile } : {}),
     ...(spreadGutterPullRatio != null ? { spreadGutterPullRatio } : {}),
     ...(spreadGutterByFile ? { spreadGutterByFile } : {}),
+    ...(typeof book?.coverImagePath === 'string' && book.coverImagePath.trim()
+      ? { coverImagePath: book.coverImagePath.trim() }
+      : {}),
     units: Array.isArray(book?.units)
       ? book.units.map((unit, ui) => ({
           id: typeof unit?.id === 'string' && unit.id ? unit.id : `unit-${ui + 1}`,
@@ -173,7 +183,7 @@ async function loadManifestIfPresent(): Promise<BookLibraryPayload | null> {
       : [],
     }
   })
-  return { books: migrated }
+  return dedupeBookLibraryPayload({ books: migrated })
 }
 
 async function autoDiscoverBooks(): Promise<BookLibraryPayload> {
@@ -241,7 +251,7 @@ export async function loadBookLibrary(): Promise<BookLibraryPayload> {
     }
   }
 
-  return { books: mergedBooks }
+  return dedupeBookLibraryPayload({ books: mergedBooks })
 }
 
 export function getBookLibraryRoot(): string {
@@ -251,4 +261,12 @@ export function getBookLibraryRoot(): string {
 /** Absolute path to persisted manifest (`book-library/books.json`). */
 export function getBookManifestPath(): string {
   return path.resolve(BOOK_LIBRARY_ROOT, MANIFEST_FILE_NAME)
+}
+
+/** Writes the full library manifest to `book-library/books.json`. */
+export async function saveBookLibraryManifest(payload: BookLibraryPayload): Promise<void> {
+  const safe = dedupeBookLibraryPayload(payload)
+  const manifestPath = getBookManifestPath()
+  await fs.mkdir(path.dirname(manifestPath), { recursive: true })
+  await fs.writeFile(manifestPath, `${JSON.stringify(safe, null, 2)}\n`, 'utf8')
 }

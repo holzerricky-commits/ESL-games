@@ -8,10 +8,10 @@ export default function DashboardPage() {
     <section>
       <PageHeader
         title="Dashboard"
-        description="Today’s classes at a glance — start or plan in one or two clicks."
+        showDivider={false}
         actions={
-          <Button asChild className="bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-bright)] text-white">
-            <Link href="/games/timed-challenge">Open Timed Challenge</Link>
+          <Button asChild variant="ghost" size="sm" className="text-muted-foreground">
+            <Link href="/games/timed-challenge">Timed Challenge</Link>
           </Button>
         }
       />

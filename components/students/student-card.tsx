@@ -1,19 +1,31 @@
 'use client'
 
 import Link from 'next/link'
-import { useMemo, useState, type ReactNode } from 'react'
-import { BookOpen, Calendar, ChevronRight, Map, UserRound } from 'lucide-react'
-import type { BookLibraryPayload } from '@/lib/books/types'
-import { getStudentDefaultBookUnitForReader } from '@/lib/students/selectors'
+import { useState } from 'react'
+import { ChevronRight, MoreHorizontal, Trash2, Undo2 } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { RemoveStudentDialog } from '@/components/students/remove-student-dialog'
 import { resolveStudentAvatarUrl } from '@/lib/students/student-avatar-url'
+import {
+  bookPageLabelForStudent,
+  openHrefForStudent,
+} from '@/lib/students/students-roster-view'
 import type { StudentListItemView } from '@/lib/students/types'
 import { cn } from '@/lib/utils'
 
 interface StudentCardProps {
   student: StudentListItemView
-  library?: BookLibraryPayload | null
+  onRemoved?: () => void
+  /** When true, show restore instead of the usual open action. */
+  onBreak?: boolean
+  onRestore?: () => void
 }
 
 function initialsFromName(name: string) {
@@ -27,24 +39,17 @@ function StudentCardAvatar({
   studentId,
   name,
   avatarUrl,
-  className,
 }: {
   studentId: string
   name: string
   avatarUrl?: string
-  className?: string
 }) {
   const [imageFailed, setImageFailed] = useState(false)
   const avatarSrc = resolveStudentAvatarUrl(studentId, avatarUrl)
   const showImage = !imageFailed
 
   return (
-    <div
-      className={cn(
-        'relative h-20 w-20 shrink-0 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-2)] shadow-sm',
-        className,
-      )}
-    >
+    <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full bg-muted ring-1 ring-border/60">
       {showImage ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -55,7 +60,7 @@ function StudentCardAvatar({
         />
       ) : (
         <div
-          className="flex h-full w-full items-center justify-center bg-[color-mix(in_oklab,var(--muted)_40%,var(--surface-2))] text-xl font-bold tracking-wide text-muted-foreground"
+          className="flex h-full w-full items-center justify-center text-xs font-medium text-muted-foreground"
           aria-hidden
         >
           {initialsFromName(name)}
@@ -66,108 +71,141 @@ function StudentCardAvatar({
   )
 }
 
-function QuickActionButton({
-  href,
-  label,
-  icon,
+function RowMoreMenu({
+  studentName,
+  deleteOnly,
+  onRemove,
 }: {
-  href: string
-  label: string
-  icon: ReactNode
+  studentName: string
+  deleteOnly?: boolean
+  onRemove: () => void
 }) {
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
         <Button
-          asChild
-          variant="outline"
-          size="icon-sm"
-          className="size-8 shrink-0 border-[var(--border)] text-muted-foreground hover:border-[var(--brand-blue)]/50 hover:bg-[var(--surface-2)] hover:text-foreground"
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="ui-icon-btn h-8 w-8 text-muted-foreground"
+          aria-label={`More options for ${studentName}`}
         >
-          <Link href={href} aria-label={label}>
-            {icon}
-          </Link>
+          <MoreHorizontal size={16} aria-hidden />
         </Button>
-      </TooltipTrigger>
-      <TooltipContent side="top">{label}</TooltipContent>
-    </Tooltip>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem variant="destructive" onClick={onRemove}>
+          <Trash2 size={14} aria-hidden />
+          {deleteOnly ? 'Delete forever' : 'Remove…'}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
-export function StudentCard({ student, library = null }: StudentCardProps) {
-  const studentHref = `/students/${student.id}`
-  const teacherHref = `/students/${student.id}/plan`
-  const playHref = `/students/${student.id}/map`
-  const booksHref = useMemo(() => {
-    const base = `/books?student=${encodeURIComponent(student.id)}`
-    const pick = library ? getStudentDefaultBookUnitForReader(student.id, library) : null
-    if (!pick) return base
-    return `${base}&book=${encodeURIComponent(pick.bookId)}&unit=${encodeURIComponent(pick.unitId)}`
-  }, [student.id, library])
+export function StudentCard({ student, onRemoved, onBreak = false, onRestore }: StudentCardProps) {
+  const [removeOpen, setRemoveOpen] = useState(false)
+  /** Phase 1: one door — still class prep / setup until Phase 2 shell. */
+  const openHref = openHrefForStudent(student)
+  const bookPageLabel = bookPageLabelForStudent(student)
+  const openLabel = student.needsSetup ? `Finish setup for ${student.name}` : `Open ${student.name}`
+
+  const metaLine = onBreak
+    ? 'History kept · weekly times freed'
+    : [student.nextClassLabel, bookPageLabel].filter(Boolean).join(' · ')
 
   return (
-    <article className="flex h-full flex-col rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-sm transition-[border-color,box-shadow] hover:border-[var(--brand-blue)]/45 hover:shadow-md">
-      <div className="flex gap-4">
-        <StudentCardAvatar studentId={student.id} name={student.name} avatarUrl={student.avatarUrl} />
+    <>
+      <article
+        className={cn(
+          'ui-row group relative items-center gap-3',
+          !onBreak && 'cursor-pointer',
+          student.needsSetup && !onBreak && 'bg-accent/30',
+          onBreak && 'opacity-90',
+        )}
+      >
+        {!onBreak ? (
+          <Link href={openHref} className="absolute inset-0 z-0 rounded-lg" aria-label={openLabel} />
+        ) : null}
 
-        <div className="flex min-w-0 flex-1 flex-col">
-          <div className="min-w-0">
-            <h2 className="truncate text-base font-semibold leading-tight text-foreground">{student.name}</h2>
-            <div className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
-              <Calendar size={14} className="shrink-0 opacity-70" aria-hidden />
-              <p className="truncate">{student.nextClassLabel}</p>
+        <div className="pointer-events-none relative z-[1] flex min-w-0 flex-1 items-center gap-3">
+          <StudentCardAvatar studentId={student.id} name={student.name} avatarUrl={student.avatarUrl} />
+
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-2">
+              <h2
+                className={cn(
+                  'min-w-0 truncate text-sm font-medium text-foreground',
+                  !onBreak && 'group-hover:text-primary',
+                )}
+              >
+                {student.name}
+              </h2>
+              {onBreak ? (
+                <Badge variant="secondary" className="shrink-0 text-[10px] font-normal">
+                  On break
+                </Badge>
+              ) : student.needsSetup ? (
+                <Badge variant="outline" className="shrink-0 text-[10px] font-normal">
+                  Set up
+                </Badge>
+              ) : null}
             </div>
-          </div>
-
-          <div className="mt-3 min-w-0 rounded-xl border border-[var(--border)]/80 bg-[var(--surface-2)]/40 px-3 py-2.5">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Current lesson</p>
-            <p className="mt-1 truncate text-sm font-medium text-foreground">{student.curriculumBookLabel}</p>
-            <p className="truncate text-sm text-muted-foreground">{student.curriculumUnitLabel}</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Page <span className="font-semibold tabular-nums text-foreground">{student.curriculumPageLabel}</span>
-            </p>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">{metaLine}</p>
           </div>
         </div>
-      </div>
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--border)] pt-3">
-        <div className="flex items-center gap-1.5">
-          <QuickActionButton
-            href={booksHref}
-            label={`Open library for ${student.name}`}
-            icon={<BookOpen size={15} aria-hidden />}
-          />
-          <QuickActionButton
-            href={playHref}
-            label={`Open challenge map for ${student.name}`}
-            icon={<Map size={15} aria-hidden />}
-          />
+        <div className="relative z-[1] flex shrink-0 items-center gap-1">
+          {onBreak ? (
+            <>
+              <Button type="button" size="sm" variant="secondary" className="gap-1.5" onClick={onRestore}>
+                <Undo2 size={14} aria-hidden />
+                Restore
+              </Button>
+              <RowMoreMenu
+                studentName={student.name}
+                deleteOnly
+                onRemove={() => setRemoveOpen(true)}
+              />
+            </>
+          ) : (
+            /*
+              One trailing slot — never two icons side by side.
+              Hover devices: chevron at rest, ⋯ on hover/focus.
+              Touch: ⋯ only (no hover), so remove stays reachable.
+            */
+            <div className="relative h-8 w-8">
+              <ChevronRight
+                size={16}
+                aria-hidden
+                className={cn(
+                  'pointer-events-none absolute inset-0 m-auto text-muted-foreground/70 transition-opacity',
+                  'opacity-0 [@media(hover:hover)]:opacity-100',
+                  '[@media(hover:hover)]:group-hover:opacity-0 [@media(hover:hover)]:group-focus-within:opacity-0',
+                )}
+              />
+              <div
+                className={cn(
+                  'absolute inset-0 transition-opacity',
+                  'opacity-100 [@media(hover:hover)]:opacity-0',
+                  '[@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100',
+                )}
+              >
+                <RowMoreMenu studentName={student.name} onRemove={() => setRemoveOpen(true)} />
+              </div>
+            </div>
+          )}
         </div>
+      </article>
 
-        <div className="flex min-w-0 flex-1 items-center justify-end gap-2 sm:flex-none">
-          <Button
-            asChild
-            variant="outline"
-            size="sm"
-            className="h-8 min-w-0 border-[var(--border)] px-3 text-foreground hover:border-[var(--brand-blue)]/50"
-          >
-            <Link href={studentHref} className="inline-flex items-center gap-1.5">
-              <UserRound size={14} aria-hidden />
-              <span className="truncate">Student</span>
-            </Link>
-          </Button>
-          <Button
-            asChild
-            size="sm"
-            className="h-8 shrink-0 bg-[var(--brand-blue)] px-3 text-white hover:bg-[var(--brand-blue-bright)]"
-          >
-            <Link href={teacherHref} className="inline-flex items-center gap-1">
-              <span>Plan</span>
-              <ChevronRight size={14} className="opacity-90" aria-hidden />
-            </Link>
-          </Button>
-        </div>
-      </div>
-    </article>
+      <RemoveStudentDialog
+        studentId={student.id}
+        studentName={student.name}
+        open={removeOpen}
+        onOpenChange={setRemoveOpen}
+        onRemoved={onRemoved}
+        deleteOnly={onBreak}
+      />
+    </>
   )
 }

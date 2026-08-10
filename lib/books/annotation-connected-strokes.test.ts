@@ -37,7 +37,7 @@ describe('annotation-connected-strokes', () => {
     expect(ids.sort()).toEqual(['h', 'v'])
   })
 
-  it('groups pen and marker when they touch', () => {
+  it('never groups highlighter with pen, even when they touch', () => {
     const commands: AnnotationCommand[] = [
       penStroke('p', [
         [0.3, 0.4],
@@ -48,8 +48,27 @@ describe('annotation-connected-strokes', () => {
         [0.5, 0.55],
       ]),
     ]
-    const ids = connectedPenMarkerStrokeIds(commands, 'p', W, H)
-    expect(ids.sort()).toEqual(['m', 'p'])
+    expect(
+      strokesAreConnected(commands[0] as never, commands[1] as never, W, H),
+    ).toBe(false)
+    expect(connectedPenMarkerStrokeIds(commands, 'p', W, H)).toEqual(['p'])
+    expect(connectedPenMarkerStrokeIds(commands, 'm', W, H)).toEqual(['m'])
+    expect(resolvePenMarkerSelectionIds(commands, 'm', W, H)).toEqual(['m'])
+  })
+
+  it('never groups touching highlighter strokes together', () => {
+    const commands: AnnotationCommand[] = [
+      markerStroke('m1', [
+        [0.2, 0.4],
+        [0.5, 0.4],
+      ]),
+      markerStroke('m2', [
+        [0.5, 0.4],
+        [0.8, 0.4],
+      ]),
+    ]
+    expect(connectedPenMarkerStrokeIds(commands, 'm1', W, H)).toEqual(['m1'])
+    expect(resolvePenMarkerSelectionIds(commands, 'm1', W, H)).toEqual(['m1'])
   })
 
   it('groups chain A–B–C when only B bridges A and C', () => {

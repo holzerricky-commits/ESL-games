@@ -62,7 +62,7 @@ export function StudentResults({ onBack }: StudentResultsProps) {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--surface-2)]/90 backdrop-blur-md">
+      <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur-sm">
         <div className="mx-auto flex max-w-5xl items-center gap-4 px-6 py-4">
           <Button
             onClick={onBack}
@@ -82,7 +82,7 @@ export function StudentResults({ onBack }: StudentResultsProps) {
       <main className="mx-auto max-w-5xl px-6 py-10">
         {students.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-6 py-24">
-            <div className="flex h-20 w-20 items-center justify-center rounded-3xl border-2 border-dashed border-[var(--border)] bg-[var(--surface-2)]">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-muted">
               <BarChart3 size={32} className="text-muted-foreground" />
             </div>
             <div className="text-center">
@@ -91,47 +91,40 @@ export function StudentResults({ onBack }: StudentResultsProps) {
             </div>
           </div>
         ) : (
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1">
             {students.map((student) => {
               const isExpanded = expandedStudent === student.name
               const avgPct = Math.round((student.totalScore / student.totalQuestions) * 100)
 
               return (
-                <div
-                  key={student.name}
-                  className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden transition-all duration-300"
-                >
-                  {/* Student row */}
+                <div key={student.name} className="overflow-hidden rounded-lg">
                   <button
                     type="button"
                     onClick={() => setExpandedStudent(isExpanded ? null : student.name)}
-                    className="w-full flex items-center gap-4 px-6 py-4 text-left hover:bg-[var(--surface-3)] transition-colors duration-150"
+                    className="ui-row w-full text-left"
                   >
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--brand-blue)]/20 border border-[var(--brand-blue)]/30">
-                      <User size={16} className="text-[var(--brand-blue-bright)]" />
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                      <User size={16} />
                     </div>
 
-                    <div className="flex-1 min-w-0">
-                      <p className="font-bold text-foreground">{student.name}</p>
-                      <div className="flex items-center gap-3 mt-0.5">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-foreground">{student.name}</p>
+                      <div className="mt-0.5 flex items-center gap-3">
                         <span className="text-xs text-muted-foreground">{student.totalQuizzes} quiz{student.totalQuizzes !== 1 ? 'zes' : ''}</span>
-                        <span className="text-xs text-muted-foreground flex items-center gap-1">
+                        <span className="flex items-center gap-1 text-xs text-muted-foreground">
                           <Calendar size={10} />
                           {formatDate(student.lastDate)}
                         </span>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-4 shrink-0">
-                      <div className="text-right">
-                        <p
-                          className="text-2xl font-black tabular-nums"
-                          style={{ color: avgPct >= 70 ? 'var(--brand-green)' : avgPct >= 50 ? 'var(--brand-yellow)' : 'var(--brand-red)' }}
-                        >
-                          {avgPct}%
-                        </p>
-                        <p className="text-xs text-muted-foreground">avg score</p>
-                      </div>
+                    <div className="flex shrink-0 items-center gap-3">
+                      <p
+                        className="text-xl font-black tabular-nums"
+                        style={{ color: avgPct >= 70 ? 'var(--brand-green)' : avgPct >= 50 ? 'var(--brand-yellow)' : 'var(--brand-red)' }}
+                      >
+                        {avgPct}%
+                      </p>
                       {isExpanded ? (
                         <ChevronUp size={16} className="text-muted-foreground" />
                       ) : (
@@ -140,10 +133,8 @@ export function StudentResults({ onBack }: StudentResultsProps) {
                     </div>
                   </button>
 
-                  {/* Expanded detail */}
                   {isExpanded && (
-                    <div className="border-t border-[var(--border)] px-6 py-4 flex flex-col gap-3 animate-slide-up">
-                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Quiz History</p>
+                    <div className="space-y-2 px-3 pb-3 animate-slide-up">
                       {student.results
                         .sort((a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime())
                         .map((r) => {
@@ -153,13 +144,13 @@ export function StudentResults({ onBack }: StudentResultsProps) {
                               key={r.id}
                               type="button"
                               onClick={() => setSelectedQuiz(r)}
-                              className="w-full text-left flex items-center gap-4 rounded-xl bg-[var(--surface-3)] px-4 py-3 hover:bg-[var(--surface-4)] transition-colors cursor-pointer"
+                              className="ui-row w-full cursor-pointer text-left"
                             >
-                              <div className="flex-1 min-w-0">
-                                <p className="font-semibold text-foreground text-sm truncate">{r.quizName}</p>
-                                <p className="text-xs text-muted-foreground mt-0.5">{formatDate(r.completedAt)}</p>
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-medium text-foreground">{r.quizName}</p>
+                                <p className="mt-0.5 text-xs text-muted-foreground">{formatDate(r.completedAt)}</p>
                               </div>
-                              <div className="flex items-center gap-3 shrink-0">
+                              <div className="flex shrink-0 items-center gap-3">
                                 <div className="flex items-center gap-1.5 text-sm">
                                   <CheckCircle2 size={13} className="text-[var(--brand-green)]" />
                                   <span className="text-foreground font-bold">{r.score}</span>
@@ -191,10 +182,9 @@ export function StudentResults({ onBack }: StudentResultsProps) {
 
       {/* Quiz Detail Modal */}
       {selectedQuiz && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-6">
-          <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-            {/* Modal Header */}
-            <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 border-b border-[var(--border)] bg-[var(--card)]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-6">
+          <div className="max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-card shadow-lg">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card px-6 py-4">
               <div>
                 <h2 className="text-xl font-bold text-foreground">{selectedQuiz.quizName}</h2>
                 <p className="text-xs text-muted-foreground mt-0.5">{formatDate(selectedQuiz.completedAt)}</p>
@@ -202,7 +192,7 @@ export function StudentResults({ onBack }: StudentResultsProps) {
               <button
                 type="button"
                 onClick={() => setSelectedQuiz(null)}
-                className="p-2 rounded-lg hover:bg-[var(--surface-3)] transition-colors text-muted-foreground"
+                className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted"
               >
                 <X size={20} />
               </button>
@@ -211,7 +201,7 @@ export function StudentResults({ onBack }: StudentResultsProps) {
             {/* Modal Content */}
             <div className="p-6 flex flex-col gap-6">
               {/* Score Summary */}
-              <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-2)] p-5 flex items-center justify-around">
+              <div className="flex items-center justify-around rounded-2xl bg-muted/40 p-5">
                 <div className="text-center">
                   <p className="text-3xl font-black text-[var(--brand-green)]">{selectedQuiz.score}</p>
                   <p className="text-sm text-muted-foreground mt-1">Correct</p>
@@ -239,7 +229,7 @@ export function StudentResults({ onBack }: StudentResultsProps) {
                 {selectedQuiz.answers.map((answer, idx) => (
                   <div
                     key={idx}
-                    className="flex items-center gap-3 p-3 rounded-xl bg-[var(--surface-3)] border border-[var(--border)]"
+                    className="flex items-center gap-3 rounded-lg bg-muted/50 p-3"
                   >
                     {answer.correct ? (
                       <CheckCircle2 size={20} className="text-[var(--brand-green)] shrink-0" />
@@ -262,7 +252,7 @@ export function StudentResults({ onBack }: StudentResultsProps) {
               </div>
 
               {/* Student Info */}
-              <div className="p-4 rounded-xl bg-[var(--surface-2)] border border-[var(--border)]">
+              <div className="rounded-lg bg-muted/40 p-4">
                 <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Student</p>
                 <p className="text-lg font-bold text-foreground mt-1">{selectedQuiz.studentName}</p>
               </div>

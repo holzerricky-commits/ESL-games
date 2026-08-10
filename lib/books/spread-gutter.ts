@@ -1,4 +1,5 @@
 import type { BookRecord } from '@/lib/books/types'
+import { spreadGutterOverlapEnabled } from '@/lib/books/feature-flags'
 
 /** Default spread seam overlap as a fraction of page width (matches legacy reader). */
 export const DEFAULT_SPREAD_GUTTER_PULL_RATIO = 0.018
@@ -31,10 +32,27 @@ export function resolveSpreadGutterPullRatio(
   return DEFAULT_SPREAD_GUTTER_PULL_RATIO
 }
 
-/** Pixels to pull the right page left at the spread seam. */
+/** Pixels to pull the right page left at the spread seam (overlap only — never inset-clip page art). */
 export function spreadSidePullPx(spreadPageWidthPx: number, pullRatio: number): number {
   if (!(spreadPageWidthPx > 0)) return 0
   return Math.max(0, Math.round(spreadPageWidthPx * clampSpreadGutterPullRatio(pullRatio)))
+}
+
+/**
+ * Layout gutter pull — respects `spreadGutterOverlapEnabled` (0 when overlap is off).
+ */
+export function effectiveSpreadGutterPullPx(spreadPageWidthPx: number, pullRatio: number): number {
+  if (!spreadGutterOverlapEnabled) return 0
+  return spreadSidePullPx(spreadPageWidthPx, pullRatio)
+}
+
+/** Two-page cluster width: 2×page width minus one overlap pull (0 when overlap off). */
+export function effectiveSpreadOverlayWidthPx(
+  spreadPageWidthPx: number,
+  pullRatio: number,
+): number {
+  const pullPx = effectiveSpreadGutterPullPx(spreadPageWidthPx, pullRatio)
+  return Math.max(0, Math.round(spreadPageWidthPx * 2 - pullPx))
 }
 
 /**

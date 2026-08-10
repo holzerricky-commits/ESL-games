@@ -10,15 +10,15 @@ Last updated: 2026-06-03
 
 ## What this is
 
-- **One lesson board per live class session** — same ink when the **book** turns pages; the board does not reset on PDF page turn.
+- **One lasting lesson board per student + book unit** — same ink across class sessions and when the **book** turns pages; the board does not reset when you start the next class or turn a PDF page.
 - **Book-first** — default view is the **spread + board in a slot** beside the active book page. The curriculum spine stays the PDF; the board is the session workspace.
 - **Not** a second app with “import from whiteboard into notebook.” Everything is **pages in one session document**, one table of contents (TOC).
 
 **Out of scope for this track**
 
-- Reviving the legacy **lesson notebook / class log** side panel (`BOOK_OVERLAY_NOTEBOOK_UI_ENABLED = false`).
+- The legacy **lesson notebook / class log** side panel (removed; was behind `BOOK_OVERLAY_NOTEBOOK_UI_ENABLED`).
 - Student devices, sync, or multi-user editing on the board.
-- Auto-creating notebook entries on page turn (see `NOTEBOOK_REBUILD_PHASES.md` for a separate track).
+- Auto-creating class-log notebook entries on page turn (see superseded `NOTEBOOK_REBUILD_PHASES.md`).
 
 ---
 
@@ -87,7 +87,7 @@ Chosen **when the page is created**; **not** rotatable after content exists (dup
 
 - Commands stay **normalized 0–1** relative to that page’s **logical width × height**.
 - Switching **view** (slot, focus, float) only changes **scale/transform** of the viewport — not the stored aspect of the page.
-- **One session store key** per class (existing `wb:session:{id}` path); document shape gains `pages[]` (see phased plan).
+- **One lasting store key** per student/book/unit (`wb:session:local:{bookId}:{unitId}`); legacy per-class keys may still be read once to migrate ink. Document shape includes `pages[]` (see phased plan).
 
 ---
 
@@ -98,6 +98,8 @@ Chosen **when the page is created**; **not** rotatable after content exists (dup
 | `INFINITE_WHITEBOARD_V1.md` | Historical implementation plan; Phases 1–3 largely **built**. Scroll runway may remain **inside a page** but is not the product model going forward. |
 | `NOTEBOOK_REBUILD_PHASES.md` | Separate **class log / structured notebook** track; not the live lesson board. No “import whiteboard capture” required if board pages are the canonical session artifact. |
 | `WHITEBOARD_INK_UNIFIED_PLAN.md` | Session ink layer — still valid; scope per **page** instead of one tall runway. |
+| `LESSON_BOARD_NAV_PRODUCT.md` | **Board finding & identity** (book name/color, unit picker, next-unit handoff). Does not replace this doc’s page/dock model. |
+| `LESSON_BOARD_NAV_PHASED_PLAN.md` | Implement nav/identity **phase by phase** (test after each). |
 
 ---
 
@@ -107,7 +109,7 @@ Chosen **when the page is created**; **not** rotatable after content exists (dup
 2. **Standard** and **Wide** pages coexist; thumbnails show orientation.
 3. **No** horizontal stretch when switching layout modes on the same page.
 4. Book page turns do not wipe or split board content.
-5. Spread-width fullscreen is gone or replaced by focus / wide page flow.
+5. Board notes (and book→board links) survive into the next class for the same student + book unit.
 
 ---
 
@@ -117,3 +119,4 @@ Chosen **when the page is created**; **not** rotatable after content exists (dup
 - **Focus** for Standard pages: Phase 5 vs later zoom.
 - **Page delete / reorder** in v1 or v2.
 - Export to class log: snapshot of page thumbnails vs full JSON.
+- Board **nav/identity** open questions live in `LESSON_BOARD_NAV_PRODUCT.md` (color assignment, next-unit trigger, Phase 4 vs hub).

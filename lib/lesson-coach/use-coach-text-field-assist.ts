@@ -7,7 +7,7 @@ import {
   type WritingAssistTextareaBind,
 } from '@/lib/writing-assist/use-writing-assist'
 
-type CoachTextField = 'label' | 'lesson-paper' | 'whiteboard'
+type CoachTextField = 'label' | 'lesson-board' | 'whiteboard'
 
 type UseCoachTextFieldAssistArgs = {
   value: string
@@ -17,6 +17,8 @@ type UseCoachTextFieldAssistArgs = {
   onKeyDown?: (e: KeyboardEvent<HTMLTextAreaElement>) => void
   /** Where this field lives — used when syncing text to the coach session. */
   coachField?: CoachTextField
+  /** Inline ghost + Tab word complete (spell/autocorrect unchanged). */
+  ghostEnabled?: boolean
 }
 
 export function useCoachTextFieldAssist({
@@ -26,9 +28,10 @@ export function useCoachTextFieldAssist({
   onChange: userOnChange,
   onKeyDown: userKeyDown,
   coachField = 'label',
+  ghostEnabled = true,
 }: UseCoachTextFieldAssistArgs): {
   assist: WritingAssistTextareaBind
-  onFieldFocus: () => void
+  onFieldFocus: (el: HTMLTextAreaElement) => void
   onFieldBlur: () => void
   ghost: ReturnType<typeof useWritingAssist>['ghost']
   ghostPartial: string
@@ -43,13 +46,26 @@ export function useCoachTextFieldAssist({
     registerActiveTextSink,
     setTextFieldFocused,
   } = useLessonCoachSyncActions()
-  const { bindTextarea, ghost, ghostPartial, ghostCandidates, ghostIndex, clearGhost } = useWritingAssist()
+  const {
+    bindTextarea,
+    ghost,
+    ghostPartial,
+    ghostCandidates,
+    ghostIndex,
+    clearGhost,
+    flushGhostFromText,
+  } = useWritingAssist()
   const valueRef = useRef(value)
   valueRef.current = value
 
   useEffect(() => {
-    if (dictationMode) clearGhost()
-  }, [dictationMode, clearGhost])
+    if (dictationMode || !ghostEnabled) clearGhost()
+  }, [dictationMode, ghostEnabled, clearGhost])
+
+  useEffect(() => {
+    if (dictationMode || !ghostEnabled) return
+    if (value.length === 0) clearGhost()
+  }, [value, dictationMode, ghostEnabled, clearGhost])
 
   const assist = bindTextarea({
     value,
@@ -58,6 +74,7 @@ export function useCoachTextFieldAssist({
     onChange: userOnChange,
     onKeyDown: userKeyDown,
     dictationMode,
+    ghostEnabled,
   })
 
   const onInput = (e: FormEvent<HTMLTextAreaElement>) => {
@@ -65,7 +82,7 @@ export function useCoachTextFieldAssist({
     syncSharedText(e.currentTarget.value, coachField)
   }
 
-  const onFocus = () => {
+  const onFocus = (el: HTMLTextAreaElement) => {
     setTextFieldFocused(true)
     registerActiveTextSink({
       getValue: () => valueRef.current,
@@ -75,11 +92,21 @@ export function useCoachTextFieldAssist({
       },
       field: coachField ?? 'label',
     })
+    if (dictationMode || !ghostEnabled) {
+      clearGhost()
+      return
+    }
+    if (el.value.length === 0) {
+      clearGhost()
+      return
+    }
+    flushGhostFromText(el.value, el.selectionStart)
   }
 
   const onBlur = () => {
     setTextFieldFocused(false)
     registerActiveTextSink(null)
+    clearGhost()
   }
 
   return {
@@ -89,10 +116,10 @@ export function useCoachTextFieldAssist({
     },
     onFieldFocus: onFocus,
     onFieldBlur: onBlur,
-    ghost: dictationMode ? null : ghost,
-    ghostPartial: dictationMode ? '' : ghostPartial,
-    ghostCandidates: dictationMode ? [] : ghostCandidates,
-    ghostIndex: dictationMode ? 0 : ghostIndex,
+    ghost: dictationMode || !ghostEnabled ? null : ghost,
+    ghostPartial: dictationMode || !ghostEnabled ? '' : ghostPartial,
+    ghostCandidates: dictationMode || !ghostEnabled ? [] : ghostCandidates,
+    ghostIndex: dictationMode || !ghostEnabled ? 0 : ghostIndex,
     spellMirrorEnabled: !dictationMode,
   }
 }

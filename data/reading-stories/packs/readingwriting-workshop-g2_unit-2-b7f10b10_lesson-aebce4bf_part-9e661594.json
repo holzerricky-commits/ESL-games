@@ -1,0 +1,116 @@
+{
+  "storyId": "readingwriting-workshop-g2::unit-2-b7f10b10::lesson-aebce4bf::part-9e661594",
+  "bookId": "readingwriting-workshop-g2",
+  "unitId": "unit-2-b7f10b10",
+  "status": "approved",
+  "stops": [
+    {
+      "id": "stop-01ed10ba",
+      "label": "Boy's job",
+      "displayPage": 116,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 117,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-8027a2c3",
+          "kind": "true_false",
+          "prompt": "The shepherd boy loved watching the sheep.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "Long ago a shepherd boy sat on a hilltop watching the village sheep. He was not fond of his job. He didn't like it one bit.",
+          "evidenceHighlight": "He was not fond of his job. He didn't like it one bit."
+        }
+      ]
+    },
+    {
+      "id": "stop-48133781",
+      "label": "First trick",
+      "displayPage": 120,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 122,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-7f65928b",
+          "kind": "mcq",
+          "prompt": "What happened when the boy cried \"Wolf!\" for the first time?",
+          "choices": [
+            "The wolf came and chased the sheep.",
+            "The villagers ran to help, but there was no wolf.",
+            "The boy ran away from the sheep.",
+            "The villagers were angry and went home."
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "Then one day he had a better idea! He took a deep breath and cried out, “Wolf! Wolf! The wolf is chasing the sheep!” The villagers ran up the hill to help the boy. When they got there, they saw no harmful wolf. The boy laughed.",
+          "evidenceHighlight": "The villagers ran up the hill to help the boy. When they got there, they saw no harmful wolf."
+        }
+      ]
+    },
+    {
+      "id": "stop-8727c28e",
+      "label": "Second cry",
+      "displayPage": 120,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 122,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-dcd3255d",
+          "kind": "true_false",
+          "prompt": "The villagers were happy when the boy cried \"Wolf!\" a second time.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "That afternoon the boy again cried out, “Wolf! Wolf! The wolf is chasing the sheep!” The villagers ran to help the boy again. They saw no wolf. The villagers were angry. “Don't cry 'wolf!' when there is NO WOLF!” they said.",
+          "evidenceHighlight": "The villagers were angry."
+        }
+      ]
+    },
+    {
+      "id": "stop-168a1bc6",
+      "label": "Real wolf",
+      "displayPage": 122,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 123,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-fba27bcd",
+          "kind": "mcq",
+          "prompt": "What happened when the boy saw a real wolf and cried for help?",
+          "choices": [
+            "The villagers quickly came to help him.",
+            "The villagers thought he was tricking them again and did not come.",
+            "The wolf ran away when it heard the boy shout.",
+            "The boy fought the wolf all by himself."
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "That afternoon the boy saw a REAL wolf. He did not want the wolf to grab any of the sheep! ... He quickly jumped to his feet and cried, “WOLF! WOLF!\" The villagers thought he was tricking them again, so they did not come.",
+          "evidenceHighlight": "The villagers thought he was tricking them again, so they did not come."
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-08-10T00:05:31.528Z",
+  "approvedAt": "2026-08-10T00:05:31.528Z"
+}

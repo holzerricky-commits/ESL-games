@@ -15,6 +15,7 @@ import { BookOverlayFocusSink } from '@/components/students/book-overlay-focus-s
 import { SelectionBoundsChrome } from '@/components/students/selection-bounds-chrome'
 import {
   MARKER_CANVAS_BLEND,
+  domSliceZBoostForCommandKind,
   pageLayerBox,
   sliceStackZ,
 } from '@/components/students/book-page-annotation-layer/constants'
@@ -75,6 +76,7 @@ export interface BookPageAnnotationLayerViewProps {
   textToolHoverFrames: OrientedSelectionFrame[]
   textToolEditingFrames: OrientedSelectionFrame[]
   onEditingTextDraftChange?: (text: string | null) => void
+  pasteRevealIds?: ReadonlySet<string>
 }
 
 export function BookPageAnnotationLayerView({
@@ -127,13 +129,14 @@ export function BookPageAnnotationLayerView({
   textToolHoverFrames,
   textToolEditingFrames,
   onEditingTextDraftChange,
+  pasteRevealIds,
 }: BookPageAnnotationLayerViewProps) {
   let inkSliceIdx = 0
   let markerSliceIdx = 0
   const pageBox = (zIndex: number): CSSProperties => pageLayerBox(widthPx, heightPx, zIndex)
 
   return (
-    <>
+    <div className="absolute inset-0">
       {renderSlices.map((slice) => {
         if (slice.kind === 'ink') {
           const idx = inkSliceIdx++
@@ -168,12 +171,16 @@ export function BookPageAnnotationLayerView({
           )
         }
         const sliceCommands = slice.indices.map((i) => paintedCommands[i]!)
+        const sliceCmd = sliceCommands[0]!
         return (
           <BookPageAnnotationDomLayer
             key={`dom-${slice.zIndex}`}
             widthPx={widthPx}
             heightPx={heightPx}
-            zIndex={sliceStackZ(slice.zIndex) + domZBoost}
+            zIndex={
+              sliceStackZ(slice.zIndex) +
+              domSliceZBoostForCommandKind(sliceCmd.kind, domZBoost > 0)
+            }
             defaultTextFontId={textFontId}
             commands={sliceCommands}
             onUpdateCommand={patchCommand}
@@ -188,6 +195,7 @@ export function BookPageAnnotationLayerView({
             onEditingIdChange={handleEditingIdChange}
             onEditingTextDraftChange={onEditingTextDraftChange}
             coachField={storageChannel === 'whiteboard' ? 'whiteboard' : 'label'}
+            pasteRevealIds={pasteRevealIds}
           />
         )
       })}
@@ -291,6 +299,6 @@ export function BookPageAnnotationLayerView({
       >
         <BookOverlayFocusSink />
       </div>
-    </>
+    </div>
   )
 }

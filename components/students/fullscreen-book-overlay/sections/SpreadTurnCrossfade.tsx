@@ -1,10 +1,24 @@
 'use client'
 
+import type { CSSProperties } from 'react'
 import { useMemo } from 'react'
 import { getPageRenderCacheBitmap } from '@/lib/books/page-render-cache'
 import { SPREAD_CROSSFADE_MS } from '@/lib/books/spread-crossfade-config'
+import {
+  spreadTurnFoldEndTransform,
+  spreadTurnFoldPageSurfaceStyle,
+  spreadTurnFoldStartTransform,
+  spreadTurnFoldTransformOrigin,
+  spreadTurnFoldTransitionActive,
+  spreadTurnFoldTransitionNone,
+  spreadTurnFoldingPageSide,
+  type SpreadTurnFoldPageSide,
+} from '@/lib/books/spread-turn-fold'
 import { SPREAD_TURN_SLIDE_MS } from '@/lib/books/spread-turn-slide-config'
+import type { SpreadTurnDirection } from '@/lib/books/spread-turn-slide-config'
 import { CachedPageCanvas } from '@/components/students/fullscreen-book-overlay/sections/CachedPageCanvas'
+import { SpreadTurnFoldLightingOverlay } from '@/components/students/fullscreen-book-overlay/sections/SpreadTurnFoldLightingOverlay'
+import { SpreadCanvasWrapper } from '@/components/books/spread-canvas-wrapper'
 import type { OutgoingSpreadSnapshot } from '@/components/students/fullscreen-book-overlay/hooks/useSpreadCrossfade'
 
 export interface SpreadTurnCrossfadeProps {
@@ -16,25 +30,53 @@ export interface SpreadTurnCrossfadeProps {
   prefetchRevision: number
   opacity: number
   spreadOverlayWidthPx: number
-  /** Phase 4b — slide off-screen instead of crossfade when capture unavailable. */
-  translateXPercent?: number
-  slideTransitionActive?: boolean
+  /** Phase 2 — 2.5D fold instead of flat translateX when set. */
+  foldDirection?: SpreadTurnDirection
+  foldTransitionActive?: boolean
+}
+
+function foldPageStyle(args: {
+  pageSide: SpreadTurnFoldPageSide
+  foldDirection: SpreadTurnDirection
+  foldTransitionActive: boolean
+  isFoldingPage: boolean
+}): CSSProperties {
+  const { pageSide, foldDirection, foldTransitionActive, isFoldingPage } = args
+  const surface = spreadTurnFoldPageSurfaceStyle()
+
+  if (!isFoldingPage) {
+    return surface
+  }
+
+  const transition = foldTransitionActive
+    ? spreadTurnFoldTransitionActive(SPREAD_TURN_SLIDE_MS)
+    : spreadTurnFoldTransitionNone()
+
+  return {
+    ...surface,
+    transformOrigin: spreadTurnFoldTransformOrigin(pageSide),
+    transform: foldTransitionActive
+      ? spreadTurnFoldEndTransform(foldDirection)
+      : spreadTurnFoldStartTransform(),
+    willChange: foldTransitionActive ? 'transform' : undefined,
+    transition,
+  }
 }
 
 /**
- * Phase 4 — frozen outgoing spread from PageRenderCache during turn crossfade.
+ * Phase 4 — frozen outgoing spread from PageRenderCache during turn crossfade / fold.
  */
 export function SpreadTurnCrossfade({
   unitId,
   outgoing,
   spreadPageWidth,
   pageCanvasHeightPx,
-  gutterPullPx,
+  gutterPullPx: _gutterPullPx,
   prefetchRevision,
   opacity,
   spreadOverlayWidthPx,
-  translateXPercent,
-  slideTransitionActive = false,
+  foldDirection,
+  foldTransitionActive = false,
 }: SpreadTurnCrossfadeProps) {
   const leftBmp = useMemo(
     () => getPageRenderCacheBitmap(unitId, outgoing.left, spreadPageWidth),
@@ -50,40 +92,97 @@ export function SpreadTurnCrossfade({
 
   if (!leftBmp) return null
 
-  const slideMode = translateXPercent != null
-  const transitionMs = slideMode ? SPREAD_TURN_SLIDE_MS : SPREAD_CROSSFADE_MS
+  const foldMode = foldDirection != null
+  const transitionMs = foldMode ? SPREAD_TURN_SLIDE_MS : SPREAD_CROSSFADE_MS
+  const foldingPageSide = foldMode ? spreadTurnFoldingPageSide(foldDirection) : null
+  const foldSurface = foldMode ? spreadTurnFoldPageSurfaceStyle() : undefined
 
   return (
     <div
-      className="pointer-events-none absolute inset-0 z-[6] inline-flex items-start leading-none motion-reduce:transition-none"
+      className="pointer-events-none absolute inset-0 z-[6] motion-reduce:transition-none"
       style={{
+        boxSizing: 'border-box',
         width: spreadOverlayWidthPx,
+        minWidth: spreadOverlayWidthPx,
+        maxWidth: spreadOverlayWidthPx,
         minHeight: pageCanvasHeightPx,
-        opacity: slideMode ? 1 : opacity,
-        transform: slideMode ? `translateX(${translateXPercent}%)` : undefined,
-        transition: slideMode
-          ? slideTransitionActive
-            ? `transform ${transitionMs}ms cubic-bezier(0.22, 1, 0.36, 1)`
-            : 'none'
-          : `opacity ${transitionMs}ms ease-out`,
+        height: pageCanvasHeightPx,
+        opacity: foldMode ? 1 : opacity,
+        transition: foldMode ? 'none' : `opacity ${transitionMs}ms ease-out`,
       }}
       aria-hidden
     >
-      <CachedPageCanvas
-        bitmap={leftBmp}
-        cssWidth={spreadPageWidth}
-        cssHeight={pageCanvasHeightPx}
-      />
-      {outgoing.right != null && rightBmp ? (
-        <div className="relative shrink-0" style={{ marginLeft: -gutterPullPx }}>
+      <SpreadCanvasWrapper
+        spreadOverlayWidthPx={spreadOverlayWidthPx}
+        pageCanvasHeightPx={pageCanvasHeightPx}
+      >
+        <div
+          className="relative shrink-0 grow-0 overflow-hidden"
+          style={{
+            boxSizing: 'border-box',
+            width: spreadPageWidth,
+            minWidth: spreadPageWidth,
+            maxWidth: spreadPageWidth,
+            flexShrink: 0,
+            flexGrow: 0,
+            ...foldSurface,
+            ...(foldMode && foldingPageSide
+              ? foldPageStyle({
+                  pageSide: 'left',
+                  foldDirection,
+                  foldTransitionActive,
+                  isFoldingPage: foldingPageSide === 'left',
+                })
+              : undefined),
+          }}
+        >
           <CachedPageCanvas
-            bitmap={rightBmp}
+            bitmap={leftBmp}
             cssWidth={spreadPageWidth}
             cssHeight={pageCanvasHeightPx}
-            clipLeftPx={gutterPullPx}
           />
+          {foldMode && foldingPageSide === 'left' ? (
+            <SpreadTurnFoldLightingOverlay
+              foldDirection={foldDirection}
+              foldTransitionActive={foldTransitionActive}
+            />
+          ) : null}
         </div>
-      ) : null}
+        {outgoing.right != null && rightBmp ? (
+          <div
+            className="relative shrink-0 grow-0 overflow-hidden"
+            style={{
+              boxSizing: 'border-box',
+              width: spreadPageWidth,
+              minWidth: spreadPageWidth,
+              maxWidth: spreadPageWidth,
+              flexShrink: 0,
+              flexGrow: 0,
+              ...foldSurface,
+              ...(foldMode && foldingPageSide
+                ? foldPageStyle({
+                    pageSide: 'right',
+                    foldDirection,
+                    foldTransitionActive,
+                    isFoldingPage: foldingPageSide === 'right',
+                  })
+                : undefined),
+            }}
+          >
+            <CachedPageCanvas
+              bitmap={rightBmp}
+              cssWidth={spreadPageWidth}
+              cssHeight={pageCanvasHeightPx}
+            />
+            {foldMode && foldingPageSide === 'right' ? (
+              <SpreadTurnFoldLightingOverlay
+                foldDirection={foldDirection}
+                foldTransitionActive={foldTransitionActive}
+              />
+            ) : null}
+          </div>
+        ) : null}
+      </SpreadCanvasWrapper>
     </div>
   )
 }

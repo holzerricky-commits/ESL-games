@@ -1,10 +1,8 @@
-import type { RefObject } from 'react'
-import { ChevronLeft, ChevronRight, Languages, Presentation, Redo2, Smartphone, Trash2, Undo2 } from 'lucide-react'
+import type { CSSProperties, MutableRefObject } from 'react'
+import { useState } from 'react'
+import { Pin } from 'lucide-react'
 import { BookAnnotationToolbar } from '@/components/students/book-annotation-toolbar'
-import { BookCaptureMenu } from '@/components/students/book-capture-menu'
-import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { getUnitReaderBounds } from '@/lib/books/page-range'
 import type { AnnotationColorSource } from '@/lib/books/annotation-custom-color'
 import type { AnnotationStrokeThicknessStep, BookAnnotationInteractionMode } from '@/lib/books/annotation-storage'
 import type {
@@ -16,23 +14,70 @@ import type {
 } from '@/lib/books/annotation-command-types'
 import type { StickerKind } from '@/lib/books/sticker-tool'
 import type { EyedropperVariant } from '@/lib/books/eyedropper-variant'
-import type { BookCaptureFormat } from '@/lib/books/book-capture'
-import type { BookLibraryPayload } from '@/lib/books/types'
-import { BOOK_OVERLAY_SHORTCUT_LABELS as SC } from '@/lib/books/book-overlay-keyboard-shortcuts'
-import { BOOK_OVERLAY_GLASS_CHROME } from '@/components/students/fullscreen-book-overlay/constants'
+import { ANNOTATION_RAIL_SLIDE_MS, useAnnotationRailHoverChrome } from '@/components/students/fullscreen-book-overlay/hooks/useAnnotationRailHoverChrome'
+import {
+  FloatingSideToolbar,
+  FLOATING_SIDE_TOOLBAR_BUTTON,
+  FLOATING_SIDE_TOOLBAR_BUTTON_ACTIVE,
+} from '@/components/students/fullscreen-book-overlay/FloatingSideToolbar'
+import type { MarqueeSelectRule } from '@/lib/books/annotation-select'
+import type { AnnotationTextFontId } from '@/lib/books/annotation-text-fonts'
 
-type AnnotationCapabilities = { canUndo: boolean; canRedo: boolean }
+function AnnotationRailHandle({
+  revealed,
+  onPointerEnter,
+  onPointerLeave,
+  onActivate,
+}: {
+  revealed: boolean
+  onPointerEnter: () => void
+  onPointerLeave: () => void
+  onActivate: () => void
+}) {
+  return (
+    <button
+      type="button"
+      className={cn(
+        'annotation-rail-handle pointer-events-auto absolute top-1/2 right-0 z-[2] -translate-y-1/2 border-0 p-0',
+        revealed && 'annotation-rail-handle--revealed',
+      )}
+      aria-label="Show annotation tools"
+      aria-expanded={revealed}
+      title="Annotation tools"
+      onPointerEnter={onPointerEnter}
+      onPointerLeave={onPointerLeave}
+      onClick={onActivate}
+    />
+  )
+}
 
-/** Same footprint for the peek tab (collapsed) and the hide handle (expanded, inside shell). */
-const ANNOTATION_RAIL_HANDLE_LAYOUT =
-  'flex h-11 w-4 shrink-0 items-center justify-center rounded-l-none rounded-r-2xl'
+/** Footer chrome — keep-open control, intentionally not a tool button. */
+function RailPinAffordance({ pinned, onToggle }: { pinned: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      className={cn('annotation-rail-pin', pinned && 'annotation-rail-pin--pinned')}
+      aria-pressed={pinned}
+      aria-label={pinned ? 'Unpin annotation tools' : 'Keep annotation tools open'}
+      title={pinned ? 'Unpin tools (allow hide)' : 'Keep tools open'}
+      onClick={onToggle}
+    >
+      <span className="annotation-rail-pin__grip" aria-hidden />
+      <Pin className="annotation-rail-pin__icon" strokeWidth={2.25} aria-hidden />
+    </button>
+  )
+}
 
 interface AnnotationRailProps {
   hasResolvedUnit: boolean
   numPages: number | null
   selectedBookId: string | null
-  isLessonPaperOverlayMode: boolean
   suppressChrome: boolean
+  isAnnotationRailPinned: boolean
+  setIsAnnotationRailPinned: (pinned: boolean) => void
+  annotationRailPinHydrated: boolean
+  annotationRailKeyboardDismissAt?: number
+  annotationRailKeyboardOpenAt?: number
   isAnnotationRailVisible: boolean
   setIsAnnotationRailVisible: (v: boolean) => void
   annotationMode: BookAnnotationInteractionMode
@@ -45,6 +90,8 @@ interface AnnotationRailProps {
   setWritableStickerVariant: (v: WritableStickerVariant) => void
   stampQuestionColor: string
   setStampQuestionColor: (c: string) => void
+  stampEffectsEnabled: boolean
+  setStampEffectsEnabled: (enabled: boolean) => void
   penSwatchId: string
   pickPenSwatch: (id: string) => void
   penStrokeProfile: import('@/lib/books/pen-stroke-profile').PenStrokeProfile
@@ -81,6 +128,8 @@ interface AnnotationRailProps {
   setEraserLineThicknessStep: (v: AnnotationStrokeThicknessStep) => void
   textVisualStyle: TextAnnotationVisualStyle
   setTextVisualStyle: (v: TextAnnotationVisualStyle) => void
+  textAlign: import('@/lib/books/annotation-command-types').TextAnnotationAlign
+  setTextAlign: (v: import('@/lib/books/annotation-command-types').TextAnnotationAlign) => void
   textFillColor: string
   setTextFillColor: (v: string) => void
   penLineDashStyle: AnnotationLineDashStyle
@@ -93,6 +142,20 @@ interface AnnotationRailProps {
   setMarkerDecoratedEdge: (v: boolean) => void
   penAutoGroupConnected: boolean
   setPenAutoGroupConnected: (v: boolean) => void
+  marqueeSelectRule: MarqueeSelectRule
+  setMarqueeSelectRule: (r: MarqueeSelectRule) => void
+  textFontId: AnnotationTextFontId
+  setTextFontId: (id: AnnotationTextFontId) => void
+  pickTextColor: (hex: string) => void
+  pickTextFillColor: (hex: string) => void
+  pickStickyFillColor: (hex: string) => void
+  textSelectionActive?: boolean
+  stickySelectionActive?: boolean
+  shapeSelectionActive?: boolean
+  penStrokeSelectionActive?: boolean
+  markerStrokeSelectionActive?: boolean
+  bookTextSpreadHasSelectable?: boolean
+  bookTextCapabilityPending?: boolean
   shapeLineDashStyle: AnnotationLineDashStyle
   setShapeLineDashStyle: (v: AnnotationLineDashStyle) => void
   shapeStrokeEnabled: boolean
@@ -105,44 +168,21 @@ interface AnnotationRailProps {
   setShapeRoundedCorners: (v: boolean) => void
   eyedropperVariant: EyedropperVariant
   setEyedropperVariant: (v: EyedropperVariant) => void
-  pdfReady: boolean
-  captureBusy: boolean
-  captureFormat: BookCaptureFormat
-  setCaptureFormat: (v: BookCaptureFormat) => void
-  jpegQuality: number
-  setJpegQuality: (v: number) => void
-  hideChromeForCapture: boolean
-  setHideChromeForCapture: (v: boolean) => void
-  watermarkEnabled: boolean
-  setWatermarkEnabled: (v: boolean) => void
-  studentName?: string
-  runImageCapture: (args: { kind: 'full' | 'page' | 'region'; regionCss?: DOMRect }) => Promise<void>
-  setRegionSelectOpen: (v: boolean) => void
-  copyLastCaptureToClipboard: () => Promise<void>
-  hasLastImageCapture: boolean
-  selectedUnit: BookLibraryPayload['books'][number]['units'][number] | null
-  selectedBook: BookLibraryPayload['books'][number] | null
-  setPdfFrom: (v: string) => void
-  setPdfTo: (v: string) => void
-  setPdfDialogOpen: (v: boolean) => void
-  toolbarCaps: AnnotationCapabilities
+  pageCanvasHeightPx?: number
   isWhiteboardOpen: boolean
-  isWhiteboardSessionOpen: boolean
-  isWhiteboardMinimized: boolean
-  onWhiteboardRailClick: () => void
-  whiteboardToolbarButtonRef: RefObject<HTMLButtonElement | null>
-  getActiveAnnotationRef: () => { current: { undo: () => void; redo: () => void; clear: () => void } | null }
-  translateDockOpen: boolean
-  onTranslateDockToggle: () => void
-  onOpenCoachDialog: () => void
+  registerToolSettingsCloseRef?: MutableRefObject<(() => void) | null>
 }
 
 export function AnnotationRail({
   hasResolvedUnit,
   numPages,
   selectedBookId,
-  isLessonPaperOverlayMode,
   suppressChrome,
+  isAnnotationRailPinned,
+  setIsAnnotationRailPinned,
+  annotationRailPinHydrated,
+  annotationRailKeyboardDismissAt = 0,
+  annotationRailKeyboardOpenAt = 0,
   isAnnotationRailVisible,
   setIsAnnotationRailVisible,
   annotationMode,
@@ -155,6 +195,8 @@ export function AnnotationRail({
   setWritableStickerVariant,
   stampQuestionColor,
   setStampQuestionColor,
+  stampEffectsEnabled,
+  setStampEffectsEnabled,
   penSwatchId,
   pickPenSwatch,
   penStrokeProfile,
@@ -191,6 +233,8 @@ export function AnnotationRail({
   setEraserLineThicknessStep,
   textVisualStyle,
   setTextVisualStyle,
+  textAlign,
+  setTextAlign,
   textFillColor,
   setTextFillColor,
   penLineDashStyle,
@@ -203,6 +247,20 @@ export function AnnotationRail({
   setMarkerDecoratedEdge,
   penAutoGroupConnected,
   setPenAutoGroupConnected,
+  marqueeSelectRule,
+  setMarqueeSelectRule,
+  textFontId,
+  setTextFontId,
+  pickTextColor,
+  pickTextFillColor,
+  pickStickyFillColor,
+  textSelectionActive = false,
+  stickySelectionActive = false,
+  shapeSelectionActive = false,
+  penStrokeSelectionActive = false,
+  markerStrokeSelectionActive = false,
+  bookTextSpreadHasSelectable = false,
+  bookTextCapabilityPending = false,
   shapeLineDashStyle,
   setShapeLineDashStyle,
   shapeStrokeEnabled,
@@ -215,69 +273,87 @@ export function AnnotationRail({
   setShapeRoundedCorners,
   eyedropperVariant,
   setEyedropperVariant,
-  pdfReady,
-  captureBusy,
-  captureFormat,
-  setCaptureFormat,
-  jpegQuality,
-  setJpegQuality,
-  hideChromeForCapture,
-  setHideChromeForCapture,
-  watermarkEnabled,
-  setWatermarkEnabled,
-  studentName,
-  runImageCapture,
-  setRegionSelectOpen,
-  copyLastCaptureToClipboard,
-  hasLastImageCapture,
-  selectedUnit,
-  selectedBook,
-  setPdfFrom,
-  setPdfTo,
-  setPdfDialogOpen,
-  toolbarCaps,
+  pageCanvasHeightPx,
   isWhiteboardOpen,
-  isWhiteboardSessionOpen,
-  isWhiteboardMinimized,
-  onWhiteboardRailClick,
-  whiteboardToolbarButtonRef,
-  getActiveAnnotationRef,
-  translateDockOpen,
-  onTranslateDockToggle,
-  onOpenCoachDialog,
+  registerToolSettingsCloseRef,
 }: AnnotationRailProps) {
+  const [settingsPanelOpen, setSettingsPanelOpen] = useState(false)
+
+  const {
+    revealed,
+    pinned,
+    revealRail,
+    togglePinned,
+    onEdgePointerEnter,
+    onEdgePointerLeave,
+    onClusterPointerEnter,
+    onClusterPointerLeave,
+    onClusterPointerDown,
+  } = useAnnotationRailHoverChrome({
+    enabled: !suppressChrome && hasResolvedUnit && numPages != null && !!selectedBookId,
+    setVisible: setIsAnnotationRailVisible,
+    pinned: isAnnotationRailPinned,
+    setPinned: setIsAnnotationRailPinned,
+    pinHydrated: annotationRailPinHydrated,
+    keyboardDismissAt: annotationRailKeyboardDismissAt,
+    keyboardOpenAt: annotationRailKeyboardOpenAt,
+    externalHoldOpen: settingsPanelOpen,
+  })
+
   if (!hasResolvedUnit || numPages == null || !selectedBookId) return null
 
   return (
-    <div
-      className={cn(
-        /* Positioned by BookOverlayLeftChrome; only chrome re-enables pointer events. */
-        'pointer-events-none flex items-center',
-        isLessonPaperOverlayMode ? 'max-w-[calc(50vw-18px)]' : 'max-w-[calc(100vw-18px)]',
-        suppressChrome && 'invisible opacity-0',
-      )}
-    >
-      {isAnnotationRailVisible ? (
+    <>
+      {!pinned && !suppressChrome ? (
         <div
-          className={cn(
-            'relative inline-block max-w-full pl-2 pr-0 align-middle md:pl-3',
-            !suppressChrome && 'pointer-events-auto',
-          )}
-        >
-          <div
-            className={cn(
-              'flex max-h-[calc(100vh-210px)] w-max flex-col overflow-hidden rounded-2xl [scrollbar-width:thin]',
-              BOOK_OVERLAY_GLASS_CHROME,
-            )}
+          className="pointer-events-auto fixed top-0 right-0 z-[27] h-full w-3"
+          aria-hidden
+          onPointerEnter={onEdgePointerEnter}
+          onPointerLeave={onEdgePointerLeave}
+        />
+      ) : null}
+
+      <div
+        className={cn(
+          'pointer-events-none fixed right-0 top-1/2 z-[28] -translate-y-1/2 transform-gpu',
+          suppressChrome && 'invisible opacity-0',
+        )}
+      >
+        {!pinned && !suppressChrome ? (
+          <AnnotationRailHandle
+            revealed={revealed}
+            onPointerEnter={onEdgePointerEnter}
+            onPointerLeave={onEdgePointerLeave}
+            onActivate={revealRail}
+          />
+        ) : null}
+        <div className="relative size-0">
+      <div
+        className={cn(
+          'annotation-rail-slide-panel absolute top-1/2 right-0 z-[1] -translate-y-1/2',
+          revealed && 'annotation-rail-slide-panel--revealed',
+          revealed
+            ? 'pointer-events-auto -translate-x-4 opacity-100'
+            : 'pointer-events-none translate-x-full opacity-0',
+        )}
+        style={{ '--annotation-rail-slide-ms': `${ANNOTATION_RAIL_SLIDE_MS}ms` } as CSSProperties}
+        onPointerEnter={!suppressChrome ? onClusterPointerEnter : undefined}
+        onPointerLeave={!suppressChrome ? onClusterPointerLeave : undefined}
+        onPointerDown={!suppressChrome ? onClusterPointerDown : undefined}
+        aria-hidden={!revealed}
+      >
+        <FloatingSideToolbar
+            hidden={suppressChrome}
+            fixed={false}
+            className="annotation-rail-toolbar relative z-[1]"
+            aria-label="Annotation tools"
           >
-            <div
-              className="flex w-max flex-col items-center gap-1 overflow-y-auto overflow-x-visible py-1.5 pl-1 pr-1 text-white"
-              role="toolbar"
-              aria-label="Annotation tools"
-            >
+            <div className="annotation-rail-toolbar__tools">
             <BookAnnotationToolbar
               layout="vertical"
               useContextStrip
+              toolButtonClassName={FLOATING_SIDE_TOOLBAR_BUTTON}
+              toolButtonActiveClassName={FLOATING_SIDE_TOOLBAR_BUTTON_ACTIVE}
               annotationMode={annotationMode}
               setAnnotationMode={setAnnotationMode}
               stampVariant={stampVariant}
@@ -288,6 +364,8 @@ export function AnnotationRail({
               setWritableStickerVariant={setWritableStickerVariant}
               stampQuestionColor={stampQuestionColor}
               setStampQuestionColor={setStampQuestionColor}
+              stampEffectsEnabled={stampEffectsEnabled}
+              setStampEffectsEnabled={setStampEffectsEnabled}
               penSwatchId={penSwatchId}
               pickPenSwatch={pickPenSwatch}
               penStrokeProfile={penStrokeProfile}
@@ -324,8 +402,13 @@ export function AnnotationRail({
               setEraserLineThicknessStep={setEraserLineThicknessStep}
               textVisualStyle={textVisualStyle}
               setTextVisualStyle={setTextVisualStyle}
+              textAlign={textAlign}
+              setTextAlign={setTextAlign}
+              textFontId={textFontId}
+              setTextFontId={setTextFontId}
               textFillColor={textFillColor}
               setTextFillColor={setTextFillColor}
+              textPageHeightPx={pageCanvasHeightPx}
               penLineDashStyle={penLineDashStyle}
               setPenLineDashStyle={setPenLineDashStyle}
               markerLineDashStyle={markerLineDashStyle}
@@ -344,164 +427,29 @@ export function AnnotationRail({
               setShapeFillColor={setShapeFillColor}
               shapeRoundedCorners={shapeRoundedCorners}
               setShapeRoundedCorners={setShapeRoundedCorners}
+              penAutoGroupConnected={penAutoGroupConnected}
+              setPenAutoGroupConnected={setPenAutoGroupConnected}
+              marqueeSelectRule={marqueeSelectRule}
+              setMarqueeSelectRule={setMarqueeSelectRule}
+              textSelectionActive={textSelectionActive}
+              stickySelectionActive={stickySelectionActive}
+              shapeSelectionActive={shapeSelectionActive}
+              penStrokeSelectionActive={penStrokeSelectionActive}
+              markerStrokeSelectionActive={markerStrokeSelectionActive}
+              bookTextSpreadHasSelectable={bookTextSpreadHasSelectable}
+              bookTextCapabilityPending={bookTextCapabilityPending}
+              onSettingsPanelOpenChange={setSettingsPanelOpen}
+              registerToolSettingsCloseRef={registerToolSettingsCloseRef}
               eyedropperVariant={eyedropperVariant}
               setEyedropperVariant={setEyedropperVariant}
+              isWhiteboardOpen={isWhiteboardOpen}
             />
-            <span className="my-1 h-px w-7 shrink-0 bg-white/20" aria-hidden />
-            <BookCaptureMenu
-              disabled={!pdfReady}
-              busy={captureBusy}
-              captureFormat={captureFormat}
-              onCaptureFormatChange={setCaptureFormat}
-              jpegQuality={jpegQuality}
-              onJpegQualityChange={setJpegQuality}
-              hideChromeForCapture={hideChromeForCapture}
-              onHideChromeForCaptureChange={setHideChromeForCapture}
-              watermarkEnabled={watermarkEnabled}
-              onWatermarkEnabledChange={setWatermarkEnabled}
-              studentDisplayName={studentName}
-              onSaveFullStage={() => runImageCapture({ kind: 'full' })}
-              onSaveCurrentPage={() => runImageCapture({ kind: 'page' })}
-              onSelectRegion={() => setRegionSelectOpen(true)}
-              onCopyLastCapture={() => copyLastCaptureToClipboard()}
-              canCopyLast={hasLastImageCapture}
-              onExportPdfPacket={() => {
-                if (numPages != null && selectedUnit) {
-                  const b = getUnitReaderBounds(selectedUnit, numPages, selectedBook ?? undefined)
-                  setPdfFrom(String(b.min))
-                  setPdfTo(String(b.max))
-                }
-                setPdfDialogOpen(true)
-              }}
-            />
-            <span className="my-1 h-px w-7 shrink-0 bg-white/20" aria-hidden />
-            <Button
-              ref={whiteboardToolbarButtonRef}
-              type="button"
-              variant="ghost"
-              size="icon"
-              className={cn(
-                'h-8 w-8 shrink-0 rounded-full text-white hover:bg-white/15',
-                isWhiteboardOpen && 'bg-white/20 ring-1 ring-white/25',
-                isWhiteboardMinimized && 'bg-white/12 ring-1 ring-white/20',
-              )}
-              aria-label={
-                !isWhiteboardSessionOpen
-                  ? 'Open lesson board'
-                  : isWhiteboardMinimized
-                    ? 'Restore lesson board'
-                    : 'Minimize lesson board'
-              }
-              aria-pressed={isWhiteboardSessionOpen}
-              title={
-                !isWhiteboardSessionOpen
-                  ? `Lesson board (${SC.whiteboard})`
-                  : isWhiteboardMinimized
-                    ? `Restore lesson board (${SC.whiteboard})`
-                    : `Minimize lesson board (${SC.whiteboard})`
-              }
-              onClick={onWhiteboardRailClick}
-            >
-              <Presentation className="h-4 w-4" strokeWidth={2} aria-hidden />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 shrink-0 rounded-full text-white hover:bg-white/15 disabled:opacity-35"
-              disabled={!toolbarCaps.canUndo}
-              aria-label={isWhiteboardOpen ? 'Undo whiteboard' : 'Undo annotation'}
-              title={isWhiteboardOpen ? `Undo whiteboard (${SC.undo})` : `Undo annotation (${SC.undo})`}
-              onClick={() => getActiveAnnotationRef().current?.undo()}
-            >
-              <Undo2 className="h-4 w-4" strokeWidth={2} />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 shrink-0 rounded-full text-white hover:bg-white/15 disabled:opacity-35"
-              disabled={!toolbarCaps.canRedo}
-              aria-label={isWhiteboardOpen ? 'Redo whiteboard' : 'Redo annotation'}
-              title={isWhiteboardOpen ? `Redo whiteboard (${SC.redo})` : `Redo annotation (${SC.redo})`}
-              onClick={() => getActiveAnnotationRef().current?.redo()}
-            >
-              <Redo2 className="h-4 w-4" strokeWidth={2} />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 shrink-0 rounded-full text-white hover:bg-white/15"
-              aria-label={isWhiteboardOpen ? 'Clear whiteboard for this page' : 'Clear all ink on this page'}
-              title={
-                isWhiteboardOpen
-                  ? `Clear whiteboard (${SC.clearPage})`
-                  : `Clear all ink on this page (${SC.clearPage})`
-              }
-              onClick={() => getActiveAnnotationRef().current?.clear()}
-            >
-              <Trash2 className="h-4 w-4" strokeWidth={2} />
-            </Button>
-            <span className="my-1 h-px w-7 shrink-0 bg-white/20" aria-hidden />
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className={cn(
-                'h-8 w-8 shrink-0 rounded-full text-white hover:bg-white/15',
-                translateDockOpen && 'bg-white/20 ring-1 ring-white/25',
-              )}
-              aria-label={translateDockOpen ? 'Close translate dock' : 'Open translate dock'}
-              aria-pressed={translateDockOpen}
-              title={`Translate to Chinese (${SC.translate})`}
-              onClick={onTranslateDockToggle}
-            >
-              <Languages className="h-4 w-4" strokeWidth={2} />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 shrink-0 rounded-full text-white hover:bg-white/15"
-              aria-label="Open teacher coach on phone"
-              title="Coach on phone (same Wi‑Fi)"
-              onClick={onOpenCoachDialog}
-            >
-              <Smartphone className="h-4 w-4" strokeWidth={2} />
-            </Button>
             </div>
-          </div>
-          <button
-            type="button"
-            className={cn(
-              BOOK_OVERLAY_GLASS_CHROME,
-              ANNOTATION_RAIL_HANDLE_LAYOUT,
-              'absolute left-full top-1/2 z-[1] -translate-x-1 -translate-y-1/2 border-l-0 transition-colors hover:bg-white/10 hover:text-white/85',
-            )}
-            onClick={() => setIsAnnotationRailVisible(false)}
-            aria-label="Hide annotation tools"
-            title={`Hide tools (${SC.toggleTools})`}
-          >
-            <ChevronLeft className="h-3 w-3 shrink-0" strokeWidth={2} />
-          </button>
-        </div>
-      ) : (
-        <button
-          type="button"
-          className={cn(
-            BOOK_OVERLAY_GLASS_CHROME,
-            ANNOTATION_RAIL_HANDLE_LAYOUT,
-            'border-l-0 transition-colors hover:bg-white/10 hover:text-white/85',
-            !suppressChrome && 'pointer-events-auto',
-          )}
-          onClick={() => setIsAnnotationRailVisible(true)}
-          aria-label="Show annotation tools"
-          title={`Show tools (${SC.toggleTools})`}
-        >
-          <ChevronRight className="h-3 w-3 shrink-0" strokeWidth={2} />
-        </button>
-      )}
+            <RailPinAffordance pinned={pinned} onToggle={togglePinned} />
+          </FloatingSideToolbar>
+      </div>
+      </div>
     </div>
+    </>
   )
 }

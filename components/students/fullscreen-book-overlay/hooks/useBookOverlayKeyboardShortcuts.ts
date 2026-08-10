@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { AnnotationStrokeThicknessStep, BookAnnotationInteractionMode } from '@/lib/books/annotation-storage'
 import type { StampVariant, WritableStickerVariant } from '@/lib/books/annotation-command-types'
-import type { StickerKind } from '@/lib/books/sticker-tool'
+import { isQuickStickerInteraction, type StickerKind } from '@/lib/books/sticker-tool'
 import {
   commitBookOverlayTypingTarget,
   focusBookOverlayAnnotationField,
@@ -23,12 +23,17 @@ import {
   BOOK_OVERLAY_STAMP_VARIANT_BY_DIGIT,
   INITIAL_SHORTCUT_TAP_STATE,
   isBookOverlayShapeMode,
+  resolveQuickStampShortcut,
   resolveShortcutTapIndex,
   type BookOverlayShapeMode,
   type ShortcutTapState,
 } from '@/lib/books/book-overlay-keyboard-shortcuts'
 import { EYEDROPPER_VARIANTS, type EyedropperVariant } from '@/lib/books/eyedropper-variant'
-import { PEN_STROKE_PROFILES, type PenStrokeProfile } from '@/lib/books/pen-stroke-profile'
+import { PEN_STROKE_PROFILES, normalizeActivePenStrokeProfile, type PenStrokeProfile } from '@/lib/books/pen-stroke-profile'
+import { shouldDeferClipboardPasteToBrowser } from '@/lib/books/clipboard-text'
+import { pasteImageOutcomeToastKind } from '@/lib/books/clipboard-image'
+import { toast } from 'sonner'
+import { useStudentRewardBurstOptional } from '@/components/students/student-reward-burst-context'
 
 const MAX_THICKNESS_STEP = 6 satisfies AnnotationStrokeThicknessStep
 
@@ -39,13 +44,13 @@ function clampThicknessStep(step: number): AnnotationStrokeThicknessStep {
 interface UseBookOverlayKeyboardShortcutsArgs {
   open: boolean
   onClose: () => void
-  isLessonPaperOpen: boolean
   annotationMode: BookAnnotationInteractionMode
   setAnnotationMode: (m: BookAnnotationInteractionMode) => void
   penStrokeProfile: PenStrokeProfile
   setPenStrokeProfile: (profile: PenStrokeProfile) => void
   stampVariant: StampVariant
   setStampVariant: (v: StampVariant) => void
+  pulseStampIndicator?: () => void
   stickerKind: StickerKind
   setStickerKind: (k: StickerKind) => void
   writableStickerVariant: WritableStickerVariant
@@ -53,7 +58,7 @@ interface UseBookOverlayKeyboardShortcutsArgs {
   eyedropperVariant: EyedropperVariant
   setEyedropperVariant: (v: EyedropperVariant) => void
   isAnnotationRailVisible: boolean
-  setIsAnnotationRailVisible: (v: boolean) => void
+  toggleAnnotationRailKeyboard: () => void
   isPageListOpen: boolean
   setIsPageListOpen: (v: boolean) => void
   pageListRailTab: 'book' | 'board'
@@ -68,6 +73,10 @@ interface UseBookOverlayKeyboardShortcutsArgs {
   setWhiteboardSlotSide?: (side: 'left' | 'right') => void
   pdfDialogOpen: boolean
   regionSelectOpen: boolean
+  boardLinkPlacementActive?: boolean
+  cancelBoardLinkPlacement?: () => void
+  readingCheckHotspotPlacementActive?: boolean
+  cancelReadingCheckHotspotPlacement?: () => void
   captionDialogOpen: boolean
   translateDockOpen: boolean
   setTranslateDockOpen: (v: boolean) => void
@@ -87,15 +96,19 @@ interface UseBookOverlayKeyboardShortcutsArgs {
   setEraserPixelThicknessStep: (s: AnnotationStrokeThicknessStep) => void
   toolbarCaps: { canUndo: boolean; canRedo: boolean }
   selectAllOnActivePage: () => void
+  selectAllIncludingLockedOnActivePage: () => void
   deselectAllOnActivePage: () => void
   hasAnyAnnotationSelection: () => boolean
   getPageAnnotationRef: () => {
     current: {
       getSelectedIds?: () => string[]
       selectAll?: () => void
+      selectAllIncludingLocked?: () => void
       deleteSelected?: () => boolean
       copySelected?: () => boolean
       pasteFromClipboard?: () => boolean
+      pasteImageFromSystemClipboard?: () => Promise<boolean>
+      pasteTextFromSystemClipboard?: () => Promise<boolean>
       groupSelected?: () => boolean
       ungroupSelected?: () => boolean
       toggleGroupSelected?: () => boolean
@@ -108,6 +121,13 @@ interface UseBookOverlayKeyboardShortcutsArgs {
       clearNudgePreview?: () => void
     } | null
   }
+  getWhiteboardAnnotationRef?: () => {
+    current: {
+      pasteImageFromSystemClipboard?: () => Promise<import('@/lib/books/clipboard-image').PasteImageOutcome>
+      pasteTextFromSystemClipboard?: () => Promise<boolean>
+    } | null
+  }
+  pasteSpreadImageFromSystemClipboard?: () => Promise<import('@/lib/books/clipboard-image').PasteImageOutcome>
   getActiveAnnotationRef: () => {
     current: {
       undo: () => void
@@ -115,6 +135,7 @@ interface UseBookOverlayKeyboardShortcutsArgs {
       clear: () => void
       getSelectedIds?: () => string[]
       selectAll?: () => void
+      selectAllIncludingLocked?: () => void
       deleteSelected?: () => boolean
       copySelected?: () => boolean
       pasteFromClipboard?: () => boolean
@@ -130,18 +151,27 @@ interface UseBookOverlayKeyboardShortcutsArgs {
       clearNudgePreview?: () => void
     } | null
   }
+  focusZoomPhase?: import('@/lib/books/focus-zoom-types').BookFocusZoomPhase
+  toggleFocusZoom?: () => void
+  clearFocusZoom?: () => void
+  cancelFocusDraw?: () => void
+  focusZoomEnabled?: boolean
+  pinchZoomActive?: boolean
+  clearPinchZoom?: () => void
+  /** Real browser full screen (hides tabs / address bar). */
+  onToggleBrowserFullscreen?: () => void
 }
 
 export function useBookOverlayKeyboardShortcuts({
   open,
   onClose,
-  isLessonPaperOpen,
   annotationMode,
   setAnnotationMode,
   penStrokeProfile,
   setPenStrokeProfile,
   stampVariant,
   setStampVariant,
+  pulseStampIndicator,
   stickerKind,
   setStickerKind,
   writableStickerVariant,
@@ -149,7 +179,7 @@ export function useBookOverlayKeyboardShortcuts({
   eyedropperVariant,
   setEyedropperVariant,
   isAnnotationRailVisible,
-  setIsAnnotationRailVisible,
+  toggleAnnotationRailKeyboard,
   isPageListOpen,
   setIsPageListOpen,
   pageListRailTab,
@@ -164,6 +194,10 @@ export function useBookOverlayKeyboardShortcuts({
   setWhiteboardSlotSide,
   pdfDialogOpen,
   regionSelectOpen,
+  boardLinkPlacementActive = false,
+  cancelBoardLinkPlacement,
+  readingCheckHotspotPlacementActive = false,
+  cancelReadingCheckHotspotPlacement,
   captionDialogOpen,
   translateDockOpen,
   setTranslateDockOpen,
@@ -183,11 +217,23 @@ export function useBookOverlayKeyboardShortcuts({
   setEraserPixelThicknessStep,
   toolbarCaps,
   selectAllOnActivePage,
+  selectAllIncludingLockedOnActivePage,
   deselectAllOnActivePage,
   hasAnyAnnotationSelection,
   getPageAnnotationRef,
+  getWhiteboardAnnotationRef,
+  pasteSpreadImageFromSystemClipboard,
   getActiveAnnotationRef,
+  focusZoomPhase = 'off',
+  toggleFocusZoom,
+  clearFocusZoom,
+  cancelFocusDraw,
+  focusZoomEnabled = false,
+  pinchZoomActive = false,
+  clearPinchZoom,
+  onToggleBrowserFullscreen,
 }: UseBookOverlayKeyboardShortcutsArgs) {
+  const studentRewardBurst = useStudentRewardBurstOptional()
   const lastShapeRef = useRef<BookOverlayShapeMode>(BOOK_OVERLAY_DEFAULT_SHAPE_MODE)
   const stampTapRef = useRef<ShortcutTapState>(INITIAL_SHORTCUT_TAP_STATE)
   const shapeTapRef = useRef<ShortcutTapState>(INITIAL_SHORTCUT_TAP_STATE)
@@ -198,6 +244,12 @@ export function useBookOverlayKeyboardShortcuts({
   const nudgeKeysDownRef = useRef(new Set<string>())
   const getPageAnnotationRefNudge = useRef(getPageAnnotationRef)
   getPageAnnotationRefNudge.current = getPageAnnotationRef
+
+  useEffect(() => {
+    if (!isQuickStickerInteraction(annotationMode, stickerKind)) {
+      stampTapRef.current = INITIAL_SHORTCUT_TAP_STATE
+    }
+  }, [annotationMode, stickerKind])
 
   function isArrowNudgeKey(key: string): boolean {
     return (
@@ -243,7 +295,7 @@ export function useBookOverlayKeyboardShortcuts({
     if (!open) return
 
     function nudgeTypingBlocksShortcuts(): boolean {
-      return shouldDeferBookOverlayToolShortcuts() && !isLessonPaperOpen
+      return shouldDeferBookOverlayToolShortcuts()
     }
 
     function onNudgeKeyDown(e: KeyboardEvent) {
@@ -286,7 +338,7 @@ export function useBookOverlayKeyboardShortcuts({
         commitNudgeGesture()
       }
     }
-  }, [open, isLessonPaperOpen])
+  }, [open])
 
   useEffect(() => {
     if (isBookOverlayShapeMode(annotationMode)) {
@@ -298,12 +350,11 @@ export function useBookOverlayKeyboardShortcuts({
     if (!open) return
 
     function isAnnotationFieldTyping(): boolean {
-      return shouldDeferBookOverlayToolShortcuts() && !isLessonPaperOpen
+      return shouldDeferBookOverlayToolShortcuts()
     }
 
     function shouldIgnoreToolShortcuts(): boolean {
       if (shouldDeferBookOverlayToolShortcuts()) return true
-      if (isLessonPaperOpen) return true
       if (pdfDialogOpen || regionSelectOpen || captionDialogOpen) return true
       return false
     }
@@ -344,7 +395,8 @@ export function useBookOverlayKeyboardShortcuts({
     }
 
     function penCurrentIndex(): number {
-      const idx = PEN_STROKE_PROFILES.indexOf(penStrokeProfile)
+      const active = normalizeActivePenStrokeProfile(penStrokeProfile)
+      const idx = PEN_STROKE_PROFILES.indexOf(active)
       return idx >= 0 ? idx : 0
     }
 
@@ -381,7 +433,7 @@ export function useBookOverlayKeyboardShortcuts({
         setShapeThicknessStep(clampThicknessStep(shapeThicknessStep + delta))
         return
       }
-      if (annotationMode === 'stamp' || annotationMode === 'callout') {
+      if (annotationMode === 'stamp' || annotationMode === 'callout' || isQuickStickerInteraction(annotationMode, stickerKind)) {
         setStampThicknessStep(clampThicknessStep(stampThicknessStep + delta))
         return
       }
@@ -429,6 +481,31 @@ export function useBookOverlayKeyboardShortcuts({
       }
 
       if (key === 'Escape') {
+        if (boardLinkPlacementActive) {
+          e.preventDefault()
+          cancelBoardLinkPlacement?.()
+          return
+        }
+        if (readingCheckHotspotPlacementActive) {
+          e.preventDefault()
+          cancelReadingCheckHotspotPlacement?.()
+          return
+        }
+        if (pinchZoomActive) {
+          e.preventDefault()
+          clearPinchZoom?.()
+          return
+        }
+        if (focusZoomEnabled && focusZoomPhase === 'draw') {
+          e.preventDefault()
+          cancelFocusDraw?.()
+          return
+        }
+        if (focusZoomEnabled && focusZoomPhase === 'active') {
+          e.preventDefault()
+          clearFocusZoom?.()
+          return
+        }
         if (pdfDialogOpen || regionSelectOpen || captionDialogOpen) return
         if (hasAnyAnnotationSelection()) {
           e.preventDefault()
@@ -493,10 +570,11 @@ export function useBookOverlayKeyboardShortcuts({
         if (shouldIgnoreToolShortcuts()) return
         e.preventDefault()
         if (e.shiftKey) {
-          deselectAllOnActivePage()
+          selectAllIncludingLockedOnActivePage()
         } else {
           selectAllOnActivePage()
         }
+        setAnnotationMode('select')
         return
       }
 
@@ -522,8 +600,42 @@ export function useBookOverlayKeyboardShortcuts({
           }
           return
         } else if (keyLower === 'v') {
+          if (shouldDeferClipboardPasteToBrowser()) return
           if (ann.pasteFromClipboard?.()) {
             e.preventDefault()
+            return
+          }
+          if (isWhiteboardOpen) {
+            e.preventDefault()
+            const wb = getWhiteboardAnnotationRef?.().current
+            void wb?.pasteImageFromSystemClipboard?.().then((outcome) => {
+              if (outcome?.ok) {
+                setAnnotationMode('select')
+                const kind = pasteImageOutcomeToastKind(outcome)
+                if (kind === 'gif') toast.success('GIF pasted')
+                else if (kind === 'frozen-fallback') {
+                  toast.warning(
+                    'Picture pasted as still image — try GIF search on the board for animation.',
+                  )
+                } else if (kind === 'picture') toast.success('Picture pasted')
+                return
+              }
+              void wb?.pasteTextFromSystemClipboard?.().then((textOk) => {
+                if (!textOk) {
+                  toast.error('Nothing to paste — copy text or an image first.')
+                }
+              })
+            })
+            return
+          }
+          if (pasteSpreadImageFromSystemClipboard) {
+            e.preventDefault()
+            void pasteSpreadImageFromSystemClipboard().then((outcome) => {
+              if (outcome?.ok) {
+                setAnnotationMode('select')
+              }
+            })
+            return
           }
           return
         }
@@ -581,7 +693,7 @@ export function useBookOverlayKeyboardShortcuts({
 
       if (key === 'Backquote') {
         e.preventDefault()
-        setIsAnnotationRailVisible(!isAnnotationRailVisible)
+        toggleAnnotationRailKeyboard()
         return
       }
 
@@ -594,6 +706,18 @@ export function useBookOverlayKeyboardShortcuts({
         } else {
           setIsPageListOpen(false)
         }
+        return
+      }
+
+      if (keyLower === 'z' && focusZoomEnabled) {
+        e.preventDefault()
+        toggleFocusZoom?.()
+        return
+      }
+
+      if (keyLower === 'f' && onToggleBrowserFullscreen) {
+        e.preventDefault()
+        onToggleBrowserFullscreen()
         return
       }
 
@@ -631,6 +755,13 @@ export function useBookOverlayKeyboardShortcuts({
       if (key === '[' || key === ']') {
         e.preventDefault()
         adjustThickness(key === '[' ? -1 : 1)
+        return
+      }
+
+      if (keyLower === 'g') {
+        if (e.repeat) return
+        e.preventDefault()
+        studentRewardBurst?.triggerReward()
         return
       }
 
@@ -672,10 +803,20 @@ export function useBookOverlayKeyboardShortcuts({
       if (keyLower === 's') {
         if (e.repeat) return
         e.preventDefault()
-        const idx = tapIndex(stampTapRef, BOOK_OVERLAY_STAMP_VARIANTS.length, stampCurrentIndex())
-        setStampVariant(BOOK_OVERLAY_STAMP_VARIANTS[idx]!)
+        const wasQuickSticker = isQuickStickerInteraction(annotationMode, stickerKind)
+        const now = performance.now()
+        const { index, nextState } = resolveQuickStampShortcut(
+          BOOK_OVERLAY_STAMP_VARIANTS.length,
+          wasQuickSticker,
+          stampTapRef.current,
+          now,
+          stampCurrentIndex(),
+        )
+        stampTapRef.current = nextState
+        setStampVariant(BOOK_OVERLAY_STAMP_VARIANTS[index]!)
         setStickerKind('quick')
         setAnnotationMode('sticker')
+        pulseStampIndicator?.()
         return
       }
       if (keyLower === 't') {
@@ -717,13 +858,13 @@ export function useBookOverlayKeyboardShortcuts({
   }, [
     open,
     onClose,
-    isLessonPaperOpen,
     annotationMode,
     setAnnotationMode,
     penStrokeProfile,
     setPenStrokeProfile,
     stampVariant,
     setStampVariant,
+    pulseStampIndicator,
     stickerKind,
     setStickerKind,
     writableStickerVariant,
@@ -731,7 +872,7 @@ export function useBookOverlayKeyboardShortcuts({
     eyedropperVariant,
     setEyedropperVariant,
     isAnnotationRailVisible,
-    setIsAnnotationRailVisible,
+    toggleAnnotationRailKeyboard,
     isPageListOpen,
     setIsPageListOpen,
     pageListRailTab,
@@ -746,6 +887,10 @@ export function useBookOverlayKeyboardShortcuts({
     setWhiteboardSlotSide,
     pdfDialogOpen,
     regionSelectOpen,
+    boardLinkPlacementActive,
+    cancelBoardLinkPlacement,
+    readingCheckHotspotPlacementActive,
+    cancelReadingCheckHotspotPlacement,
     captionDialogOpen,
     translateDockOpen,
     setTranslateDockOpen,
@@ -765,9 +910,14 @@ export function useBookOverlayKeyboardShortcuts({
     setEraserPixelThicknessStep,
     toolbarCaps,
     selectAllOnActivePage,
+    selectAllIncludingLockedOnActivePage,
     deselectAllOnActivePage,
     hasAnyAnnotationSelection,
     getPageAnnotationRef,
+    getWhiteboardAnnotationRef,
+    pasteSpreadImageFromSystemClipboard,
     getActiveAnnotationRef,
+    studentRewardBurst,
+    onToggleBrowserFullscreen,
   ])
 }

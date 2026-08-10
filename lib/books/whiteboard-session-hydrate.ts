@@ -7,7 +7,11 @@ export function hydrateWhiteboardSessionFromLegacyStorage(
 ): AnnotationCommand[] {
   return legacy.filter(
     (c) =>
-      isWhiteboardDelegatedCanvasCommand(c) || c.kind === 'text' || c.kind === 'sticky',
+      isWhiteboardDelegatedCanvasCommand(c) ||
+      c.kind === 'text' ||
+      c.kind === 'sticky' ||
+      c.kind === 'image' ||
+      c.kind === 'flashcard',
   )
 }
 
@@ -17,7 +21,11 @@ export function legacyStorageCommandsWithoutDelegatedInk(
 ): AnnotationCommand[] {
   return legacy.filter(
     (c) =>
-      !isWhiteboardDelegatedCanvasCommand(c) && c.kind !== 'text' && c.kind !== 'sticky',
+      !isWhiteboardDelegatedCanvasCommand(c) &&
+      c.kind !== 'text' &&
+      c.kind !== 'sticky' &&
+      c.kind !== 'image' &&
+      c.kind !== 'flashcard',
   )
 }
 

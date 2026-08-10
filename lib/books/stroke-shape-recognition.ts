@@ -23,7 +23,20 @@ export const HOLD_SHAPE_RESIZE_ARM_DIST_SQ = 8e-5
 export const HOLD_SHAPE_MIN_SIZE = 0.012
 
 /** Best candidate must meet this score (0–1). */
-export const HOLD_SHAPE_MIN_CONFIDENCE = 0.52
+export const HOLD_SHAPE_MIN_CONFIDENCE = 0.58
+
+/**
+ * Closed-shape path length vs expected outline.
+ * Soft penalty starts above SOFT; hard reject above MAX (clouds / zigzags).
+ */
+const PATH_LEN_RATIO_SOFT = 1.2
+const PATH_LEN_RATIO_MAX = 1.4
+
+/** Mean radial error divisor for ellipse fit (lower = stricter). */
+const ELLIPSE_MEAN_ERR_SCALE = 0.28
+
+/** Max |r - 1| on the unit ellipse before the stroke fails as an oval. */
+const ELLIPSE_MAX_RADIAL_ERR = 0.35
 
 type BBox = { x: number; y: number; w: number; h: number; cx: number; cy: number; diag: number }
 
@@ -63,6 +76,33 @@ function polylineLength(points: readonly [number, number][]): number {
     len += dist(points[i - 1]!, points[i]!)
   }
   return len
+}
+
+/** Bbox perimeter — expected outline length for rect / triangle. */
+function bboxPerimeter(bbox: BBox): number {
+  return 2 * (bbox.w + bbox.h)
+}
+
+/** Ramanujan approximation for ellipse perimeter from half-axes. */
+function ellipsePerimeter(rx: number, ry: number): number {
+  const a = Math.max(rx, ry)
+  const b = Math.min(rx, ry)
+  if (a < 1e-8) return 0
+  const h = ((a - b) * (a - b)) / ((a + b) * (a + b))
+  return Math.PI * (a + b) * (1 + (3 * h) / (10 + Math.sqrt(4 - 3 * h)))
+}
+
+/**
+ * Multiplier in (0, 1] for simple closed outlines.
+ * Returns 0 when the stroke is much longer than a simple shape of that size.
+ */
+function pathLengthSimplicity(pathLen: number, expectedPerimeter: number): number {
+  if (expectedPerimeter < 1e-8) return 0
+  const ratio = pathLen / expectedPerimeter
+  if (ratio > PATH_LEN_RATIO_MAX) return 0
+  if (ratio <= PATH_LEN_RATIO_SOFT) return 1
+  const t = (ratio - PATH_LEN_RATIO_SOFT) / (PATH_LEN_RATIO_MAX - PATH_LEN_RATIO_SOFT)
+  return Math.max(0, 1 - t)
 }
 
 function pointLineDistance(p: [number, number], a: [number, number], b: [number, number]): number {
@@ -184,6 +224,8 @@ function countNearRightAngles(angles: readonly number[], tolerance = 28): number
 function scoreRect(points: readonly [number, number][], bbox: BBox): number {
   if (!isClosedLoop(points, bbox)) return 0
   if (bbox.w < HOLD_SHAPE_MIN_SIZE || bbox.h < HOLD_SHAPE_MIN_SIZE) return 0
+  const simplicity = pathLengthSimplicity(polylineLength(points), bboxPerimeter(bbox))
+  if (simplicity <= 0) return 0
   const epsilon = Math.max(0.004, bbox.diag * 0.06)
   const simplified = simplifiedClosedLoopCorners(points, epsilon)
   const cornerCount = simplified.length
@@ -197,7 +239,7 @@ function scoreRect(points: readonly [number, number][], bbox: BBox): number {
   const edge = rectEdgeScore(points, bbox)
   const aspectPenalty =
     Math.min(bbox.w, bbox.h) / Math.max(bbox.w, bbox.h, 1e-6) < 0.18 ? 0.75 : 1
-  return Math.min(1, (0.45 * rightAngles + 0.55 * edge) * aspectPenalty)
+  return Math.min(1, (0.45 * rightAngles + 0.55 * edge) * aspectPenalty * simplicity)
 }
 
 function scoreEllipse(points: readonly [number, number][], bbox: BBox): number {
@@ -206,22 +248,34 @@ function scoreEllipse(points: readonly [number, number][], bbox: BBox): number {
   const rx = bbox.w / 2
   const ry = bbox.h / 2
   if (rx < 1e-6 || ry < 1e-6) return 0
-  let err = 0
+  const simplicity = pathLengthSimplicity(polylineLength(points), ellipsePerimeter(rx, ry))
+  if (simplicity <= 0) return 0
+  let errSum = 0
+  let maxErr = 0
   for (const [x, y] of points) {
     const nx = (x - bbox.cx) / rx
     const ny = (y - bbox.cy) / ry
-    err += Math.abs(Math.hypot(nx, ny) - 1)
+    const radialErr = Math.abs(Math.hypot(nx, ny) - 1)
+    errSum += radialErr
+    maxErr = Math.max(maxErr, radialErr)
   }
-  const fit = Math.max(0, 1 - err / points.length / 0.42)
+  if (maxErr > ELLIPSE_MAX_RADIAL_ERR) return 0
+  const meanFit = Math.max(0, 1 - errSum / points.length / ELLIPSE_MEAN_ERR_SCALE)
+  const maxFit = Math.max(0, 1 - maxErr / ELLIPSE_MAX_RADIAL_ERR)
+  // Prefer mean fit; max fit blocks outliers that average out.
+  const fit = 0.7 * meanFit + 0.3 * maxFit
+  // Few RDP corners look angular (rect/triangle), not oval.
   const epsilon = Math.max(0.004, bbox.diag * 0.06)
   const cornerCount = simplifiedClosedLoopCorners(points, epsilon).length
-  const smoothBonus = cornerCount >= 6 ? 0.12 : cornerCount <= 4 ? -0.18 : 0
-  return Math.max(0, Math.min(1, fit + smoothBonus))
+  const angularPenalty = cornerCount <= 4 ? 0.82 : 1
+  return Math.max(0, Math.min(1, fit * angularPenalty * simplicity))
 }
 
 function scoreTriangle(points: readonly [number, number][], bbox: BBox): number {
   if (!isClosedLoop(points, bbox)) return 0
   if (bbox.w < HOLD_SHAPE_MIN_SIZE || bbox.h < HOLD_SHAPE_MIN_SIZE) return 0
+  const simplicity = pathLengthSimplicity(polylineLength(points), bboxPerimeter(bbox))
+  if (simplicity <= 0) return 0
   const epsilon = Math.max(0.004, bbox.diag * 0.07)
   const simplified = simplifiedClosedLoopCorners(points, epsilon)
   const cornerCount = simplified.length
@@ -237,7 +291,7 @@ function scoreTriangle(points: readonly [number, number][], bbox: BBox): number 
     ) / angles.length
   const edge = rectEdgeScore(points, bbox) * 0.82
   const cornerBonus = cornerCount === 4 ? 0.08 : 0
-  return Math.min(1, 0.52 * triAngles + 0.48 * edge + cornerBonus)
+  return Math.min(1, (0.52 * triAngles + 0.48 * edge + cornerBonus) * simplicity)
 }
 
 function pickBestCandidate(candidates: ShapeCandidate[]): ShapeCandidate | null {
@@ -321,6 +375,37 @@ export function recognizeHoldShapeFromStroke(
 }
 
 /**
+ * Pin the far corner of the current shape and put the free corner on the pointer.
+ * Standard two-point resize: opposite corner stays fixed, cursor defines size.
+ */
+function armClosedHoldShapeResizeFromPointer(
+  draft: HoldShapeDraft,
+  pointer: [number, number],
+): void {
+  const x0 = Math.min(draft.anchor[0], draft.current[0])
+  const y0 = Math.min(draft.anchor[1], draft.current[1])
+  const x1 = Math.max(draft.anchor[0], draft.current[0])
+  const y1 = Math.max(draft.anchor[1], draft.current[1])
+  const corners: [number, number][] = [
+    [x0, y0],
+    [x1, y0],
+    [x1, y1],
+    [x0, y1],
+  ]
+  let nearestIdx = 0
+  let minDist = Infinity
+  for (let i = 0; i < corners.length; i++) {
+    const d = dist(pointer, corners[i]!)
+    if (d < minDist) {
+      minDist = d
+      nearestIdx = i
+    }
+  }
+  draft.anchor = corners[(nearestIdx + 2) % 4]!
+  draft.current = pointer
+}
+
+/**
  * On hold activation only: snap open lines to the pointer.
  * Closed shapes keep the hand-drawn bbox — do not shrink to the pause point.
  */
@@ -357,6 +442,8 @@ export function updateHoldShapeDraftAtPointer(
     const dy = pointer[1] - draft.pausePoint[1]
     if (dx * dx + dy * dy < HOLD_SHAPE_RESIZE_ARM_DIST_SQ) return
     draft.pausePoint = null
+    armClosedHoldShapeResizeFromPointer(draft, pointer)
+    return
   }
   draft.current = pointer
 }

@@ -4,7 +4,8 @@ import { useCallback, useEffect, useRef } from 'react'
 import type { AnnotationStrokeThicknessStep } from '@/lib/books/annotation-storage'
 import { ANNOTATION_FINE_INK_THICKNESS_PREVIEW_DOTS } from '@/lib/books/annotation-storage'
 import { cn } from '@/lib/utils'
-import { popoverSectionLabelClass } from '@/components/students/annotation-popover-controls'
+import { popoverSectionLabelClass, type PopoverControlSurface } from '@/components/students/annotation-popover-controls'
+import { ANNOTATION_CHROME_SECTION_LABEL } from '@/components/students/annotation-chrome-styles'
 
 const THICKNESS_STEP_MAX = 6
 const SLIDER_THUMB_PX = 14
@@ -41,9 +42,10 @@ function ThicknessPreviewDot({
   active?: boolean
   className?: string
 }) {
+  const dotClass = active ? PREVIEW_DOT_ACTIVE_CLASS : PREVIEW_DOT_CLASS
   return (
     <span
-      className={cn(active ? PREVIEW_DOT_ACTIVE_CLASS : PREVIEW_DOT_CLASS, className)}
+      className={cn(dotClass, className)}
       style={{ width: diameterPx, height: diameterPx }}
     />
   )
@@ -57,6 +59,7 @@ export function ThicknessSliderRow({
   previewDots = ANNOTATION_FINE_INK_THICKNESS_PREVIEW_DOTS,
   ariaLabel = 'Thickness',
   compact = false,
+  surface = 'default',
 }: {
   value: AnnotationStrokeThicknessStep
   onChange: (s: AnnotationStrokeThicknessStep) => void
@@ -64,6 +67,7 @@ export function ThicknessSliderRow({
   previewDots?: readonly number[]
   ariaLabel?: string
   compact?: boolean
+  surface?: PopoverControlSurface
 }) {
   const railRef = useRef<HTMLDivElement>(null)
   const draggingRef = useRef(false)
@@ -103,6 +107,16 @@ export function ThicknessSliderRow({
     updateFromClientX(clientX)
   }
 
+  const isRail = surface === 'rail'
+  const trackClass = isRail ? 'bg-[#3f3f46]' : 'bg-[#2a2118]'
+  const fillClass = isRail ? 'bg-[#71717a]' : 'bg-amber-500/45'
+  const thumbClass = isRail
+    ? 'border-[#a1a1aa] bg-[#f4f4f5]'
+    : 'border-amber-400/70 bg-amber-100'
+  const labelClass = isRail ? ANNOTATION_CHROME_SECTION_LABEL : popoverSectionLabelClass
+  const previewDotClass = isRail ? 'bg-[#a1a1aa]' : undefined
+  const previewDotActiveClass = isRail ? 'bg-[#f4f4f5]' : undefined
+
   const rail = (
     <div
       ref={railRef}
@@ -123,15 +137,18 @@ export function ThicknessSliderRow({
         startDrag(e.clientX)
       }}
     >
-      <div className="pointer-events-none relative h-1 w-full rounded-full bg-[#2a2118]">
+      <div
+        className={cn('pointer-events-none relative h-1 w-full rounded-full', trackClass)}
+      >
         <div
-          className="absolute inset-y-0 left-0 rounded-full bg-amber-500/45"
+          className={cn('absolute inset-y-0 left-0 rounded-full', fillClass)}
           style={{ width: sliderStepLeft(value, thumbPx) }}
         />
       </div>
       <div
         className={cn(
-          'pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-amber-400/70 bg-amber-100 shadow-sm',
+          'pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border shadow-sm',
+          thumbClass,
           compact ? 'size-2.5' : 'size-3.5',
         )}
         style={{ left: sliderStepLeft(value, thumbPx) }}
@@ -159,10 +176,13 @@ export function ThicknessSliderRow({
   }
 
   return (
-    <div className="space-y-2.5">
-      <p className={popoverSectionLabelClass}>Thickness</p>
+    <div className="min-w-0 space-y-2.5">
+      <p className={labelClass}>Thickness</p>
       {rail}
-      <div className="relative mt-1 w-full" style={{ minHeight: maxDotPx }}>
+      <div
+        className="relative mt-1 w-full overflow-hidden px-5"
+        style={{ minHeight: maxDotPx }}
+      >
         {previewDots.map((dotPx, i) => {
           const step = i as AnnotationStrokeThicknessStep
           if (step > THICKNESS_STEP_MAX) return null
@@ -178,7 +198,13 @@ export function ThicknessSliderRow({
               className="absolute bottom-0 z-[1] flex h-10 w-10 -translate-x-1/2 items-end justify-center rounded-md"
               style={{ left: sliderStepLeft(step, thumbPx) }}
             >
-              <ThicknessPreviewDot diameterPx={dotPx} active={active} />
+              <ThicknessPreviewDot
+                diameterPx={dotPx}
+                active={active}
+                className={cn(
+                  previewDotClass && (active ? previewDotActiveClass : previewDotClass),
+                )}
+              />
             </button>
           )
         })}

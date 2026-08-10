@@ -43,11 +43,11 @@ export function LessonBoardNewPageMenu({
         <DropdownMenuContent side="top" align="center" className="min-w-[10rem]">
           <DropdownMenuItem onSelect={() => onCreatePage('standard')}>
             <RectangleVertical className="size-4" aria-hidden />
-            Standard page
+            Half
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => onCreatePage('wide')}>
             <RectangleHorizontal className="size-4" aria-hidden />
-            Wide page
+            Full
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -66,7 +66,7 @@ export function LessonBoardNewPageMenu({
           <Plus className="h-3.5 w-3.5 shrink-0 stroke-[2.25] text-[#374151]" aria-hidden />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent side="bottom" align="start" className="min-w-[10rem]">
+      <DropdownMenuContent side="top" align="end" className="min-w-[10rem]">
         <DropdownMenuItem onSelect={() => onCreatePage('standard')}>
           <RectangleVertical className="size-4" aria-hidden />
           Standard page

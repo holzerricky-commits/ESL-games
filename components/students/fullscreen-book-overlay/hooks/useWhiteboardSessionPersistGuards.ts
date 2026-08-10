@@ -25,6 +25,7 @@ export function useWhiteboardSessionPersistGuards({
     const onVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
         checkpointRef.current()
+        flushRef.current()
       }
     }
 
@@ -35,6 +36,7 @@ export function useWhiteboardSessionPersistGuards({
 
     const onPageHide = () => {
       checkpointRef.current()
+      flushRef.current()
     }
 
     document.addEventListener('visibilitychange', onVisibilityChange)

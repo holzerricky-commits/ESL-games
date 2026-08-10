@@ -1,23 +1,24 @@
 import type { ReaderProgressMap } from '@/lib/books/types'
+import {
+  getReaderProgressMapFromDiskOrBrowser,
+  READER_PROGRESS_BROWSER_KEY,
+  setReaderProgressMapOnDiskOrBrowser,
+} from '@/lib/local-data/reader-progress-disk-client'
 
-const READER_PROGRESS_KEY = 'esl_book_reader_progress_v1'
+/** @deprecated Prefer disk-backed storage; kept for older references. */
+export const READER_PROGRESS_KEY = READER_PROGRESS_BROWSER_KEY
 
 /** Debounce window for saving last-read page during rapid page turns (R1). */
 export const UNIT_PAGE_SAVE_DEBOUNCE_MS = 400
 
 export function getReaderProgressMap(): ReaderProgressMap {
-  if (typeof localStorage === 'undefined') return {}
-  try {
-    const raw = localStorage.getItem(READER_PROGRESS_KEY)
-    return raw ? (JSON.parse(raw) as ReaderProgressMap) : {}
-  } catch {
-    return {}
-  }
+  if (typeof localStorage === 'undefined' && typeof window === 'undefined') return {}
+  return getReaderProgressMapFromDiskOrBrowser()
 }
 
 export function saveReaderProgressMap(map: ReaderProgressMap): void {
-  if (typeof localStorage === 'undefined') return
-  localStorage.setItem(READER_PROGRESS_KEY, JSON.stringify(map))
+  if (typeof localStorage === 'undefined' && typeof window === 'undefined') return
+  setReaderProgressMapOnDiskOrBrowser(map)
 }
 
 export function getSavedUnitPage(bookId: string, unitId: string): number {
@@ -44,7 +45,7 @@ let pendingUnitPageSave: { bookId: string; unitId: string; page: number } | null
 
 /** Schedule a debounced last-page write (coalesces rapid turns). */
 export function scheduleSaveUnitPage(bookId: string, unitId: string, page: number): void {
-  if (typeof localStorage === 'undefined') return
+  if (typeof localStorage === 'undefined' && typeof window === 'undefined') return
   pendingUnitPageSave = { bookId, unitId, page }
   if (pendingUnitPageSaveTimer != null) clearTimeout(pendingUnitPageSaveTimer)
   pendingUnitPageSaveTimer = setTimeout(() => {

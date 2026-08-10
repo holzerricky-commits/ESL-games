@@ -32,6 +32,9 @@ export interface BookCaptureMenuProps {
   onCopyLastCapture?: () => void | Promise<void>
   canCopyLast?: boolean
   onExportPdfPacket: () => void
+  /** Optional trigger button class (e.g. bottom chrome icon style). */
+  triggerClassName?: string
+  contentSide?: 'top' | 'bottom' | 'left' | 'right'
 }
 
 export function BookCaptureMenu(props: BookCaptureMenuProps) {
@@ -53,6 +56,8 @@ export function BookCaptureMenu(props: BookCaptureMenuProps) {
     onCopyLastCapture,
     canCopyLast,
     onExportPdfPacket,
+    triggerClassName,
+    contentSide = 'top',
   } = props
 
   const [open, setOpen] = useState(false)
@@ -74,12 +79,13 @@ export function BookCaptureMenu(props: BookCaptureMenuProps) {
           className={cn(
             'h-9 w-9 shrink-0 rounded-full border border-white/14 bg-black/50 text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-black/65',
             open && 'ring-2 ring-amber-400/55',
+            triggerClassName,
           )}
         >
           <Camera className="h-4 w-4" strokeWidth={2} />
         </Button>
       </PopoverTrigger>
-      <PopoverContent side="top" align="center" className={popoverContentClass}>
+      <PopoverContent side={contentSide} align="center" className={popoverContentClass}>
         <div className="space-y-4">
           <div className="space-y-2">
             <p className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-[#c4b5a8]/85">Format</p>

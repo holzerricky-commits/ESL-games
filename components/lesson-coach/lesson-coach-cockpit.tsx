@@ -128,8 +128,8 @@ export function LessonCoachCockpit({ session, patch }: LessonCoachCockpitProps) 
       ? 'Whiteboard'
       : session.activeField === 'label'
         ? 'Book label'
-        : session.activeField === 'lesson-paper'
-          ? 'Lesson notebook'
+        : session.activeField === 'lesson-board'
+          ? 'Lesson board'
           : null
 
   return (

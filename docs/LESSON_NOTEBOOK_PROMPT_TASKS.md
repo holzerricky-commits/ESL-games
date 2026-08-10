@@ -1,5 +1,7 @@
 # Lesson Notebook Feature — Prompt-by-Prompt Task Plan
 
+> **Superseded (2026-06-24):** Lesson notebook UI and auto-create on class start were removed. Use **lesson board** (whiteboard pages) and **class recap** (`sessionNote`) instead. Kept for historical context only.
+
 Last updated: 2026-05-06
 
 ## Locked decisions from this chat

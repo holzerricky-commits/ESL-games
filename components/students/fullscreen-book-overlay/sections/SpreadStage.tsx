@@ -9,6 +9,7 @@ import {
   useSpreadTurnSlide,
   type SpreadTurnSlidePayload,
 } from '@/components/students/fullscreen-book-overlay/hooks/useSpreadTurnSlide'
+import { BookSpreadFrame } from '@/components/books/book-spread-frame'
 import { spreadCrossfadeEnabled, spreadSlideEnabled } from '@/lib/books/feature-flags'
 import { cn } from '@/lib/utils'
 
@@ -16,6 +17,9 @@ export interface SpreadStageProps extends PageViewPoolProps {
   gridRef?: RefObject<HTMLDivElement | null>
   spreadOverlayWidthPx: number
   showSpreadRightPage: boolean
+  showBookFrame?: boolean
+  /** Dim cover + stacks + pages (Full board). Desk stays bright. */
+  dimBook?: boolean
   children?: ReactNode
   turnSlide?: SpreadTurnSlidePayload | null
   onTurnSlideComplete?: () => void
@@ -23,7 +27,7 @@ export interface SpreadStageProps extends PageViewPoolProps {
 
 /**
  * Phase 2 spread layout: inline-flex cluster with pooled page views; turn updates visibility only.
- * Phase 4b: directional spread slide (incoming pool + annotations move together).
+ * Phase 4b: 2.5D page fold at the spine (incoming pool visible underneath).
  */
 export function SpreadStage({
   gridRef,
@@ -32,6 +36,8 @@ export function SpreadStage({
   spreadPageWidth,
   gutterPullPx,
   showSpreadRightPage,
+  showBookFrame = true,
+  dimBook = false,
   spreadRightPage,
   children,
   anchorPage,
@@ -56,12 +62,7 @@ export function SpreadStage({
   const useSlide = spreadSlideEnabled && turnSlide != null
 
   const incomingLayerStyle = useSlide
-    ? {
-        transform: `translateX(${slide.incomingTranslateX}%)`,
-        transition: slide.transitionActive
-          ? `transform ${slide.slideMs}ms cubic-bezier(0.22, 1, 0.36, 1)`
-          : 'none',
-      }
+    ? undefined
     : crossfade.isAnimating
       ? {
           opacity: crossfade.incomingOpacity,
@@ -76,9 +77,11 @@ export function SpreadStage({
           <SpreadTurnSlideOutgoing
             captureUrl={slide.outgoingCaptureUrl}
             spreadOverlayWidthPx={spreadOverlayWidthPx}
+            spreadPageWidthPx={spreadPageWidth}
             pageCanvasHeightPx={pageCanvasHeightPx}
-            translateXPercent={slide.outgoingTranslateX}
-            slideTransitionActive={slide.transitionActive}
+            hasRightPage={turnSlide.outgoing.right != null}
+            foldDirection={slide.direction}
+            foldTransitionActive={slide.transitionActive}
           />
         )
       }
@@ -93,8 +96,8 @@ export function SpreadStage({
             prefetchRevision={prefetchRevision}
             opacity={1}
             spreadOverlayWidthPx={spreadOverlayWidthPx}
-            translateXPercent={slide.outgoingTranslateX}
-            slideTransitionActive={slide.transitionActive}
+            foldDirection={slide.direction}
+            foldTransitionActive={slide.transitionActive}
           />
         )
       }
@@ -118,21 +121,31 @@ export function SpreadStage({
 
   const effectiveSpreadRight =
     showSpreadRightPage && spreadRightPage != null ? spreadRightPage : null
+  const twoPageSpread = showSpreadRightPage && spreadRightPage != null
 
-  return (
+  const stage = (
     <div
       ref={gridRef}
-      className="relative inline-flex w-max max-w-full items-start overflow-hidden leading-none"
+      className={cn(
+        'relative shrink-0 grow-0 leading-none',
+        twoPageSpread && 'overflow-visible',
+      )}
       style={{
+        boxSizing: 'border-box',
+        position: 'relative',
+        width: spreadOverlayWidthPx,
+        minWidth: spreadOverlayWidthPx,
+        maxWidth: spreadOverlayWidthPx,
         minHeight: pageCanvasHeightPx,
         height: pageCanvasHeightPx,
-        width: spreadOverlayWidthPx,
+        flexShrink: 0,
+        flexGrow: 0,
       }}
     >
       {renderOutgoing()}
       <div
         className={cn(
-          'relative inline-flex w-full items-start leading-none motion-reduce:transition-none',
+          'relative motion-reduce:transition-none',
           !useSlide && crossfade.isAnimating && 'transition-opacity ease-out',
         )}
         style={incomingLayerStyle}
@@ -147,12 +160,26 @@ export function SpreadStage({
           pageCanvasHeightPx={pageCanvasHeightPx}
           gutterPullPx={gutterPullPx}
           spreadPageWidth={spreadPageWidth}
+          spreadOverlayWidthPx={spreadOverlayWidthPx}
+          showBookFrame={showBookFrame}
         />
       </div>
       {!showSpreadRightPage || spreadRightPage == null ? (
-        <div aria-hidden className="shrink-0" style={{ width: spreadPageWidth, height: pageCanvasHeightPx }} />
+        <div
+          aria-hidden
+          className="shrink-0 grow-0"
+          style={{
+            boxSizing: 'border-box',
+            width: spreadPageWidth,
+            minWidth: spreadPageWidth,
+            maxWidth: spreadPageWidth,
+            height: pageCanvasHeightPx,
+            flexShrink: 0,
+            flexGrow: 0,
+          }}
+        />
       ) : null}
-      {children ? (
+      {!showBookFrame && children ? (
         <div
           className="pointer-events-none absolute inset-0 z-[36]"
           style={{ width: spreadOverlayWidthPx, height: pageCanvasHeightPx }}
@@ -161,5 +188,20 @@ export function SpreadStage({
         </div>
       ) : null}
     </div>
+  )
+
+  if (!showBookFrame) return stage
+
+  return (
+    <BookSpreadFrame
+      contentWidthPx={spreadOverlayWidthPx}
+      contentHeightPx={pageCanvasHeightPx}
+      spreadPageWidthPx={spreadPageWidth}
+      twoPage={twoPageSpread}
+      dimBook={dimBook}
+      overlayChildren={children}
+    >
+      {stage}
+    </BookSpreadFrame>
   )
 }

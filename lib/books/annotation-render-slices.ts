@@ -24,11 +24,19 @@ export type DomRenderSlice = {
 
 export type AnnotationRenderSlice = InkRenderSlice | MarkerRenderSlice | DomRenderSlice
 
+/** R3 PaintEngine: cap pen/shape/stamp batch size per ink canvas (limits erase redraw cost). */
+export const INK_PAINT_SLICE_BATCH_SIZE = 48
+
+export type BuildAnnotationRenderSlicesOptions = {
+  /** When set, ink runs flush after this many commands (still breaks on marker/dom). */
+  inkBatchSize?: number
+}
+
 /** @deprecated Use InkRenderSlice; kept for callers migrating off combined canvas slices. */
 export type CanvasRenderSlice = InkRenderSlice
 
 function isDomCommand(cmd: AnnotationCommand): boolean {
-  return cmd.kind === 'text' || cmd.kind === 'sticky'
+  return cmd.kind === 'text' || cmd.kind === 'sticky' || cmd.kind === 'image' || cmd.kind === 'flashcard'
 }
 
 /**
@@ -39,7 +47,9 @@ function isDomCommand(cmd: AnnotationCommand): boolean {
 export function buildAnnotationRenderSlices(
   commands: readonly AnnotationCommand[],
   deadIndices: ReadonlySet<number>,
+  options?: BuildAnnotationRenderSlicesOptions,
 ): AnnotationRenderSlice[] {
+  const inkBatchSize = options?.inkBatchSize ?? 0
   const slices: AnnotationRenderSlice[] = []
   let inkIndices: number[] = []
 
@@ -64,6 +74,7 @@ export function buildAnnotationRenderSlices(
       slices.push({ kind: 'marker', indices: [i], zIndex: i })
     } else {
       inkIndices.push(i)
+      if (inkBatchSize > 0 && inkIndices.length >= inkBatchSize) flushInk()
     }
   }
   flushInk()

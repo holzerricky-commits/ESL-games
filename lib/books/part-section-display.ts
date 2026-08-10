@@ -11,6 +11,9 @@ const PRIMARY_BY_TAG: Record<BookLessonPartTag, string> = {
   making_connections: 'Making connections',
   grammar: 'Grammar',
   writing_narrate: 'Writing',
+  genre: 'Genre',
+  vocabulary_strategy: 'Vocab strategy',
+  literary_element: 'Literary element',
 }
 
 /** Strip common leading skill labels so the rest reads as the lesson-specific line. */
@@ -34,17 +37,45 @@ function stripStoryNoise(raw: string): string {
   t = t.replace(/^main\s*selection\s*:\s*/i, '').trim()
   t = t.replace(/^paired\s*selection\s*:\s*/i, '').trim()
   t = t.replace(/^anchor\s*text\s*:\s*/i, '').trim()
+  t = t.replace(/^shared\s*read\s*:\s*/i, '').trim()
   return t || raw.trim()
 }
 
 /**
  * One-line teacher-facing label for a part row (stable blocks vs TOC detail).
  */
+function stripLabeledPrefix(raw: string, prefixes: RegExp[]): string {
+  let t = raw.trim()
+  for (const re of prefixes) {
+    t = t.replace(re, '').trim()
+  }
+  return t || raw.trim()
+}
+
 export function getPartPrimaryLabel(tag: BookLessonPartTag, rawTitle: string): string {
   const raw = rawTitle.trim()
   if (tag === 'comprehension') {
     const cleaned = stripComprehensionNoise(raw)
     return cleaned.length > 0 ? cleaned : PRIMARY_BY_TAG.comprehension
+  }
+  if (tag === 'genre') {
+    const cleaned = stripLabeledPrefix(raw, [/^genre\s*:\s*/i, /^genre\s*[·•]\s*/i])
+    return cleaned.length > 0 ? cleaned : PRIMARY_BY_TAG.genre
+  }
+  if (tag === 'vocabulary_strategy') {
+    const cleaned = stripLabeledPrefix(raw, [
+      /^vocabulary\s*strategy\s*:\s*/i,
+      /^vocab\s*strategy\s*:\s*/i,
+    ])
+    return cleaned.length > 0 ? cleaned : PRIMARY_BY_TAG.vocabulary_strategy
+  }
+  if (tag === 'literary_element') {
+    const cleaned = stripLabeledPrefix(raw, [/^literary\s*element\s*:\s*/i])
+    return cleaned.length > 0 ? cleaned : PRIMARY_BY_TAG.literary_element
+  }
+  if (tag === 'writing_narrate') {
+    const cleaned = stripLabeledPrefix(raw, [/^writing\s*:\s*/i, /^write to narrate\s*:\s*/i])
+    return cleaned.length > 0 && cleaned.toLowerCase() !== 'writing' ? cleaned : PRIMARY_BY_TAG.writing_narrate
   }
   if (tag === 'main_story' || tag === 'paired_story') {
     const cleaned = stripStoryNoise(raw)

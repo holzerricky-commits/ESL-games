@@ -4,7 +4,6 @@ import { useRef, useState } from 'react'
 import { Download, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -84,21 +83,14 @@ export function LocalDataBackupCard() {
 
   return (
     <>
-      <Card className="border-[var(--border)] bg-[var(--card)] lg:col-span-2">
-        <CardHeader>
-          <CardTitle>Data backup (Phase 0)</CardTitle>
-          <CardDescription>
-            When you run <code className="text-xs">npm run dev</code> locally, students and class schedules are saved
-            under <code className="text-xs">data/students/</code> on your PC. Other app data still uses browser{' '}
-            <code className="text-xs">localStorage</code> (<code className="text-xs">esl_*</code> keys). Export before
-            clearing site data or switching machines.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap items-center gap-3">
+      <section className="ui-section">
+        <h3 className="text-sm font-medium text-foreground">Data backup</h3>
+        <p className="text-sm text-muted-foreground">
+          Export before clearing browser data or switching machines.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button"
-            variant="default"
-            className="bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-bright)] text-white"
             onClick={() => {
               void downloadBackupJsonAsync().then((payload) => {
                 const n = Object.keys(payload.localStorage).length
@@ -106,12 +98,12 @@ export function LocalDataBackupCard() {
               })
             }}
           >
-            <Download className="mr-2 h-4 w-4" />
-            Download backup JSON
+            <Download className="h-4 w-4" />
+            Download JSON
           </Button>
           <Button type="button" variant="outline" onClick={handlePickFile}>
-            <Upload className="mr-2 h-4 w-4" />
-            Restore from JSON…
+            <Upload className="h-4 w-4" />
+            Restore…
           </Button>
           <input
             ref={inputRef}
@@ -120,12 +112,8 @@ export function LocalDataBackupCard() {
             className="hidden"
             onChange={handleFileChange}
           />
-          <p className="w-full text-xs text-muted-foreground">
-            Restore overwrites only keys listed in the file. Reloads the app after restore. See{' '}
-            <code className="text-[11px]">docs/PHASE0.md</code> for the full Phase 0 checklist.
-          </p>
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>

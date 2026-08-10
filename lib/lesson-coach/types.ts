@@ -35,7 +35,10 @@ export const lessonCoachSessionSchema = z.object({
   lessonId: z.string().max(128).optional(),
   lessonTitle: z.string().max(300).optional(),
   dictationMode: z.boolean(),
-  activeField: z.enum(['lesson-paper', 'label', 'whiteboard']).nullable(),
+  activeField: z.preprocess(
+    (value) => (value === 'lesson-paper' ? 'lesson-board' : value),
+    z.enum(['lesson-board', 'label', 'whiteboard']).nullable(),
+  ),
   sharedText: z.string().max(50_000),
   issueCount: z.number().int().min(0),
   revealedCount: z.number().int().min(0),

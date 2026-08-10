@@ -1,0 +1,65 @@
+{
+  "id": "frame:readingwriting-workshop-g2:unit-1-d16fc3b1:lesson-18d2dfd8",
+  "bookId": "readingwriting-workshop-g2",
+  "unitId": "unit-1-d16fc3b1",
+  "lessonId": "lesson-18d2dfd8",
+  "lessonTitle": "Lesson 1: • Friends Help Friends",
+  "comprehensionSkill": "Key Details",
+  "readingStrategy": "Visualize",
+  "essentialQuestion": "How do friends depend on each other?",
+  "lessonGoals": [],
+  "targetVocabulary": [
+    "actions",
+    "afraid",
+    "depend",
+    "nervously",
+    "peered",
+    "perfectly",
+    "rescue",
+    "secret",
+    "friends",
+    "counted"
+  ],
+  "teachingNotes": "Vocabulary strategy: Inflectional Endings\n\nGenre: Fantasy\n\nWhen you visualize, you form pictures in your mind about the characters, setting, and events in the story.\n\nYou can learn important information in a story by looking for key details in the illustrations. Looking at the illustrations helps find key details about the characters and events.\n\n\"Little Flap Learns to Fly\" is a fantasy story. A Fantasy is a made-up story and has imaginary characters that could not be real. I can use what I read to tell that \"Little Flap Learns to Fly\" is a fantasy story.\n\nTo understand the meaning of a word you do not know, you can separate the root word from the ending, such as -ed or -s. For example, if you don't know 'looked,' you can separate the root word 'look' (to see) from the ending '-ed' (happened in the past). This means 'looked' means 'saw something in the past'.",
+  "sourcePageRange": {
+    "startPdfPage": 22,
+    "endPdfPage": 33
+  },
+  "startDisplayPage": 20,
+  "endDisplayPage": 31,
+  "scannedSections": [
+    {
+      "title": "Vocabulary",
+      "tag": "vocabulary_in_context",
+      "startDisplayPage": 20,
+      "endDisplayPage": 21
+    },
+    {
+      "title": "Comprehension Strategy: Visualize",
+      "tag": "comprehension",
+      "startDisplayPage": 28,
+      "endDisplayPage": 28
+    },
+    {
+      "title": "Comprehension Skill: Key Details.",
+      "tag": "comprehension",
+      "startDisplayPage": 29,
+      "endDisplayPage": 29
+    },
+    {
+      "title": "Genre: Fantasy",
+      "tag": "genre",
+      "startDisplayPage": 30,
+      "endDisplayPage": 30
+    },
+    {
+      "title": "Vocabulary Strategy: Inflectional Endings",
+      "tag": "vocabulary_strategy",
+      "startDisplayPage": 31,
+      "endDisplayPage": 31
+    }
+  ],
+  "status": "ready",
+  "source": "gemini",
+  "updatedAt": "2026-08-09T13:57:00.463Z"
+}

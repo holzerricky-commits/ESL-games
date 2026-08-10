@@ -49,15 +49,35 @@ const bookRecordSchema = z.object({
   id: z.string().min(1),
   title: z.string(),
   description: z.string().optional(),
+  series: z.string().optional(),
+  grade: z.string().optional(),
+  role: z.string().optional(),
   pageAlignmentByFile: z.record(z.string().min(1), bookFilePageAlignmentSchema).optional(),
   spreadGutterPullRatio: spreadGutterPullRatioSchema.optional(),
   spreadGutterByFile: z.record(z.string().min(1), spreadGutterPullRatioSchema).optional(),
+  coverImagePath: z.string().min(1).optional(),
   units: z.array(bookUnitSchema).min(1),
 }).strict()
 
-export const bookLibraryPayloadSchema = z.object({
-  books: z.array(bookRecordSchema),
-})
+export const bookLibraryPayloadSchema = z
+  .object({
+    books: z.array(bookRecordSchema),
+  })
+  .superRefine((payload, ctx) => {
+    const seen = new Set<string>()
+    for (let i = 0; i < payload.books.length; i += 1) {
+      const id = payload.books[i]!.id
+      if (seen.has(id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Duplicate book id: ${id}`,
+          path: ['books', i, 'id'],
+        })
+        continue
+      }
+      seen.add(id)
+    }
+  })
 
 /**
  * True if resolved file path is inside book-library (same rules as /api/book-file).

@@ -16,6 +16,7 @@ let studentsPersistTimer: ReturnType<typeof setTimeout> | null = null
 let progressPersistTimer: ReturnType<typeof setTimeout> | null = null
 let pendingStudentsFlush: StudentRecord[] | null = null
 let pendingProgressFlush: Record<string, StudentProgressRecord> | null = null
+let avatarBackfillStarted = false
 
 function dedupeStudents(parsed: StudentRecord[]): StudentRecord[] {
   const seen = new Set<string>()
@@ -213,6 +214,15 @@ export async function hydrateStudentRecordsFromDisk(): Promise<boolean> {
       progressCache = progress
       diskActive = true
       notifyStudentRecordsHydrated()
+
+      if (!avatarBackfillStarted && students.length > 0) {
+        avatarBackfillStarted = true
+        void import('@/lib/students/student-avatar-client').then(({ backfillStudentAvatarsOnServer }) => {
+          void backfillStudentAvatarsOnServer().then(() => {
+            notifyStudentRecordsHydrated()
+          })
+        })
+      }
 
       if (migrated) {
         toast.success('Student data is now saved on this PC (not in browser storage).')

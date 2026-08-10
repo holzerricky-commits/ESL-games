@@ -23,9 +23,9 @@ function strokeInkFields(cmd: StrokeAnnotationCommand): Omit<StrokeAnnotationCom
     ...(cmd.penInkPatternPhaseX != null ? { penInkPatternPhaseX: cmd.penInkPatternPhaseX } : {}),
     ...(cmd.penInkPatternPhaseY != null ? { penInkPatternPhaseY: cmd.penInkPatternPhaseY } : {}),
     ...(cmd.markerDecoratedEdge ? { markerDecoratedEdge: true } : {}),
-    ...(cmd.figureGroupId ? { figureGroupId: cmd.figureGroupId } : {}),
-    ...(cmd.committedAtMs != null ? { committedAtMs: cmd.committedAtMs } : {}),
-    ...(cmd.figureAutoJoinClosed ? { figureAutoJoinClosed: true } : {}),
+    ...(cmd.tool === 'pen' && cmd.figureGroupId ? { figureGroupId: cmd.figureGroupId } : {}),
+    ...(cmd.tool === 'pen' && cmd.committedAtMs != null ? { committedAtMs: cmd.committedAtMs } : {}),
+    ...(cmd.tool === 'pen' && cmd.figureAutoJoinClosed ? { figureAutoJoinClosed: true } : {}),
     ...(cmd.rotationBounds ? { rotationBounds: cmd.rotationBounds } : {}),
     ...(cmd.rotationDeg != null ? { rotationDeg: cmd.rotationDeg } : {}),
   }
@@ -249,7 +249,11 @@ function isPageOwnedSpreadCommand(cmd: AnnotationCommand): boolean {
   )
 }
 
-/** Page-owned items merged into spread session with correct spread coords. */
+/**
+ * Page-owned items merged into spread session with correct spread coords.
+ * Page storage wins on id collision; session-only text/sticky/stamp/callout are kept so a
+ * demoted/empty page projection cannot erase a good spread checkpoint.
+ */
 export function mergeSpreadSessionPageOwnedFromOwnerPages(
   sessionCommands: readonly AnnotationCommand[],
   leftCommands: readonly AnnotationCommand[],
@@ -257,10 +261,17 @@ export function mergeSpreadSessionPageOwnedFromOwnerPages(
   layout: SpreadInkLayout,
 ): AnnotationCommand[] {
   const withoutPageOwned = sessionCommands.filter((c) => !isPageOwnedSpreadCommand(c))
+  const sessionPageOwned = sessionCommands.filter(isPageOwnedSpreadCommand)
   const pageOwnedLeft = leftCommands.filter(isPageOwnedSpreadCommand)
   const pageOwnedRight = rightCommands.filter(isPageOwnedSpreadCommand)
-  const mapped = hydrateSpreadSessionFromOwnerPages(pageOwnedLeft, pageOwnedRight, layout)
-  return [...withoutPageOwned, ...mapped]
+  const mappedFromPages = hydrateSpreadSessionFromOwnerPages(
+    pageOwnedLeft,
+    pageOwnedRight,
+    layout,
+  )
+  const seen = new Set(mappedFromPages.map((c) => c.id))
+  const sessionOnly = sessionPageOwned.filter((c) => !seen.has(c.id))
+  return [...withoutPageOwned, ...mappedFromPages, ...sessionOnly]
 }
 
 /** @deprecated Use mergeSpreadSessionPageOwnedFromOwnerPages */

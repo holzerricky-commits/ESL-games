@@ -3,14 +3,10 @@ import { shouldDeferBookOverlayToolShortcuts } from '@/lib/books/book-overlay-ke
 
 interface UseCtrlTemporarySelectArgs {
   enabled: boolean
-  isLessonPaperOpen: boolean
 }
 
 /** Hold Control to temporarily use the select tool; release restores the prior tool. */
-export function useCtrlTemporarySelect({
-  enabled,
-  isLessonPaperOpen,
-}: UseCtrlTemporarySelectArgs): boolean {
+export function useCtrlTemporarySelect({ enabled }: UseCtrlTemporarySelectArgs): boolean {
   const [active, setActive] = useState(false)
   const activeRef = useRef(false)
 
@@ -22,7 +18,7 @@ export function useCtrlTemporarySelect({
     }
 
     function blocked(): boolean {
-      return shouldDeferBookOverlayToolShortcuts() && !isLessonPaperOpen
+      return shouldDeferBookOverlayToolShortcuts()
     }
 
     function activate(): void {
@@ -47,16 +43,20 @@ export function useCtrlTemporarySelect({
       deactivate()
     }
 
+    function onBlur(): void {
+      deactivate()
+    }
+
     window.addEventListener('keydown', onKeyDown, true)
     window.addEventListener('keyup', onKeyUp, true)
-    window.addEventListener('blur', deactivate)
+    window.addEventListener('blur', onBlur)
     return () => {
       window.removeEventListener('keydown', onKeyDown, true)
       window.removeEventListener('keyup', onKeyUp, true)
-      window.removeEventListener('blur', deactivate)
+      window.removeEventListener('blur', onBlur)
       deactivate()
     }
-  }, [enabled, isLessonPaperOpen])
+  }, [enabled])
 
   return active
 }

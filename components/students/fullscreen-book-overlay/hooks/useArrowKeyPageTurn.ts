@@ -3,17 +3,12 @@ import { shouldDeferBookOverlayToolShortcuts } from '@/lib/books/book-overlay-ke
 
 interface UseArrowKeyPageTurnArgs {
   open: boolean
-  isLessonPaperOpen: boolean
   goToAdjacentPage: (direction: -1 | 1) => void
 }
 
-export function useArrowKeyPageTurn({
-  open,
-  isLessonPaperOpen,
-  goToAdjacentPage,
-}: UseArrowKeyPageTurnArgs) {
+export function useArrowKeyPageTurn({ open, goToAdjacentPage }: UseArrowKeyPageTurnArgs) {
   useEffect(() => {
-    if (!open || isLessonPaperOpen) return
+    if (!open) return
 
     function onArrowPageTurn(e: KeyboardEvent) {
       if (e.defaultPrevented) return
@@ -31,7 +26,7 @@ export function useArrowKeyPageTurn({
       }
     }
 
-    window.addEventListener('keydown', onArrowPageTurn)
-    return () => window.removeEventListener('keydown', onArrowPageTurn)
-  }, [open, isLessonPaperOpen, goToAdjacentPage])
+    window.addEventListener('keydown', onArrowPageTurn, true)
+    return () => window.removeEventListener('keydown', onArrowPageTurn, true)
+  }, [open, goToAdjacentPage])
 }

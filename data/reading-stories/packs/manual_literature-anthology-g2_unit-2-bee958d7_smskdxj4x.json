@@ -1,0 +1,270 @@
+{
+  "storyId": "manual::literature-anthology-g2::unit-2-bee958d7::smskdxj4x",
+  "bookId": "literature-anthology-g2",
+  "unitId": "unit-2-bee958d7",
+  "status": "draft",
+  "stops": [
+    {
+      "id": "stop-d92babee",
+      "label": "Wolf's Problem",
+      "displayPage": 136,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 137,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-6cce43e6",
+          "kind": "true_false",
+          "prompt": "The old wolf was good at catching birds and rabbits.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "The hungry old wolf was too slow to snatch birds and too stiff to chase rabbits, so he tried growing food in a small garden.",
+          "evidenceHighlight": "too slow to snatch birds and too stiff to chase rabbits"
+        }
+      ]
+    },
+    {
+      "id": "stop-c778bf4f",
+      "label": "Boy with Goats",
+      "displayPage": 138,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 140,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-9be13479",
+          "kind": "mcq",
+          "prompt": "What did the old wolf find in the clearing?",
+          "choices": [
+            "A boy with goats",
+            "A group of villagers",
+            "A hidden cave",
+            "A big pile of weeds"
+          ],
+          "correctIndex": 0,
+          "correctTrue": null,
+          "evidenceSnippet": "After a tiring climb and two stubbed toes, the old wolf came to a clearing. “What's this? A boy? With goats!\"",
+          "evidenceHighlight": "A boy? With goats!"
+        }
+      ]
+    },
+    {
+      "id": "stop-eed5dce6",
+      "label": "Boy's First Trick",
+      "displayPage": 140,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 142,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-ba10046b",
+          "kind": "true_false",
+          "prompt": "The boy called \"WOLF! WOLF!\" because a wolf was really taking his goats.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "\"What wolf?\" the boy giggled. \"There is no wolf.\"",
+          "evidenceHighlight": "There is no wolf."
+        }
+      ]
+    },
+    {
+      "id": "stop-41f15b5b",
+      "label": "Wolf's Trick Plan",
+      "displayPage": 142,
+      "midPageNote": "This question is for the 'Make Predictions' stop on page 145.",
+      "hotspot": {
+        "pdfPage": 143,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-f0e1c1eb",
+          "kind": "mcq",
+          "prompt": "Why did the old wolf decide to make his own trick?",
+          "choices": [
+            "He wanted to play with the boy",
+            "He wanted to scare the villagers",
+            "He wanted to get one of the scrumptious goats",
+            "He wanted to help the boy stop yelling"
+          ],
+          "correctIndex": 2,
+          "correctTrue": null,
+          "evidenceSnippet": "There's got to be a way to get one of those scrumptious goats from that trickster, he thought. Perhaps through a trick of my own.",
+          "evidenceHighlight": "get one of those scrumptious goats"
+        }
+      ]
+    },
+    {
+      "id": "stop-1ddca6e8",
+      "label": "Wolf's Trick Revealed",
+      "displayPage": 148,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 150,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-9b043f9e",
+          "kind": "mcq",
+          "prompt": "What was the old wolf's trick to get a goat?",
+          "choices": [
+            "He pretended to be a villager",
+            "He asked the boy to bring him a goat",
+            "He chased all the goats away",
+            "He hid in a tree and waited"
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "\"But you have to bring it to me, because if I go over there, I might change my mind and grab them all.\"",
+          "evidenceHighlight": "you have to bring it to me"
+        }
+      ]
+    },
+    {
+      "id": "stop-4c28cc7e",
+      "label": "Confirming the Trick",
+      "displayPage": 148,
+      "midPageNote": "This question is for the 'Confirm Predictions' stop on page 151.",
+      "hotspot": {
+        "pdfPage": 149,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-a2cc4b95",
+          "kind": "true_false",
+          "prompt": "Was the wolf's trick to scare the boy and make him stop yelling \"Wolf!\"?",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "\"The villagers are only going to believe you if you really are missing a goat. I can help you with that.\" He grinned. \"Just one goat?\" The boy leaned forward on the branch. \"I'm a picky eater. That plump one looks about right. But you have to bring it to me, because if I go over there, I might change my mind and grab them all.\"",
+          "evidenceHighlight": "The villagers are only going to believe you if you really are missing a goat. I can help you with that."
+        }
+      ]
+    },
+    {
+      "id": "stop-2d9ce20f",
+      "label": "Garden Surprise",
+      "displayPage": 156,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 157,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-722b7499",
+          "kind": "mcq",
+          "prompt": "What surprising thing did the old wolf find in his garden?",
+          "choices": [
+            "The goat had run away",
+            "The garden was full of weeds again",
+            "The garden was full of ripe vegetables",
+            "The boy was hiding in the garden"
+          ],
+          "correctIndex": 2,
+          "correctTrue": null,
+          "evidenceSnippet": "Everywhere he looked, there were ripe and juicy vegetables: baby bok choy, beautiful eggplant, ready-to-pick carrots, and even his favorite—onions.",
+          "evidenceHighlight": "Everywhere he looked, there were ripe and juicy vegetables"
+        }
+      ]
+    },
+    {
+      "id": "stop-cf33ba32",
+      "label": "New Friend",
+      "displayPage": 158,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 159,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-ecadb7fc",
+          "kind": "true_false",
+          "prompt": "At the end of the story, the wolf decided to eat the goat.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "\"Don't be sorry! You did my work for me. What's one breakfast compared to delicious vegetables for the rest of my days?\" The wolf smiled as he untied the goat. \"I could use a friend like you.\"",
+          "evidenceHighlight": "The wolf smiled as he untied the goat. \"I could use a friend like you.\""
+        }
+      ]
+    },
+    {
+      "id": "stop-dc203f38",
+      "label": "Stop and Check · p145",
+      "displayPage": 145,
+      "midPageNote": "Publisher Stop and Check",
+      "hotspot": {
+        "pdfPage": null,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-c6b41afe",
+          "kind": "true_false",
+          "prompt": "Make Predictions\nWhat do you think the\nWolf's trick will be? Use\nthe Make Predictions\nstrategy to predict what\nwill happen.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": true,
+          "evidenceSnippet": null,
+          "evidenceHighlight": null
+        }
+      ]
+    },
+    {
+      "id": "stop-55619759",
+      "label": "Stop and Check · p151",
+      "displayPage": 151,
+      "midPageNote": "Publisher Stop and Check",
+      "hotspot": {
+        "pdfPage": null,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-1c309908",
+          "kind": "true_false",
+          "prompt": "Confirm Predictions\nThink about the prediction\nyou made about Wolf's\ntrick. Was it correct? How\nwould you revise it?",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": true,
+          "evidenceSnippet": null,
+          "evidenceHighlight": null
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-08-09T12:08:55.906Z",
+  "approvedAt": null
+}

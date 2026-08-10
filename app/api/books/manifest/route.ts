@@ -1,7 +1,7 @@
 import path from 'node:path'
-import { promises as fs } from 'node:fs'
 import { NextResponse } from 'next/server'
-import { getBookLibraryRoot, getBookManifestPath } from '@/lib/books/server'
+import { getBookLibraryRoot, saveBookLibraryManifest } from '@/lib/books/server'
+import { ensureMissingBookCovers } from '@/lib/books/book-cover-sync'
 import {
   bookLibraryPayloadSchema,
   isBookLibraryFilePath,
@@ -42,17 +42,20 @@ export async function POST(req: Request) {
         )
       }
     }
+    if (book.coverImagePath && !isBookLibraryFilePath(book.coverImagePath, cwd, libraryRoot)) {
+      return NextResponse.json(
+        { error: `coverImagePath must be inside book-library: ${book.coverImagePath}` },
+        { status: 400 },
+      )
+    }
   }
 
-  const manifestPath = getBookManifestPath()
-  const dir = path.dirname(manifestPath)
   try {
-    await fs.mkdir(dir, { recursive: true })
-    await fs.writeFile(manifestPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
+    const withCovers = await ensureMissingBookCovers(payload)
+    await saveBookLibraryManifest(withCovers.payload)
+    return NextResponse.json(withCovers.payload)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Write failed'
     return NextResponse.json({ error: message }, { status: 500 })
   }
-
-  return NextResponse.json(payload)
 }

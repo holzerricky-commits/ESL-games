@@ -854,6 +854,18 @@ export function scaleAnnotationCommand(
         fontSizeNorm: Math.max(0.008, cmd.fontSizeNorm * thicknessScale),
       }
     }
+    case 'image': {
+      const p0 = mapPointInBounds([cmd.x, cmd.y], startBounds, newBounds)
+      const p1 = mapPointInBounds([cmd.x + cmd.w, cmd.y + cmd.h], startBounds, newBounds)
+      return {
+        ...cmd,
+        x: Math.min(p0[0], p1[0]),
+        y: Math.min(p0[1], p1[1]),
+        w: Math.max(MIN_BOUNDS_NORM, Math.abs(p1[0] - p0[0])),
+        h: Math.max(MIN_BOUNDS_NORM, Math.abs(p1[1] - p0[1])),
+        rotationDeg: cmd.rotationDeg,
+      }
+    }
     default:
       return cmd
   }
@@ -961,7 +973,8 @@ export function scaleAnnotationCommandFromOrientedFrames(
       }
     case 'rect':
     case 'ellipse':
-    case 'triangle': {
+    case 'triangle':
+    case 'image': {
       const rotationDeg = cmd.rotationDeg ?? 0
       const mappedCorners = boxShapeCornersNorm({
         x: cmd.x,
@@ -976,12 +989,16 @@ export function scaleAnnotationCommandFromOrientedFrames(
         widthPx,
         heightPx,
       )
-      return {
+      const scaled = {
         ...cmd,
         x: bounds.x,
         y: bounds.y,
         w: bounds.w,
         h: bounds.h,
+      }
+      if (cmd.kind === 'image') return scaled
+      return {
+        ...scaled,
         strokeWidthScale: (cmd.strokeWidthScale ?? 1) * thicknessScale,
       }
     }

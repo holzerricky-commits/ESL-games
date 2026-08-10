@@ -65,6 +65,9 @@ export function partVisualKindFromStructureTag(
       return 'makingConnections'
     case 'grammar':
     case 'writing_narrate':
+    case 'genre':
+    case 'vocabulary_strategy':
+    case 'literary_element':
       return 'grammarWrite'
     default:
       return 'other'

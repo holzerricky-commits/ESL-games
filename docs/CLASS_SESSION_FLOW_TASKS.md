@@ -4,10 +4,13 @@
 
 Teaches: start class → map + timer → end class → past classes + log fields → bookmark → (later) AI on log.
 
+**Follow-on (schedule-driven live / move / missed):** Product locked in `docs/CLASS_SCHEDULE_LIFECYCLE_PRODUCT.md`. Implement **phase by phase** per `docs/CLASS_SCHEDULE_LIFECYCLE_PHASED_PLAN.md` (Move before auto-start; test after each phase). That track supersedes Task 3’s “countdown from Start click” behavior once Phase 1 there ships.
+
 | # | Task | Status |
 |---|------|--------|
 | 1 | **Data model** — `in_progress` status; session fields (`classStartedAt`, `classEndedAt`, `classEndNote`, `bookmarkAtEnd`); sanitize + `computeNextClass` ignores `in_progress` for “next upcoming”. | [x] |
-| 2 | **Start class** — Button next to Prepare; set `in_progress` + `classStartedAt`; navigate to student map with session context (query or store). | [x] |
+| 2 | **Start class** — Button next to Prepare lesson; set `in_progress` + `classStartedAt`; navigate to student map with session context (query or store). | [x] |
+| 2b | **Prepare lesson** — Opens teaching book + board for the class (`?classSession=&openBook=1`) **without** `in_progress`; marks bind to that session and carry into Start class. Plan dialog = notes/AI only. | [x] |
 | 3 | **Timer on map** — Countdown from `durationMin` + wall clock; yellow blink in last N min; red when over (no hard stop). | [x] |
 | 4 | **End class** — Sticky control + confirm; set `completed`, `classEndedAt`, optional `classEndNote`, `bookmarkAtEnd`. | [x] |
 | 5 | **Past classes UI** — Section listing `completed` sessions (newest first), expandable rows. | [x] |

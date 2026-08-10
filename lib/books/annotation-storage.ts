@@ -13,6 +13,8 @@ import type {
   RectAnnotationCommand,
   StampAnnotationCommand,
   StampVariant,
+  ImageAnnotationCommand,
+  FlashcardAnnotationCommand,
   StickyAnnotationCommand,
   TriangleAnnotationCommand,
   StrokeAnnotationCommand,
@@ -20,9 +22,18 @@ import type {
   TextAnnotationCommand,
 } from '@/lib/books/annotation-command-types'
 import { isAnnotationTextFontId } from '@/lib/books/annotation-text-fonts'
+import { STAMP_DRAW_RADIUS_FACTOR } from '@/lib/books/stamp-symbol-bounds'
+import { TEXT_TOOL_PREVIEW_REFERENCE_HEIGHT_PX } from '@/lib/books/text-tool-preview-style'
 import { isPenInkStyle, PEN_INK_TILE_PX, type PenInkStyle } from '@/lib/books/pen-ink'
 import { normalizeDeg } from '@/lib/books/annotation-rotation'
 import { isPenStrokeProfile, type PenStrokeProfile } from '@/lib/books/pen-stroke-profile'
+import { FLASHCARD_PLACEHOLDER_ZH } from '@/lib/lesson-board/lesson-board-flashcard-layout'
+import { sanitizeTextGlosses } from '@/lib/books/text-gloss'
+import {
+  getBookAnnotationsDiskCache,
+  isBookAnnotationsDiskActive,
+  setAnnotationsRootOnDiskCache,
+} from '@/lib/local-data/book-annotations-disk-client'
 
 export type BookAnnotationTool = 'pen' | 'marker' | 'eraser' | 'eraser-line'
 
@@ -44,6 +55,9 @@ export type BookAnnotationInteractionMode =
 
 /** Seven thickness steps (multiplier on marker / eraser / stamp base widths). */
 export const ANNOTATION_STROKE_WIDTH_STEPS = [0.5, 0.66, 0.8, 1, 1.2, 1.42, 1.68] as const
+
+/** Max persisted data URL length for pasted board images. */
+export const ANNOTATION_IMAGE_SRC_MAX_CHARS = 2_000_000
 
 /** Shared base line width for pen ink and shape outlines (CSS px). Keep in sync with `PEN_LINE_WIDTH`. */
 export const ANNOTATION_FINE_INK_LINE_BASE_PX = 2.5
@@ -102,6 +116,11 @@ export const ANNOTATION_MARKER_THICKNESS_PREVIEW_DOTS = ANNOTATION_STROKE_WIDTH_
 /** Preview dots for eraser thickness (= `ERASER_LINE_WIDTH` × step). */
 export const ANNOTATION_ERASER_THICKNESS_PREVIEW_DOTS = ANNOTATION_STROKE_WIDTH_STEPS.map(
   (m) => ERASER_LINE_BASE_PX * m,
+) as readonly number[]
+
+/** Preview dots for quick stamp size (= diameter ≈ 2 × stamp draw radius at reference page min dimension). */
+export const ANNOTATION_STAMP_THICKNESS_PREVIEW_DOTS = ANNOTATION_STROKE_WIDTH_STEPS.map(
+  (m) => TEXT_TOOL_PREVIEW_REFERENCE_HEIGHT_PX * STAMP_DRAW_RADIUS_FACTOR * 2 * m,
 ) as readonly number[]
 
 export type AnnotationStrokeThicknessStep = 0 | 1 | 2 | 3 | 4 | 5 | 6
@@ -171,6 +190,10 @@ function sanitizeRotationDeg(raw: unknown): number | undefined {
   return normalizeDeg(raw)
 }
 
+function sanitizeLockedFlag(raw: unknown): true | undefined {
+  return raw === true ? true : undefined
+}
+
 function sanitizePoints(raw: unknown): [number, number][] | null {
   if (!Array.isArray(raw)) return null
   const points: [number, number][] = []
@@ -183,15 +206,19 @@ function sanitizePoints(raw: unknown): [number, number][] | null {
 
 function parseStampVariant(v: unknown): StampVariant | null {
   if (
-    v === 'check' ||
-    v === 'cross' ||
-    v === 'question' ||
-    v === 'star' ||
-    v === 'heart' ||
     v === 'thumbsUp' ||
     v === 'repeat' ||
     v === 'yourTurn' ||
     v === 'newWord'
+  ) {
+    return 'check'
+  }
+  if (
+    v === 'check' ||
+    v === 'cross' ||
+    v === 'question' ||
+    v === 'star' ||
+    v === 'heart'
   ) {
     return v
   }
@@ -199,7 +226,7 @@ function parseStampVariant(v: unknown): StampVariant | null {
 }
 
 function parseWritableStickerVariant(v: unknown): import('@/lib/books/annotation-command-types').WritableStickerVariant | null {
-  if (v === 'note' || v === 'speech' || v === 'thought' || v === 'caption') return v
+  if (v === 'note' || v === 'caption' || v === 'speech' || v === 'thought') return v
   return null
 }
 
@@ -264,7 +291,7 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
       }
       let figureGroupId: string | undefined
       if (
-        (tool === 'pen' || tool === 'marker') &&
+        tool === 'pen' &&
         typeof rec.figureGroupId === 'string' &&
         rec.figureGroupId.length > 0 &&
         rec.figureGroupId.length <= 64
@@ -312,6 +339,7 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
       if (rec.lineDashStyle === 'solid' || rec.lineDashStyle === 'dashed' || rec.lineDashStyle === 'dotted') {
         lineDash = rec.lineDashStyle
       }
+      const locked = sanitizeLockedFlag(rec.locked)
       out.push({
         kind: 'line',
         id,
@@ -320,6 +348,7 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
         color: c,
         ...(widthScale != null ? { widthScale } : {}),
         ...(lineDash ? { lineDashStyle: lineDash } : {}),
+        ...(locked ? { locked } : {}),
       } satisfies LineAnnotationCommand)
       continue
     }
@@ -359,6 +388,7 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
       }
       const roundedCorners = rec.roundedCorners === false ? false : undefined
       const rotationDeg = sanitizeRotationDeg(rec.rotationDeg)
+      const locked = sanitizeLockedFlag(rec.locked)
       const base = {
         id,
         x: box.x,
@@ -374,6 +404,7 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
         ...(lineDash ? { lineDashStyle: lineDash } : {}),
         ...(roundedCorners === false ? { roundedCorners: false as const } : {}),
         ...(rotationDeg != null && rotationDeg !== 0 ? { rotationDeg } : {}),
+        ...(locked ? { locked } : {}),
       }
       if (kind === 'rect') {
         out.push({ kind: 'rect', ...base } satisfies RectAnnotationCommand)
@@ -401,6 +432,7 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
       if (rec.lineDashStyle === 'solid' || rec.lineDashStyle === 'dashed' || rec.lineDashStyle === 'dotted') {
         lineDash = rec.lineDashStyle
       }
+      const locked = sanitizeLockedFlag(rec.locked)
       out.push({
         kind: 'arrow',
         id,
@@ -410,6 +442,7 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
         ...(widthScale != null ? { widthScale } : {}),
         ...(headLengthNorm != null ? { headLengthNorm } : {}),
         ...(lineDash ? { lineDashStyle: lineDash } : {}),
+        ...(locked ? { locked } : {}),
       } satisfies ArrowAnnotationCommand)
       continue
     }
@@ -485,8 +518,13 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
       if (rec.yAnchor === 'center' || rec.yAnchor === 'top') {
         yAnchor = rec.yAnchor
       }
+      let textAlign: TextAnnotationCommand['textAlign']
+      if (rec.textAlign === 'left' || rec.textAlign === 'center' || rec.textAlign === 'right') {
+        textAlign = rec.textAlign
+      }
       let fontId: TextAnnotationCommand['fontId']
       if (isAnnotationTextFontId(rec.fontId)) fontId = rec.fontId
+      const glosses = sanitizeTextGlosses(rec.glosses)
       out.push({
         kind: 'text',
         id,
@@ -499,7 +537,9 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
         ...(visualStyle != null ? { visualStyle } : {}),
         ...(fillColor != null ? { fillColor } : {}),
         ...(yAnchor != null ? { yAnchor } : {}),
+        ...(textAlign != null ? { textAlign } : {}),
         ...(fontId != null ? { fontId } : {}),
+        ...(glosses != null ? { glosses } : {}),
       } satisfies TextAnnotationCommand)
       continue
     }
@@ -530,6 +570,7 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
       }
       let stickyFontId: StickyAnnotationCommand['fontId']
       if (isAnnotationTextFontId(rec.fontId)) stickyFontId = rec.fontId
+      const stickyGlosses = sanitizeTextGlosses(rec.glosses)
       out.push({
         kind: 'sticky',
         id,
@@ -544,7 +585,92 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
         ...(parseWritableStickerVariant(rec.writableVariant)
           ? { writableVariant: parseWritableStickerVariant(rec.writableVariant)! }
           : {}),
+        ...(stickyGlosses != null ? { glosses: stickyGlosses } : {}),
       } satisfies StickyAnnotationCommand)
+      continue
+    }
+
+    if (kind === 'image') {
+      const src = rec.src
+      if (typeof src !== 'string' || !src.startsWith('data:image/') || src.length > ANNOTATION_IMAGE_SRC_MAX_CHARS) {
+        continue
+      }
+      const nums = ['x', 'y', 'w', 'h'] as const
+      const box: Record<string, number> = {}
+      let ok = true
+      for (const k of nums) {
+        const v = rec[k]
+        if (typeof v !== 'number' || !Number.isFinite(v)) {
+          ok = false
+          break
+        }
+        box[k] = clamp01(v)
+      }
+      if (!ok) continue
+      const alt = typeof rec.alt === 'string' ? rec.alt.slice(0, 200) : undefined
+      const sc = rec.strokeColor
+      const strokeColor = typeof sc === 'string' && isHexColor(sc) ? sc : undefined
+      let strokeWidthScale: number | undefined
+      if (typeof rec.strokeWidthScale === 'number' && Number.isFinite(rec.strokeWidthScale)) {
+        strokeWidthScale = Math.max(0.2, Math.min(10, rec.strokeWidthScale))
+      }
+      const strokeVisible = rec.strokeVisible === false ? false : undefined
+      const rotationDeg = sanitizeRotationDeg(rec.rotationDeg)
+      const locked = rec.locked === true ? true : undefined
+      out.push({
+        kind: 'image',
+        id,
+        x: box.x,
+        y: box.y,
+        w: Math.max(0.02, box.w),
+        h: Math.max(0.02, box.h),
+        src,
+        ...(alt ? { alt } : {}),
+        ...(rotationDeg != null && rotationDeg !== 0 ? { rotationDeg } : {}),
+        ...(strokeColor ? { strokeColor } : {}),
+        ...(strokeWidthScale != null ? { strokeWidthScale } : {}),
+        ...(strokeVisible === false ? { strokeVisible: false as const } : {}),
+        ...(locked ? { locked: true as const } : {}),
+      } satisfies ImageAnnotationCommand)
+      continue
+    }
+
+    if (kind === 'flashcard') {
+      const src = rec.src
+      if (typeof src !== 'string' || !src.startsWith('data:image/') || src.length > ANNOTATION_IMAGE_SRC_MAX_CHARS) {
+        continue
+      }
+      const english = typeof rec.english === 'string' ? rec.english.trim().slice(0, 120) : ''
+      if (!english) continue
+      const chinese =
+        typeof rec.chinese === 'string' ? rec.chinese.trim().slice(0, 120) : FLASHCARD_PLACEHOLDER_ZH
+      const nums = ['x', 'y', 'w', 'h'] as const
+      const box: Record<string, number> = {}
+      let ok = true
+      for (const k of nums) {
+        const v = rec[k]
+        if (typeof v !== 'number' || !Number.isFinite(v)) {
+          ok = false
+          break
+        }
+        box[k] = clamp01(v)
+      }
+      if (!ok) continue
+      const alt = typeof rec.alt === 'string' ? rec.alt.slice(0, 200) : undefined
+      const locked = rec.locked === true ? true : undefined
+      out.push({
+        kind: 'flashcard',
+        id,
+        x: box.x,
+        y: box.y,
+        w: Math.max(0.02, box.w),
+        h: Math.max(0.02, box.h),
+        src,
+        english,
+        chinese: chinese || FLASHCARD_PLACEHOLDER_ZH,
+        ...(alt ? { alt } : {}),
+        ...(locked ? { locked: true as const } : {}),
+      } satisfies FlashcardAnnotationCommand)
       continue
     }
   }
@@ -641,6 +767,10 @@ function migrateV1StorageToV2Once(): void {
 
 export function readAnnotationsRoot(): BookAnnotationsRoot {
   if (typeof window === 'undefined') return {}
+  if (isBookAnnotationsDiskActive()) {
+    const disk = getBookAnnotationsDiskCache()
+    return (disk?.annotations ?? {}) as BookAnnotationsRoot
+  }
   migrateV1StorageToV2Once()
   try {
     const raw = localStorage.getItem(ANNOTATION_STORAGE_KEY_V2)
@@ -655,6 +785,10 @@ export function readAnnotationsRoot(): BookAnnotationsRoot {
 
 export function writeAnnotationsRoot(map: BookAnnotationsRoot): void {
   if (typeof window === 'undefined') return
+  if (isBookAnnotationsDiskActive()) {
+    setAnnotationsRootOnDiskCache(map)
+    return
+  }
   try {
     localStorage.setItem(ANNOTATION_STORAGE_KEY_V2, JSON.stringify(map))
   } catch {

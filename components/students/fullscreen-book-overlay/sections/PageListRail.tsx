@@ -1,16 +1,23 @@
 'use client'
 
-import { PencilLine, RectangleHorizontal, RectangleVertical, X } from 'lucide-react'
+import { Pencil, PencilLine, RectangleHorizontal, RectangleVertical, X } from 'lucide-react'
 import { LessonBoardNewPageMenu } from '@/components/students/fullscreen-book-overlay/sections/LessonBoardNewPageMenu'
 import type { LessonBoardPageOrientation } from '@/lib/books/lesson-board-types'
 import type { MutableRefObject, ReactNode } from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { PdfPageThumbnail } from '@/components/students/pdf-page-thumbnail'
 import { LessonBoardPageThumbnail } from '@/components/students/fullscreen-book-overlay/sections/LessonBoardPageThumbnail'
 import { Button } from '@/components/ui/button'
-import { lessonBoardPageDisplayLabel } from '@/lib/books/lesson-board-session-ops'
+import {
+  lessonBoardPageDisplayLabel,
+  orderLessonBoardPagesForToc,
+} from '@/lib/books/lesson-board-session-ops'
 import { mapPdfPageToDisplayLabel, type PageNumberingMode } from '@/lib/books/page-numbering'
 import { PDF_THUMB_WIDTH } from '@/lib/books/pdf-thumbnail-cache'
+import {
+  BOOK_PAGE_LIST_RAIL_WIDTH_PX,
+  BOOK_WORKSPACE_LEFT_BAR_WIDTH,
+} from '@/components/students/fullscreen-book-overlay/constants'
 import type { WhiteboardSessionDocument } from '@/lib/books/whiteboard-session-types'
 import type { BookLibraryPayload } from '@/lib/books/types'
 import { cn } from '@/lib/utils'
@@ -44,7 +51,7 @@ interface PageListRailProps {
   onSelectLessonBoardPage: (pageId: string) => void
   onNewLessonBoardPage?: (orientation: LessonBoardPageOrientation) => void
   onRenameLessonBoardPage?: (pageId: string, title: string | undefined) => void
-  lessonBoardActivePageRowRef: MutableRefObject<HTMLButtonElement | null>
+  lessonBoardActivePageRowRef: MutableRefObject<HTMLDivElement | null>
 }
 
 function RailTabButton({
@@ -63,8 +70,8 @@ function RailTabButton({
       className={cn(
         'min-w-0 flex-1 rounded-md px-1.5 py-1 text-[10px] font-semibold leading-none transition-colors',
         active
-          ? 'bg-white/80 text-[#2a1d12] shadow-sm ring-1 ring-[#5c4030]/15'
-          : 'text-[#5c4030]/75 hover:bg-white/40 hover:text-[#3d2918]',
+          ? 'bg-white/15 text-white shadow-sm ring-1 ring-white/10'
+          : 'text-[#a1a1aa] hover:bg-white/10 hover:text-white/90',
       )}
     >
       {children}
@@ -107,6 +114,11 @@ export function PageListRail({
   const showBoardTab = isWhiteboardOpen && whiteboardSessionDoc != null
   const activeTab: PageListRailTab = showBoardTab ? pageListRailTab : 'book'
 
+  const boardPageRows = useMemo(
+    () => orderLessonBoardPagesForToc(whiteboardSessionDoc?.pages ?? []),
+    [whiteboardSessionDoc?.pages],
+  )
+
   useEffect(() => {
     if (!showBoardTab && pageListRailTab === 'board') {
       setPageListRailTab('book')
@@ -120,7 +132,6 @@ export function PageListRail({
 
   if (!hasResolvedUnit || numPages == null) return null
 
-  const boardPages = whiteboardSessionDoc?.pages ?? []
   const activeBoardPageId = whiteboardSessionDoc?.activePageId ?? ''
 
   const commitRename = (pageId: string) => {
@@ -129,25 +140,47 @@ export function PageListRail({
     setRenameDraft('')
   }
 
+  const startRename = (pageId: string, index: number, currentTitle?: string) => {
+    if (!onRenameLessonBoardPage) return
+    setRenamingPageId(pageId)
+    setRenameDraft(currentTitle?.trim() || `Page ${index + 1}`)
+  }
+
+  const formatBookHint = (hint: number | undefined) => {
+    if (hint == null || !(hint >= 1)) return null
+    const display = mapPdfPageToDisplayLabel(
+      hint,
+      selectedBook,
+      selectedUnit,
+      numPages,
+      numberingMode,
+    )
+    return `Book p.${display}`
+  }
+
   return (
     <>
       <div
         className={cn(
-          'absolute inset-y-0 left-0 z-50 flex min-h-0 w-[min(168px,calc(100vw-12px))] flex-col border-r border-[#4a3421]/18 bg-gradient-to-b from-[#faf6ef] to-[#e8dfd2] shadow-[4px_0_16px_rgba(12,6,2,0.12)] transition-transform duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none [scrollbar-gutter:stable]',
+          'absolute inset-y-0 z-50 flex min-h-0 flex-col overflow-hidden border-r border-white/10 bg-[#2a2a2e] text-[#a1a1aa] shadow-[4px_0_16px_rgba(0,0,0,0.35)] transition-transform duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
           isPageListOpen ? 'translate-x-0' : '-translate-x-full pointer-events-none',
         )}
+        style={{
+          left: BOOK_WORKSPACE_LEFT_BAR_WIDTH,
+          width: `min(${BOOK_PAGE_LIST_RAIL_WIDTH_PX}px, calc(100vw - ${BOOK_WORKSPACE_LEFT_BAR_WIDTH} - 12px))`,
+        }}
         aria-hidden={!isPageListOpen}
       >
-        <header className="flex shrink-0 flex-col gap-1.5 border-b border-[#4a3421]/12 px-2 py-2">
+        <header className="flex shrink-0 flex-col gap-1.5 border-b border-white/10 px-2 py-2">
           <div className="flex items-center justify-between gap-1.5">
-            <p className="min-w-0 truncate text-[11px] font-semibold leading-tight text-[#3d2918]">
+            <p className="min-w-0 truncate text-[11px] font-semibold leading-tight text-white/90">
               {activeTab === 'board' ? 'Lesson board' : selectedUnitTitle}
             </p>
             <Button
               type="button"
               variant="outline"
               size="icon"
-              className="h-7 w-7 shrink-0 rounded-md border-[#5c4030]/25 bg-white/50 p-0 text-[#3d2918] hover:bg-white/80"
+              className="h-7 w-7 shrink-0 rounded-md border-white/15 bg-white/5 p-0 text-[#a1a1aa] hover:bg-white/10 hover:text-white"
               onClick={() => setIsPageListOpen(false)}
               aria-label="Close page list"
             >
@@ -155,7 +188,7 @@ export function PageListRail({
             </Button>
           </div>
           {showBoardTab ? (
-            <div className="flex gap-1 rounded-lg bg-[#5c4030]/[0.06] p-0.5" role="tablist" aria-label="Page list mode">
+            <div className="flex gap-1 rounded-lg bg-black/20 p-0.5" role="tablist" aria-label="Page list mode">
               <RailTabButton active={activeTab === 'book'} onClick={() => setPageListRailTab('book')}>
                 Book
               </RailTabButton>
@@ -168,7 +201,7 @@ export function PageListRail({
         <div
           id={activeTab === 'board' ? 'lesson-board-page-list' : 'book-page-list'}
           ref={setPageListScrollRoot}
-          className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain px-2 py-2 [scrollbar-color:rgba(107,78,50,0.3)_transparent] [scrollbar-width:thin]"
+          className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain px-2 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           role="list"
         >
           {activeTab === 'book'
@@ -183,8 +216,8 @@ export function PageListRail({
                     role="listitem"
                     onClick={() => goToPage(p)}
                     className={cn(
-                      'flex w-full flex-col items-center gap-0.5 rounded-md py-1.5 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-amber-600/45 focus-visible:ring-offset-1 focus-visible:ring-offset-[#faf6ef]',
-                      rowActive ? 'bg-amber-200/35 ring-1 ring-amber-700/25' : 'hover:bg-[#5c4030]/[0.06]',
+                      'flex w-full flex-col items-center gap-0.5 rounded-md py-1.5 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-white/25 focus-visible:ring-offset-1 focus-visible:ring-offset-[#2a2a2e]',
+                      rowActive ? 'bg-white/15 ring-1 ring-white/20' : 'hover:bg-white/10',
                     )}
                   >
                     <PdfPageThumbnail
@@ -199,7 +232,7 @@ export function PageListRail({
                     <span
                       className={cn(
                         'tabular-nums text-[10px] leading-none',
-                        rowActive ? 'font-semibold text-[#2a1d12]' : 'font-medium text-[#5c4030]/85',
+                        rowActive ? 'font-semibold text-white' : 'font-medium text-[#a1a1aa]',
                       )}
                     >
                       {mapPdfPageToDisplayLabel(p, selectedBook, selectedUnit, numPages, numberingMode)}
@@ -207,17 +240,18 @@ export function PageListRail({
                   </button>
                 )
               })
-            : boardPages.length === 0 ? (
+            : boardPageRows.length === 0 ? (
                 <div className="flex flex-col items-center justify-center gap-2 px-1 py-8 text-center">
-                  <PencilLine className="h-5 w-5 text-[#5c4030]/40" aria-hidden />
-                  <p className="text-[10px] font-medium leading-snug text-[#5c4030]/70">
+                  <PencilLine className="h-5 w-5 text-[#a1a1aa]/50" aria-hidden />
+                  <p className="text-[10px] font-medium leading-snug text-[#a1a1aa]/70">
                     No board pages yet. Tap New page below.
                   </p>
                 </div>
               )
-            : boardPages.map((page, index) => {
+            : boardPageRows.map(({ page, index }) => {
                 const rowActive = page.id === activeBoardPageId
                 const label = lessonBoardPageDisplayLabel(page, index)
+                const bookHint = formatBookHint(page.bookPageHint)
                 const commands =
                   rowActive && whiteboardSessionDoc
                     ? whiteboardSessionDoc.commands
@@ -229,13 +263,13 @@ export function PageListRail({
                     ref={rowActive ? lessonBoardActivePageRowRef : undefined}
                     className={cn(
                       'flex w-full flex-col items-center gap-0.5 rounded-md py-1.5 outline-none transition-colors',
-                      rowActive ? 'bg-amber-200/35 ring-1 ring-amber-700/25' : 'hover:bg-[#5c4030]/[0.06]',
+                      rowActive ? 'bg-white/15 ring-1 ring-white/20' : 'hover:bg-white/10',
                     )}
                   >
                     <button
                       type="button"
                       onClick={() => onSelectLessonBoardPage(page.id)}
-                      className="flex w-full flex-col items-center gap-0.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-amber-600/45 focus-visible:ring-offset-1 focus-visible:ring-offset-[#faf6ef]"
+                      className="flex w-full flex-col items-center gap-0.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-white/25 focus-visible:ring-offset-1 focus-visible:ring-offset-[#2a2a2e]"
                     >
                       <LessonBoardPageThumbnail
                         commands={commands}
@@ -262,39 +296,69 @@ export function PageListRail({
                             setRenameDraft('')
                           }
                         }}
-                        className="w-full rounded border border-[#5c4030]/25 bg-white/80 px-1.5 py-0.5 text-center text-[10px] text-[#2a1d12] outline-none focus:ring-1 focus:ring-amber-600/40"
+                        className="w-full rounded border border-white/15 bg-[#1f1f23] px-1.5 py-0.5 text-center text-[10px] text-white outline-none focus:ring-1 focus:ring-white/25"
                         aria-label="Rename board page"
                       />
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() => onSelectLessonBoardPage(page.id)}
-                        onDoubleClick={(e) => {
-                          if (!onRenameLessonBoardPage) return
-                          e.preventDefault()
-                          setRenamingPageId(page.id)
-                          setRenameDraft(page.title?.trim() ?? `Page ${index + 1}`)
-                        }}
-                        title={onRenameLessonBoardPage ? 'Double-click to rename' : undefined}
-                        className={cn(
-                          'flex max-w-full items-center justify-center gap-1 truncate px-1 text-[10px] leading-tight',
-                          rowActive ? 'font-semibold text-[#2a1d12]' : 'font-medium text-[#5c4030]/85',
-                        )}
-                      >
-                        {page.orientation === 'wide' ? (
-                          <RectangleHorizontal className="h-3 w-3 shrink-0 opacity-70" aria-hidden />
-                        ) : (
-                          <RectangleVertical className="h-3 w-3 shrink-0 opacity-70" aria-hidden />
-                        )}
-                        <span className="truncate">{label}</span>
-                      </button>
+                      <div className="flex w-full max-w-full flex-col items-center gap-0.5 px-0.5">
+                        <div className="flex max-w-full items-center justify-center gap-0.5">
+                          <button
+                            type="button"
+                            onClick={() => onSelectLessonBoardPage(page.id)}
+                            onDoubleClick={(e) => {
+                              e.preventDefault()
+                              startRename(page.id, index, page.title)
+                            }}
+                            title={
+                              onRenameLessonBoardPage
+                                ? 'Open page · double-click to rename'
+                                : undefined
+                            }
+                            className={cn(
+                              'flex min-w-0 items-center justify-center gap-1 truncate px-0.5 text-[10px] leading-tight',
+                              rowActive ? 'font-semibold text-white' : 'font-medium text-[#a1a1aa]',
+                            )}
+                          >
+                            {page.orientation === 'wide' ? (
+                              <RectangleHorizontal className="h-3 w-3 shrink-0 opacity-70" aria-hidden />
+                            ) : (
+                              <RectangleVertical className="h-3 w-3 shrink-0 opacity-70" aria-hidden />
+                            )}
+                            <span className="truncate">{label}</span>
+                          </button>
+                          {onRenameLessonBoardPage ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                startRename(page.id, index, page.title)
+                              }}
+                              className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[#a1a1aa] transition-colors hover:bg-white/10 hover:text-white"
+                              aria-label={`Rename ${label}`}
+                              title="Rename page"
+                            >
+                              <Pencil className="h-3 w-3" aria-hidden />
+                            </button>
+                          ) : null}
+                        </div>
+                        {bookHint ? (
+                          <span
+                            className={cn(
+                              'tabular-nums text-[9px] leading-none',
+                              rowActive ? 'text-white/70' : 'text-[#71717a]',
+                            )}
+                          >
+                            {bookHint}
+                          </span>
+                        ) : null}
+                      </div>
                     )}
                   </div>
                 )
               })}
         </div>
         {activeTab === 'board' && onNewLessonBoardPage ? (
-          <div className="shrink-0 border-t border-[#4a3421]/12 px-2 py-2">
+          <div className="shrink-0 border-t border-white/10 px-2 py-2">
             <LessonBoardNewPageMenu variant="footer" onCreatePage={onNewLessonBoardPage} />
           </div>
         ) : null}
@@ -304,7 +368,7 @@ export function PageListRail({
           type="button"
           onClick={() => setIsPageListOpen(false)}
           aria-label="Close page list"
-          className="absolute inset-0 z-40 bg-[#120a03]/45"
+          className="absolute inset-0 z-40 bg-black/45"
         ></button>
       ) : null}
     </>

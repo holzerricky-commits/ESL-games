@@ -8,6 +8,7 @@ import {
 } from '@/lib/books/annotation-scale'
 import type { GroupSelectionChrome } from '@/lib/books/annotation-select'
 import {
+  filterUnlockedTransformIds,
   resolveSelectionHandleFrame,
   selectionOutlineFramesForChrome,
   translateAnnotationCommands,
@@ -154,26 +155,32 @@ export function computeInkSessionSelectionChrome(
     hoverTargetIds,
   } = input
 
-  const hasSelection = selectedIds.length > 0
-  const chromeActive = enabled && editingId == null
+  const transformableSelectedIds = filterUnlockedTransformIds(displayCommands, selectedIds)
+  const hasTransformableSelection = transformableSelectedIds.length > 0
+  /** Outlines stay when another tool is active (e.g. Type after submit); handles only in Move. */
+  const chromeActive = editingId == null && (enabled || hasTransformableSelection)
+  const hoverUnlockedIds = filterUnlockedTransformIds(displayCommands, hoverTargetIds)
 
-  const selectionOutlineFramesList = selectionOutlineFramesForChrome(
-    displayCommands,
-    selectedIds,
-    widthPx,
-    heightPx,
-    groupSelectionChrome,
-    deadIndices,
-    selectRotationLiveDelta,
-    selectRotationStartFrame,
-    rotateCommitFrame,
-  )
-
-  const hoverOutlineFramesList =
-    chromeActive && hoverTargetIds.length > 0 && !marqueeRect
+  const selectionOutlineFramesList =
+    chromeActive && hasTransformableSelection && !marqueeRect
       ? selectionOutlineFramesForChrome(
           displayCommands,
-          hoverTargetIds,
+          transformableSelectedIds,
+          widthPx,
+          heightPx,
+          groupSelectionChrome,
+          deadIndices,
+          selectRotationLiveDelta,
+          selectRotationStartFrame,
+          rotateCommitFrame,
+        )
+      : []
+
+  const hoverOutlineFramesList =
+    chromeActive && hoverUnlockedIds.length > 0 && !marqueeRect
+      ? selectionOutlineFramesForChrome(
+          displayCommands,
+          hoverUnlockedIds,
           widthPx,
           heightPx,
           'union',
@@ -182,22 +189,29 @@ export function computeInkSessionSelectionChrome(
       : []
 
   const selectionUnionBounds =
-    chromeActive && hasSelection && !marqueeRect
-      ? unionSelectionBounds(displayCommands, selectedIds, widthPx, heightPx, deadIndices)
+    chromeActive && hasTransformableSelection && !marqueeRect
+      ? unionSelectionBounds(
+          displayCommands,
+          transformableSelectedIds,
+          widthPx,
+          heightPx,
+          deadIndices,
+        )
       : null
 
   const showScaleHandles =
-    chromeActive && hasSelection && !marqueeRect && selectionUnionBounds != null
+    enabled && hasTransformableSelection && !marqueeRect && selectionUnionBounds != null
 
   const showRotationHandle =
-    showScaleHandles && selectionHasRotatableShapes(displayCommands, selectedIds)
+    showScaleHandles &&
+    selectionHasRotatableShapes(displayCommands, transformableSelectedIds)
 
   const selectionHandleFrame =
     selectScaleLiveFrame ??
     (showScaleHandles && selectionUnionBounds
       ? resolveSelectionHandleFrame(
           displayCommands,
-          selectedIds,
+          transformableSelectedIds,
           widthPx,
           heightPx,
           selectionUnionBounds,

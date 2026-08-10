@@ -1,6 +1,17 @@
 import type { PenInkStyle } from '@/lib/books/pen-ink'
 import type { StampVariant } from '@/lib/books/annotation-command-types'
 
+/** White, gray, and black shared across annotation color pickers. */
+export const ANNOTATION_NEUTRAL_WHITE = '#ffffff'
+export const ANNOTATION_NEUTRAL_GRAY = '#cbd5e1'
+export const ANNOTATION_NEUTRAL_BLACK = '#1e293b'
+
+export const ANNOTATION_NEUTRAL_SWATCHES = [
+  ANNOTATION_NEUTRAL_WHITE,
+  ANNOTATION_NEUTRAL_GRAY,
+  ANNOTATION_NEUTRAL_BLACK,
+] as const
+
 export type PenSwatch = {
   id: string
   label: string
@@ -44,14 +55,22 @@ export const ANNOTATION_PEN_SWATCHES: readonly PenSwatch[] = [
 export const DEFAULT_PEN_SWATCH_ID = ANNOTATION_PEN_SWATCHES[0].id
 export const DEFAULT_SHAPE_STROKE_SWATCH_ID = DEFAULT_PEN_SWATCH_ID
 
-/** Text stroke colors — solids only (no effect inks). */
-export const ANNOTATION_TEXT_STROKE_SWATCHES = ANNOTATION_PEN_SWATCHES.filter(
+/** Solid pen swatches only — for text, shapes, and other flat stroke/fill pickers. */
+export const ANNOTATION_SOLID_PEN_SWATCHES = ANNOTATION_PEN_SWATCHES.filter(
   (s) => s.patternId === 'solid',
-).map((s) => s.color) as readonly string[]
+)
+
+/** Text stroke colors — solids only (no effect inks). */
+export const ANNOTATION_TEXT_STROKE_SWATCHES = ANNOTATION_SOLID_PEN_SWATCHES.map(
+  (s) => s.color,
+) as readonly string[]
 
 export const DEFAULT_TEXT_COLOR = ANNOTATION_TEXT_STROKE_SWATCHES[0]
 
-/** Sticky note background fills (pastel). */
+/** Default shape fill — classroom solid yellow (same family as pen/text). */
+export const DEFAULT_SHAPE_FILL_COLOR = '#facc15'
+
+/** Sticky note background fills (pastel + neutrals). */
 export const ANNOTATION_STICKY_FILL_SWATCHES = [
   '#fef3c7',
   '#fef9c3',
@@ -61,6 +80,9 @@ export const ANNOTATION_STICKY_FILL_SWATCHES = [
   '#cffafe',
   '#d1fae5',
   '#fef08a',
+  ANNOTATION_NEUTRAL_WHITE,
+  ANNOTATION_NEUTRAL_GRAY,
+  ANNOTATION_NEUTRAL_BLACK,
 ] as const
 
 export const DEFAULT_STICKY_FILL_COLOR = ANNOTATION_STICKY_FILL_SWATCHES[0]
@@ -180,7 +202,11 @@ export const ANNOTATION_MARKER_SWATCHES = [
   '#69f0ae',
   '#c6ff00',
   '#ffd740',
+  ...ANNOTATION_NEUTRAL_SWATCHES,
 ] as const
+
+/** Shape fill colors — same balanced solids as pen/text (no highlighter neon set). */
+export const ANNOTATION_SHAPE_FILL_SWATCHES = ANNOTATION_TEXT_STROKE_SWATCHES
 
 /** Retired highlighter hex → current neon-tuned palette. */
 export const LEGACY_MARKER_COLOR_MAP: Readonly<Record<string, string>> = {
@@ -211,10 +237,6 @@ export const STAMP_COLOR_CHECK = '#16a34a'
 export const STAMP_COLOR_CROSS = '#dc2626'
 export const STAMP_COLOR_STAR = '#eab308'
 export const STAMP_COLOR_HEART = '#dc2626'
-export const STAMP_COLOR_THUMBS_UP = '#16a34a'
-export const STAMP_COLOR_REPEAT = '#2563eb'
-export const STAMP_COLOR_YOUR_TURN = '#ea580c'
-export const STAMP_COLOR_NEW_WORD = '#7c3aed'
 export const DEFAULT_STAMP_QUESTION_COLOR = '#1d4ed8'
 
 export function stampColorForVariant(variant: StampVariant, questionColor: string): string {
@@ -222,10 +244,6 @@ export function stampColorForVariant(variant: StampVariant, questionColor: strin
   if (variant === 'cross') return STAMP_COLOR_CROSS
   if (variant === 'star') return STAMP_COLOR_STAR
   if (variant === 'heart') return STAMP_COLOR_HEART
-  if (variant === 'thumbsUp') return STAMP_COLOR_THUMBS_UP
-  if (variant === 'repeat') return STAMP_COLOR_REPEAT
-  if (variant === 'yourTurn') return STAMP_COLOR_YOUR_TURN
-  if (variant === 'newWord') return STAMP_COLOR_NEW_WORD
   return questionColor
 }
 
@@ -247,8 +265,9 @@ export const ANNOTATION_TEXT_FILL_SWATCHES = [
   '#ddd6fe', // purple
   '#a5f3fc', // cyan
   '#fde68a', // amber
-  '#e2e8f0', // gray
-  '#ffffff', // white
+  ANNOTATION_NEUTRAL_WHITE,
+  ANNOTATION_NEUTRAL_GRAY,
+  ANNOTATION_NEUTRAL_BLACK,
 ] as const
 
 export const DEFAULT_TEXT_FILL_COLOR = ANNOTATION_TEXT_FILL_SWATCHES[0]
@@ -256,7 +275,7 @@ export const DEFAULT_TEXT_FILL_COLOR = ANNOTATION_TEXT_FILL_SWATCHES[0]
 /** @deprecated Migration only — do not auto-apply when picking text color. */
 export const TEXT_FILL_BY_STROKE: Readonly<Record<string, string>> = {
   '#1e293b': '#fef08a',
-  '#64748b': '#e2e8f0',
+  '#64748b': ANNOTATION_NEUTRAL_GRAY,
   '#3b82f6': '#bfdbfe',
   '#ef4444': '#fecaca',
   '#22c55e': '#bbf7d0',
@@ -267,7 +286,7 @@ export const TEXT_FILL_BY_STROKE: Readonly<Record<string, string>> = {
   '#8b5cf6': '#ddd6fe',
   '#06b6d4': '#a5f3fc',
   '#b45309': '#fde68a',
-  '#ffffff': '#ffffff',
+  '#ffffff': ANNOTATION_NEUTRAL_WHITE,
 }
 
 /** Retired text fills → current background palette. */
@@ -292,12 +311,13 @@ export const LEGACY_TEXT_FILL_COLOR_MAP: Readonly<Record<string, string>> = {
   '#c4b5fd': '#ddd6fe',
   '#cffafe': '#a5f3fc',
   '#67e8f9': '#a5f3fc',
-  '#f3f4f6': '#e2e8f0',
-  '#d6d3d1': '#e2e8f0',
+  '#f3f4f6': ANNOTATION_NEUTRAL_GRAY,
+  '#d6d3d1': ANNOTATION_NEUTRAL_GRAY,
   '#d1fae5': '#bbf7d0',
   '#e0e7ff': '#bfdbfe',
-  '#e5e5e5': '#e2e8f0',
-  '#cbd5e1': '#e2e8f0',
+  '#e5e5e5': ANNOTATION_NEUTRAL_GRAY,
+  '#cbd5e1': ANNOTATION_NEUTRAL_GRAY,
+  '#e2e8f0': ANNOTATION_NEUTRAL_GRAY,
 }
 
 const TEXT_FILL_COLOR_SET = new Set(

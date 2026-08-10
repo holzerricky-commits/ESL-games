@@ -3,10 +3,14 @@ import { createEmptyWhiteboardSession } from '@/lib/books/whiteboard-session-typ
 import {
   appendLessonBoardPage,
   appendLessonBoardStandardPage,
+  deleteLessonBoardPage,
   goToAdjacentLessonBoardPage,
   lessonBoardPageDisplayLabel,
   lessonBoardPageStorageKey,
+  orderLessonBoardPagesForToc,
+  setLessonBoardActivePageContentHeight,
   setLessonBoardActivePageId,
+  setLessonBoardPageBookPageHint,
   setLessonBoardPageTitle,
 } from '@/lib/books/lesson-board-session-ops'
 
@@ -54,6 +58,43 @@ describe('lesson-board-session-ops', () => {
     expect(doc.commands).toHaveLength(0)
     expect(doc.pages[0]?.commands).toHaveLength(1)
     expect(doc.pages[1]?.id).toBe(doc.activePageId)
+    expect(doc.pages[1]?.contentHeightPx).toBe(1200)
+  })
+
+  it('setLessonBoardActivePageContentHeight remaps stickies so pixels stay put', () => {
+    let doc = createEmptyWhiteboardSession(key)
+    const sticky = {
+      kind: 'sticky' as const,
+      id: 'st1',
+      x: 0.1,
+      y: 0.2,
+      w: 0.3,
+      h: 0.15,
+      text: 'note',
+      fontSizeNorm: 0.05,
+      fillColor: '#fef08a',
+    }
+    doc.commands = [sticky]
+    doc = {
+      ...doc,
+      pages: doc.pages.map((p) =>
+        p.id === doc.activePageId ? { ...p, contentHeightPx: 1000, commands: [sticky] } : p,
+      ),
+    }
+    const grown = setLessonBoardActivePageContentHeight(doc, 2000)
+    const next = grown.commands[0]
+    expect(next?.kind).toBe('sticky')
+    if (next?.kind !== 'sticky') return
+    expect(next.y * 2000).toBeCloseTo(0.2 * 1000, 5)
+    expect(next.h * 2000).toBeCloseTo(0.15 * 1000, 5)
+    expect(grown.pages[0]?.contentHeightPx).toBe(2000)
+
+    const shrunk = setLessonBoardActivePageContentHeight(grown, 1000)
+    const back = shrunk.commands[0]
+    expect(back?.kind).toBe('sticky')
+    if (back?.kind !== 'sticky') return
+    expect(back.y).toBeCloseTo(0.2, 5)
+    expect(back.h).toBeCloseTo(0.15, 5)
   })
 
   it('setLessonBoardActivePageId swaps commands', () => {
@@ -80,6 +121,32 @@ describe('lesson-board-session-ops', () => {
     expect(lessonBoardPageDisplayLabel(cleared!.pages[0]!, 0)).toBe('Page 1')
   })
 
+  it('orderLessonBoardPagesForToc puts titled pages first', () => {
+    let doc = createEmptyWhiteboardSession(key)
+    doc = appendLessonBoardStandardPage(doc)
+    doc = appendLessonBoardStandardPage(doc)
+    const untitled = doc.pages[0]!
+    const mid = setLessonBoardPageTitle(doc, doc.pages[1]!.id, 'Grammar')!
+    const titled = setLessonBoardPageTitle(mid, mid.pages[2]!.id, 'Vocab')!
+    const ordered = orderLessonBoardPagesForToc(titled.pages)
+    expect(ordered.map((e) => e.index)).toEqual([1, 2, 0])
+    expect(ordered.map((e) => lessonBoardPageDisplayLabel(e.page, e.index))).toEqual([
+      'Grammar',
+      'Vocab',
+      'Page 1',
+    ])
+    expect(untitled.title).toBeUndefined()
+  })
+
+  it('setLessonBoardPageBookPageHint sets and skips unchanged', () => {
+    const doc = createEmptyWhiteboardSession(key)
+    const pageId = doc.pages[0]!.id
+    const once = setLessonBoardPageBookPageHint(doc, pageId, 12)
+    expect(once?.pages[0]?.bookPageHint).toBe(12)
+    expect(setLessonBoardPageBookPageHint(once!, pageId, 12)).toBeNull()
+    expect(setLessonBoardPageBookPageHint(once!, pageId, 0)).toBeNull()
+  })
+
   it('goToAdjacentLessonBoardPage respects bounds', () => {
     let doc = createEmptyWhiteboardSession(key)
     expect(goToAdjacentLessonBoardPage(doc, -1)).toBeNull()
@@ -89,5 +156,18 @@ describe('lesson-board-session-ops', () => {
     const onSecond = goToAdjacentLessonBoardPage(onFirst!, 1)
     expect(onSecond).not.toBeNull()
     expect(goToAdjacentLessonBoardPage(onSecond!, 1)).toBeNull()
+  })
+
+  it('deleteLessonBoardPage removes page and switches active when needed', () => {
+    let doc = createEmptyWhiteboardSession(key)
+    doc.commands = [stroke]
+    doc = appendLessonBoardStandardPage(doc)
+    const page2Id = doc.activePageId
+    const page1Id = doc.pages[0]!.id
+    const deleted = deleteLessonBoardPage(doc, page2Id)
+    expect(deleted?.pages).toHaveLength(1)
+    expect(deleted?.activePageId).toBe(page1Id)
+    expect(deleted?.commands).toHaveLength(1)
+    expect(deleteLessonBoardPage(deleted!, page1Id)).toBeNull()
   })
 })

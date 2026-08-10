@@ -3,6 +3,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { Loader2 } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 interface FantasyHUDProps {
   exitHref: string
@@ -19,7 +20,12 @@ export function FantasyHUD({
   isBookOpeningPending = false,
 }: FantasyHUDProps) {
   return (
-    <div className="pointer-events-none absolute inset-0 z-20">
+    <div
+      className={cn(
+        'pointer-events-none absolute inset-0 z-20',
+        isBookOverlayOpen && 'hidden',
+      )}
+    >
       <div className="animate-map-hud-enter-top absolute inset-x-0 top-1 z-20 flex justify-center px-2 sm:top-2 sm:px-4">
         <div className="w-full max-w-[560px] sm:max-w-[600px]">
           <Image
@@ -32,13 +38,6 @@ export function FantasyHUD({
           />
         </div>
       </div>
-
-      <div
-        aria-hidden="true"
-        className={`pointer-events-none absolute inset-x-0 bottom-0 z-0 h-[150px] bg-gradient-to-t from-[#120a03]/55 via-[#120a03]/28 to-transparent transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] sm:h-[185px] ${
-          isBookOverlayOpen ? 'translate-y-[140%] opacity-0' : 'translate-y-0 opacity-100'
-        }`}
-      />
 
       <div
         className={`pointer-events-none animate-map-hud-enter-bottom absolute inset-x-0 bottom-1 z-10 flex justify-center px-2 transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] sm:bottom-2 sm:px-4 ${

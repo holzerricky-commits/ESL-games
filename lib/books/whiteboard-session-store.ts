@@ -3,10 +3,12 @@ import type { SelectionMoveClampContext } from '@/lib/books/annotation-scale'
 import { INK_SESSION_AUTOSAVE_MS } from '@/lib/books/ink-session-persist-config'
 import {
   appendLessonBoardPage,
+  deleteLessonBoardPage,
   extendLessonBoardActivePageContentHeight,
   goToAdjacentLessonBoardPage,
   setLessonBoardActivePageContentHeight,
   setLessonBoardActivePageId,
+  setLessonBoardPageBookPageHint,
   setLessonBoardPageTitle,
 } from '@/lib/books/lesson-board-session-ops'
 import {
@@ -35,6 +37,8 @@ export type WhiteboardSessionStore = InkSessionStore<WhiteboardSessionDocument> 
   setActiveLessonBoardContentHeightPx: (contentHeightPx: number) => void
   extendActiveLessonBoardRunway: (viewportHeightPx: number) => void
   setLessonBoardPageTitle: (pageId: string, title: string | undefined) => boolean
+  setLessonBoardPageBookPageHint: (pageId: string, bookPageHint: number) => boolean
+  deleteLessonBoardPage: (pageId: string) => boolean
 }
 
 export type CreateWhiteboardSessionStoreOptions = {
@@ -106,6 +110,18 @@ function withLessonBoardPageApi(
     },
     setLessonBoardPageTitle: (pageId, title) => {
       const next = setLessonBoardPageTitle(store.getState().doc, pageId, title)
+      if (!next) return false
+      applyDoc(next)
+      return true
+    },
+    setLessonBoardPageBookPageHint: (pageId, bookPageHint) => {
+      const next = setLessonBoardPageBookPageHint(store.getState().doc, pageId, bookPageHint)
+      if (!next) return false
+      applyDoc(next)
+      return true
+    },
+    deleteLessonBoardPage: (pageId) => {
+      const next = deleteLessonBoardPage(store.getState().doc, pageId)
       if (!next) return false
       applyDoc(next)
       return true

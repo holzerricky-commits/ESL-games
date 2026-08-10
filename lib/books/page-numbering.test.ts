@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   formatEffectivePageSpan,
+  getEffectivePageTotal,
+  getPageAlignmentRuntime,
   mapPdfPageToDisplayLabel,
   mapPdfSpreadToDisplayLabel,
   resolveAlignedAnchorPage,
+  resolveMappedPageToPdfPage,
 } from '@/lib/books/page-numbering'
 import type { BookRecord, BookUnitRecord } from '@/lib/books/types'
 
@@ -49,6 +52,18 @@ describe('page-numbering helpers', () => {
   it('formats effective spans without treating hints as PDF indices', () => {
     expect(formatEffectivePageSpan(2, 4, book, unit, 10)).toBe('p2-4')
     expect(formatEffectivePageSpan(2, 4, book, unit, 10, 'original')).toBe('p2-6')
+  })
+
+  it('getPageAlignmentRuntime and getEffectivePageTotal respect hidden and ghost pages', () => {
+    const runtime = getPageAlignmentRuntime(book, unit, 10)
+    expect(runtime.effectiveTotal).toBeGreaterThan(0)
+    expect(getEffectivePageTotal(book, unit, 10)).toBe(runtime.effectiveTotal)
+    expect(getEffectivePageTotal(book, unit, 10)).toBeLessThan(10)
+  })
+
+  it('resolveMappedPageToPdfPage converts book page to PDF index', () => {
+    expect(resolveMappedPageToPdfPage(3, book, unit, 10)).toBe(4)
+    expect(resolveMappedPageToPdfPage(3, book, unit, 10)).toBe(resolveAlignedAnchorPage(3, book, unit, 10))
   })
 })
 

@@ -24,15 +24,22 @@ export interface WarmMapInitialBookSpreadPrefetchArgs {
   assignedBookIds: string[]
   assignedUnitRefs: Array<{ bookId: string; unitId: string }>
   curriculumHistory: BookReaderCurriculumHistoryEntry[]
+  preferBookId?: string | null
+  preferUnitId?: string | null
+  preferResumePage?: number | null
 }
 
 export async function warmMapInitialBookSpreadPrefetch(args: WarmMapInitialBookSpreadPrefetchArgs): Promise<void> {
-  const { library, assignedBookIds, assignedUnitRefs, curriculumHistory } = args
+  const { library, assignedBookIds, assignedUnitRefs, curriculumHistory, preferBookId, preferUnitId, preferResumePage } =
+    args
   const sel = resolveInitialBookReaderSelection({
     library,
     assignedBookIds,
     assignedUnitRefs,
     curriculumHistory,
+    preferBookId,
+    preferUnitId,
+    preferResumePage,
   })
   if (!sel.selectedBookId || !sel.selectedUnitId) {
     setMapAnchorSpreadContext(null)

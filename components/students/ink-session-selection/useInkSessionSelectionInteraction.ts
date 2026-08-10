@@ -6,6 +6,7 @@ import type { AnnotationCommand } from '@/lib/books/annotation-command-types'
 import { MARQUEE_MIN_AREA } from '@/components/students/book-page-annotation-layer/constants'
 import {
   annotationIdsInMarquee,
+  filterUnlockedTransformIds,
   hitTestAnnotationIndex,
   hitTestSelectedAnnotationIndex,
   normalizeMarqueeRect,
@@ -42,6 +43,12 @@ import {
   applyInkSessionSelectionLivePreview,
   computeInkSessionSelectionChrome,
 } from '@/lib/books/ink-session-selection-display'
+import {
+  clearNativePdfTextSelection,
+  forwardPointerToPdfText,
+  isPointerOverPdfTextSpan,
+} from '@/lib/books/pdf-text-pointer-routing'
+import { shouldDismissBookOverlayAnnotationEditOnPointerDown } from '@/lib/books/book-overlay-typing-dismiss'
 
 export type InkSessionSelectionGesture = 'marquee' | 'move' | 'scale' | 'rotate' | null
 
@@ -85,7 +92,7 @@ export type UseInkSessionSelectionInteractionOptions = {
   onGroupChromeReset?: () => void
   onClearEditing?: () => void
   resolveClickTargetIds: (cmd: AnnotationCommand) => string[]
-  selectMoveIdsForDrag?: (hitCmd: AnnotationCommand) => string[]
+  selectMoveIdsForDrag?: (hitCmd: AnnotationCommand, dragSelectionIds?: readonly string[]) => string[]
   acceptPointerDown?: (e: React.PointerEvent<HTMLDivElement>) => boolean
   clampMoveDelta?: (
     dx: number,
@@ -96,6 +103,8 @@ export type UseInkSessionSelectionInteractionOptions = {
   onScaleCommitFrame?: (frame: OrientedSelectionFrame) => void
   /** Spread layer bumps repaint after rotate commit overlay. */
   onRotateCommitRepaint?: () => void
+  /** When true, empty clicks forward to PDF text spans; hover shows text cursor. */
+  pdfTextRoutingEnabled?: boolean
 }
 
 export type ToNormFromElement = (
@@ -137,6 +146,7 @@ export function useInkSessionSelectionInteraction(
     clampMoveDelta,
     onScaleCommitFrame,
     onRotateCommitRepaint,
+    pdfTextRoutingEnabled = false,
   } = options
 
   const paintCommands = paintCommandsProp ?? hitTestCommands
@@ -180,6 +190,7 @@ export function useInkSessionSelectionInteraction(
   const [hoveredScaleHandle, setHoveredScaleHandle] = useState<ScaleHandleId | null>(null)
   const [hoveredRotationHandle, setHoveredRotationHandle] = useState(false)
   const [pointerOverSelection, setPointerOverSelection] = useState(false)
+  const [pointerOverPdfText, setPointerOverPdfText] = useState(false)
   const [hoverTargetIds, setHoverTargetIds] = useState<string[]>([])
 
   const clearSelectScaleLive = useCallback(() => {
@@ -350,9 +361,12 @@ export function useInkSessionSelectionInteraction(
 
   const beginSelectMove = useCallback(
     (e: React.PointerEvent<HTMLDivElement>, p: [number, number], moveIds?: string[]) => {
+      const rawIds = moveIds ?? [...selectedIdsRef.current]
+      const ids = filterUnlockedTransformIds(selectionInteractionCommandsRef.current, rawIds)
+      if (ids.length === 0) return
       clearSelectScaleLive()
       clearSelectRotationLive()
-      selectMoveIdsRef.current = moveIds ?? [...selectedIdsRef.current]
+      selectMoveIdsRef.current = ids
       selectGestureRef.current = 'move'
       setActiveGesture('move')
       selectAnchorRef.current = p
@@ -375,7 +389,12 @@ export function useInkSessionSelectionInteraction(
       clearSelectDragLive()
       setMarqueeRect(null)
       setMarqueeMode(null)
-      selectScaleIdsRef.current = [...selectedIdsRef.current]
+      const scaleIds = filterUnlockedTransformIds(
+        selectionInteractionCommandsRef.current,
+        selectedIdsRef.current,
+      )
+      if (scaleIds.length === 0) return
+      selectScaleIdsRef.current = scaleIds
       const frameCopy: OrientedSelectionFrame = {
         rect: { ...startFrame.rect },
         rotationDeg: startFrame.rotationDeg,
@@ -407,6 +426,7 @@ export function useInkSessionSelectionInteraction(
         hitTestCommands as AnnotationCommand[],
         selectedIdsRef.current,
       )
+      if (rotIds.length === 0) return
       const prepared = prepareRotationGestureState(
         hitTestCommands as AnnotationCommand[],
         rotIds,
@@ -504,14 +524,34 @@ export function useInkSessionSelectionInteraction(
         } else {
           const cmd = hitTestCommands[idx]!
           const targetIds = resolveClickTargetIds(cmd)
-          if (selectionIdsMatch(targetIds, selectedIdsRef.current)) {
+          const hoverIds = filterUnlockedTransformIds(
+            hitTestCommands as AnnotationCommand[],
+            targetIds,
+          )
+          if (hoverIds.length === 0) {
+            if (hoverTargetIds.length > 0) setHoverTargetIds([])
+          } else if (selectionIdsMatch(targetIds, selectedIdsRef.current)) {
             if (hoverTargetIds.length > 0) setHoverTargetIds([])
           } else {
-            setHoverTargetIdsIfChanged(targetIds)
+            setHoverTargetIdsIfChanged(hoverIds)
           }
         }
       } else if (hoverTargetIds.length > 0) {
         setHoverTargetIds([])
+      }
+
+      if (
+        pdfTextRoutingEnabled &&
+        editingId == null &&
+        !marqueeRect &&
+        !hoveredRotationHandle &&
+        !hoveredScaleHandle &&
+        hoverTargetIds.length === 0
+      ) {
+        const overText = isPointerOverPdfTextSpan(e.clientX, e.clientY, [e.currentTarget])
+        if (overText !== pointerOverPdfText) setPointerOverPdfText(overText)
+      } else if (pointerOverPdfText) {
+        setPointerOverPdfText(false)
       }
 
       if (selectedIdsRef.current.length === 0) {
@@ -532,12 +572,19 @@ export function useInkSessionSelectionInteraction(
       isPointerOverSelected,
       marqueeRect,
       pointerOverSelection,
+      pointerOverPdfText,
+      pdfTextRoutingEnabled,
       resolveClickTargetIds,
       setHoverTargetIdsIfChanged,
       toNorm,
       hoverTargetIds.length,
       widthPx,
     ],
+  )
+
+  const selectedTransformableIds = useMemo(
+    () => filterUnlockedTransformIds(displayCommands as AnnotationCommand[], selectedIds),
+    [displayCommands, selectedIds],
   )
 
   const effectiveCursor: CSSProperties['cursor'] = useMemo(() => {
@@ -567,11 +614,12 @@ export function useInkSessionSelectionInteraction(
       )
     }
     if (
-      (pointerOverSelection && selectedIds.length > 0) ||
+      (pointerOverSelection && selectedTransformableIds.length > 0) ||
       (hoverTargetIds.length > 0 && !marqueeRect)
     ) {
       return 'move'
     }
+    if (pointerOverPdfText) return 'text'
     return 'default'
   }, [
     activeGesture,
@@ -581,9 +629,10 @@ export function useInkSessionSelectionInteraction(
     hoveredScaleHandle,
     hoverTargetIds.length,
     marqueeRect,
+    pointerOverPdfText,
     pointerOverSelection,
     selectRotationLiveDelta,
-    selectedIds.length,
+    selectedTransformableIds.length,
     widthPx,
   ])
 
@@ -591,8 +640,14 @@ export function useInkSessionSelectionInteraction(
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (!pointerEnabled) return
       if (acceptPointerDown && !acceptPointerDown(e)) return
+      // Editing a label/sticky: pointer on that field is for text selection, not Move.
+      if (
+        editingId != null &&
+        !shouldDismissBookOverlayAnnotationEditOnPointerDown(e.target, { editingId })
+      ) {
+        return
+      }
       onClearEditing?.()
-      if (e.button === 0) e.preventDefault()
       setHoverTargetIds([])
       const p = toNorm(e.currentTarget, e.clientX, e.clientY)
       if (!p) return
@@ -608,11 +663,18 @@ export function useInkSessionSelectionInteraction(
             selectionHasRotatableShapes(interactionCommands, selectedIdsRef.current) &&
             hitTestRotationHandleForFrame(p, handleFrame, widthPx, heightPx)
           ) {
+            if (e.button === 0) e.preventDefault()
             beginSelectRotate(e, handleFrame, p)
             return
           }
           const handle = hitTestScaleHandleForFrame(p, handleFrame, widthPx, heightPx)
           if (handle) {
+            const scaleIds = filterUnlockedTransformIds(
+              interactionCommands,
+              selectedIdsRef.current,
+            )
+            if (scaleIds.length === 0) return
+            if (e.button === 0) e.preventDefault()
             beginSelectScale(e, handle, handleFrame)
             return
           }
@@ -629,12 +691,14 @@ export function useInkSessionSelectionInteraction(
       )
 
       if (idx != null) {
+        if (e.button === 0) e.preventDefault()
         const cmd = hitTestCommands[idx]!
         const targetIds = resolveClickTargetIds(cmd)
         const fullySelected = targetIds.every((id) => selectedIdsRef.current.includes(id))
 
         if (selMode === 'replace' && fullySelected) {
-          const moveIds = selectMoveIdsForDrag?.(cmd) ?? [...selectedIdsRef.current]
+          const moveIds =
+            selectMoveIdsForDrag?.(cmd, selectedIdsRef.current) ?? [...selectedIdsRef.current]
           beginSelectMove(e, p, moveIds)
           return
         }
@@ -647,9 +711,15 @@ export function useInkSessionSelectionInteraction(
         if (selMode === 'toggle' && fullySelected) return
         if (nextIds.length === 0) return
 
-        const moveIds = selectMoveIdsForDrag?.(cmd) ?? [...selectedIdsRef.current]
+        const moveIds = selectMoveIdsForDrag?.(cmd, nextIds) ?? [...nextIds]
         beginSelectMove(e, p, moveIds)
         return
+      }
+
+      if (pdfTextRoutingEnabled && e.button === 0) {
+        const forwarded = forwardPointerToPdfText(e.nativeEvent, e.currentTarget)
+        if (forwarded) return
+        clearNativePdfTextSelection()
       }
 
       if (clearSelectionOnEmptyClick && selMode === 'replace') {
@@ -664,6 +734,7 @@ export function useInkSessionSelectionInteraction(
       setMarqueeRect(normalizeMarqueeRect(p, p))
       setMarqueeMode(resolveMarqueeSelectMode(p, p, marqueeSelectRule))
       clearSelectDragLive()
+      if (e.button === 0) e.preventDefault()
       e.currentTarget.setPointerCapture(e.pointerId)
     },
     [
@@ -676,6 +747,7 @@ export function useInkSessionSelectionInteraction(
       deadIndices,
       editingId,
       pointerEnabled,
+      pdfTextRoutingEnabled,
       heightPx,
       hitTestCommands,
       marqueeSelectRule,
@@ -797,6 +869,7 @@ export function useInkSessionSelectionInteraction(
         } else if (marqueeSelModeRef.current === 'replace') {
           onSelectedIdsChange([])
           onGroupChromeReset?.()
+          if (pdfTextRoutingEnabled) clearNativePdfTextSelection()
         }
         clearSelectionHover()
         return
@@ -873,6 +946,7 @@ export function useInkSessionSelectionInteraction(
       onScaleCommitFrame,
       onScaleCommitted,
       onSelectedIdsChange,
+      pdfTextRoutingEnabled,
       toNorm,
       widthPx,
     ],

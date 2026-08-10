@@ -16,6 +16,9 @@ import {
   Circle,
   Triangle,
   Type,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
 } from 'lucide-react'
 import type { MarqueeSelectRule } from '@/lib/books/annotation-select'
 import { nextMarqueeSelectRule } from '@/lib/books/annotation-select'
@@ -31,10 +34,12 @@ import {
 } from '@/components/students/annotation-popover-controls'
 import { TOOLBAR_ICON_CLASS } from '@/components/students/annotation-toolbar-icon'
 import type { EyedropperVariant } from '@/lib/books/eyedropper-variant'
-import type { TextAnnotationVisualStyle } from '@/lib/books/annotation-command-types'
+import type { TextAnnotationAlign, TextAnnotationVisualStyle } from '@/lib/books/annotation-command-types'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { SelectionContextValueMenu } from '@/components/students/selection-context-bar/SelectionContextIconMenu'
+import { SELECTION_CONTEXT_ICON_CLASS } from '@/components/students/selection-context-bar/selection-context-bar-styles'
 import {
-  ANNOTATION_TEXT_FONTS,
+  ANNOTATION_TEXT_FONTS_FOR_PICKER,
   getAnnotationTextFont,
   type AnnotationTextFontId,
 } from '@/lib/books/annotation-text-fonts'
@@ -45,8 +50,35 @@ const SHAPE_MODES = ['line', 'rect', 'ellipse', 'triangle', 'arrow'] as const
 type ShapeMode = (typeof SHAPE_MODES)[number]
 const FILL_CYCLE: ShapeFillMode[] = ['solid', 'transparent', 'none']
 
+export type TopStripTone = 'dark'
+export type TopStripChipVariant = 'strip' | 'panel'
+
 export const stripChipClass =
   'flex h-6 w-8 shrink-0 items-center justify-center rounded-md text-white/65 transition-colors hover:bg-white/10 hover:text-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/55'
+
+export function topStripChipButtonClass(active: boolean, variant: TopStripChipVariant = 'strip') {
+  if (variant === 'panel') {
+    return cn(
+      'flex h-7 w-9 shrink-0 items-center justify-center rounded-lg text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#71717a]',
+      active
+        ? 'bg-[#52525b] text-[#f4f4f5] ring-1 ring-[#71717a]'
+        : 'text-[#a1a1aa] hover:bg-[#3f3f46] hover:text-[#f4f4f5]',
+    )
+  }
+  return cn(stripChipClass, active && 'bg-white/20 text-white ring-1 ring-amber-400/45')
+}
+
+export function stripChipClassForTone(_tone: TopStripTone = 'dark'): string {
+  return stripChipClass
+}
+
+export function stripChipActiveClassForTone(_tone: TopStripTone = 'dark'): string {
+  return 'bg-white/20 text-white ring-1 ring-amber-400/45'
+}
+
+export function stripChipMutedClassForTone(_tone: TopStripTone = 'dark'): string {
+  return 'text-white/45'
+}
 
 const iconCls = TOOLBAR_ICON_CLASS
 
@@ -90,17 +122,19 @@ export function TopStripLineStyleChip({
   value,
   onChange,
   idPrefix,
+  tone = 'dark',
 }: {
   value: AnnotationLineDashStyle
   onChange: (v: AnnotationLineDashStyle) => void
   idPrefix: string
+  tone?: TopStripTone
 }) {
   const label = value === 'solid' ? 'Solid line' : value === 'dashed' ? 'Dashed line' : 'Dotted line'
   return (
     <button
       type="button"
       id={`${idPrefix}-line-style`}
-      className={stripChipClass}
+      className={stripChipClassForTone(tone)}
       aria-label={`${label}. Click for next style.`}
       title={label}
       onClick={() => onChange(nextLineStyle(value))}
@@ -132,16 +166,18 @@ export function TopStripShapeRoundedCornersChip({
   active,
   onChange,
   idPrefix,
+  variant = 'strip',
 }: {
   active: boolean
   onChange: (v: boolean) => void
   idPrefix: string
+  variant?: TopStripChipVariant
 }) {
   return (
     <button
       type="button"
       id={`${idPrefix}-rounded-corners`}
-      className={cn(stripChipClass, active && 'bg-white/20 text-white ring-1 ring-amber-400/45')}
+      className={topStripChipButtonClass(active, variant)}
       aria-pressed={active}
       aria-label={
         active
@@ -164,6 +200,7 @@ export function TopStripShapeLineStyleChip({
   fillMode,
   onFillModeChange,
   idPrefix,
+  tone = 'dark',
 }: {
   strokeEnabled: boolean
   lineDashStyle: AnnotationLineDashStyle
@@ -172,6 +209,7 @@ export function TopStripShapeLineStyleChip({
   fillMode?: ShapeFillMode
   onFillModeChange?: (mode: ShapeFillMode) => void
   idPrefix: string
+  tone?: TopStripTone
 }) {
   const label = !strokeEnabled
     ? 'No border'
@@ -203,7 +241,10 @@ export function TopStripShapeLineStyleChip({
     <button
       type="button"
       id={`${idPrefix}-line-style`}
-      className={cn(stripChipClass, !strokeEnabled && 'text-white/45')}
+      className={cn(
+        stripChipClassForTone(tone),
+        !strokeEnabled && stripChipMutedClassForTone(tone),
+      )}
       aria-label={`${label}. Click for next style.`}
       title={label}
       onClick={cycle}
@@ -257,10 +298,12 @@ export function TopStripFillModeChip({
   fillMode,
   onChange,
   idPrefix,
+  tone = 'dark',
 }: {
   fillMode: ShapeFillMode
   onChange: (m: ShapeFillMode) => void
   idPrefix: string
+  tone?: TopStripTone
 }) {
   const icons: Record<ShapeFillMode, ReactNode> = {
     solid: <ShapeFillSolidIcon />,
@@ -276,7 +319,7 @@ export function TopStripFillModeChip({
     <button
       type="button"
       id={`${idPrefix}-fill-mode`}
-      className={stripChipClass}
+      className={stripChipClassForTone(tone)}
       aria-label={`${labels[fillMode]}. Click for next fill.`}
       title={labels[fillMode]}
       onClick={() => onChange(nextInCycle(fillMode, FILL_CYCLE))}
@@ -341,17 +384,19 @@ export function TopStripTextStyleChip({
   style,
   onChange,
   idPrefix,
+  tone = 'dark',
 }: {
   style: TextAnnotationVisualStyle
   onChange: (s: TextAnnotationVisualStyle) => void
   idPrefix: string
+  tone?: TopStripTone
 }) {
   const isFilled = style === 'filled'
   return (
     <button
       type="button"
       id={`${idPrefix}-text-style`}
-      className={stripChipClass}
+      className={stripChipClassForTone(tone)}
       aria-label={isFilled ? 'Text with background. Click to switch style.' : 'Plain text. Click to switch style.'}
       title={isFilled ? 'Text with background' : 'Plain text'}
       onClick={() => onChange(isFilled ? 'plain' : 'filled')}
@@ -361,31 +406,99 @@ export function TopStripTextStyleChip({
   )
 }
 
-/** Straight highlighter / pen segment (Shift also enables for pen when ink is solid). */
+const TEXT_ALIGN_OPTIONS: {
+  id: TextAnnotationAlign
+  label: string
+  Icon: typeof AlignLeft
+}[] = [
+  { id: 'left', label: 'Align left', Icon: AlignLeft },
+  { id: 'center', label: 'Align center', Icon: AlignCenter },
+  { id: 'right', label: 'Align right', Icon: AlignRight },
+]
+
+export function TopStripTextAlignChip({
+  value,
+  onChange,
+  idPrefix,
+  tone = 'dark',
+  layout = 'inline',
+}: {
+  value: TextAnnotationAlign
+  onChange: (align: TextAnnotationAlign) => void
+  idPrefix: string
+  tone?: TopStripTone
+  layout?: 'inline' | 'dropdown'
+}) {
+  if (layout === 'dropdown') {
+    return (
+      <SelectionContextValueMenu
+        value={value}
+        onChange={onChange}
+        options={TEXT_ALIGN_OPTIONS.map(({ id, label, Icon }) => ({
+          id,
+          label,
+          icon: <Icon className={SELECTION_CONTEXT_ICON_CLASS} strokeWidth={1.75} aria-hidden />,
+        }))}
+        idPrefix={`${idPrefix}-text-align`}
+        ariaLabel="Text alignment"
+        popoverLayout="icons"
+      />
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-0.5" role="group" aria-label="Text alignment">
+      {TEXT_ALIGN_OPTIONS.map(({ id, label, Icon }) => {
+        const active = value === id
+        return (
+          <button
+            key={id}
+            type="button"
+            id={`${idPrefix}-text-align-${id}`}
+            className={cn(
+              stripChipClassForTone(tone),
+              active && stripChipActiveClassForTone(tone),
+            )}
+            aria-pressed={active}
+            aria-label={label}
+            title={label}
+            onClick={() => onChange(id)}
+          >
+            <Icon className={iconCls} strokeWidth={1.75} aria-hidden />
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/** Straight highlighter underline toggle. */
 export function TopStripStraightStrokeChip({
   active,
   onChange,
   idPrefix,
+  variant = 'strip',
 }: {
   active: boolean
   onChange: (v: boolean) => void
   idPrefix: string
+  variant?: TopStripChipVariant
 }) {
   return (
     <button
       type="button"
       id={`${idPrefix}-straight-stroke`}
-      className={cn(stripChipClass, active && 'bg-white/20 text-white ring-1 ring-amber-400/45')}
+      className={topStripChipButtonClass(active, variant)}
       aria-pressed={active}
       aria-label={
         active
-          ? 'Straight horizontal or vertical on. Click to draw freehand.'
-          : 'Straight horizontal or vertical off. Click to constrain with Shift.'
+          ? 'Straight horizontal underline on. Click to draw freehand.'
+          : 'Straight horizontal underline off. Click to draw freehand highlights.'
       }
       title={
         active
-          ? 'Straight H/V (on)'
-          : 'Straight horizontal or vertical — hold Shift while drawing'
+          ? 'Straight horizontal (on)'
+          : 'Straight horizontal underline'
       }
       onClick={() => onChange(!active)}
     >
@@ -399,16 +512,24 @@ export function TopStripMarkerDecoratedEdgeChip({
   active,
   onChange,
   idPrefix,
+  tone = 'dark',
+  variant = 'strip',
 }: {
   active: boolean
   onChange: (v: boolean) => void
   idPrefix: string
+  tone?: TopStripTone
+  variant?: TopStripChipVariant
 }) {
   return (
     <button
       type="button"
       id={`${idPrefix}-decorated-edge`}
-      className={cn(stripChipClass, active && 'bg-white/20 text-white ring-1 ring-amber-400/45')}
+      className={
+        variant === 'panel'
+          ? topStripChipButtonClass(active, 'panel')
+          : cn(stripChipClassForTone(tone), active && stripChipActiveClassForTone(tone))
+      }
       aria-pressed={active}
       aria-label={
         active
@@ -428,10 +549,12 @@ export function TopStripMarqueeRuleChip({
   rule,
   onChange,
   idPrefix,
+  variant = 'strip',
 }: {
   rule: MarqueeSelectRule
   onChange: (r: MarqueeSelectRule) => void
   idPrefix: string
+  variant?: TopStripChipVariant
 }) {
   const label =
     rule === 'follow-drag'
@@ -448,11 +571,13 @@ export function TopStripMarqueeRuleChip({
       <Square className={iconCls} strokeWidth={1.75} aria-hidden />
     )
 
+  const active = rule !== 'follow-drag'
+
   return (
     <button
       type="button"
       id={`${idPrefix}-marquee-rule`}
-      className={cn(stripChipClass, rule !== 'follow-drag' && 'bg-white/20 text-white ring-1 ring-amber-400/45')}
+      className={topStripChipButtonClass(active, variant)}
       aria-label={`${label}. Click for next rule.`}
       title={label}
       onClick={() => onChange(nextMarqueeSelectRule(rule))}
@@ -467,16 +592,18 @@ export function TopStripPenAutoGroupChip({
   active,
   onChange,
   idPrefix,
+  variant = 'strip',
 }: {
   active: boolean
   onChange: (v: boolean) => void
   idPrefix: string
+  variant?: TopStripChipVariant
 }) {
   return (
     <button
       type="button"
       id={`${idPrefix}-auto-group`}
-      className={cn(stripChipClass, active && 'bg-white/20 text-white ring-1 ring-amber-400/45')}
+      className={topStripChipButtonClass(active, variant)}
       aria-pressed={active}
       aria-label={
         active
@@ -531,17 +658,27 @@ export const TOP_STRIP_POPOVER_CLASS =
 
 export const TOP_STRIP_POPOVER_STACK = 'space-y-2.5'
 
+/** Sample word shown in the font chip trigger so the active typeface is readable at a glance. */
+export const TEXT_FONT_CHIP_PREVIEW_WORD = 'Header'
+
 export function TopStripTextFontChip({
   value,
   onChange,
   idPrefix,
+  tone = 'dark',
+  compact = false,
+  previewWord = TEXT_FONT_CHIP_PREVIEW_WORD,
 }: {
   value: AnnotationTextFontId
   onChange: (id: AnnotationTextFontId) => void
   idPrefix: string
+  tone?: TopStripTone
+  compact?: boolean
+  previewWord?: string
 }) {
   const [open, setOpen] = useState(false)
   const active = getAnnotationTextFont(value)
+  const chipClass = stripChipClassForTone(tone)
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -550,17 +687,22 @@ export function TopStripTextFontChip({
           type="button"
           id={`${idPrefix}-text-font`}
           className={cn(
-            stripChipClass,
-            'inline-flex w-auto min-w-[4.75rem] max-w-[8.5rem] gap-0.5 px-1.5',
+            chipClass,
+            'h-8 min-h-8',
+            compact
+              ? 'inline-flex w-auto min-w-[4.75rem] max-w-[7.5rem] gap-0.5 px-2'
+              : 'inline-flex w-auto min-w-[5.5rem] max-w-[9.5rem] gap-0.5 px-2',
           )}
           aria-label={`Text font: ${active.label}. Click to choose another font.`}
           title={`Font: ${active.label}`}
         >
           <span
-            className="truncate text-[11px] font-medium leading-none text-white/85"
+            className={cn(
+              'truncate font-medium leading-none text-sm text-white/85',
+            )}
             style={{ fontFamily: active.cssFamily }}
           >
-            Aa
+            {previewWord}
           </span>
           <ChevronDown className="h-3 w-3 shrink-0 opacity-60" aria-hidden />
         </button>
@@ -573,8 +715,8 @@ export function TopStripTextFontChip({
         <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-white/45">
           Text font
         </p>
-        <div className="max-h-[min(16rem,50vh)] space-y-0.5 overflow-y-auto overscroll-contain pr-0.5">
-        {ANNOTATION_TEXT_FONTS.map((font) => {
+        <div className="space-y-0.5">
+        {ANNOTATION_TEXT_FONTS_FOR_PICKER.map((font) => {
           const selected = font.id === value
           return (
             <button

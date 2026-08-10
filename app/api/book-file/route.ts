@@ -28,8 +28,18 @@ function parseRangeHeader(rangeHeader: string, totalSize: number): { start: numb
 }
 
 function getContentType(absPath: string): string {
-  if (absPath.toLowerCase().endsWith('.pdf')) return 'application/pdf'
+  const lower = absPath.toLowerCase()
+  if (lower.endsWith('.pdf')) return 'application/pdf'
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg'
+  if (lower.endsWith('.png')) return 'image/png'
+  if (lower.endsWith('.webp')) return 'image/webp'
+  if (lower.endsWith('.gif')) return 'image/gif'
   return 'application/octet-stream'
+}
+
+function cacheControlForContentType(contentType: string): string {
+  if (contentType.startsWith('image/')) return 'public, max-age=604800'
+  return 'public, max-age=300'
 }
 
 function toWebReadableWithAbort(
@@ -135,7 +145,7 @@ export async function GET(req: NextRequest) {
       status: 206,
       headers: {
         'Accept-Ranges': 'bytes',
-        'Cache-Control': 'public, max-age=300',
+        'Cache-Control': cacheControlForContentType(contentType),
         'Content-Length': String(chunkSize),
         'Content-Range': `bytes ${start}-${end}/${totalSize}`,
         'Content-Type': contentType,
@@ -148,7 +158,7 @@ export async function GET(req: NextRequest) {
     status: 200,
     headers: {
       'Accept-Ranges': 'bytes',
-      'Cache-Control': 'public, max-age=300',
+      'Cache-Control': cacheControlForContentType(contentType),
       'Content-Length': String(totalSize),
       'Content-Type': contentType,
     },

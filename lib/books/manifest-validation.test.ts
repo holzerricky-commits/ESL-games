@@ -52,6 +52,20 @@ describe('bookLibraryPayloadSchema', () => {
     expect(bookLibraryPayloadSchema.safeParse(payload).success).toBe(true)
   })
 
+  it('accepts optional coverImagePath on a book', () => {
+    const payload = {
+      books: [
+        {
+          id: 'b1',
+          title: 'Book',
+          coverImagePath: 'book-library/journeys/cover.jpg',
+          units: [{ id: 'u1', title: 'Unit 1', filePath: 'book-library/journeys/unit1.pdf' }],
+        },
+      ],
+    }
+    expect(bookLibraryPayloadSchema.safeParse(payload).success).toBe(true)
+  })
+
   it('remains backward compatible with start-only records', () => {
     const payload = {
       books: [
@@ -63,5 +77,33 @@ describe('bookLibraryPayloadSchema', () => {
       ],
     }
     expect(bookLibraryPayloadSchema.safeParse(payload).success).toBe(true)
+  })
+
+  it('accepts series, grade, and role on a book', () => {
+    const payload = {
+      books: [
+        {
+          id: 'b1',
+          title: 'Journeys Grade 3 — Student book',
+          series: 'Journeys',
+          grade: 'G3',
+          role: 'Student book',
+          units: [{ id: 'u1', title: 'Unit 1', filePath: 'book-library/journeys/unit1.pdf' }],
+        },
+      ],
+    }
+    expect(bookLibraryPayloadSchema.safeParse(payload).success).toBe(true)
+  })
+
+  it('rejects duplicate book ids', () => {
+    const unit = { id: 'u1', title: 'Unit 1', filePath: 'book-library/b/unit1.pdf' }
+    const payload = {
+      books: [
+        { id: 'same', title: 'A', units: [unit] },
+        { id: 'same', title: 'B', units: [unit] },
+      ],
+    }
+    const result = bookLibraryPayloadSchema.safeParse(payload)
+    expect(result.success).toBe(false)
   })
 })

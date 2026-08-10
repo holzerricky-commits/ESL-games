@@ -62,7 +62,7 @@ export interface StudentResult {
   passedChallenge?: boolean
 }
 
-export type StudentClassStatus = 'planned' | 'prepared' | 'in_progress' | 'completed' | 'cancelled'
+export type StudentClassStatus = 'planned' | 'prepared' | 'in_progress' | 'completed' | 'cancelled' | 'missed'
 
 /** Bookmark captured when the teacher ends class (last viewed PDF page for that book). */
 export interface ClassSessionBookmarkAtEnd {
@@ -103,8 +103,20 @@ export interface WeeklySlotAssignment {
   id: string
   dayOfWeek: number
   startMinute: number
-  durationMinutes: 30 | 60
+  /** Class length in minutes (presets 25/30/45/50/60 or custom). */
+  durationMinutes: number
   studentId: string
+  createdAt: string
+  updatedAt: string
+}
+
+/** Skip or override auto-generation for one calendar date on a recurring weekly slot. */
+export interface WeeklySlotException {
+  id: string
+  slotId: string
+  /** Local calendar date YYYY-MM-DD for the original generated occurrence. */
+  localDate: string
+  type: 'cancelled' | 'rescheduled'
   createdAt: string
   updatedAt: string
 }
@@ -153,9 +165,42 @@ export interface StudentClassSession {
     createdAt: string
   }>
   teacherNotes?: string
+  /** Structured lesson outline blocks (time bands). */
+  prepTimeBlocks?: Array<{
+    id: string
+    label: string
+    minutes: number
+    objective: string
+    activityType: string
+    teacherMoves?: string[]
+    studentOutput?: string
+    checkForUnderstanding?: string
+  }>
+  /** One-line AI summary shown above outline cards. */
+  prepOutlineSummary?: string
+  /** Teacher freeform notes — separate from the outline. */
+  prepNotes?: string
+  /** AI / saved prep: what to focus on this class. */
+  prepPriorities?: string[]
+  /** AI / saved prep: concrete in-class activity ideas. */
+  prepSuggestedActivities?: string[]
+  /** AI / saved prep: when to pause and check understanding. */
+  prepCheckpointMoments?: string[]
+  /** AI / saved prep: words worth extra attention. */
+  prepWordsToRevisit?: Array<{ word: string; reason: string }>
+  /** AI / saved prep: level or support tweaks. */
+  prepDifferentiationTips?: string[]
+  /** AI / saved prep: homework or next-class carry-over. */
+  prepCarryOver?: string[]
+  /** @deprecated Legacy flat prep text; use prepTimeBlocks when available. */
   aiPrepSummary?: string
   /** When the teacher tapped Start class (ISO). */
   classStartedAt?: string
+  /**
+   * Extra minutes past the original scheduled end (`scheduledFor + durationMin`).
+   * Cap: 15. Used by the live countdown / grace / extend flow.
+   */
+  extendedMinutesTotal?: number
   /** When the teacher confirmed End class (ISO). */
   classEndedAt?: string
   /** Short recap after class (separate from prep `teacherNotes`). */
@@ -167,52 +212,29 @@ export interface StudentClassSession {
   sessionNote?: string
   /** Teacher dismissed the optional “add a recap” prompt without adding text. */
   postClassRecapPromptDismissed?: boolean
+  /** Auto line from end-of-class reading-check wrap (e.g. "Checks: 10/20 · 8 right"). */
+  readingCheckWrapLine?: string
   /** Last-viewed PDF page at end class, per your bookmark rule. */
   bookmarkAtEnd?: ClassSessionBookmarkAtEnd
-  /** Session-scoped lesson notebook (Prompt 1 foundation). */
-  lessonNotebookSession?: LessonNotebookSession
   createdAt: string
   updatedAt: string
 }
 
-export type LessonNotebookAnchorType = 'page_span' | 'toc_part'
-export type LessonNotebookEntryLayer = 'doc' | 'overlay'
-
-export interface LessonNotebookSession {
-  sessionId: string
-  studentId: string
-  classSessionId: string
-  bookId: string
-  unitId?: string
-  startedAt: string
-  endedAt?: string
-  sections: LessonNotebookSection[]
-}
-
-export interface LessonNotebookSection {
-  sectionId: string
-  sessionId: string
-  anchorType: LessonNotebookAnchorType
-  anchorKey: string
-  title: string
-  order: number
-  entries: LessonNotebookEntry[]
-}
-
-export interface LessonNotebookEntry {
-  entryId: string
-  sectionId: string
-  layer: LessonNotebookEntryLayer
-  payload: Record<string, unknown>
-  createdAt: string
-  updatedAt: string
-}
+/** Active = on the main roster; on_break = hidden but kept (history preserved, schedule freed). */
+export type StudentRosterStatus = 'active' | 'on_break'
 
 export interface StudentRecord {
   id: string
   name: string
   createdAt: string
   updatedAt: string
+  /**
+   * Roster visibility. Missing / unknown values are treated as active.
+   * On break: hidden from the main list and schedule; profile data kept.
+   */
+  rosterStatus?: StudentRosterStatus
+  /** When the student was put on break (ISO). Cleared when restored. */
+  onBreakAt?: string
   /** Optional profile image URL (local `/student-avatars/...` or remote). */
   avatarUrl?: string
   note?: string
@@ -241,8 +263,23 @@ export interface StudentRecord {
   /**
    * Optional `StudentSectionOption.id` from the book outline — where reading should start
    * when there is no earlier completed class with a chosen section.
+   * @deprecated Prefer `curriculumBookStarts` (one start per book). Kept for migration / Classes fallback.
    */
   curriculumAnchorSectionId?: string
+  /**
+   * Per assigned book: teacher-set starting place (lesson piece + mapped page).
+   * Last-class bookmark / reader history still win when opening after real progress.
+   */
+  curriculumBookStarts?: Record<
+    string,
+    {
+      sectionId: string
+      unitId: string
+      /** Printed / mapped book page (not raw PDF index). */
+      mappedPage: number
+      updatedAt: string
+    }
+  >
   /** Per-session reading history entries captured from the Books reader when opened from a student context. */
   curriculumHistory?: Array<{
     id: string
@@ -254,8 +291,28 @@ export interface StudentRecord {
   }>
   /** Scheduled class sessions for this student (teacher planning flow). */
   scheduledClasses?: StudentClassSession[]
+  /** Teacher-managed practice word list (thin word review; not full Phase 4 bank). */
+  wordReviewEntries?: StudentWordReviewEntry[]
+  /** Lowercase word keys hidden from review lists and prep signals. */
+  wordReviewHidden?: string[]
   /** Per-lesson page range overrides keyed by `bookId::unitId::lessonId`. */
   lessonRangeOverrides?: Record<string, { startPage: number; endPage: number; updatedAt: string }>
+  /**
+   * When true, the lesson welcome screen says "Welcome" (not "Welcome back") until the first class ends.
+   * Set when adding a brand-new student who has never had a class with you.
+   */
+  firstClassWelcome?: boolean
+}
+
+export type StudentWordReviewStrength = 'needs_practice' | 'strong'
+
+export type StudentWordReviewSource = 'manual' | 'seeded'
+
+export interface StudentWordReviewEntry {
+  word: string
+  strength: StudentWordReviewStrength
+  source: StudentWordReviewSource
+  updatedAt: string
 }
 
 /** Distinct students from saved results, for pickers (same source as Student Results page). */

@@ -1,70 +1,20 @@
 'use client'
 
-import type { ReactNode, RefObject } from 'react'
+import type { CSSProperties, ReactNode, RefObject } from 'react'
 import type { WritableStickerVariant } from '@/lib/books/annotation-command-types'
 import {
+  BubbleBodyShape,
+  BubbleTailShape,
+  BUBBLE_BODY_PAD_PX,
+  SPEECH_BUBBLE_EXTRA_BOTTOM_PAD_PX,
+  isBubbleWritableVariant,
+} from '@/components/students/bubble-sticker-shape'
+import {
+  THOUGHT_TAIL_SIDE_RESERVE_PX,
   writableStickerChrome,
   WRITABLE_STICKER_HEADER_PX,
 } from '@/lib/books/writable-sticker-visuals'
 import { cn } from '@/lib/utils'
-
-function SpeechBubbleTail({
-  fill,
-  stroke,
-  className,
-}: {
-  fill: string
-  stroke: string
-  className?: string
-}) {
-  return (
-    <svg
-      width="22"
-      height="14"
-      viewBox="0 0 22 14"
-      aria-hidden
-      className={cn('pointer-events-none absolute', className)}
-    >
-      <path
-        d="M1 1 H21 V9 H10 L5 13 L5 9 H1 Z"
-        fill={fill}
-        stroke={stroke}
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
-function ThoughtBubblePuffs({
-  fill,
-  stroke,
-}: {
-  fill: string
-  stroke: string
-}) {
-  const puff = (size: number, className: string) => (
-    <span
-      className={cn('inline-block rounded-full border-2', className)}
-      style={{
-        width: size,
-        height: size,
-        backgroundColor: fill,
-        borderColor: stroke,
-      }}
-    />
-  )
-  return (
-    <div
-      className="pointer-events-none absolute bottom-0 left-[22%] flex items-end gap-1.5"
-      aria-hidden
-    >
-      {puff(14, '-translate-y-0.5')}
-      {puff(9, 'translate-y-1')}
-      {puff(5, 'translate-y-2.5')}
-    </div>
-  )
-}
 
 export interface WritableStickerShellProps {
   variant: WritableStickerVariant
@@ -74,6 +24,8 @@ export interface WritableStickerShellProps {
   widthPct: number
   shellMinPx: number
   bodyMinPx: number
+  /** When set (e.g. while typing), overrides bodyMinPx for live bubble growth. */
+  liveBodyMinPx?: number
   shellRef: RefObject<HTMLDivElement | null>
   annotationLabelId?: string
   showEditChrome: boolean
@@ -83,6 +35,8 @@ export interface WritableStickerShellProps {
   onShellPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void
   onShellPointerUp?: (e: React.PointerEvent<HTMLDivElement>) => void
   onShellClick?: (e: React.MouseEvent<HTMLDivElement>) => void
+  allowContentOverflow?: boolean
+  shellClassName?: string
   children: ReactNode
 }
 
@@ -94,6 +48,7 @@ export function WritableStickerShell({
   widthPct,
   shellMinPx,
   bodyMinPx,
+  liveBodyMinPx,
   shellRef,
   annotationLabelId,
   showEditChrome,
@@ -103,17 +58,28 @@ export function WritableStickerShell({
   onShellPointerDown,
   onShellPointerUp,
   onShellClick,
+  allowContentOverflow = false,
+  shellClassName,
   children,
 }: WritableStickerShellProps) {
   const chrome = writableStickerChrome(variant, fillColor)
   const isNote = variant === 'note'
-  const isSpeech = variant === 'speech'
+  const isBubble = isBubbleWritableVariant(variant)
   const isThought = variant === 'thought'
-  const isCaption = variant === 'caption'
+  const effectiveBodyMinPx = liveBodyMinPx ?? bodyMinPx
+  const effectiveShellMinPx = isBubble ? effectiveBodyMinPx : shellMinPx
 
   const editRing =
     showEditChrome &&
     'shadow-[0_2px_4px_rgba(59,130,246,0.08),0_8px_20px_rgba(59,130,246,0.12)] ring-2 ring-[var(--brand-blue)]/55'
+
+  const textSlotPadding: CSSProperties = {
+    padding: BUBBLE_BODY_PAD_PX,
+    paddingBottom:
+      variant === 'speech'
+        ? BUBBLE_BODY_PAD_PX + SPEECH_BUBBLE_EXTRA_BOTTOM_PAD_PX
+        : BUBBLE_BODY_PAD_PX,
+  }
 
   if (isNote) {
     return (
@@ -121,11 +87,13 @@ export function WritableStickerShell({
         ref={shellRef}
         data-annotation-label={annotationLabelId}
         className={cn(
-          'group/sticky absolute box-border flex flex-col overflow-hidden rounded-lg border',
+          'group/sticky absolute box-border flex flex-col rounded-lg border',
+          allowContentOverflow ? 'overflow-visible' : 'overflow-hidden',
           chrome.shadowClass,
           'transition-[box-shadow,ring-color] duration-150',
           blockPointerEvents,
           editRing,
+          shellClassName,
         )}
         style={{
           left: `${leftPct}%`,
@@ -158,64 +126,95 @@ export function WritableStickerShell({
     )
   }
 
+  const positionedStyle: CSSProperties = {
+    left: `${leftPct}%`,
+    top: `${topPct}%`,
+    width: `${widthPct}%`,
+    minWidth: isBubble ? 64 : 56,
+    minHeight: isBubble ? effectiveShellMinPx : shellMinPx,
+    ...(stackZ != null ? { zIndex: stackZ } : {}),
+  }
+
+  if (isBubble) {
+    return (
+      <div
+        ref={shellRef}
+        className={cn('group/sticky absolute', isThought && 'overflow-visible', shellClassName)}
+        style={positionedStyle}
+      >
+        <div
+          data-annotation-label={annotationLabelId}
+          className={cn(
+            'relative transition-[box-shadow,ring-color] duration-150',
+            isThought || allowContentOverflow ? 'overflow-visible' : 'overflow-hidden',
+            chrome.shadowClass,
+            blockPointerEvents,
+            editRing,
+          )}
+          style={isThought ? { paddingLeft: THOUGHT_TAIL_SIDE_RESERVE_PX } : undefined}
+          onPointerDown={onShellPointerDown}
+          onPointerUp={onShellPointerUp}
+          onClick={onShellClick}
+        >
+          <div className="absolute right-1.5 top-1.5 z-10">{deleteButton}</div>
+          <div
+            className="relative w-full overflow-visible"
+            style={{ height: effectiveBodyMinPx, minHeight: bodyMinPx }}
+          >
+            <BubbleBodyShape
+              variant={variant}
+              fillColor={chrome.backgroundColor}
+              strokeColor={chrome.strokeColor}
+            />
+            <BubbleTailShape
+              variant={variant}
+              fillColor={chrome.backgroundColor}
+              strokeColor={chrome.strokeColor}
+            />
+            <div
+              className={cn(
+                'absolute inset-0 z-[1] box-border flex items-center justify-center overflow-hidden',
+                allowContentOverflow && 'overflow-visible',
+              )}
+              style={textSlotPadding}
+            >
+              {children}
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div
-      ref={shellRef}
-      className="group/sticky absolute"
-      style={{
-        left: `${leftPct}%`,
-        top: `${topPct}%`,
-        width: `${widthPct}%`,
-        minWidth: isCaption ? 56 : 52,
-        paddingBottom: chrome.tailReservePx,
-        ...(stackZ != null ? { zIndex: stackZ } : {}),
-      }}
-    >
+    <div ref={shellRef} className={cn('group/sticky absolute', shellClassName)} style={positionedStyle}>
       <div
         data-annotation-label={annotationLabelId}
-        className={cn('relative', blockPointerEvents)}
-        style={{ minHeight: shellMinPx - chrome.tailReservePx }}
+        className={cn(
+          'relative box-border rounded-md transition-[box-shadow,ring-color] duration-150',
+          allowContentOverflow ? 'overflow-visible' : 'overflow-hidden',
+          chrome.shadowClass,
+          blockPointerEvents,
+          editRing,
+        )}
+        style={{
+          minHeight: bodyMinPx,
+          backgroundColor: chrome.backgroundColor,
+          borderColor: chrome.borderColor,
+          borderWidth: chrome.borderWidthPx,
+          borderStyle: chrome.borderStyle,
+        }}
         onPointerDown={onShellPointerDown}
         onPointerUp={onShellPointerUp}
         onClick={onShellClick}
       >
+        <div className="absolute right-1.5 top-1.5 z-10">{deleteButton}</div>
         <div
-          className={cn(
-            'relative flex flex-col overflow-hidden transition-[box-shadow,ring-color] duration-150',
-            isSpeech && 'rounded-[1.25rem]',
-            isThought && 'rounded-[999px]',
-            isCaption && 'rounded-md',
-            chrome.shadowClass,
-            editRing,
-          )}
-          style={{
-            minHeight: shellMinPx - chrome.tailReservePx,
-            backgroundColor: chrome.backgroundColor,
-            borderColor: chrome.borderColor,
-            borderWidth: chrome.borderWidthPx,
-            borderStyle: chrome.borderStyle,
-          }}
+          className="relative z-[2] flex min-h-0 flex-col justify-center px-2.5 py-1.5"
+          style={{ minHeight: bodyMinPx }}
         >
-          <div className="absolute right-1 top-1 z-10">{deleteButton}</div>
-          <div
-            className={cn(
-              'relative flex min-h-0 flex-1 flex-col justify-center',
-              isCaption ? 'px-2.5 py-1.5' : 'px-3.5 py-2.5',
-            )}
-            style={{ minHeight: bodyMinPx }}
-          >
-            {children}
-          </div>
+          {children}
         </div>
-
-        {isSpeech ? (
-          <SpeechBubbleTail
-            fill={chrome.backgroundColor}
-            stroke={chrome.borderColor}
-            className="-bottom-[11px] left-[16%]"
-          />
-        ) : null}
-        {isThought ? <ThoughtBubblePuffs fill={chrome.backgroundColor} stroke={chrome.borderColor} /> : null}
       </div>
     </div>
   )

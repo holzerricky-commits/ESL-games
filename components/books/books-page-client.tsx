@@ -1,10 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'next/navigation'
-import dynamic from 'next/dynamic'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
-import { Camera, ChevronDown, ChevronLeft, ChevronRight, FileText, FileType2, Pencil, Settings2, Upload, Wand2, X } from 'lucide-react'
+import { Camera, ChevronDown, ChevronLeft, ChevronRight, Eye, FileText, FileType2, Library, Pencil, Plus, X } from 'lucide-react'
 import type {
   BookLessonPartRecord,
   BookLessonRecord,
@@ -17,23 +16,27 @@ import type { BookContextDraftRecord, BookContextMaterialRecord, BookContextSumm
 import {
   formatEffectivePageSpan,
   mapPdfPageToDisplayLabel,
-  resolveAlignedAnchorPage,
   type PageNumberingMode,
 } from '@/lib/books/page-numbering'
 import { pageRangeForIndex } from '@/lib/books/toc-page-range'
+import { resolveOutlinePrintedStartPdfPage } from '@/lib/books/story-thumb-pdf-page'
 import { clampPdfPage, clampPdfPageToVisible, getFileAlignment, getUnitReaderBounds, getVisiblePdfPages } from '@/lib/books/page-range'
 import { buildPageAlignmentRuntime, resolveEffectiveAnchorToPdfPage } from '@/lib/books/page-alignment-runtime'
 import { getSavedUnitPage, saveUnitPage } from '@/lib/books/progress'
 import {
   appendStudentCurriculumSession,
   getStudentDefaultBookUnitForReader,
-  getStudentResumePdfPageForBookUnit,
+  getStudentTeachingOpenPdfPageForBookUnit,
+  resolveStudentSectionAtMappedPage,
+  updateStudentCurriculumBookStart,
+  updateStudentCurriculumAssignments,
 } from '@/lib/students/selectors'
 import {
   clearLessonRangeOverride,
   getLessonRangeOverride,
   upsertLessonRangeOverride,
 } from '@/lib/students/selectors'
+import { getStudents } from '@/lib/storage'
 import type { LessonContextRecord, UnitContextRecord } from '@/lib/context/types'
 import {
   deriveAutoLessonRange,
@@ -41,36 +44,37 @@ import {
   type ContextRangeOption,
   type LessonRangeSource,
 } from '@/lib/context/resolver'
-import { BookOutlinePartRow, BOOK_OUTLINE_PAGE_BADGE_CLASS } from '@/components/books/book-outline-part-row'
-import { BookStructureWizard } from '@/components/books/book-structure-wizard'
+import { BookLibraryShelf } from '@/components/books/book-library-shelf'
+import { BookLessonShelf } from '@/components/books/book-lesson-shelf'
+import { BookPartPrepShell } from '@/components/books/book-part-prep-shell'
+import { BookPartShelf } from '@/components/books/book-part-shelf'
 import { BookDropUpload } from '@/components/books/book-drop-upload'
-import { PdfPageThumbnail } from '@/components/students/pdf-page-thumbnail'
+import { BookSetupHub } from '@/components/books/book-setup-hub'
+import { BookStructureWizard } from '@/components/books/book-structure-wizard'
+import { BookAdvancedTab } from '@/components/books/tabs/book-advanced-tab'
+import { BookMaterialsTab } from '@/components/books/tabs/book-materials-tab'
+import { BookOutlineTab } from '@/components/books/tabs/book-outline-tab'
+import { BookPlanTab } from '@/components/books/tabs/book-plan-tab'
+import { BookStoriesTab } from '@/components/books/tabs/book-stories-tab'
+import { UnitPdfPageCountLoader } from '@/components/books/unit-pdf-page-count-loader'
+import { makeUnitFileUrl } from '@/lib/books/book-file-url'
+import { findLessonInBook, findPartInLesson } from '@/lib/books/book-part-shelf'
+import {
+  buildBooksPageHref,
+  parseBookSetupTab,
+  resolveBookSetupTab,
+  type BookSetupTab,
+} from '@/lib/books/book-setup-copy'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import { bookHasTocMapping } from '@/lib/books/strip-book-toc-mapping'
-import { resolvePartStructureTag } from '@/lib/books/part-structure-tag'
-import type { InteractiveVocabWord } from '@/lib/books/interactive-vocab'
-import {
-  buildInteractiveVocabPack,
-  getInteractiveVocabPackForPartKey,
-  interactiveVocabPartKey,
-  resolveLessonAndPartAtPdfPage,
-} from '@/lib/books/interactive-vocab'
-import { InteractiveVocabReaderShelf } from '@/components/books/interactive-vocab-reader-shelf'
 
-const PdfDocument = dynamic(() => import('react-pdf').then((mod) => mod.Document), {
-  ssr: false,
-})
-const PdfPage = dynamic(() => import('react-pdf').then((mod) => mod.Page), {
-  ssr: false,
-})
 const PDF_DOCUMENT_OPTIONS = { wasmUrl: '/wasm/' } as const
 const BOOK_MATERIAL_TYPE_OPTIONS: Array<{ value: BookContextMaterialRecord['type']; label: string }> = [
   { value: 'pacing-guide', label: 'Pacing guide' },
@@ -197,10 +201,6 @@ interface MaterialAnalysisResult {
 }
 
 
-function makeUnitFileUrl(filePath: string): string {
-  return `/api/book-file?path=${encodeURIComponent(filePath)}`
-}
-
 function estimatePageByIndex(min: number, max: number, idx: number, total: number): number {
   if (max <= min) return min
   if (total <= 1) return min
@@ -208,38 +208,6 @@ function estimatePageByIndex(min: number, max: number, idx: number, total: numbe
   const span = max - min
   const ratio = clampedIdx / (total - 1)
   return min + Math.round(span * ratio)
-}
-
-/** PDF page index for unit cover thumb (`startPageHint` is printed when set). */
-function unitCoverThumbnailPdfPage(unit: BookUnitRecord, book: BookRecord, numPages: number | null): number {
-  const raw = unit.startPageHint ?? unit.pdfPageRange?.start ?? 1
-  const floor = Math.max(1, Math.floor(raw))
-  if (typeof unit.startPageHint === 'number') {
-    const pdf =
-      resolveAlignedAnchorPage(unit.startPageHint, book, unit, numPages, 'mapped') ?? floor
-    return numPages != null ? Math.min(Math.max(1, Math.floor(pdf)), Math.floor(numPages)) : Math.max(1, Math.floor(pdf))
-  }
-  return numPages != null ? Math.min(floor, Math.floor(numPages)) : floor
-}
-
-/** First interior PDF page for story thumb from printed-range metadata. */
-function partStoryThumbPdfPage(
-  part: BookLessonPartRecord,
-  lesson: BookLessonRecord,
-  partRangeStart: number | null,
-  book: BookRecord,
-  unit: BookUnitRecord,
-  numPages: number | null,
-): number | null {
-  if (partRangeStart == null) return null
-  const tocAnchored =
-    typeof part.startPageHint === 'number' || typeof lesson.startPageHint === 'number'
-  const startPdf = tocAnchored
-    ? resolveAlignedAnchorPage(partRangeStart, book, unit, numPages, 'mapped') ?? partRangeStart
-    : partRangeStart
-  const n = Math.max(1, Math.floor(startPdf)) + 1
-  if (numPages != null && Number.isFinite(numPages)) return Math.min(n, Math.floor(numPages))
-  return n
 }
 
 function resolveStartHintWithAlignment(
@@ -321,7 +289,7 @@ function formatSpeed(bytesPerSec: number): string {
   return `${(bytesPerSec / (1024 * 1024)).toFixed(2)} MB/s`
 }
 
-function isPdfMaterial(material: DownloadedBookMaterial): boolean {
+function isPdfMaterial(material: { fileName: string; filePath: string; contentType?: string }): boolean {
   const contentType = material.contentType?.toLowerCase() ?? ''
   const fileName = material.fileName?.toLowerCase() ?? ''
   const filePath = material.filePath?.toLowerCase() ?? ''
@@ -484,28 +452,28 @@ interface FrameworkApplyPreview {
 
 export function BooksPageClient() {
   const numberingMode: PageNumberingMode = 'mapped'
+  const router = useRouter()
   const searchParams = useSearchParams()
   const selectedStudentId = searchParams.get('student')
   const requestedBookId = searchParams.get('book')
   const requestedUnitId = searchParams.get('unit')
+  const requestedTab = searchParams.get('tab')
+  const requestedStoryId = searchParams.get('story')
+  const requestedLessonId = searchParams.get('lesson')
+  const requestedPartId = searchParams.get('part')
+  const isBrowsePreview = searchParams.get('preview') === '1'
   const [library, setLibrary] = useState<BookLibraryPayload | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [selected, setSelected] = useState<SelectedBookState | null>(null)
   const [pageNumber, setPageNumber] = useState(1)
   const [numPages, setNumPages] = useState<number | null>(null)
-  const [viewerWidth, setViewerWidth] = useState(900)
   const [sessionStartedAt, setSessionStartedAt] = useState<string | null>(null)
   const [pdfReady, setPdfReady] = useState(false)
-  /** Single expanded book in the left sidebar; collapsed by default. */
-  const [expandedBookId, setExpandedBookId] = useState<string | null>(null)
-  /** One expanded unit per book (`bookId -> unitId`). */
-  const [expandedUnitByBook, setExpandedUnitByBook] = useState<Record<string, string | null>>({})
-  /** One expanded lesson parts group per unit (`unitId -> lessonId`). */
-  const [expandedLessonByUnit, setExpandedLessonByUnit] = useState<Record<string, string | null>>({})
   const [structureWizardOpen, setStructureWizardOpen] = useState(false)
   const [structureWizardTarget, setStructureWizardTarget] = useState<{ bookId: string; filePath: string | null } | null>(null)
   const [uploadPanelOpen, setUploadPanelOpen] = useState(false)
+  const [isSavingStudentStart, setIsSavingStudentStart] = useState(false)
   const [readerLessonId, setReaderLessonId] = useState<string | null>(null)
   const [readerPartId, setReaderPartId] = useState<string | null>(null)
   const [unitContext, setUnitContext] = useState<UnitContextRecord | null>(null)
@@ -671,7 +639,8 @@ export function BooksPageClient() {
           }
           effectiveBookId = fallbackBook.id
         }
-        if (effectiveBookId && !effectiveUnitId) {
+        // Book-only URL → lesson shelf (no forced unit). Auto-pick unit when student teach path.
+        if (effectiveBookId && !effectiveUnitId && studentId) {
           const b = books.find((book) => book.id === effectiveBookId)
           const first = b?.units?.[0]
           if (first) effectiveUnitId = first.id
@@ -688,21 +657,21 @@ export function BooksPageClient() {
         const genericSaved = getSavedUnitPage(targetBook.id, targetUnit.id)
         const studentResume =
           studentId.length > 0
-            ? getStudentResumePdfPageForBookUnit(studentId, targetBook.id, targetUnit.id)
+            ? getStudentTeachingOpenPdfPageForBookUnit(studentId, targetBook.id, targetUnit.id, resolved)
             : null
         const startPage = studentResume ?? genericSaved
         const bounds = getUnitReaderBounds(targetUnit, null, targetBook)
         setSelected({ bookId: targetBook.id, unitId: targetUnit.id })
         setPageNumber(clampPdfPage(startPage, bounds))
-        setSessionStartedAt(new Date().toISOString())
-        setExpandedBookId(targetBook.id)
-        setExpandedUnitByBook({ [targetBook.id]: targetUnit.id })
+        if (studentId.length > 0) {
+          setSessionStartedAt(new Date().toISOString())
+        } else {
+          setSessionStartedAt(null)
+        }
       } else {
         setSelected({ bookId: targetBook.id, unitId: null })
         setSessionStartedAt(null)
-        setExpandedBookId(targetBook.id)
       }
-      setExpandedLessonByUnit({})
       setReaderLessonId(null)
       setReaderPartId(null)
     } catch (error) {
@@ -711,7 +680,9 @@ export function BooksPageClient() {
     } finally {
       setLoading(false)
     }
-  }, [requestedBookId, requestedUnitId, selectedStudentId])
+    // Intentionally omit requestedUnitId: lesson/part desk navigation must not
+    // re-fetch the library (that flashed "Loading…" and raced click → URL updates).
+  }, [requestedBookId, selectedStudentId])
 
   useEffect(() => {
     let active = true
@@ -730,15 +701,27 @@ export function BooksPageClient() {
     void loadLibrary()
   }, [loadLibrary])
 
+  /** Keep selected unit in sync when the URL gains/loses a unit without a library reload. */
   useEffect(() => {
-    function syncWidth() {
-      const target = Math.min(window.innerWidth - 420, 980)
-      setViewerWidth(Math.max(320, target))
+    if (!library || loading) return
+    const bookId = requestedBookId?.trim() ?? ''
+    if (!bookId) return
+    const book = library.books.find((b) => b.id === bookId)
+    if (!book) return
+    const unitId = requestedUnitId?.trim() ?? ''
+    const unit = unitId ? book.units.find((u) => u.id === unitId) ?? null : null
+    setSelected((prev) => {
+      if (!prev || prev.bookId !== bookId) return prev
+      const nextUnitId = unit?.id ?? null
+      if (prev.unitId === nextUnitId) return prev
+      return { bookId, unitId: nextUnitId }
+    })
+    if (unit) {
+      const saved = getSavedUnitPage(book.id, unit.id)
+      const bounds = getUnitReaderBounds(unit, null, book)
+      setPageNumber(clampPdfPage(saved, bounds))
     }
-    syncWidth()
-    window.addEventListener('resize', syncWidth)
-    return () => window.removeEventListener('resize', syncWidth)
-  }, [])
+  }, [library, loading, requestedBookId, requestedUnitId])
 
   const selectedBook: BookRecord | null = useMemo(() => {
     if (!library || !selected) return null
@@ -859,62 +842,10 @@ export function BooksPageClient() {
     return pageRangeForIndex(parts, partIndex, lessonRange.start, lessonRange.end)
   }, [selectedLesson, selectedPart, selectedUnit])
 
-  const vocabReaderHit = useMemo(() => {
-    if (!selectedBook || !selectedUnit) return null
-    return resolveLessonAndPartAtPdfPage(selectedBook, selectedUnit, readerLessonId, pageNumber, numPages)
-  }, [selectedBook, selectedUnit, readerLessonId, pageNumber, numPages])
-
-  const vocabReaderTag = useMemo(() => {
-    if (!vocabReaderHit) return null
-    const parts = vocabReaderHit.lesson.parts ?? []
-    const partIndex = Math.max(0, parts.findIndex((p) => p.id === vocabReaderHit.part.id))
-    return resolvePartStructureTag(vocabReaderHit.part, partIndex)
-  }, [vocabReaderHit])
-
-  const [savedPartInteractiveVocab, setSavedPartInteractiveVocab] = useState<InteractiveVocabWord[] | null>(null)
-
-  useEffect(() => {
-    if (!selectedBook || !selectedUnit || !vocabReaderHit) {
-      setSavedPartInteractiveVocab(null)
-      return
-    }
-    if (vocabReaderTag !== 'vocabulary_in_context' && vocabReaderTag !== 'vocabulary_background') {
-      setSavedPartInteractiveVocab(null)
-      return
-    }
-    const { lesson, part } = vocabReaderHit
-    setSavedPartInteractiveVocab(null)
-    const qs = new URLSearchParams({
-      bookId: selectedBook.id,
-      unitId: selectedUnit.id,
-      lessonId: lesson.id,
-      partId: part.id,
-    })
-    let cancelled = false
-    void fetch(`/api/context/get?${qs.toString()}`)
-      .then((r) => r.json())
-      .then((data: { ok?: boolean; context?: { interactiveVocabulary?: InteractiveVocabWord[] } | null }) => {
-        if (cancelled) return
-        const list = data.ok ? data.context?.interactiveVocabulary : undefined
-        setSavedPartInteractiveVocab(Array.isArray(list) && list.length ? list : null)
-      })
-      .catch(() => {
-        if (!cancelled) setSavedPartInteractiveVocab(null)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [selectedBook, selectedUnit, vocabReaderHit, vocabReaderTag])
-
-  /** Interactive reader: saved part vocab overrides demo pack; vocabulary_in_context or vocabulary_background parts. */
-  const interactiveVocabPack = useMemo(() => {
-    if (!selectedBook || !selectedUnit || !vocabReaderHit) return null
-    if (vocabReaderTag !== 'vocabulary_in_context' && vocabReaderTag !== 'vocabulary_background') return null
-    const key = interactiveVocabPartKey(selectedBook.id, selectedUnit.id, vocabReaderHit.lesson.id, vocabReaderHit.part.id)
-    const sectionLabel = vocabReaderHit.part.title ?? 'Vocabulary'
-    const hardcoded = getInteractiveVocabPackForPartKey(key)
-    return buildInteractiveVocabPack(key, sectionLabel, savedPartInteractiveVocab, hardcoded)
-  }, [selectedBook, selectedUnit, vocabReaderHit, vocabReaderTag, savedPartInteractiveVocab])
+  const activeTab: BookSetupTab = useMemo(() => {
+    if (!selectedBook) return 'outline'
+    return resolveBookSetupTab(requestedTab, bookHasTocMapping(selectedBook))
+  }, [selectedBook, requestedTab])
 
   const frameworkLessonRows = useMemo(() => {
     if (!selectedBook) return []
@@ -1017,7 +948,7 @@ export function BooksPageClient() {
     const studentId = selectedStudentId?.trim() ?? ''
     const studentResume =
       studentId.length > 0 && initialPdfPage == null
-        ? getStudentResumePdfPageForBookUnit(studentId, bookId, unitId)
+        ? getStudentTeachingOpenPdfPageForBookUnit(studentId, bookId, unitId, library)
         : null
     const bounds = unit ? getUnitReaderBounds(unit, null, book ?? undefined) : { min: 1, max: Number.MAX_SAFE_INTEGER }
     const target = initialPdfPage != null ? initialPdfPage : studentResume ?? saved
@@ -1030,7 +961,12 @@ export function BooksPageClient() {
     setPageNumber(bounded)
     saveUnitPage(bookId, unitId, bounded)
     if (fileChanged) setNumPages(null)
-    setSessionStartedAt(new Date().toISOString())
+    // Curriculum session clock only when teaching with a student — not Library Browse.
+    if (studentId.length > 0) {
+      setSessionStartedAt(new Date().toISOString())
+    } else {
+      setSessionStartedAt(null)
+    }
   }
 
   function selectBook(bookId: string) {
@@ -1042,37 +978,22 @@ export function BooksPageClient() {
     setSessionStartedAt(null)
   }
 
-  function toggleUnitExpanded(bookId: string, unitId: string) {
-    setExpandedUnitByBook((prev) => ({
-      ...prev,
-      [bookId]: prev[bookId] === unitId ? null : unitId,
-    }))
-  }
-
-  function toggleBookExpanded(bookId: string) {
-    setExpandedBookId((prev) => (prev === bookId ? null : bookId))
-  }
-
-  function toggleLessonPartsExpanded(unitId: string, lessonId: string) {
-    setExpandedLessonByUnit((prev) => ({
-      ...prev,
-      [unitId]: prev[unitId] === lessonId ? null : lessonId,
-    }))
-  }
-
   function selectLessonForReading(bookId: string, unit: BookUnitRecord, lesson: BookLessonRecord) {
-    const book = library?.books.find((b) => b.id === bookId)
-    const bounds = getUnitReaderBounds(unit, numPages, book ?? undefined)
+    const book = library?.books.find((b) => b.id === bookId) ?? {
+      id: bookId,
+      title: '',
+      units: [],
+    }
+    const bounds = getUnitReaderBounds(unit, numPages, book)
     const lessons = unit.lessons ?? []
     const lessonIdx = Math.max(0, lessons.findIndex((l) => l.id === lesson.id))
+    const lessonRange = pageRangeForIndex(lessons, lessonIdx)
     const page =
+      resolveOutlinePrintedStartPdfPage(lessonRange.start, book, unit, numPages) ??
       resolveStartHintWithAlignment(bounds.min, bounds.max, lesson.startPageHint, book, unit, numPages) ??
       lesson.pdfPageRange?.start ??
       estimatePageByIndex(bounds.min, bounds.max, lessonIdx, lessons.length || 1)
     openUnit(bookId, unit.id, page)
-    setExpandedBookId(bookId)
-    setExpandedUnitByBook((prev) => ({ ...prev, [bookId]: unit.id }))
-    setExpandedLessonByUnit((prev) => ({ ...prev, [unit.id]: lesson.id }))
     setReaderLessonId(lesson.id)
     setReaderPartId(null)
   }
@@ -1083,22 +1004,24 @@ export function BooksPageClient() {
     lesson: BookLessonRecord,
     part: BookLessonPartRecord,
   ) {
-    const book = library?.books.find((b) => b.id === bookId)
-    const bounds = getUnitReaderBounds(unit, numPages, book ?? undefined)
+    const book = library?.books.find((b) => b.id === bookId) ?? {
+      id: bookId,
+      title: '',
+      units: [],
+    }
+    const lessons = unit.lessons ?? []
+    const lessonIdx = Math.max(0, lessons.findIndex((l) => l.id === lesson.id))
+    const lessonRange = pageRangeForIndex(lessons, lessonIdx)
     const parts = lesson.parts ?? []
     const partIdx = Math.max(0, parts.findIndex((p) => p.id === part.id))
-    const lessonPage =
-      resolveStartHintWithAlignment(bounds.min, bounds.max, lesson.startPageHint, book, unit, numPages) ??
-      lesson.pdfPageRange?.start ??
-      estimatePageByIndex(bounds.min, bounds.max, Math.max(0, (unit.lessons ?? []).findIndex((l) => l.id === lesson.id)), (unit.lessons ?? []).length || 1)
+    const partRange = pageRangeForIndex(parts, partIdx, lessonRange.start, lessonRange.end)
+    const printedStart = partRange.start ?? lessonRange.start
     const page =
-      resolveStartHintWithAlignment(lessonPage, bounds.max, part.startPageHint, book, unit, numPages) ??
+      resolveOutlinePrintedStartPdfPage(printedStart, book, unit, numPages) ??
       part.pdfPageRange?.start ??
-      (parts.length > 0 ? estimatePageByIndex(lessonPage, bounds.max, partIdx, parts.length) : lessonPage)
+      (typeof part.startPageHint === 'number' ? Math.round(part.startPageHint) : null) ??
+      1
     openUnit(bookId, unit.id, page)
-    setExpandedBookId(bookId)
-    setExpandedUnitByBook((prev) => ({ ...prev, [bookId]: unit.id }))
-    setExpandedLessonByUnit((prev) => ({ ...prev, [unit.id]: lesson.id }))
     setReaderLessonId(lesson.id)
     setReaderPartId(part.id)
   }
@@ -1106,9 +1029,75 @@ export function BooksPageClient() {
   function goToPage(nextPage: number) {
     if (!selected || !selectedUnit) return
     const bounds = getUnitReaderBounds(selectedUnit, numPages, selectedBook ?? undefined)
-    const bounded = clampPdfPageToVisible(nextPage, visiblePages, bounds)
+    let bounded = clampPdfPageToVisible(nextPage, visiblePages, bounds)
+    // Snap to spread-left so jumps land on a two-page view when possible.
+    const idx = visiblePages.indexOf(bounded)
+    if (idx >= 0) {
+      bounded = visiblePages[Math.max(0, idx - (idx % 2))] ?? bounded
+    }
     setPageNumber(bounded)
     saveUnitPage(selected.bookId, selectedUnit.id, bounded)
+  }
+
+  async function saveCurrentPageAsStudentStart() {
+    const studentId = selectedStudentId?.trim() ?? ''
+    if (!studentId || !library || !selectedBook || !selectedUnit) return
+    if (numPages == null) {
+      toast.error('Still loading book pages… try again in a moment.')
+      return
+    }
+    setIsSavingStudentStart(true)
+    try {
+      const leftLabel = mapPdfPageToDisplayLabel(
+        currentSpreadLeftPage,
+        selectedBook,
+        selectedUnit,
+        numPages,
+        'mapped',
+      )
+      let mappedPage = Math.floor(Number(leftLabel))
+      if (!Number.isFinite(mappedPage) || mappedPage < 1 || leftLabel === '·') {
+        if (currentSpreadRightPage != null) {
+          const rightLabel = mapPdfPageToDisplayLabel(
+            currentSpreadRightPage,
+            selectedBook,
+            selectedUnit,
+            numPages,
+            'mapped',
+          )
+          mappedPage = Math.floor(Number(rightLabel))
+        }
+      }
+      if (!Number.isFinite(mappedPage) || mappedPage < 1) {
+        toast.error('This page is not in the lesson map. Try another page or pick from the Curriculum tab.')
+        return
+      }
+      const section = resolveStudentSectionAtMappedPage(
+        studentId,
+        library,
+        selectedBook.id,
+        selectedUnit.id,
+        mappedPage,
+        numPages,
+      )
+      if (!section) {
+        toast.error('No lesson matches this page. Try another page or pick from the Curriculum tab.')
+        return
+      }
+      const result = updateStudentCurriculumBookStart(
+        studentId,
+        { bookId: selectedBook.id, sectionId: section.id, mappedPage },
+        library,
+      )
+      if (!result.ok) {
+        toast.error(result.error)
+        return
+      }
+      toast.success('Starting place saved for this book.')
+      router.push(`/students/${encodeURIComponent(studentId)}?tab=curriculum`)
+    } finally {
+      setIsSavingStudentStart(false)
+    }
   }
 
   function goToNeighborPage(direction: -1 | 1, step = 1) {
@@ -1135,29 +1124,249 @@ export function BooksPageClient() {
     saveUnitPage(selected.bookId, selectedUnit.id, bounded)
   }
 
-  function handleManifestSaved(payload: BookLibraryPayload) {
+  function handleManifestSaved(
+    payload: BookLibraryPayload,
+    meta?: { bookId?: string; focusUnitId?: string },
+  ) {
     setLibrary(payload)
-    const cur = selectedRef.current
-    if (!cur) return
-    const book = payload.books.find((b) => b.id === cur.bookId)
+    const bookId = meta?.bookId ?? selectedRef.current?.bookId
+    if (!bookId) return
+    const book = payload.books.find((b) => b.id === bookId)
     if (!book) return
-    if (cur.unitId) {
-      const sameUnit = book.units.find((u) => u.id === cur.unitId)
-      const nextUnit = sameUnit ?? book.units[0]
-      if (!nextUnit) return
-      const bounds = getUnitReaderBounds(nextUnit, null, book ?? undefined)
-      const saved = getSavedUnitPage(book.id, nextUnit.id)
-      setSelected({ bookId: book.id, unitId: nextUnit.id })
-      setPageNumber(clampPdfPage(saved, bounds))
-      setNumPages(null)
+    const focusUnit =
+      (meta?.focusUnitId ? book.units.find((u) => u.id === meta.focusUnitId) : null) ??
+      (selectedRef.current?.unitId
+        ? book.units.find((u) => u.id === selectedRef.current!.unitId)
+        : null) ??
+      book.units[0] ??
+      null
+    if (!focusUnit) {
+      setSelected({ bookId: book.id, unitId: null })
+      syncBooksUrl({ book: book.id, unit: null, tab: 'outline' })
       return
     }
-    setSelected({ bookId: book.id, unitId: null })
+    const bounds = getUnitReaderBounds(focusUnit, null, book)
+    const saved = getSavedUnitPage(book.id, focusUnit.id)
+    setSelected({ bookId: book.id, unitId: focusUnit.id })
+    setPageNumber(clampPdfPage(saved, bounds))
+    setNumPages(null)
+    syncBooksUrl({ book: book.id, unit: focusUnit.id, tab: 'outline' })
+  }
+
+  function handleBookRemoved(payload: BookLibraryPayload, removedBookId: string) {
+    setLibrary(payload)
+    for (const student of getStudents()) {
+      const assigned = student.assignedBookIds ?? []
+      if (!assigned.includes(removedBookId)) continue
+      updateStudentCurriculumAssignments(
+        student.id,
+        {
+          assignedBookIds: assigned.filter((id) => id !== removedBookId),
+          assignedUnitRefs: (student.assignedUnitRefs ?? []).filter((ref) => ref.bookId !== removedBookId),
+        },
+        payload,
+      )
+    }
+
+    const nextBook = payload.books[0]
+    if (nextBook) {
+      selectBook(nextBook.id)
+      const tab = 'outline'
+      router.replace(
+        buildBooksPageHref({
+          book: nextBook.id,
+          unit: null,
+          tab,
+          student: selectedStudentId,
+        }),
+      )
+      return
+    }
+
+    setSelected(null)
+    router.replace(
+      buildBooksPageHref({
+        book: null,
+        unit: null,
+        tab: null,
+        student: selectedStudentId,
+      }),
+    )
   }
 
   function openStructureWizardForBook(book: BookRecord) {
     setStructureWizardTarget({ bookId: book.id, filePath: book.units[0]?.filePath ?? null })
     setStructureWizardOpen(true)
+  }
+
+  function syncBooksUrl(updates: {
+    book?: string | null
+    unit?: string | null
+    tab?: BookSetupTab | null
+    preview?: boolean | null
+    lesson?: string | null
+    part?: string | null
+  }) {
+    const bookId = updates.book !== undefined ? updates.book : selectedRef.current?.bookId ?? null
+    const unitId = updates.unit !== undefined ? updates.unit : selectedRef.current?.unitId ?? null
+    const book = bookId ? library?.books.find((b) => b.id === bookId) : null
+    const tab =
+      updates.tab !== undefined
+        ? updates.tab
+        : resolveBookSetupTab(requestedTab, book ? bookHasTocMapping(book) : false)
+    const preview =
+      updates.preview !== undefined ? Boolean(updates.preview) : isBrowsePreview
+    // Opening the old prep desk (tab set) drops lesson/part desk deep links.
+    const lesson =
+      updates.lesson !== undefined
+        ? updates.lesson
+        : updates.tab !== undefined
+          ? null
+          : requestedLessonId
+    const part =
+      updates.part !== undefined
+        ? updates.part
+        : updates.tab !== undefined
+          ? null
+          : requestedPartId
+    router.replace(
+      buildBooksPageHref({
+        book: bookId,
+        unit: unitId,
+        tab,
+        student: selectedStudentId,
+        preview: preview || null,
+        lesson,
+        part,
+      }),
+    )
+  }
+
+  function handleSelectBookFromSidebar(bookId: string) {
+    handleOpenBook(bookId)
+  }
+
+  /** Library cover → lesson shelf (or outline empty state). */
+  function handleOpenBook(bookId: string) {
+    selectBook(bookId)
+    router.replace(
+      buildBooksPageHref({
+        book: bookId,
+        unit: null,
+        tab: null,
+        student: selectedStudentId,
+        preview: null,
+        lesson: null,
+        part: null,
+      }),
+    )
+  }
+
+  /** Quiet overflow to materials / plan / advanced (part prep is the main path now). */
+  function handleOpenAdvancedTools() {
+    if (!selectedBook) return
+    router.replace(
+      buildBooksPageHref({
+        book: selectedBook.id,
+        unit: null,
+        tab: 'materials',
+        student: selectedStudentId,
+        preview: null,
+        lesson: null,
+        part: null,
+      }),
+    )
+  }
+
+  function handleOpenLesson(unitId: string, lessonId: string) {
+    if (!selectedBook) return
+    setSelected({ bookId: selectedBook.id, unitId })
+    router.replace(
+      buildBooksPageHref({
+        book: selectedBook.id,
+        unit: unitId,
+        tab: null,
+        student: selectedStudentId,
+        preview: null,
+        lesson: lessonId,
+        part: null,
+      }),
+    )
+  }
+
+  function handleOpenPart(partId: string) {
+    if (!selectedBook || !requestedUnitId?.trim() || !requestedLessonId?.trim()) return
+    router.replace(
+      buildBooksPageHref({
+        book: selectedBook.id,
+        unit: requestedUnitId,
+        tab: null,
+        student: selectedStudentId,
+        preview: null,
+        lesson: requestedLessonId,
+        part: partId,
+      }),
+    )
+  }
+
+  function handleBackToLessons() {
+    if (!selectedBook) return
+    router.replace(
+      buildBooksPageHref({
+        book: selectedBook.id,
+        unit: null,
+        tab: null,
+        student: selectedStudentId,
+        preview: null,
+        lesson: null,
+        part: null,
+      }),
+    )
+  }
+
+  function handleBackToParts() {
+    if (!selectedBook || !requestedUnitId?.trim() || !requestedLessonId?.trim()) return
+    router.replace(
+      buildBooksPageHref({
+        book: selectedBook.id,
+        unit: requestedUnitId,
+        tab: null,
+        student: selectedStudentId,
+        preview: null,
+        lesson: requestedLessonId,
+        part: null,
+      }),
+    )
+  }
+
+  function handleBackToShelf() {
+    closeCurrentSession(pageNumber)
+    setSelected(null)
+    setReaderLessonId(null)
+    setReaderPartId(null)
+    setNumPages(null)
+    setSessionStartedAt(null)
+    router.replace(
+      buildBooksPageHref({
+        book: null,
+        unit: null,
+        tab: null,
+        student: selectedStudentId,
+        preview: null,
+        lesson: null,
+        part: null,
+      }),
+    )
+  }
+
+  function handleTabChange(tab: BookSetupTab) {
+    syncBooksUrl({ tab })
+  }
+
+  function handleSelectUnitFromOutline(unitId: string) {
+    if (!selected?.bookId) return
+    openUnit(selected.bookId, unitId)
+    syncBooksUrl({ unit: unitId })
   }
 
   async function loadUnitContextForSelection(bookId: string, unitId: string, rev: number) {
@@ -2236,7 +2445,7 @@ export function BooksPageClient() {
 
   if (loading) {
     return (
-      <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--surface-2)] p-6">
+      <div className="py-6">
         <p className="text-sm text-muted-foreground">Loading local books...</p>
       </div>
     )
@@ -2244,7 +2453,7 @@ export function BooksPageClient() {
 
   if (loadError) {
     return (
-      <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--surface-2)] p-6">
+      <div className="py-6">
         <p className="text-base font-semibold text-foreground">Could not load books</p>
         <p className="mt-2 text-sm text-muted-foreground">{loadError}</p>
       </div>
@@ -2255,473 +2464,312 @@ export function BooksPageClient() {
 
   if (books.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--surface-2)] p-6">
-        <p className="text-base font-semibold text-foreground">No units found yet</p>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Add PDFs under `book-library/BookName/Unit-01.pdf`, or create `book-library/books.json`.
-          The template file `books.example.json` is ignored by the app.
-        </p>
-      </div>
-    )
-  }
-
-  return (
-    <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between gap-2">
-            <CardTitle className="text-base">Books and units</CardTitle>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-7 gap-1.5 px-2 text-xs"
-              onClick={() => setUploadPanelOpen((prev) => !prev)}
-            >
-              {uploadPanelOpen ? <X className="h-3.5 w-3.5" /> : <Upload className="h-3.5 w-3.5" />}
-              {uploadPanelOpen ? 'Hide upload' : 'Add PDF'}
-            </Button>
+      <div className="space-y-8 py-6">
+        <header className="flex items-end justify-between gap-4">
+          <div>
+            <h3 className="text-[28px] font-semibold tracking-tight text-foreground">Library</h3>
+            <p className="mt-0.5 text-[13px] text-muted-foreground">No books yet</p>
           </div>
-          {selectedStudentId ? (
-            <p className="text-xs text-muted-foreground">
-              Student context active. Session history will be tracked for this student.
-            </p>
-          ) : null}
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {uploadPanelOpen ? (
+          <button
+            type="button"
+            onClick={() => setUploadPanelOpen(true)}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--surface-3)] text-foreground transition hover:bg-[var(--surface-4)] active:scale-95"
+            aria-label="Add book"
+          >
+            <Plus className="h-5 w-5" strokeWidth={1.75} aria-hidden />
+          </button>
+        </header>
+        <button
+          type="button"
+          onClick={() => setUploadPanelOpen(true)}
+          className="mx-auto flex w-full max-w-[160px] flex-col items-center gap-3"
+        >
+          <div
+            className="flex w-full items-center justify-center rounded-lg bg-[var(--surface-3)] transition hover:bg-[var(--surface-4)]"
+            style={{ aspectRatio: '1 / 1.414' }}
+          >
+            <Plus className="h-8 w-8 text-muted-foreground" strokeWidth={1.5} aria-hidden />
+          </div>
+          <span className="text-[13px] font-medium text-muted-foreground">Add Book</span>
+        </button>
+        {uploadPanelOpen ? (
+          <div className="mx-auto max-w-xl rounded-2xl bg-[var(--surface-2)] p-5 shadow-[0_8px_30px_-12px_rgba(0,0,0,0.12)]">
             <BookDropUpload
               onUploadComplete={async () => {
                 await loadLibrary({ preserveSelection: true })
                 setUploadPanelOpen(false)
               }}
             />
-          ) : null}
-          {library ? (
-            <BookStructureWizard
-              library={library}
-              preferredBookId={structureWizardTarget?.bookId ?? selected?.bookId ?? null}
-              preferredFilePath={structureWizardTarget?.filePath ?? selectedUnit?.filePath ?? null}
-              onManifestSaved={handleManifestSaved}
-              open={structureWizardOpen}
-              onOpenChange={(nextOpen) => {
-                setStructureWizardOpen(nextOpen)
-                if (!nextOpen) setStructureWizardTarget(null)
-              }}
-            />
-          ) : null}
-          {books.map((book) => {
-            const coverPath = book.units[0]?.filePath
-            const coverUrl = coverPath ? makeUnitFileUrl(coverPath) : null
-            const mapped = bookHasTocMapping(book)
-            const bookOpen = expandedBookId === book.id
-            return (
-            <section key={book.id} className="space-y-2">
-              <div
-                className="flex gap-2.5 rounded-lg px-1 py-1 transition-colors hover:bg-background/30"
-                role="button"
-                tabIndex={0}
-                aria-expanded={bookOpen}
-                aria-label={bookOpen ? `Collapse ${book.title}` : `Expand ${book.title}`}
-                onClick={() => {
-                  selectBook(book.id)
-                  toggleBookExpanded(book.id)
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault()
-                    selectBook(book.id)
-                    toggleBookExpanded(book.id)
-                  }
-                }}
-              >
-                {coverUrl && pdfReady ? (
-                  <div className="flex shrink-0 flex-col items-center gap-0.5">
-                    <PdfPageThumbnail
-                      fileUrl={coverUrl}
-                      unitId={`${book.id}-cover`}
-                      pageNumber={1}
-                      width={56}
-                      pdfReady={pdfReady}
-                      label="Cover"
-                      className="rounded-md border border-[var(--border)] bg-[var(--surface-2)] shadow-sm"
-                    />
-                  </div>
-                ) : null}
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start gap-2">
-                    <span className="mt-0.5 inline-flex shrink-0 items-center justify-center rounded-sm p-0.5 text-muted-foreground transition">
-                      <ChevronDown className={cn('h-4 w-4 transition-transform', !bookOpen && '-rotate-90')} />
-                    </span>
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <h3 className="text-sm font-semibold leading-tight text-foreground">{book.title}</h3>
-                      {book.description ? (
-                        <p className="text-xs text-muted-foreground">{book.description}</p>
-                      ) : null}
-                    </div>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          type="button"
-                          variant={mapped ? 'outline' : 'secondary'}
-                          size="icon-sm"
-                          className={cn(
-                            'h-7 w-7 shrink-0 rounded-full',
-                            mapped &&
-                              'border-[var(--brand-green)]/40 text-[var(--brand-green)] hover:bg-[var(--brand-green)]/10 hover:text-[var(--brand-green)]',
-                          )}
-                          aria-label={mapped ? `View or edit ${book.title} mapping` : `Map ${book.title} structure`}
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            openStructureWizardForBook(book)
-                          }}
-                        >
-                          {mapped ? <Pencil className="h-3.5 w-3.5" /> : <Wand2 className="h-3.5 w-3.5" />}
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent sideOffset={6}>{mapped ? 'View/Edit mapping' : 'Map structure'}</TooltipContent>
-                    </Tooltip>
-                  </div>
-                </div>
-              </div>
-              {bookOpen ? (
-              <div className="space-y-1">
-                {book.units.map((unit) => {
-                  const active = selected?.bookId === book.id && selected?.unitId === unit.id
-                  const resumePage = getSavedUnitPage(book.id, unit.id)
-                  const unitOpen = expandedUnitByBook[book.id] === unit.id
-                  const lessons = unit.lessons ?? []
-                  const unitStart = unit.startPageHint ?? unit.pdfPageRange?.start ?? 1
-                  const contentStart = unit.pdfContentStart ?? unitStart
-                  const coverPages = Math.max(0, contentStart - unitStart)
-                  const unitCoverUrl = makeUnitFileUrl(unit.filePath)
-                  const coverThumbPdfPage = unitCoverThumbnailPdfPage(unit, book, numPages)
-                  return (
-                    <div
-                      key={unit.id}
-                      className={cn(
-                        'overflow-hidden rounded-lg border text-left transition-colors',
-                        active
-                          ? 'border-[var(--brand-blue)] bg-[var(--brand-blue)]/10'
-                          : 'border-[var(--border)] bg-[var(--surface-2)] hover:bg-background/30',
-                      )}
-                    >
-                      <div className="flex items-stretch gap-0">
-                        {pdfReady ? (
-                          <div className="flex w-12 shrink-0 flex-col items-center justify-center border-r border-[var(--border)]/70 bg-background/40 px-1 py-1">
-                            <PdfPageThumbnail
-                              fileUrl={unitCoverUrl}
-                              unitId={`${unit.id}-cover`}
-                              pageNumber={coverThumbPdfPage}
-                              width={36}
-                              pdfReady={pdfReady}
-                              label="Unit cover"
-                              className="rounded-sm border border-[var(--border)]/70"
-                            />
-                            <span className="mt-0.5 text-[9px] text-muted-foreground">Cover</span>
-                          </div>
-                        ) : null}
-                        <button
-                          type="button"
-                          className="flex shrink-0 items-center justify-center px-1.5 text-muted-foreground hover:text-foreground"
-                          aria-expanded={unitOpen}
-                          aria-label={unitOpen ? 'Hide lessons' : 'Show lessons'}
-                          onClick={() => toggleUnitExpanded(book.id, unit.id)}
-                        >
-                          <ChevronDown
-                            className={cn('h-4 w-4 transition-transform', unitOpen && 'rotate-180')}
-                          />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            openUnit(book.id, unit.id)
-                            setExpandedBookId(book.id)
-                            toggleUnitExpanded(book.id, unit.id)
-                          }}
-                          className={cn(
-                            'min-w-0 flex-1 px-2 py-2 text-left text-sm transition-colors',
-                            active
-                              ? 'text-foreground'
-                              : 'text-muted-foreground hover:bg-background/40 hover:text-foreground',
-                          )}
-                        >
-                          <span className="block font-medium">{unit.title}</span>
-                          <span className="mt-0.5 block text-xs text-muted-foreground">
-                            Open · saved page {resumePage}
-                          </span>
-                          {coverPages > 0 ? (
-                            <span className="mt-0.5 block text-[11px] text-muted-foreground">
-                              {coverPages} cover page{coverPages === 1 ? '' : 's'} before Lesson 1
-                            </span>
-                          ) : null}
-                        </button>
-                      </div>
-                      {unitOpen ? (
-                        <div className="border-t border-[var(--border)] bg-background/30 px-1 py-1">
-                          {lessons.length === 0 ? (
-                            <p className="px-2 py-1.5 text-xs text-muted-foreground">
-                              No lessons mapped for this unit yet.
-                            </p>
-                          ) : (
-                            <ul className="space-y-0.5">
-                              {lessons.map((lesson, lessonIndex) => {
-                                const partsOpen = expandedLessonByUnit[unit.id] === lesson.id
-                                const parts = lesson.parts ?? []
-                                const lessonRange = pageRangeForIndex(lessons, lessonIndex)
-                                return (
-                                  <li key={lesson.id} className="rounded-md">
-                                    <div className="flex items-start gap-0">
-                                      <button
-                                        type="button"
-                                        className={cn(
-                                          'mt-0.5 flex shrink-0 items-center justify-center p-1 text-muted-foreground hover:text-foreground',
-                                          parts.length === 0 && 'pointer-events-none opacity-25',
-                                        )}
-                                        aria-expanded={partsOpen}
-                                        aria-label={partsOpen ? 'Hide parts' : 'Show parts'}
-                                        disabled={parts.length === 0}
-                                        onClick={() => toggleLessonPartsExpanded(unit.id, lesson.id)}
-                                      >
-                                        <ChevronDown
-                                          className={cn(
-                                            'h-3.5 w-3.5 transition-transform',
-                                            partsOpen && 'rotate-180',
-                                          )}
-                                        />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => selectLessonForReading(book.id, unit, lesson)}
-                                        className={cn(
-                                          'min-w-0 flex-1 rounded px-1.5 py-1 text-left text-sm leading-snug transition-colors',
-                                          active &&
-                                            readerLessonId === lesson.id &&
-                                            readerPartId == null
-                                            ? 'bg-[var(--brand-blue)]/20 font-medium text-foreground'
-                                            : 'text-muted-foreground hover:bg-background/60 hover:text-foreground',
-                                        )}
-                                      >
-                                        <span className="flex min-w-0 items-baseline gap-2">
-                                          <span className="truncate font-medium">
-                                            Lesson {lessonIndex + 1}: {lesson.title || 'Lesson'}
-                                          </span>
-                                          <span className={BOOK_OUTLINE_PAGE_BADGE_CLASS}>
-                                            {formatEffectivePageSpan(
-                                              lessonRange.start,
-                                              lessonRange.end,
-                                              book,
-                                              unit,
-                                              numPages,
-                                              numberingMode,
-                                            )}
-                                          </span>
-                                        </span>
-                                      </button>
-                                    </div>
-                                    {partsOpen && parts.length > 0 ? (
-                                      <ul className="ml-5 border-l border-[var(--border)]/80 py-0.5 pl-2">
-                                        {parts.map((part, partIndex) => {
-                                          const partRange = pageRangeForIndex(parts, partIndex, lessonRange.start, lessonRange.end)
-                                          return (
-                                          <li key={part.id}>
-                                            <BookOutlinePartRow
-                                              part={part}
-                                              partIndex={partIndex}
-                                              pageRangeLabel={formatEffectivePageSpan(
-                                                partRange.start,
-                                                partRange.end,
-                                                book,
-                                                unit,
-                                                numPages,
-                                                numberingMode,
-                                              )}
-                                              isActive={active && readerPartId === part.id}
-                                              onSelect={() => selectPartForReading(book.id, unit, lesson, part)}
-                                              fileUrl={unitCoverUrl}
-                                              pdfReady={pdfReady}
-                                              storyThumbPdfPage={partStoryThumbPdfPage(
-                                                part,
-                                                lesson,
-                                                partRange.start,
-                                                book,
-                                                unit,
-                                                numPages,
-                                              )}
-                                              totalPdfPages={numPages}
-                                            />
-                                          </li>
-                                          )
-                                        })}
-                                      </ul>
-                                    ) : null}
-                                  </li>
-                                )
-                              })}
-                            </ul>
-                          )}
-                        </div>
-                      ) : null}
-                    </div>
-                  )
-                })}
-              </div>
-              ) : null}
-            </section>
-            )
-          })}
-        </CardContent>
-      </Card>
+          </div>
+        ) : null}
+      </div>
+    )
+  }
 
+  const shelfView = !selectedBook
+  const wantsPrepDesk = parseBookSetupTab(requestedTab) != null
+  const lessonDeskView = Boolean(selectedBook) && !wantsPrepDesk
+  const deskLesson =
+    selectedBook && requestedUnitId?.trim() && requestedLessonId?.trim()
+      ? findLessonInBook(selectedBook, requestedUnitId.trim(), requestedLessonId.trim())
+      : null
+  const deskPart =
+    deskLesson && requestedPartId?.trim()
+      ? findPartInLesson(deskLesson.lesson, requestedPartId.trim())
+      : null
+
+  return (
+    <div className="space-y-4">
+      <UnitPdfPageCountLoader
+        fileUrl={selectedUnit?.filePath ? makeUnitFileUrl(selectedUnit.filePath) : null}
+        pdfReady={pdfReady}
+        enabled={Boolean(selectedUnit) && numPages == null}
+        onNumPages={setNumPages}
+      />
+      {library ? (
+        <BookStructureWizard
+          library={library}
+          preferredBookId={structureWizardTarget?.bookId ?? selected?.bookId ?? null}
+          preferredFilePath={structureWizardTarget?.filePath ?? selectedUnit?.filePath ?? null}
+          onManifestSaved={handleManifestSaved}
+          open={structureWizardOpen}
+          onOpenChange={(nextOpen) => {
+            setStructureWizardOpen(nextOpen)
+            if (!nextOpen) setStructureWizardTarget(null)
+          }}
+        />
+      ) : null}
+
+      {shelfView ? (
+        <div className="space-y-6">
+          <BookLibraryShelf
+            books={books}
+            pdfReady={pdfReady}
+            onOpenBook={handleOpenBook}
+            onAddBook={() => setUploadPanelOpen((prev) => !prev)}
+          />
+          {uploadPanelOpen ? (
+            <div className="mx-auto max-w-xl rounded-2xl bg-[var(--surface-2)] p-5 shadow-[0_8px_30px_-12px_rgba(0,0,0,0.12)]">
+              <BookDropUpload
+                onUploadComplete={async () => {
+                  await loadLibrary({ preserveSelection: true })
+                  setUploadPanelOpen(false)
+                }}
+              />
+            </div>
+          ) : null}
+        </div>
+      ) : lessonDeskView && selectedBook && deskLesson && deskPart ? (
+        <BookPartPrepShell
+          book={selectedBook}
+          unit={deskLesson.unit}
+          lesson={deskLesson.lesson}
+          lessonIndex={deskLesson.lessonIndex}
+          part={deskPart.part}
+          partIndex={deskPart.partIndex}
+          pdfReady={pdfReady}
+          onBackToParts={handleBackToParts}
+          onBackToLessons={handleBackToLessons}
+          onBackToLibrary={handleBackToShelf}
+        />
+      ) : lessonDeskView && selectedBook && deskLesson ? (
+        <BookPartShelf
+          book={selectedBook}
+          unit={deskLesson.unit}
+          lesson={deskLesson.lesson}
+          lessonIndex={deskLesson.lessonIndex}
+          pdfReady={pdfReady}
+          onBackToLessons={handleBackToLessons}
+          onBackToLibrary={handleBackToShelf}
+          onOutlineBook={() => openStructureWizardForBook(selectedBook)}
+          onOpenPart={handleOpenPart}
+        />
+      ) : lessonDeskView && selectedBook ? (
+        <div className="space-y-6">
+          <BookLessonShelf
+            book={selectedBook}
+            pdfReady={pdfReady}
+            onBackToLibrary={handleBackToShelf}
+            onOutlineBook={() => openStructureWizardForBook(selectedBook)}
+            onOpenAdvancedTools={handleOpenAdvancedTools}
+            onAddPdf={() => setUploadPanelOpen(true)}
+            onOpenLesson={handleOpenLesson}
+          />
+          {uploadPanelOpen ? (
+            <div className="mx-auto max-w-xl rounded-2xl bg-[var(--surface-2)] p-5 shadow-[0_8px_30px_-12px_rgba(0,0,0,0.12)]">
+              <BookDropUpload
+                onUploadComplete={async () => {
+                  await loadLibrary({ preserveSelection: true })
+                  setUploadPanelOpen(false)
+                }}
+              />
+            </div>
+          ) : null}
+        </div>
+      ) : (
       <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-3xl leading-tight md:text-4xl">
-            {selectedBook?.title ?? 'Choose a Book'}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {!selectedBook ? (
-            <section className="ui-simple-surface space-y-5 p-5">
-              <div className="grid gap-4 md:grid-cols-[130px_minmax(0,1fr)]">
-                <div className="ui-simple-block flex h-[180px] w-[130px] items-center justify-center text-center">
-                  <span className="px-2 text-xs text-muted-foreground">Book cover preview</span>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Workspace ready</p>
-                  <h3 className="text-xl font-semibold leading-tight text-foreground md:text-2xl">
-                    Select a book to start
-                  </h3>
-                  <p className="text-sm text-muted-foreground">
-                    Choose from the left list to load the cover, title, and supporting files in this panel.
-                  </p>
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    <Button type="button" size="sm" variant="outline" onClick={() => setUploadPanelOpen(true)}>
-                      Import PDF
-                    </Button>
-                  </div>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <p className="text-sm font-semibold text-foreground">Quick pick</p>
-                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                  {books.slice(0, 6).map((book) => (
-                    <button
-                      key={book.id}
-                      type="button"
-                      onClick={() => {
-                        selectBook(book.id)
-                        setExpandedBookId(book.id)
-                      }}
-                      className="ui-simple-block p-3 text-left transition hover:bg-background"
-                    >
-                      <p className="truncate text-sm font-semibold text-foreground">{book.title}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {book.units.length} unit{book.units.length === 1 ? '' : 's'}
-                      </p>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </section>
-          ) : (
+        <CardContent className="space-y-4 pt-5">
+          {library ? (
             <>
-              <section className="space-y-3 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="flex min-w-0 items-start gap-4">
-                    {selectedBook.units[0]?.filePath && pdfReady ? (
-                      <PdfPageThumbnail
-                        fileUrl={makeUnitFileUrl(selectedBook.units[0].filePath)}
-                        unitId={`${selectedBook.id}-right-panel-cover`}
-                        pageNumber={1}
-                        width={120}
-                        pdfReady={pdfReady}
-                        label="Book cover"
-                        className="rounded-md border border-[var(--border)] bg-background shadow-sm"
-                      />
-                    ) : (
-                      <div className="flex h-[166px] w-[120px] shrink-0 items-center justify-center rounded-md border border-[var(--border)] bg-background text-xs text-muted-foreground">
-                        No cover
-                      </div>
-                    )}
-                    <div className="min-w-0 space-y-1">
-                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Selected book</p>
-                      <h3 className="text-2xl font-semibold leading-tight text-foreground md:text-3xl">
-                        {selectedBook.title}
-                      </h3>
-                      {selectedBook.description ? (
-                        <p className="max-w-2xl text-sm text-muted-foreground">{selectedBook.description}</p>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-8 text-xs"
-                      onClick={() => setFrameworkWorkspaceOpen(true)}
-                    >
-                      <Settings2 className="mr-1 h-3.5 w-3.5" />
-                      Framework
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-8 text-xs"
-                      onClick={() => setMappingWorkspaceOpen(true)}
-                    >
-                      Mapping workspace
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-8 text-xs"
-                      onClick={() => setAiPanelOpen((prev) => ({ ...prev, book: true }))}
-                    >
-                      <Wand2 className="mr-1 h-3.5 w-3.5" />
-                      Book Ops
-                    </Button>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm font-semibold text-foreground">Supporting files</p>
-                  {materialsLoading ? (
-                    <p className="text-sm text-muted-foreground">Loading downloaded files...</p>
-                  ) : downloadedMaterials.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                      No files found in this book&apos;s `supporting` folder yet.
-                    </p>
-                  ) : (
-                    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                      {downloadedMaterials.map((material) => {
-                        const fileUrl = makeUnitFileUrl(material.filePath)
-                        const PdfIcon = isPdfMaterial(material) ? FileType2 : FileText
-                        return (
-                          <a
-                            key={material.id}
-                            href={fileUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="group rounded-md border border-[var(--border)] bg-background p-3 transition hover:border-[var(--brand-blue)]/50 hover:bg-[var(--surface-2)]"
-                            title={material.fileName}
-                          >
-                            <div className="flex items-start gap-3">
-                              <PdfIcon className="mt-0.5 h-10 w-10 shrink-0 text-[var(--brand-blue)]" />
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-semibold text-foreground group-hover:underline">
-                                  {material.title || material.fileName}
-                                </p>
-                                <p className="mt-0.5 truncate text-xs text-muted-foreground">{material.fileName}</p>
-                              </div>
-                            </div>
-                          </a>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 gap-1.5 text-muted-foreground"
+                  onClick={handleBackToShelf}
+                >
+                  <Library className="h-3.5 w-3.5" aria-hidden />
+                  Library
+                </Button>
+                <button
+                  type="button"
+                  onClick={handleBackToLessons}
+                  className="text-[12px] font-medium text-muted-foreground transition hover:text-foreground"
+                >
+                  Back to lessons
+                </button>
+                {isBrowsePreview ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--surface-3)] px-2.5 py-1 text-[12px] font-medium text-muted-foreground">
+                    <Eye className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden />
+                    Browsing · preview only
+                  </span>
+                ) : selectedStudentId?.trim() ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--accent)] px-2.5 py-1 text-[12px] font-medium text-[var(--brand-blue)]">
+                    Prep with student
+                  </span>
+                ) : null}
+              </div>
+              <BookSetupHub
+                book={selectedBook}
+                library={library}
+                activeTab={activeTab}
+                onTabChange={handleTabChange}
+                pdfReady={pdfReady}
+                materialsCount={downloadedMaterials.length}
+                onCoverUpdated={handleManifestSaved}
+                onIdentitySaved={handleManifestSaved}
+                onBookRemoved={handleBookRemoved}
+                onUnitsUploaded={() => loadLibrary({ preserveSelection: true })}
+                outlineTab={
+                  <BookOutlineTab
+                    book={selectedBook}
+                    selectedUnitId={selected?.unitId ?? null}
+                    readerLessonId={readerLessonId}
+                    readerPartId={readerPartId}
+                    numPages={numPages}
+                    pdfReady={pdfReady}
+                    previewPage={pageNumber}
+                    onPreviewPageChange={(page) => {
+                      if (!selectedUnit) {
+                        setPageNumber(Math.max(1, Math.floor(page)))
+                        return
+                      }
+                      const bounds = getUnitReaderBounds(selectedUnit, numPages, selectedBook ?? undefined)
+                      const nextVisible = getVisiblePdfPages(selectedUnit, numPages, selectedBook ?? undefined)
+                      const bounded = clampPdfPageToVisible(page, nextVisible, bounds)
+                      setPageNumber(bounded)
+                      saveUnitPage(selectedBook!.id, selectedUnit.id, bounded)
+                    }}
+                    onPdfNumPages={(pages) => {
+                      setNumPages(pages)
+                      if (!selectedUnit || !selectedBook) return
+                      const bounds = getUnitReaderBounds(selectedUnit, pages, selectedBook)
+                      const nextVisible = getVisiblePdfPages(selectedUnit, pages, selectedBook)
+                      if (selectedPart && selectedLesson) {
+                        const lessons = selectedUnit.lessons ?? []
+                        const lessonIdx = Math.max(0, lessons.findIndex((l) => l.id === selectedLesson.id))
+                        const lessonRange = pageRangeForIndex(lessons, lessonIdx)
+                        const parts = selectedLesson.parts ?? []
+                        const partIdx = Math.max(0, parts.findIndex((p) => p.id === selectedPart.id))
+                        const partRange = pageRangeForIndex(parts, partIdx, lessonRange.start, lessonRange.end)
+                        const aligned =
+                          resolveOutlinePrintedStartPdfPage(
+                            partRange.start ?? lessonRange.start,
+                            selectedBook,
+                            selectedUnit,
+                            pages,
+                          ) ?? pageNumber
+                        const bounded = clampPdfPageToVisible(aligned, nextVisible, bounds)
+                        if (bounded !== pageNumber) setPageNumber(bounded)
+                        return
+                      }
+                      if (selectedLesson) {
+                        const lessons = selectedUnit.lessons ?? []
+                        const lessonIdx = Math.max(0, lessons.findIndex((l) => l.id === selectedLesson.id))
+                        const lessonRange = pageRangeForIndex(lessons, lessonIdx)
+                        const aligned =
+                          resolveOutlinePrintedStartPdfPage(lessonRange.start, selectedBook, selectedUnit, pages) ??
+                          pageNumber
+                        const bounded = clampPdfPageToVisible(aligned, nextVisible, bounds)
+                        if (bounded !== pageNumber) setPageNumber(bounded)
+                        return
+                      }
+                      const bounded = clampPdfPageToVisible(pageNumber, nextVisible, bounds)
+                      if (bounded !== pageNumber) setPageNumber(bounded)
+                    }}
+                    onEditOutline={() => openStructureWizardForBook(selectedBook)}
+                    onSelectUnit={handleSelectUnitFromOutline}
+                    onSelectLesson={(unit, lesson) => selectLessonForReading(selectedBook.id, unit, lesson)}
+                    onSelectPart={(unit, lesson, part) => selectPartForReading(selectedBook.id, unit, lesson, part)}
+                  />
+                }
+                materialsTab={
+                  <BookMaterialsTab
+                    materialsLoading={materialsLoading}
+                    downloadedMaterials={downloadedMaterials}
+                    isPdfMaterial={isPdfMaterial}
+                    onOpenFindGuides={() => setAiPanelOpen((prev) => ({ ...prev, book: true }))}
+                    onOpenScanGuides={() => setMappingWorkspaceOpen(true)}
+                  />
+                }
+                storiesTab={
+                  <BookStoriesTab
+                    book={selectedBook}
+                    libraryBooks={library?.books ?? []}
+                    selectedUnit={selectedUnit}
+                    numPages={numPages}
+                    currentPdfPage={pageNumber}
+                    pdfReady={pdfReady}
+                    focusStoryId={requestedStoryId}
+                    onOpenStoryPage={(unitId, pdfPage) => {
+                      openUnit(selectedBook.id, unitId, pdfPage)
+                    }}
+                    onPdfNumPages={(pages) => {
+                      setNumPages(pages)
+                    }}
+                  />
+                }
+                planTab={<BookPlanTab onOpenFocusGrid={() => setFrameworkWorkspaceOpen(true)} />}
+                advancedTab={
+                  <BookAdvancedTab
+                    selectedUnit={selectedUnit}
+                    selectedLesson={selectedLesson}
+                    selectedPart={selectedPart}
+                    unitText={unitText}
+                    lessonText={lessonText}
+                    partText={partText}
+                    unitContextLoading={unitContextLoading}
+                    lessonContextLoading={lessonContextLoading}
+                    editingLevel={editingLevel}
+                    aiPanelOpen={aiPanelOpen}
+                    aiRange={aiRange}
+                    aiBusyLevel={aiBusyLevel}
+                    contextError={contextError}
+                    selectedStudentId={selectedStudentId}
+                    isSavingStudentStart={isSavingStudentStart}
+                    onSaveStudentStart={() => void saveCurrentPageAsStudentStart()}
+                    onSetUnitText={setUnitText}
+                    onSetLessonText={setLessonText}
+                    onSetPartText={setPartText}
+                    onToggleEditing={(level) => setEditingLevel((prev) => ({ ...prev, [level]: !prev[level] }))}
+                    onToggleAiPanel={(level) => setAiPanelOpen((prev) => ({ ...prev, [level]: !prev[level] }))}
+                    onSetAiRange={setAiRange}
+                    onRunUnitAi={() => void runUnitAiFromPanel()}
+                    onRunLessonAi={() => void runLessonAiFromPanel()}
+                  />
+                }
+              />
                 <Dialog
                   open={aiPanelOpen.book}
                   onOpenChange={(open) => setAiPanelOpen((prev) => ({ ...prev, book: open }))}
@@ -4022,203 +4070,11 @@ export function BooksPageClient() {
                     </div>
                   </DialogContent>
                 </Dialog>
-              </section>
-
-              <section className="space-y-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-foreground">Unit {selectedUnit ? `— ${selectedUnit.title}` : ''}</p>
-                  <div className="flex gap-1">
-                    <Button type="button" size="sm" variant="outline" className="h-7 text-xs" disabled={!selectedUnit} onClick={() => setEditingLevel((prev) => ({ ...prev, unit: !prev.unit }))}>
-                      {editingLevel.unit ? 'Done' : 'Edit'}
-                    </Button>
-                    <Button type="button" size="sm" variant="outline" className="h-7 text-xs" disabled={!selectedUnit} onClick={() => setAiPanelOpen((prev) => ({ ...prev, unit: !prev.unit }))}>
-                      AI
-                    </Button>
-                  </div>
-                </div>
-                {!selectedUnit ? (
-                  <p className="text-sm text-muted-foreground">Select a unit from the left panel.</p>
-                ) : editingLevel.unit ? (
-                  <Textarea value={unitText} onChange={(event) => setUnitText(event.target.value)} className="min-h-24 bg-background" placeholder="Write unit context, goals, and focus." />
-                ) : (
-                  <p className="text-sm text-foreground">{unitContextLoading ? 'Loading context...' : (unitText || `Not extracted for this unit (${selectedUnit.title}).`)}</p>
-                )}
-                {aiPanelOpen.unit && selectedUnit ? (
-                  <div className="mt-2 space-y-2">
-                    <div className="flex flex-wrap items-end gap-2">
-                      <Label className="text-xs text-muted-foreground">Start
-                        <Input type="number" min={1} value={aiRange.unit.startPage} onChange={(e) => {
-                          const startPage = Math.max(1, Number(e.target.value || 1))
-                          setAiRange((prev) => ({ ...prev, unit: { startPage, endPage: Math.max(startPage, prev.unit.endPage) } }))
-                        }} className="mt-1 h-8 w-24 text-xs" />
-                      </Label>
-                      <Label className="text-xs text-muted-foreground">End
-                        <Input type="number" min={1} value={aiRange.unit.endPage} onChange={(e) => {
-                          const endPage = Math.max(1, Number(e.target.value || aiRange.unit.startPage))
-                          setAiRange((prev) => ({ ...prev, unit: { ...prev.unit, endPage: Math.max(prev.unit.startPage, endPage) } }))
-                        }} className="mt-1 h-8 w-24 text-xs" />
-                      </Label>
-                      <Button type="button" size="sm" variant="outline" className="h-8 text-xs" disabled={aiBusyLevel === 'unit'} onClick={() => void runUnitAiFromPanel()}>
-                        {aiBusyLevel === 'unit' ? 'Generating...' : 'Run AI'}
-                      </Button>
-                    </div>
-                  </div>
-                ) : null}
-              </section>
-
-              <section className="space-y-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-foreground">Lesson {selectedLesson ? `— ${selectedLesson.title}` : ''}</p>
-                  <div className="flex gap-1">
-                    <Button type="button" size="sm" variant="outline" className="h-7 text-xs" disabled={!selectedLesson} onClick={() => setEditingLevel((prev) => ({ ...prev, lesson: !prev.lesson }))}>
-                      {editingLevel.lesson ? 'Done' : 'Edit'}
-                    </Button>
-                    <Button type="button" size="sm" variant="outline" className="h-7 text-xs" disabled={!selectedLesson} onClick={() => setAiPanelOpen((prev) => ({ ...prev, lesson: !prev.lesson }))}>
-                      AI
-                    </Button>
-                  </div>
-                </div>
-                {!selectedLesson ? (
-                  <p className="text-sm text-muted-foreground">Select a lesson from the left panel.</p>
-                ) : editingLevel.lesson ? (
-                  <Textarea value={lessonText} onChange={(event) => setLessonText(event.target.value)} className="min-h-24 bg-background" placeholder="Write lesson context, goals, and strategy." />
-                ) : (
-                  <p className="text-sm text-foreground">{lessonContextLoading ? 'Loading context...' : (lessonText || `Not extracted for this lesson (${selectedLesson.title}).`)}</p>
-                )}
-                {aiPanelOpen.lesson && selectedLesson ? (
-                  <div className="mt-2 space-y-2">
-                    <div className="flex flex-wrap items-end gap-2">
-                      <Label className="text-xs text-muted-foreground">Start
-                        <Input type="number" min={1} value={aiRange.lesson.startPage} onChange={(e) => {
-                          const startPage = Math.max(1, Number(e.target.value || 1))
-                          setAiRange((prev) => ({ ...prev, lesson: { startPage, endPage: Math.max(startPage, prev.lesson.endPage) } }))
-                        }} className="mt-1 h-8 w-24 text-xs" />
-                      </Label>
-                      <Label className="text-xs text-muted-foreground">End
-                        <Input type="number" min={1} value={aiRange.lesson.endPage} onChange={(e) => {
-                          const endPage = Math.max(1, Number(e.target.value || aiRange.lesson.startPage))
-                          setAiRange((prev) => ({ ...prev, lesson: { ...prev.lesson, endPage: Math.max(prev.lesson.startPage, endPage) } }))
-                        }} className="mt-1 h-8 w-24 text-xs" />
-                      </Label>
-                      <Button type="button" size="sm" variant="outline" className="h-8 text-xs" disabled={aiBusyLevel === 'lesson'} onClick={() => void runLessonAiFromPanel()}>
-                        {aiBusyLevel === 'lesson' ? 'Generating...' : 'Run AI'}
-                      </Button>
-                    </div>
-                  </div>
-                ) : null}
-              </section>
-
-              <section className="space-y-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-foreground">Lesson Part {selectedPart ? `— ${selectedPart.title}` : ''}</p>
-                  <div className="flex gap-1">
-                    <Button type="button" size="sm" variant="outline" className="h-7 text-xs" disabled={!selectedPart} onClick={() => setEditingLevel((prev) => ({ ...prev, part: !prev.part }))}>
-                      {editingLevel.part ? 'Done' : 'Edit'}
-                    </Button>
-                    <Button type="button" size="sm" variant="outline" className="h-7 text-xs" disabled={!selectedPart} onClick={() => setAiPanelOpen((prev) => ({ ...prev, part: !prev.part }))}>
-                      AI
-                    </Button>
-                  </div>
-                </div>
-                {!selectedPart ? (
-                  <p className="text-sm text-muted-foreground">Select a lesson part from the left panel.</p>
-                ) : editingLevel.part ? (
-                  <Textarea value={partText} onChange={(event) => setPartText(event.target.value)} className="min-h-24 bg-background" placeholder="Write part-level context and activity goals." />
-                ) : (
-                  <p className="text-sm text-foreground">{partText || `No generated context yet for ${selectedPart.title}.`}</p>
-                )}
-                {aiPanelOpen.part && selectedPart ? (
-                  <div className="mt-2 space-y-2">
-                    <div className="flex flex-wrap items-end gap-2">
-                      <Label className="text-xs text-muted-foreground">Start
-                        <Input type="number" min={1} value={aiRange.part.startPage} onChange={(e) => {
-                          const startPage = Math.max(1, Number(e.target.value || 1))
-                          setAiRange((prev) => ({ ...prev, part: { startPage, endPage: Math.max(startPage, prev.part.endPage) } }))
-                        }} className="mt-1 h-8 w-24 text-xs" />
-                      </Label>
-                      <Label className="text-xs text-muted-foreground">End
-                        <Input type="number" min={1} value={aiRange.part.endPage} onChange={(e) => {
-                          const endPage = Math.max(1, Number(e.target.value || aiRange.part.startPage))
-                          setAiRange((prev) => ({ ...prev, part: { ...prev.part, endPage: Math.max(prev.part.startPage, endPage) } }))
-                        }} className="mt-1 h-8 w-24 text-xs" />
-                      </Label>
-                      <Button type="button" size="sm" variant="outline" className="h-8 text-xs" onClick={() => toast.info('Part-level AI generation endpoint will be added next.')}>
-                        Run AI
-                      </Button>
-                    </div>
-                  </div>
-                ) : null}
-              </section>
-
-              {contextError ? <p className="text-xs text-[var(--brand-red)]">{contextError}</p> : null}
-
-              {selectedUnit ? (
-                <>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => goToNeighborPage(-1, 2)}
-                      disabled={!visiblePages.length || currentSpreadLeftPage === (visiblePages[0] ?? currentSpreadLeftPage)}
-                    >
-                      <ChevronLeft size={16} />
-                      Prev
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => goToNeighborPage(1, 2)}
-                      disabled={!visiblePages.length || currentSpreadRightPage == null}
-                    >
-                      Next
-                      <ChevronRight size={16} />
-                    </Button>
-                    <span className="text-sm text-muted-foreground">
-                      PDF page {currentSpreadRightPage != null ? `${currentSpreadLeftPage}-${currentSpreadRightPage}` : `${currentSpreadLeftPage}`}
-                      {numPages != null ? ` / ${numPages}` : ''}
-                    </span>
-                    {interactiveVocabPack ? <InteractiveVocabReaderShelf pack={interactiveVocabPack} className="ml-auto" /> : null}
-                  </div>
-                  <div className="relative overflow-auto rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-2">
-                    {pdfReady ? (
-                      <PdfDocument
-                        file={makeUnitFileUrl(selectedUnit.filePath)}
-                        options={PDF_DOCUMENT_OPTIONS}
-                        onLoadSuccess={onDocumentLoadSuccess}
-                        loading={<p className="p-6 text-sm text-muted-foreground">Loading PDF...</p>}
-                        error={<p className="p-6 text-sm text-[var(--brand-red)]">Could not open this PDF unit.</p>}
-                      >
-                        <div className="grid gap-2 xl:grid-cols-2">
-                          <PdfPage
-                            pageNumber={currentSpreadLeftPage}
-                            width={Math.max(320, Math.floor(viewerWidth / 2) - 8)}
-                            renderTextLayer={false}
-                            renderAnnotationLayer={false}
-                          />
-                          {currentSpreadRightPage != null ? (
-                            <PdfPage
-                              pageNumber={currentSpreadRightPage}
-                              width={Math.max(320, Math.floor(viewerWidth / 2) - 8)}
-                              renderTextLayer={false}
-                              renderAnnotationLayer={false}
-                            />
-                          ) : null}
-                        </div>
-                      </PdfDocument>
-                    ) : (
-                      <p className="p-6 text-sm text-muted-foreground">Preparing PDF viewer...</p>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <p className="rounded-lg border border-dashed border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-muted-foreground">
-                  Select a unit to open the book preview and verify lesson page ranges.
-                </p>
-              )}
             </>
-          )}
+          ) : null}
         </CardContent>
       </Card>
+      )}
     </div>
   )
 }

@@ -1,8 +1,9 @@
 /**
- * Downloads cute DiceBear avatars and writes avatarUrl onto each student in data/students/students.json.
+ * Downloads DiceBear avatars for every student in data/students/students.json
+ * when the PNG file is missing under public/student-avatars/.
  * Run: node scripts/assign-student-avatars.mjs
  */
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -11,15 +12,30 @@ const root = path.resolve(__dirname, '..')
 const studentsPath = path.join(root, 'data', 'students', 'students.json')
 const avatarsDir = path.join(root, 'public', 'student-avatars')
 
-/** style, seed, background hex (no #) — one cute look per student */
-const AVATAR_BY_STUDENT_ID = {
-  stu_po0okz4fmnqbgdqo: { style: 'fun-emoji', seed: 'bubi', bg: 'fff4e6' },
-  stu_lu1ogztrmo5xlcr5: { style: 'lorelei', seed: 'cara', bg: 'ffd5dc' },
-  stu_wu8oz216mo5xlnxl: { style: 'adventurer', seed: 'cassie', bg: 'e0f4ff' },
-  stu_0ewx114emo5xlu68: { style: 'adventurer-neutral', seed: 'yushang', bg: 'e8f5e9' },
-  stu_2pc6oefsmo5xm9cx: { style: 'lorelei', seed: 'eliana', bg: 'f3e8ff' },
-  stu_niolc700mo5xmhlb: { style: 'micah', seed: 'linda', bg: 'fff9c4' },
-  stu_whwsvzf9mo5xmo3n: { style: 'big-smile', seed: 'ella', bg: 'ffe0f0' },
+const STYLES = ['fun-emoji', 'lorelei', 'adventurer', 'adventurer-neutral', 'micah', 'big-smile']
+const BACKGROUNDS = ['fff4e6', 'ffd5dc', 'e0f4ff', 'e8f5e9', 'f3e8ff', 'fff9c4', 'ffe0f0', 'e8eaf6', 'fce4ec', 'e0f2f1']
+
+function hashString(input) {
+  let hash = 2166136261
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
+  }
+  return hash >>> 0
+}
+
+function pickFrom(items, hash) {
+  return items[hash % items.length]
+}
+
+function buildSpec(studentId, name) {
+  const key = `${studentId}:${name.trim().toLowerCase()}`
+  const hash = hashString(key)
+  return {
+    style: pickFrom(STYLES, hash),
+    seed: `${studentId}-${name.trim().toLowerCase().replace(/\s+/g, '-')}`,
+    bg: pickFrom(BACKGROUNDS, hash >>> 8),
+  }
 }
 
 function dicebearPngUrl({ style, seed, bg }) {
@@ -29,6 +45,15 @@ function dicebearPngUrl({ style, seed, bg }) {
     backgroundColor: bg,
   })
   return `https://api.dicebear.com/9.x/${style}/png?${params}`
+}
+
+async function fileExists(filePath) {
+  try {
+    await access(filePath)
+    return true
+  } catch {
+    return false
+  }
 }
 
 async function downloadAvatar(url, destPath) {
@@ -45,12 +70,24 @@ async function main() {
   if (!Array.isArray(students)) throw new Error('students.json must be an array')
 
   let updated = 0
+  let skipped = 0
   for (const student of students) {
-    const spec = AVATAR_BY_STUDENT_ID[student.id]
-    if (!spec) continue
+    if (!student?.id || !student?.name) continue
     const fileName = `${student.id}.png`
     const publicPath = `/student-avatars/${fileName}`
     const diskPath = path.join(avatarsDir, fileName)
+    if (await fileExists(diskPath)) {
+      if (student.avatarUrl !== publicPath) {
+        student.avatarUrl = publicPath
+        student.updatedAt = new Date().toISOString()
+        updated += 1
+      } else {
+        skipped += 1
+      }
+      continue
+    }
+
+    const spec = buildSpec(student.id, student.name)
     const url = dicebearPngUrl(spec)
     console.log(`Downloading ${student.name} → ${fileName}`)
     await downloadAvatar(url, diskPath)
@@ -60,7 +97,7 @@ async function main() {
   }
 
   await writeFile(studentsPath, JSON.stringify(students, null, 2), 'utf8')
-  console.log(`Done. Updated ${updated} student(s).`)
+  console.log(`Done. Updated ${updated} student(s), skipped ${skipped} existing file(s).`)
 }
 
 main().catch((err) => {

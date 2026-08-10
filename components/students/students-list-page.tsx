@@ -2,41 +2,64 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { Plus } from 'lucide-react'
+import { PageHeader } from '@/components/page-header'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { StudentsSearchBar } from '@/components/students/students-search-bar'
+import { AddStudentDialog } from '@/components/students/add-student-dialog'
 import { StudentCard } from '@/components/students/student-card'
+import { StudentGridCard } from '@/components/students/student-grid-card'
 import { StudentsEmptyState } from '@/components/students/students-empty-state'
+import { StudentsRosterToolbar } from '@/components/students/students-roster-toolbar'
+import { fetchBooksLibraryCached, getBooksLibraryCached } from '@/lib/books/fetch-books-library-cached'
 import type { BookLibraryPayload } from '@/lib/books/types'
 import {
   ensureStudentRecordsHydrated,
   STUDENT_RECORDS_HYDRATED_EVENT,
 } from '@/lib/local-data/student-records-client'
-import { addStudentRecord, getStudentsListView, STUDENT_LOCAL_DATA_CHANGED_EVENT } from '@/lib/students/selectors'
-import { DEFAULT_PLAY_TIER, DIFFICULTY_TIER_LABELS, DIFFICULTY_TIERS } from '@/lib/quiz-difficulty'
+import {
+  getStudentsListView,
+  restoreStudentFromBreak,
+  STUDENT_LOCAL_DATA_CHANGED_EVENT,
+} from '@/lib/students/selectors'
+import {
+  DEFAULT_STUDENTS_ROSTER_PREFS,
+  readStudentsRosterPrefs,
+  writeStudentsRosterPrefs,
+  type StudentsRosterPrefs,
+  type StudentsRosterSort,
+  type StudentsRosterStatusFilter,
+  type StudentsRosterViewMode,
+} from '@/lib/students/students-roster-prefs'
+import {
+  filterStudentsByRosterStatus,
+  sortStudentsForRoster,
+} from '@/lib/students/students-roster-view'
 import type { StudentListItemView } from '@/lib/students/types'
-import type { DifficultyTier } from '@/lib/types'
+import { useToast } from '@/hooks/use-toast'
 
 export function StudentsListPage() {
+  const { toast } = useToast()
   const [recordsReady, setRecordsReady] = useState(false)
   const [query, setQuery] = useState('')
   const [showAddDialog, setShowAddDialog] = useState(false)
-  const [studentName, setStudentName] = useState('')
-  const [className, setClassName] = useState('')
-  const [note, setNote] = useState('')
-  const [defaultDifficultyTier, setDefaultDifficultyTier] = useState<DifficultyTier>(DEFAULT_PLAY_TIER)
-  const [formError, setFormError] = useState('')
   const [reloadTick, setReloadTick] = useState(0)
-  const [bookLibrary, setBookLibrary] = useState<BookLibraryPayload | null>(null)
+  const [bookLibrary, setBookLibrary] = useState<BookLibraryPayload | null>(() => getBooksLibraryCached())
+  const [prefs, setPrefs] = useState<StudentsRosterPrefs>(DEFAULT_STUDENTS_ROSTER_PREFS)
+  const [prefsReady, setPrefsReady] = useState(false)
+
+  const handleStudentsAdded = () => {
+    setReloadTick((tick) => tick + 1)
+  }
+
+  useEffect(() => {
+    setPrefs(readStudentsRosterPrefs())
+    setPrefsReady(true)
+  }, [])
+
+  useEffect(() => {
+    if (!prefsReady) return
+    writeStudentsRosterPrefs(prefs)
+  }, [prefs, prefsReady])
+
   useEffect(() => {
     let cancelled = false
     void ensureStudentRecordsHydrated().then(() => {
@@ -54,14 +77,11 @@ export function StudentsListPage() {
 
   useEffect(() => {
     let cancelled = false
-    void fetch('/api/books')
-      .then(async (res) => {
-        const payload = (await res.json()) as BookLibraryPayload | { error?: string }
-        if (!res.ok || !payload || !Array.isArray((payload as BookLibraryPayload).books)) {
-          return { books: [] } as BookLibraryPayload
-        }
-        return payload as BookLibraryPayload
-      })
+    if (getBooksLibraryCached()) {
+      setBookLibrary(getBooksLibraryCached())
+      return
+    }
+    void fetchBooksLibraryCached()
       .then((lib) => {
         if (!cancelled) setBookLibrary(lib)
       })
@@ -73,140 +93,128 @@ export function StudentsListPage() {
     }
   }, [])
 
-  const students: StudentListItemView[] = useMemo(
-    () => (recordsReady ? getStudentsListView(bookLibrary ?? undefined) : []),
+  const allStudents: StudentListItemView[] = useMemo(
+    () => (recordsReady ? getStudentsListView(bookLibrary ?? undefined, { includeOnBreak: true }) : []),
     [recordsReady, reloadTick, bookLibrary],
   )
 
-  const filteredStudents = useMemo(() => {
+  const activeStudents = useMemo(() => allStudents.filter((s) => !s.isOnBreak), [allStudents])
+  const onBreakStudents = useMemo(() => allStudents.filter((s) => s.isOnBreak), [allStudents])
+  const needsSetupCount = useMemo(
+    () => activeStudents.filter((s) => s.needsSetup).length,
+    [activeStudents],
+  )
+
+  const displayedStudents = useMemo(() => {
+    const byStatus = filterStudentsByRosterStatus(allStudents, prefs.statusFilter)
     const normalized = query.trim().toLowerCase()
-    if (!normalized) return students
-    return students.filter((student) => student.name.toLowerCase().includes(normalized))
-  }, [students, query])
+    const bySearch = normalized
+      ? byStatus.filter((student) => student.name.toLowerCase().includes(normalized))
+      : byStatus
+    return sortStudentsForRoster(bySearch, prefs.sort)
+  }, [allStudents, prefs.statusFilter, prefs.sort, query])
 
-  const resetForm = () => {
-    setStudentName('')
-    setClassName('')
-    setNote('')
-    setDefaultDifficultyTier(DEFAULT_PLAY_TIER)
-    setFormError('')
-  }
-
-  const handleAddStudent = () => {
-    const result = addStudentRecord({
-      name: studentName,
-      className,
-      note,
-      defaultDifficultyTier,
-    })
+  const handleRestore = (student: StudentListItemView) => {
+    const result = restoreStudentFromBreak(student.id)
     if (!result.ok) {
-      setFormError(result.error)
+      toast({ variant: 'destructive', title: 'Could not restore', description: result.error })
       return
     }
-    setShowAddDialog(false)
-    resetForm()
     setReloadTick((tick) => tick + 1)
+    toast({
+      title: `${student.name} is active again`,
+      description: 'They are back on your student list. Set a weekly time when you are ready.',
+    })
   }
 
+  const updatePrefs = (patch: Partial<StudentsRosterPrefs>) => {
+    setPrefs((prev) => ({ ...prev, ...patch }))
+  }
+
+  const headerCounts = (() => {
+    const parts: string[] = [`${activeStudents.length} active`]
+    if (needsSetupCount > 0) parts.push(`${needsSetupCount} need setup`)
+    if (onBreakStudents.length > 0) parts.push(`${onBreakStudents.length} on break`)
+    return parts.join(' · ')
+  })()
+
+  const showingOnBreak = prefs.statusFilter === 'onBreak'
+
   return (
-    <>
-      <div className="mb-4 flex items-center justify-end">
-        <Button
-          className="bg-[var(--brand-blue)] text-white hover:bg-[var(--brand-blue-bright)]"
-          onClick={() => setShowAddDialog(true)}
+    <div className="mx-auto w-full max-w-7xl">
+      <PageHeader
+        title="Students"
+        titleClassName="text-3xl sm:text-4xl"
+        description={
+          recordsReady
+            ? `Your class roster · ${headerCounts}`
+            : 'Your class roster'
+        }
+        actions={
+          <Button onClick={() => setShowAddDialog(true)}>
+            <Plus size={16} />
+            Add student
+          </Button>
+        }
+      />
+
+      <StudentsRosterToolbar
+        query={query}
+        onQueryChange={setQuery}
+        statusFilter={prefs.statusFilter}
+        onStatusFilterChange={(statusFilter: StudentsRosterStatusFilter) => updatePrefs({ statusFilter })}
+        sort={prefs.sort}
+        onSortChange={(sort: StudentsRosterSort) => updatePrefs({ sort })}
+        viewMode={prefs.viewMode}
+        onViewModeChange={(viewMode: StudentsRosterViewMode) => updatePrefs({ viewMode })}
+        onBreakCount={onBreakStudents.length}
+        needsSetupCount={needsSetupCount}
+      />
+
+      {!prefsReady || !recordsReady ? (
+        <p className="text-sm text-muted-foreground">Loading students…</p>
+      ) : displayedStudents.length === 0 ? (
+        <StudentsEmptyState
+          hasSearch={query.trim().length > 0}
+          rosterEmpty={allStudents.length === 0}
+          statusFilter={prefs.statusFilter}
+        />
+      ) : prefs.viewMode === 'grid' ? (
+        <ul
+          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+          aria-label={showingOnBreak ? 'Students on break' : 'Students'}
         >
-          <Plus size={16} />
-          Add Student
-        </Button>
-      </div>
-
-      <StudentsSearchBar value={query} onChange={setQuery} count={filteredStudents.length} />
-
-      {filteredStudents.length === 0 ? (
-        <StudentsEmptyState hasSearch={query.trim().length > 0} />
-      ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-[repeat(auto-fill,minmax(18rem,1fr))] xl:grid-cols-[repeat(auto-fill,minmax(18.5rem,1fr))]">
-          {filteredStudents.map((student) => (
-            <StudentCard key={student.id} student={student} library={bookLibrary} />
+          {displayedStudents.map((student) => (
+            <li key={student.id}>
+              <StudentGridCard
+                student={student}
+                onBreak={student.isOnBreak}
+                onRestore={student.isOnBreak ? () => handleRestore(student) : undefined}
+                onRemoved={() => setReloadTick((tick) => tick + 1)}
+              />
+            </li>
           ))}
-        </div>
+        </ul>
+      ) : (
+        <ul className="space-y-0.5" aria-label={showingOnBreak ? 'Students on break' : 'Students'}>
+          {displayedStudents.map((student) => (
+            <li key={student.id}>
+              <StudentCard
+                student={student}
+                onBreak={student.isOnBreak}
+                onRestore={student.isOnBreak ? () => handleRestore(student) : undefined}
+                onRemoved={() => setReloadTick((tick) => tick + 1)}
+              />
+            </li>
+          ))}
+        </ul>
       )}
 
-      <Dialog
+      <AddStudentDialog
         open={showAddDialog}
-        onOpenChange={(open) => {
-          setShowAddDialog(open)
-          if (!open) resetForm()
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Student</DialogTitle>
-            <DialogDescription>Create a student profile for quick classroom access.</DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-foreground">Name *</p>
-              <Input
-                value={studentName}
-                onChange={(event) => setStudentName(event.target.value)}
-                placeholder="Student name"
-                autoFocus
-              />
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-foreground">Class (optional)</p>
-              <Input
-                value={className}
-                onChange={(event) => setClassName(event.target.value)}
-                placeholder="Class name"
-              />
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-foreground">Note (optional)</p>
-              <Textarea
-                value={note}
-                onChange={(event) => setNote(event.target.value)}
-                placeholder="Any quick note"
-                className="min-h-[80px]"
-              />
-            </div>
-            <div className="space-y-2">
-              <p className="text-sm font-medium text-foreground">Default quiz difficulty</p>
-              <p className="text-xs text-muted-foreground">
-                Preselects Easy / Mid / Hard when this student starts a Timed Challenge (they can change it each time).
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {DIFFICULTY_TIERS.map((tier) => (
-                  <button
-                    key={tier}
-                    type="button"
-                    onClick={() => setDefaultDifficultyTier(tier)}
-                    className={`rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${
-                      defaultDifficultyTier === tier
-                        ? 'border-[var(--brand-blue)] bg-[var(--brand-blue)]/15 text-foreground'
-                        : 'border-[var(--border)] bg-[var(--surface-2)] text-muted-foreground hover:border-[var(--brand-blue)]/40'
-                    }`}
-                  >
-                    {DIFFICULTY_TIER_LABELS[tier]}
-                  </button>
-                ))}
-              </div>
-            </div>
-            {formError && <p className="text-sm text-[var(--brand-red)]">{formError}</p>}
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddDialog(false)}>
-              Cancel
-            </Button>
-            <Button className="bg-[var(--brand-blue)] text-white hover:bg-[var(--brand-blue-bright)]" onClick={handleAddStudent}>
-              Save Student
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+        onOpenChange={setShowAddDialog}
+        onStudentsAdded={handleStudentsAdded}
+      />
+    </div>
   )
 }

@@ -1,8 +1,16 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createMemorySpreadSessionStorage, loadSpreadSession } from '@/lib/books/spread-session-storage'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { INK_SESSION_AUTOSAVE_MS_DRAWING } from '@/lib/books/ink-session-persist-config'
+import {
+  createMemorySpreadSessionStorage,
+  invalidateSpreadSessionRootCache,
+  loadSpreadSession,
+} from '@/lib/books/spread-session-storage'
 import { createSpreadSessionStore } from '@/lib/books/spread-session-store'
+import { __resetInkSessionPersistV2ForTests } from '@/lib/books/ink-session-persist-v2'
 import type { SpreadSessionKey } from '@/lib/books/spread-session-types'
 import { getAnnotationClipboard, setAnnotationClipboard } from '@/lib/books/annotation-clipboard'
+import { setBoardPasteAnchorNorm } from '@/lib/books/board-paste-placement'
+import { alignSelectedCommands } from '@/lib/books/annotation-align'
 
 const key: SpreadSessionKey = {
   studentId: 's1',
@@ -13,8 +21,25 @@ const key: SpreadSessionKey = {
 }
 
 describe('spread-session-store', () => {
+  beforeEach(() => {
+    invalidateSpreadSessionRootCache()
+    __resetInkSessionPersistV2ForTests()
+  })
+
+  afterEach(() => {
+    invalidateSpreadSessionRootCache()
+    __resetInkSessionPersistV2ForTests()
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
   it('debounced autosave resets on each append', () => {
     vi.useFakeTimers()
+    vi.stubGlobal('requestIdleCallback', (cb: IdleRequestCallback) => {
+      cb({ didTimeout: false, timeRemaining: () => 50 } as IdleDeadline)
+      return 1
+    })
+    vi.stubGlobal('cancelIdleCallback', () => {})
     const storage = createMemorySpreadSessionStorage()
     const store = createSpreadSessionStore(key, { storage, autosaveMs: 3000 })
     store.appendCommand({
@@ -34,12 +59,8 @@ describe('spread-session-store', () => {
     })
     vi.advanceTimersByTime(2000)
     expect(loadSpreadSession(key, storage).commands).toHaveLength(0)
-    vi.advanceTimersByTime(1000)
+    vi.advanceTimersByTime(INK_SESSION_AUTOSAVE_MS_DRAWING - 2000)
     expect(loadSpreadSession(key, storage).commands).toHaveLength(2)
-    vi.useRealTimers()
-  })
-
-  afterEach(() => {
     vi.useRealTimers()
   })
 
@@ -69,7 +90,8 @@ describe('spread-session-store', () => {
     expect(store.getState().doc.commands).toHaveLength(2)
     expect(store.getState().canUndo).toBe(true)
     store.undo()
-    expect(store.getState().doc.commands).toHaveLength(0)
+    expect(store.getState().doc.commands).toHaveLength(1)
+    expect(store.getState().doc.commands[0]?.id).toBe('l2')
   })
 
   it('setCommands updates revision and undo stack', () => {
@@ -140,6 +162,68 @@ describe('spread-session-store', () => {
     }
   })
 
+  it('alignSelected aligns selected commands and records undo', () => {
+    const storage = createMemorySpreadSessionStorage()
+    const store = createSpreadSessionStore(key, {
+      storage,
+      autosaveMs: 60_000,
+      getSelectionMoveClamp: () => ({ widthPx: 800, heightPx: 600, canvas: null }),
+    })
+    store.setCommands([
+      { kind: 'rect', id: 'a', x: 0.1, y: 0.1, w: 0.1, h: 0.1, strokeColor: '#000' },
+      { kind: 'rect', id: 'b', x: 0.4, y: 0.2, w: 0.1, h: 0.1, strokeColor: '#000' },
+    ])
+    store.setSelectedIds(['a', 'b'])
+    expect(store.alignSelected('left')).toBe(true)
+    const a = store.getState().doc.commands.find((c) => c.id === 'a')
+    const b = store.getState().doc.commands.find((c) => c.id === 'b')
+    if (a?.kind === 'rect' && b?.kind === 'rect') {
+      expect(a.x).toBeCloseTo(0.1, 6)
+      expect(b.x).toBeCloseTo(0.1, 6)
+    }
+    expect(store.getState().canUndo).toBe(true)
+    expect(store.undo()).toBe(true)
+    const aAfterUndo = store.getState().doc.commands.find((c) => c.id === 'a')
+    const bAfterUndo = store.getState().doc.commands.find((c) => c.id === 'b')
+    if (aAfterUndo?.kind === 'rect' && bAfterUndo?.kind === 'rect') {
+      expect(aAfterUndo.x).toBeCloseTo(0.1, 6)
+      expect(bAfterUndo.x).toBeCloseTo(0.4, 6)
+    }
+  })
+
+  it('arrange via patchCommands works without getSelectionMoveClamp', () => {
+    const storage = createMemorySpreadSessionStorage()
+    const store = createSpreadSessionStore(key, { storage, autosaveMs: 60_000 })
+    store.setCommands([
+      { kind: 'rect', id: 'a', x: 0.1, y: 0.1, w: 0.1, h: 0.1, strokeColor: '#000' },
+      { kind: 'rect', id: 'b', x: 0.4, y: 0.2, w: 0.1, h: 0.1, strokeColor: '#000' },
+    ])
+    store.setSelectedIds(['a', 'b'])
+    const widthPx = 800
+    const heightPx = 600
+    store.patchCommands((cmds) =>
+      alignSelectedCommands(cmds, ['a', 'b'], 'left', widthPx, heightPx),
+    )
+    const a = store.getState().doc.commands.find((c) => c.id === 'a')
+    const b = store.getState().doc.commands.find((c) => c.id === 'b')
+    if (a?.kind === 'rect' && b?.kind === 'rect') {
+      expect(a.x).toBeCloseTo(0.1, 6)
+      expect(b.x).toBeCloseTo(0.1, 6)
+    }
+    expect(store.getState().canUndo).toBe(true)
+  })
+
+  it('alignSelected returns false without selection move clamp context', () => {
+    const storage = createMemorySpreadSessionStorage()
+    const store = createSpreadSessionStore(key, { storage, autosaveMs: 60_000 })
+    store.setCommands([
+      { kind: 'rect', id: 'a', x: 0.1, y: 0.1, w: 0.1, h: 0.1, strokeColor: '#000' },
+      { kind: 'rect', id: 'b', x: 0.4, y: 0.2, w: 0.1, h: 0.1, strokeColor: '#000' },
+    ])
+    store.setSelectedIds(['a', 'b'])
+    expect(store.alignSelected('left')).toBe(false)
+  })
+
   it('duplicateSelected clones selected commands and selects duplicates', () => {
     const storage = createMemorySpreadSessionStorage()
     const store = createSpreadSessionStore(key, { storage, autosaveMs: 60_000 })
@@ -184,6 +268,27 @@ describe('spread-session-store', () => {
     expect(store.getState().selectedIds[0]).not.toBe('clip-1')
   })
 
+  it('pasteFromClipboard places copied ink at the last board click anchor', () => {
+    setBoardPasteAnchorNorm({ x: 0.5, y: 0.5 })
+    setAnnotationClipboard([
+      { kind: 'rect', id: 'clip-1', x: 0.1, y: 0.1, w: 0.1, h: 0.1, strokeColor: '#111827' },
+    ])
+    const storage = createMemorySpreadSessionStorage()
+    const store = createSpreadSessionStore(key, {
+      storage,
+      autosaveMs: 60_000,
+      getSelectionMoveClamp: () => ({ widthPx: 400, heightPx: 400, canvas: true }),
+    })
+    expect(store.pasteFromClipboard()).toBe(true)
+    const pasted = store.getState().doc.commands.find((c) => c.id !== 'clip-1')
+    expect(pasted?.kind).toBe('rect')
+    if (pasted?.kind === 'rect') {
+      expect(pasted.x + pasted.w / 2).toBeCloseTo(0.5, 4)
+      expect(pasted.y + pasted.h / 2).toBeCloseTo(0.5, 4)
+    }
+    setBoardPasteAnchorNorm(null)
+  })
+
   it('selectNextInStack cycles selection forward and backward', () => {
     const storage = createMemorySpreadSessionStorage()
     const store = createSpreadSessionStore(key, { storage, autosaveMs: 60_000 })
@@ -208,7 +313,7 @@ describe('spread-session-store', () => {
     expect(store.selectNextInStack(1)).toBe(false)
   })
 
-  it('toggleGroupSelected groups selected pen/marker strokes', () => {
+  it('toggleGroupSelected groups selected pen strokes only (not highlighter)', () => {
     const storage = createMemorySpreadSessionStorage()
     const store = createSpreadSessionStore(key, { storage, autosaveMs: 60_000 })
     store.setCommands([
@@ -228,14 +333,49 @@ describe('spread-session-store', () => {
         widthNorm: 0.02,
         points: [[0.3, 0.3], [0.4, 0.4]],
       },
+      {
+        kind: 'stroke',
+        id: 's3',
+        tool: 'pen',
+        color: '#111827',
+        widthNorm: 0.01,
+        points: [[0.5, 0.5], [0.6, 0.6]],
+      },
     ])
-    store.setSelectedIds(['s1', 's2'])
+    store.setSelectedIds(['s1', 's2', 's3'])
     expect(store.toggleGroupSelected()).toBe(true)
-    const grouped = store.getState().doc.commands.filter((c) => c.id === 's1' || c.id === 's2')
-    const fg1 = grouped[0]?.kind === 'stroke' ? grouped[0].figureGroupId : undefined
-    const fg2 = grouped[1]?.kind === 'stroke' ? grouped[1].figureGroupId : undefined
-    expect(fg1).toBeTruthy()
-    expect(fg1).toBe(fg2)
+    const grouped = store.getState().doc.commands.filter((c) => c.id === 's1' || c.id === 's2' || c.id === 's3')
+    const byId = Object.fromEntries(
+      grouped.map((c) => [c.id, c.kind === 'stroke' ? c.figureGroupId : undefined]),
+    )
+    expect(byId.s1).toBeTruthy()
+    expect(byId.s3).toBe(byId.s1)
+    expect(byId.s2).toBeUndefined()
+  })
+
+  it('toggleGroupSelected does nothing for highlighter-only selection', () => {
+    const storage = createMemorySpreadSessionStorage()
+    const store = createSpreadSessionStore(key, { storage, autosaveMs: 60_000 })
+    store.setCommands([
+      {
+        kind: 'stroke',
+        id: 'm1',
+        tool: 'marker',
+        color: '#ffff00',
+        widthNorm: 0.02,
+        points: [[0.1, 0.1], [0.2, 0.2]],
+      },
+      {
+        kind: 'stroke',
+        id: 'm2',
+        tool: 'marker',
+        color: '#ffff00',
+        widthNorm: 0.02,
+        points: [[0.3, 0.3], [0.4, 0.4]],
+      },
+    ])
+    store.setSelectedIds(['m1', 'm2'])
+    expect(store.toggleGroupSelected()).toBe(false)
   })
 
   it('removeFromGroupSelected clears figureGroupId from selected strokes', () => {

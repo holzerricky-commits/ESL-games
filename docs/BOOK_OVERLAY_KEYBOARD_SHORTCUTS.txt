@@ -2,7 +2,7 @@ BOOK OVERLAY — KEYBOARD SHORTCUTS
 ===================================
 
 Active while the fullscreen book reader is open. Shortcuts are ignored when you
-are typing in a text field, editing a sticky note, or using the lesson notebook
+are typing in a text field, editing a sticky note, or using the lesson board
 in typing mode — except:
 
   Esc            Commit the current label and leave the field (press again for

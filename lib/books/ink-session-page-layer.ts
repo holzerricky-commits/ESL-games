@@ -22,7 +22,7 @@ export const isSpreadDelegatedCanvasCommand = isInkSessionDelegatedCanvasCommand
 /** Commands owned by the book spread session (canvas + text + sticky). */
 export function isSpreadSessionOwnedCommand(cmd: AnnotationCommand): boolean {
   if (isInkSessionDelegatedCanvasCommand(cmd)) return true
-  return cmd.kind === 'text' || cmd.kind === 'sticky'
+  return cmd.kind === 'text' || cmd.kind === 'sticky' || cmd.kind === 'image' || cmd.kind === 'flashcard'
 }
 
 /**
@@ -35,6 +35,19 @@ export function pageLayerCommandsWhenSpreadDelegated(
 ): AnnotationCommand[] {
   if (!spreadInkDelegated) return [...commands]
   return commands.filter((c) => !isSpreadSessionOwnedCommand(c))
+}
+
+/**
+ * While the lesson board is open, page storage may still hold flushed copies of spread-session
+ * commands. Drop only ids that the live spread session layer is already painting.
+ */
+export function pageLayerCommandsExcludingSpreadSessionIds(
+  commands: readonly AnnotationCommand[],
+  spreadSessionCommandIds: readonly string[],
+): AnnotationCommand[] {
+  if (spreadSessionCommandIds.length === 0) return [...commands]
+  const ids = new Set(spreadSessionCommandIds)
+  return commands.filter((c) => !ids.has(c.id))
 }
 
 /** @deprecated Use pageLayerCommandsWhenSpreadDelegated */
@@ -69,6 +82,6 @@ export function pageLayerCanvasCommandsWhenWhiteboardInkDelegated(
   if (!whiteboardInkDelegated) return [...commands]
   return commands.filter(
     (c) =>
-      !isWhiteboardDelegatedCanvasCommand(c) && c.kind !== 'text' && c.kind !== 'sticky',
+      !isWhiteboardDelegatedCanvasCommand(c) && c.kind !== 'text' && c.kind !== 'sticky' && c.kind !== 'image' && c.kind !== 'flashcard',
   )
 }

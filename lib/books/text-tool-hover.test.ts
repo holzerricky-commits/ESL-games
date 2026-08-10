@@ -73,36 +73,20 @@ describe('text-tool-hover', () => {
     expect(stickyFrames[0]!.rect).toEqual(getAnnotationBounds(sticky, widthPx, heightPx))
   })
 
-  it('editing frames hug placeholder for empty new labels', () => {
+  it('editing frames are hidden while typing (WYSIWYG — no solid edit ring)', () => {
     const empty: AnnotationCommand = { ...text, id: 'new', text: '' }
-    const frames = textToolEditingOutlineFrames([empty], 'new', widthPx, heightPx)
-    expect(frames).toHaveLength(1)
-    expect(frames[0]!.rect).toEqual(
-      textLabelChromeBounds(empty as TextAnnotationCommand, widthPx, heightPx, { mode: 'edit' }),
-    )
+    expect(textToolEditingOutlineFrames([empty], 'new', widthPx, heightPx)).toEqual([])
+    expect(textToolEditingOutlineFrames(commands, 't1', widthPx, heightPx, 'hello')).toEqual([])
   })
 
-  it('editing frames use tight box when label has text', () => {
-    const frames = textToolEditingOutlineFrames(commands, 't1', widthPx, heightPx)
-    expect(frames).toHaveLength(1)
-    expect(frames[0]!.rect).toEqual(
-      textLabelChromeBounds(text as TextAnnotationCommand, widthPx, heightPx, { mode: 'edit' }),
-    )
-  })
-
-  it('editing frames grow with live draft text', () => {
-    const shortFrames = textToolEditingOutlineFrames([text], 't1', widthPx, heightPx, 'ab')
-    const longFrames = textToolEditingOutlineFrames([text], 't1', widthPx, heightPx, 'hello world!!!')
-    expect(shortFrames).toHaveLength(1)
-    expect(longFrames).toHaveLength(1)
-    expect(longFrames[0]!.rect.w).toBeGreaterThan(shortFrames[0]!.rect.w)
-  })
-
-  it('placement cursor is I-beam on target else crosshair', () => {
+  it('text tool uses I-beam by default and grab over selected label', () => {
     expect(textToolPlacementCursor('t1', true, false)).toBe('text')
-    expect(textToolPlacementCursor(null, true, false)).toBe('crosshair')
+    expect(textToolPlacementCursor(null, true, false)).toBe('text')
     expect(textToolPlacementCursor(null, false, true)).toBe('crosshair')
     expect(textToolPlacementCursor('n1', false, true)).toBe('text')
     expect(textToolPlacementCursor(null, true, false, 't1')).toBe('text')
+    expect(textToolPlacementCursor('t1', true, false, null, 't1')).toBe('grab')
+    expect(textToolPlacementCursor('t1', true, false, null, 't1', true)).toBe('grabbing')
+    expect(textToolPlacementCursor('t2', true, false, null, 't1')).toBe('text')
   })
 })

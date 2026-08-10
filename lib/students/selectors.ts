@@ -1,4 +1,15 @@
 import { getCachedStudents, isStudentRecordsDiskActive } from '@/lib/local-data/student-records-client'
+import {
+  flushWeeklyScheduleToDisk,
+  getWeeklyScheduleDiskCache,
+  isWeeklyScheduleDiskActive,
+  setWeeklyScheduleConfigOnDiskCache,
+  setWeeklySlotAssignmentsOnDiskCache,
+  setWeeklySlotExceptionsOnDiskCache,
+  WEEKLY_SCHEDULE_CONFIG_KEY,
+  WEEKLY_SLOT_ASSIGNMENTS_KEY,
+  WEEKLY_SLOT_EXCEPTIONS_KEY,
+} from '@/lib/local-data/weekly-schedule-disk-client'
 import { buildChallengeCatalogForQuizIds } from '@/lib/challenges'
 import { buildPageAlignmentRuntime, resolveEffectiveAnchorToPdfPage } from '@/lib/books/page-alignment-runtime'
 import { mapPdfPageToDisplayLabel, type PageNumberingMode } from '@/lib/books/page-numbering'
@@ -10,12 +21,41 @@ import {
   getQuizzes,
   getStudentProgressMap,
   getStudents,
+  removeStudentFromBrowserStorage,
   saveStudent,
   saveStudentProgressMap,
   saveStudents,
 } from '@/lib/storage'
 import { createInitialProgressRecord, reconcileProgressWithCatalog } from '@/lib/students/progression'
 import { generateStudentId, normalizeStudentKey } from '@/lib/students/identity'
+import { sanitizePrepTimeBlocks, type ClassPrepTimeBlock } from '@/lib/students/class-prep-outline'
+import { hasPrepExtras, sanitizeClassPrepExtras, type ClassPrepExtrasPayload } from '@/lib/students/class-prep-extras'
+import {
+  collectClassPrepSignals,
+  dueReviewWordsForSession,
+  sessionNoteForHistory,
+  type ClassPrepContextFlags,
+  type ClassPrepContextMode,
+  type ClassPrepNamedIssue,
+  type ClassPrepReadingPosition,
+  type ClassPrepVocabSignals,
+} from '@/lib/students/class-prep-signals'
+import {
+  buildSeedEntriesFromRows,
+  buildStudentWordReviewView,
+  combineAggregatedWordReviewRows,
+  resolveVocabSignalsFromWordReview,
+  sanitizeWordReviewEntries,
+  sanitizeWordReviewHidden,
+  type StudentWordReviewRow,
+  type StudentWordReviewView,
+} from '@/lib/students/student-word-review'
+import { daysAheadToCover } from '@/lib/schedule/month-view-layout'
+import { normalizeClassDurationMinutes } from '@/lib/schedule/class-duration'
+import {
+  formatScheduleConflictError,
+  type ScheduleConflict,
+} from '@/lib/schedule/schedule-conflict-messages'
 import {
   sanitizeMapPathSegments,
   syncAllSegmentEndpoints,
@@ -27,10 +67,10 @@ import {
   type MapPathPoint,
   type MapPathSegments,
 } from '@/lib/students/challenge-map-layout'
-import { appendWhiteboardCaptureToNotebookHtml } from '@/lib/books/lesson-notebook-whiteboard-capture-html'
 import { buildSectionPathLabel, getPartPrimaryLabel } from '@/lib/books/part-section-display'
 import { isBookLessonPartTag, resolvePartStructureTag } from '@/lib/books/part-structure-tag'
 import type { BookLibraryPayload, BookRecord, BookUnitRecord } from '@/lib/books/types'
+import { resolveMappedPageToPdfPage } from '@/lib/books/page-numbering'
 import type { StudentListItemView, StudentProfileTab, StudentProfileView } from '@/lib/students/types'
 import type { BookContextRecord } from '@/lib/context/types'
 import type {
@@ -38,31 +78,82 @@ import type {
   BookSectionType,
   ClassSessionBookmarkAtEnd,
   DifficultyTier,
-  LessonNotebookEntry,
-  LessonNotebookSection,
-  LessonNotebookSession,
   StudentBookSectionRef,
   StudentClassSession,
   StudentClassStatus,
   StudentProgressRecord,
   StudentRecord,
+  StudentRosterStatus,
+  StudentWordReviewStrength,
   TeacherWeeklyScheduleConfig,
   WeeklySlotAssignment,
+  WeeklySlotException,
 } from '@/lib/types'
+
+import { buildStudentFinishSetupHref, buildStudentOpenPlanHref, resolveStudentSetupStatus, studentHasBookedClass } from '@/lib/students/student-setup-status'
+import type { StudentSetupStatus } from '@/lib/students/student-setup-status'
+import {
+  canExtendClassBy,
+  isSessionDueForHardAutoEnd,
+  isSessionDueForMissed,
+  isSessionEligibleForSoftAutoStart,
+  resolveTodayClassTeachingState,
+  sanitizeExtendedMinutesTotal,
+  type TodayClassTeachingState,
+} from '@/lib/students/class-schedule-lifecycle'
 
 const NEXT_CLASS_LIST_PLACEHOLDER = 'No class scheduled.'
 export const STUDENT_LOCAL_DATA_CHANGED_EVENT = 'esl-student-data-changed'
 
-function notifyStudentLocalDataChanged(studentId: string): void {
+export function notifyStudentLocalDataChanged(studentId?: string): void {
   if (typeof window === 'undefined') return
   if (typeof window.dispatchEvent !== 'function') return
   window.dispatchEvent(new CustomEvent(STUDENT_LOCAL_DATA_CHANGED_EVENT, { detail: { studentId } }))
 }
-const WEEKLY_SCHEDULE_CONFIG_KEY = 'esl_weekly_schedule_config'
-const WEEKLY_SLOT_ASSIGNMENTS_KEY = 'esl_weekly_slot_assignments'
+
+/** Missing / unknown rosterStatus counts as active (legacy records). */
+export function resolveStudentRosterStatus(student: Pick<StudentRecord, 'rosterStatus'>): StudentRosterStatus {
+  return student.rosterStatus === 'on_break' ? 'on_break' : 'active'
+}
+
+export function isStudentOnBreak(student: Pick<StudentRecord, 'rosterStatus'>): boolean {
+  return resolveStudentRosterStatus(student) === 'on_break'
+}
+
+/** Active students only — used for schedule conflicts, calendar, and the main roster. */
+export function getActiveStudents(): StudentRecord[] {
+  return getStudents().filter((row) => !isStudentOnBreak(row))
+}
+
+function activeStudentIds(): Set<string> {
+  return new Set(getActiveStudents().map((row) => row.id))
+}
+
+/**
+ * Drop weekly slots (and their date exceptions) for students who no longer exist
+ * or are on break. Returns how many slots were removed.
+ */
+export function pruneOrphanWeeklySlots(): number {
+  if (typeof window === 'undefined') return 0
+  const keepIds = activeStudentIds()
+  const assignments = getWeeklySlotAssignments()
+  const next = assignments.filter((slot) => keepIds.has(slot.studentId))
+  const removedCount = assignments.length - next.length
+  if (removedCount === 0) return 0
+
+  const keptSlotIds = new Set(next.map((slot) => slot.id))
+  const exceptions = getWeeklySlotExceptions()
+  const nextExceptions = exceptions.filter((row) => keptSlotIds.has(row.slotId))
+  if (nextExceptions.length !== exceptions.length) {
+    saveWeeklySlotExceptions(nextExceptions)
+  }
+  saveWeeklySlotAssignments(next)
+  return removedCount
+}
+
 const SLOT_MINUTES = 30 as const
 
-const PROFILE_TABS: StudentProfileTab[] = ['challenges', 'curriculum', 'classes', 'map', 'avatar', 'info']
+const PROFILE_TABS: StudentProfileTab[] = ['challenges', 'curriculum', 'classes', 'map', 'avatar', 'words', 'info']
 export type StudentMapNodeLayout = Record<string, { xPct: number; yPct: number }>
 export type StudentMapPathSegments = MapPathSegments
 export interface StudentCurriculumSessionInput {
@@ -139,13 +230,26 @@ export interface StudentClassPrepContext {
     reviewedWords: string[]
     learnedWords: string[]
     notes?: string
+    sessionNote?: string
+    dueReviewWords: string[]
   }>
+  readingPosition?: ClassPrepReadingPosition
+  vocabSignals: ClassPrepVocabSignals
+  namedRecurringIssues: ClassPrepNamedIssue[]
+  prepContextMode: ClassPrepContextMode
+  prepContextFlags: ClassPrepContextFlags
+}
+
+export interface BuildStudentClassPrepContextOptions {
+  savedWordEntries?: unknown[]
+  /** Part interactive vocabulary from context store — overrides token heuristic when present. */
+  partSectionVocabulary?: string[]
 }
 
 export interface WeeklySlotAssignmentInput {
   dayOfWeek: number
   startMinute: number
-  durationMinutes: 30 | 60
+  durationMinutes: number
   studentId: string
 }
 
@@ -353,10 +457,21 @@ function buildUpdatedReviewPlan(
 }
 
 function normalizeClassStatus(status: unknown): StudentClassStatus {
-  if (status === 'prepared' || status === 'completed' || status === 'cancelled' || status === 'in_progress') {
+  if (
+    status === 'prepared' ||
+    status === 'completed' ||
+    status === 'cancelled' ||
+    status === 'in_progress' ||
+    status === 'missed'
+  ) {
     return status
   }
   return 'planned'
+}
+
+/** Finished / inactive for “next class” and start flows (not live, not upcoming). */
+export function isClosedClassSessionStatus(status: string): boolean {
+  return status === 'completed' || status === 'cancelled' || status === 'missed'
 }
 
 function optionalIsoString(raw: unknown): string | undefined {
@@ -381,6 +496,13 @@ function sanitizeSessionNote(raw: unknown): string | undefined {
   return t.length > 12000 ? t.slice(0, 12000) : t
 }
 
+function sanitizeReadingCheckWrapLine(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined
+  const t = raw.trim()
+  if (!t) return undefined
+  return t.length > 240 ? t.slice(0, 240) : t
+}
+
 function sanitizeBookmarkAtEnd(raw: unknown): ClassSessionBookmarkAtEnd | undefined {
   if (!raw || typeof raw !== 'object') return undefined
   const o = raw as Record<string, unknown>
@@ -390,6 +512,70 @@ function sanitizeBookmarkAtEnd(raw: unknown): ClassSessionBookmarkAtEnd | undefi
   const pdfPage = Math.max(1, Math.floor(n))
   const unitId = typeof o.unitId === 'string' && o.unitId.trim() ? o.unitId.trim() : undefined
   return { bookId, pdfPage, unitId }
+}
+
+export type StudentCurriculumBookStart = NonNullable<StudentRecord['curriculumBookStarts']>[string]
+
+function sanitizeCurriculumBookStarts(raw: unknown): Record<string, StudentCurriculumBookStart> {
+  if (!raw || typeof raw !== 'object') return {}
+  const out: Record<string, StudentCurriculumBookStart> = {}
+  for (const [bookIdRaw, entryRaw] of Object.entries(raw as Record<string, unknown>)) {
+    const bookId = bookIdRaw.trim()
+    if (!bookId || !entryRaw || typeof entryRaw !== 'object') continue
+    const entry = entryRaw as Record<string, unknown>
+    const sectionId = typeof entry.sectionId === 'string' ? entry.sectionId.trim() : ''
+    const unitId = typeof entry.unitId === 'string' ? entry.unitId.trim() : ''
+    const mapped = Number(entry.mappedPage)
+    if (!sectionId || !unitId || !Number.isFinite(mapped) || mapped < 1) continue
+    const updatedAt =
+      typeof entry.updatedAt === 'string' && entry.updatedAt.trim()
+        ? entry.updatedAt.trim()
+        : new Date(0).toISOString()
+    out[bookId] = {
+      sectionId,
+      unitId,
+      mappedPage: Math.max(1, Math.floor(mapped)),
+      updatedAt,
+    }
+  }
+  return out
+}
+
+/** Merge stored per-book starts with legacy single anchor (display / open helpers). */
+export function resolveCurriculumBookStarts(
+  record: Pick<StudentRecord, 'curriculumBookStarts' | 'curriculumAnchorSectionId' | 'updatedAt'> | null | undefined,
+  library: BookLibraryPayload | null,
+  sectionOptions?: StudentSectionOption[],
+): Record<string, StudentCurriculumBookStart> {
+  const starts = sanitizeCurriculumBookStarts(record?.curriculumBookStarts)
+  if (Object.keys(starts).length > 0) return starts
+  const legacyId = record?.curriculumAnchorSectionId?.trim()
+  if (!legacyId || !library?.books?.length) return starts
+  const options = sectionOptions ?? []
+  const hit = options.find((o) => o.id === legacyId)
+  if (!hit) return starts
+  return {
+    [hit.bookId]: {
+      sectionId: hit.id,
+      unitId: hit.unitId,
+      mappedPage: typeof hit.startPageHint === 'number' && hit.startPageHint >= 1 ? Math.floor(hit.startPageHint) : 1,
+      updatedAt: record?.updatedAt?.trim() || new Date(0).toISOString(),
+    },
+  }
+}
+
+function mostRecentCurriculumBookStart(
+  starts: Record<string, StudentCurriculumBookStart>,
+  options: StudentSectionOption[],
+): StudentSectionOption | null {
+  const ranked = Object.values(starts).sort(
+    (a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt) || b.sectionId.localeCompare(a.sectionId),
+  )
+  for (const start of ranked) {
+    const hit = options.find((o) => o.id === start.sectionId)
+    if (hit) return hit
+  }
+  return null
 }
 
 function sanitizeSelectedSection(raw: unknown): StudentBookSectionRef | undefined {
@@ -430,151 +616,10 @@ function sanitizeSelectedSection(raw: unknown): StudentBookSectionRef | undefine
   }
 }
 
-function makeNotebookId(prefix: string): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-}
-
-function sanitizeNotebookEntry(raw: unknown): LessonNotebookEntry | null {
-  if (!raw || typeof raw !== 'object') return null
-  const src = raw as Partial<LessonNotebookEntry>
-  const entryId = typeof src.entryId === 'string' ? src.entryId.trim() : ''
-  const sectionId = typeof src.sectionId === 'string' ? src.sectionId.trim() : ''
-  if (!entryId || !sectionId) return null
-  const nowIso = new Date().toISOString()
-  return {
-    entryId,
-    sectionId,
-    layer: src.layer === 'overlay' ? 'overlay' : 'doc',
-    payload: src.payload && typeof src.payload === 'object' ? src.payload : {},
-    createdAt: typeof src.createdAt === 'string' && src.createdAt.trim() ? src.createdAt : nowIso,
-    updatedAt: typeof src.updatedAt === 'string' && src.updatedAt.trim() ? src.updatedAt : nowIso,
-  }
-}
-
-function sanitizeNotebookSection(raw: unknown, fallbackSessionId: string): LessonNotebookSection | null {
-  if (!raw || typeof raw !== 'object') return null
-  const src = raw as Partial<LessonNotebookSection>
-  const sectionId = typeof src.sectionId === 'string' ? src.sectionId.trim() : ''
-  const anchorKey = typeof src.anchorKey === 'string' ? src.anchorKey.trim() : ''
-  const title = typeof src.title === 'string' ? src.title.trim() : ''
-  if (!sectionId || !anchorKey || !title) return null
-  const entriesRaw = Array.isArray(src.entries) ? src.entries : []
-  const entries = entriesRaw
-    .map((item) => sanitizeNotebookEntry(item))
-    .filter((item): item is LessonNotebookEntry => !!item)
-  return {
-    sectionId,
-    sessionId:
-      typeof src.sessionId === 'string' && src.sessionId.trim()
-        ? src.sessionId.trim()
-        : fallbackSessionId,
-    anchorType: src.anchorType === 'toc_part' ? 'toc_part' : 'page_span',
-    anchorKey,
-    title,
-    order: Number.isFinite(Number(src.order)) ? Math.max(0, Math.floor(Number(src.order))) : 0,
-    entries,
-  }
-}
-
-function sanitizeLessonNotebookSession(
-  raw: unknown,
-  classSessionId: string,
-  studentId: string,
-): LessonNotebookSession | undefined {
-  if (!raw || typeof raw !== 'object') return undefined
-  const src = raw as Partial<LessonNotebookSession>
-  const notebookSessionId = typeof src.sessionId === 'string' ? src.sessionId.trim() : ''
-  const bookId = typeof src.bookId === 'string' ? src.bookId.trim() : ''
-  if (!notebookSessionId || !bookId) return undefined
-  const sectionsRaw = Array.isArray(src.sections) ? src.sections : []
-  const sections = sectionsRaw
-    .map((item) => sanitizeNotebookSection(item, notebookSessionId))
-    .filter((item): item is LessonNotebookSection => !!item)
-    .sort((a, b) => a.order - b.order)
-  const startedAt = optionalIsoString(src.startedAt) ?? new Date().toISOString()
-  return {
-    sessionId: notebookSessionId,
-    studentId:
-      typeof src.studentId === 'string' && src.studentId.trim() ? src.studentId.trim() : studentId,
-    classSessionId:
-      typeof src.classSessionId === 'string' && src.classSessionId.trim()
-        ? src.classSessionId.trim()
-        : classSessionId,
-    bookId,
-    unitId: typeof src.unitId === 'string' && src.unitId.trim() ? src.unitId.trim() : undefined,
-    startedAt,
-    endedAt: optionalIsoString(src.endedAt),
-    sections,
-  }
-}
-
-function formatNotebookPageSpan(startPageHint?: number, endPageHint?: number): string {
-  const start =
-    typeof startPageHint === 'number' && Number.isFinite(startPageHint) && startPageHint >= 1
-      ? Math.floor(startPageHint)
-      : 1
-  const end =
-    typeof endPageHint === 'number' && Number.isFinite(endPageHint) && endPageHint >= start
-      ? Math.floor(endPageHint)
-      : start
-  return end > start ? `p${start}-${end}` : `p${start}`
-}
-
-export function buildNotebookPageSpanKey(startPage: number, endPage?: number | null): string {
+export function buildSpreadPageSpanKey(startPage: number, endPage?: number | null): string {
   const start = Number.isFinite(Number(startPage)) ? Math.max(1, Math.floor(Number(startPage))) : 1
   const rawEnd = Number.isFinite(Number(endPage)) ? Math.max(start, Math.floor(Number(endPage))) : start
   return rawEnd > start ? `p${start}-${rawEnd}` : `p${start}`
-}
-
-function createInitialLessonNotebookSession(student: StudentRecord, session: StudentClassSession): LessonNotebookSession {
-  const nowIso = new Date().toISOString()
-  const section = session.selectedSection
-  const pageSpan = formatNotebookPageSpan(section?.startPageHint, section?.endPageHint)
-  const bookId = section?.bookId?.trim() || student.assignedBookIds?.[0]?.trim() || 'unknown-book'
-  const unitId = section?.unitId?.trim() || student.assignedUnitRefs?.find((row) => row.bookId === bookId)?.unitId?.trim()
-  const notebookSessionId = makeNotebookId('lesson-notebook')
-  const notebookSectionId = makeNotebookId('lesson-notebook-section')
-  const dateLabel = new Date(session.scheduledFor).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
-  const lessonPartLabel = (section?.partTitle ?? section?.lessonTitle ?? section?.title ?? '').trim()
-  const pageLabel = pageSpan.startsWith('p') ? pageSpan.slice(1) : pageSpan
-  const headerEntry: LessonNotebookEntry = {
-    entryId: makeNotebookId('lesson-notebook-entry'),
-    sectionId: notebookSectionId,
-    layer: 'doc',
-    payload: {
-      kind: 'header_block',
-      title: lessonPartLabel || section?.title?.trim() || session.title,
-      dateLabel,
-      lessonPartLabel,
-      pageLabel,
-      pageSpan,
-    },
-    createdAt: nowIso,
-    updatedAt: nowIso,
-  }
-  return {
-    sessionId: notebookSessionId,
-    studentId: student.id,
-    classSessionId: session.id,
-    bookId,
-    unitId,
-    startedAt: session.classStartedAt ?? nowIso,
-    sections: [
-      {
-        sectionId: notebookSectionId,
-        sessionId: notebookSessionId,
-        anchorType: 'page_span',
-        anchorKey: pageSpan,
-        title: pageSpan,
-        order: 0,
-        entries: [headerEntry],
-      },
-    ],
-  }
 }
 
 function flattenUnitSections(book: BookRecord, unit: BookUnitRecord): StudentSectionOption[] {
@@ -684,15 +729,30 @@ function sanitizeClassSession(raw: Partial<StudentClassSession> | null | undefin
     vocabularyReviewPlan: sanitizeVocabularyReviewPlan(raw.vocabularyReviewPlan),
     practiceItems: sanitizePracticeItems(raw.practiceItems),
     teacherNotes: typeof raw.teacherNotes === 'string' && raw.teacherNotes.trim() ? raw.teacherNotes.trim() : undefined,
+    prepTimeBlocks: sanitizePrepTimeBlocks(raw.prepTimeBlocks),
+    prepOutlineSummary:
+      typeof raw.prepOutlineSummary === 'string' && raw.prepOutlineSummary.trim()
+        ? raw.prepOutlineSummary.trim()
+        : undefined,
+    prepNotes: typeof raw.prepNotes === 'string' && raw.prepNotes.trim() ? raw.prepNotes.trim() : undefined,
+    ...sanitizeClassPrepExtras({
+      prepPriorities: raw.prepPriorities,
+      prepSuggestedActivities: raw.prepSuggestedActivities,
+      prepCheckpointMoments: raw.prepCheckpointMoments,
+      prepWordsToRevisit: raw.prepWordsToRevisit,
+      prepDifferentiationTips: raw.prepDifferentiationTips,
+      prepCarryOver: raw.prepCarryOver,
+    }),
     aiPrepSummary:
       typeof raw.aiPrepSummary === 'string' && raw.aiPrepSummary.trim() ? raw.aiPrepSummary.trim() : undefined,
     classStartedAt: optionalIsoString(raw.classStartedAt),
+    extendedMinutesTotal: sanitizeExtendedMinutesTotal(raw.extendedMinutesTotal),
     classEndedAt: optionalIsoString(raw.classEndedAt),
     classEndNote: sanitizeClassEndNote(raw.classEndNote),
     sessionNote: sanitizeSessionNote(raw.sessionNote),
     postClassRecapPromptDismissed: raw.postClassRecapPromptDismissed === true ? true : undefined,
+    readingCheckWrapLine: sanitizeReadingCheckWrapLine(raw.readingCheckWrapLine),
     bookmarkAtEnd: sanitizeBookmarkAtEnd(raw.bookmarkAtEnd),
-    lessonNotebookSession: sanitizeLessonNotebookSession(raw.lessonNotebookSession, id, ''),
     createdAt: typeof raw.createdAt === 'string' && raw.createdAt.trim() ? raw.createdAt : now,
     updatedAt: typeof raw.updatedAt === 'string' && raw.updatedAt.trim() ? raw.updatedAt : now,
   }
@@ -731,7 +791,7 @@ function sanitizeWeeklySlotAssignment(raw: Partial<WeeklySlotAssignment> | null 
   if (!id || !studentId) return null
   const dayOfWeek = Number(raw.dayOfWeek)
   const startMinute = Number(raw.startMinute)
-  const durationMinutes = Number(raw.durationMinutes) === 60 ? 60 : 30
+  const durationMinutes = normalizeClassDurationMinutes(raw.durationMinutes, 30)
   if (!Number.isInteger(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6) return null
   if (!Number.isFinite(startMinute)) return null
   const nowIso = new Date().toISOString()
@@ -755,6 +815,38 @@ function overlapsSlot(a: WeeklySlotAssignment, b: WeeklySlotAssignment): boolean
   return aStart < bEnd && bStart < aEnd
 }
 
+function sessionMinutesOverlap(aStart: number, aDur: number, bStart: number, bDur: number): boolean {
+  return aStart < bStart + bDur && bStart < aStart + aDur
+}
+
+export function localDateKey(day: Date): string {
+  const y = day.getFullYear()
+  const m = String(day.getMonth() + 1).padStart(2, '0')
+  const d = String(day.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+function sanitizeWeeklySlotException(
+  raw: Partial<WeeklySlotException> | null | undefined,
+): WeeklySlotException | null {
+  if (!raw || typeof raw.id !== 'string' || typeof raw.slotId !== 'string') return null
+  const id = raw.id.trim()
+  const slotId = raw.slotId.trim()
+  const localDate = typeof raw.localDate === 'string' ? raw.localDate.trim() : ''
+  if (!id || !slotId || !/^\d{4}-\d{2}-\d{2}$/.test(localDate)) return null
+  const type = raw.type === 'cancelled' ? 'cancelled' : raw.type === 'rescheduled' ? 'rescheduled' : null
+  if (!type) return null
+  const nowIso = new Date().toISOString()
+  return {
+    id,
+    slotId,
+    localDate,
+    type,
+    createdAt: typeof raw.createdAt === 'string' && raw.createdAt.trim() ? raw.createdAt : nowIso,
+    updatedAt: typeof raw.updatedAt === 'string' && raw.updatedAt.trim() ? raw.updatedAt : nowIso,
+  }
+}
+
 function isoForSlotDate(date: Date, startMinute: number): string {
   const out = new Date(date)
   out.setHours(0, 0, 0, 0)
@@ -770,8 +862,7 @@ function computeNextClass(sessions: StudentClassSession[]): StudentClassSession 
   const now = Date.now()
   const upcoming = sessions
     .filter((session) => {
-      if (session.status === 'completed' || session.status === 'cancelled' || session.status === 'in_progress')
-        return false
+      if (isClosedClassSessionStatus(session.status) || session.status === 'in_progress') return false
       const ms = new Date(session.scheduledFor).getTime()
       return Number.isFinite(ms) && ms >= now
     })
@@ -786,8 +877,12 @@ function formatNextClassLabel(nextClass: StudentClassSession | null): string {
   return `${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · ${nextClass.title}`
 }
 
-export function getStudentsListView(library?: BookLibraryPayload | null): StudentListItemView[] {
+export function getStudentsListView(
+  library?: BookLibraryPayload | null,
+  options?: { includeOnBreak?: boolean },
+): StudentListItemView[] {
   ensureStudentAssignmentsMigrated()
+  pruneOrphanWeeklySlots()
   generateScheduledClassesWindow(30)
   const knownStudents = getKnownStudentSummaries()
   const storedStudents = getStudents()
@@ -806,13 +901,23 @@ export function getStudentsListView(library?: BookLibraryPayload | null): Studen
       createdAt: now,
       updatedAt: now,
       assignedQuizIds: [],
+      rosterStatus: 'active',
     }
     saveStudent(created)
     studentsByKey.set(key, created)
   }
 
   const knownByKey = new Map(knownStudents.map((student) => [normalizeStudentKey(student.name), student]))
-  const allStudents = [...studentsByKey.values()].sort((a, b) => a.name.localeCompare(b.name))
+  const includeOnBreak = options?.includeOnBreak === true
+  const allStudents = [...studentsByKey.values()]
+    .filter((student) => includeOnBreak || !isStudentOnBreak(student))
+    .sort((a, b) => a.name.localeCompare(b.name))
+  const allWeeklySlots = getWeeklySlotAssignments()
+  const weeklySlotStudentIds = new Set(
+    allWeeklySlots
+      .map((slot) => slot.studentId)
+      .filter((id): id is string => typeof id === 'string' && id.trim().length > 0),
+  )
 
   const students = allStudents.map((student) => {
     const studentKey = normalizeStudentKey(student.name)
@@ -855,6 +960,16 @@ export function getStudentsListView(library?: BookLibraryPayload | null): Studen
         .filter((session): session is StudentClassSession => !!session),
     )
     const nextClass = computeNextClass(scheduledClasses)
+    const setup = resolveStudentSetupStatus({
+      studentId: student.id,
+      assignedBookIds: student.assignedBookIds,
+      nextClass,
+      weeklySlotStudentIds,
+      weeklySlots: allWeeklySlots,
+      nextClassLabel: formatNextClassLabel(nextClass),
+      hasBookedClass: studentHasBookedClass(scheduledClasses),
+    })
+    const onBreak = isStudentOnBreak(student)
 
     return {
       id: student.id,
@@ -867,13 +982,21 @@ export function getStudentsListView(library?: BookLibraryPayload | null): Studen
       currentChallengeLabel,
       totalAttempts: known?.totalQuizzes ?? 0,
       lastActiveLabel: known ? formatLastActive(known.lastDate) : 'No activity yet',
-      nextClassLabel: formatNextClassLabel(nextClass),
+      nextClassLabel: onBreak ? 'On break' : formatNextClassLabel(nextClass),
+      nextClassAt: onBreak || !nextClass ? null : nextClass.scheduledFor,
       curriculumBookLabel: curriculum.book,
       curriculumUnitLabel: curriculum.unit,
       curriculumPageLabel: curriculum.page,
       curriculumThumbFilePath: curriculum.thumbFilePath,
       curriculumThumbUnitId: curriculum.thumbUnitId,
       curriculumThumbPage: curriculum.thumbPage,
+      createdAt: student.createdAt,
+      needsSetup: onBreak ? false : setup.needsSetup,
+      setupHint: onBreak ? 'On break — not on the active roster' : setup.setupHint,
+      finishSetupHref: buildStudentFinishSetupHref(student.id, setup),
+      openPlanHref: buildStudentOpenPlanHref(student.id),
+      isOnBreak: onBreak,
+      onBreakAt: typeof student.onBreakAt === 'string' ? student.onBreakAt : undefined,
     }
   })
 
@@ -881,9 +1004,50 @@ export function getStudentsListView(library?: BookLibraryPayload | null): Studen
   return students
 }
 
-export function getStudentProfileView(studentId: string): StudentProfileView | null {
+export function getStudentSetupStatus(studentId: string): StudentSetupStatus {
+  ensureStudentAssignmentsMigrated()
   generateScheduledClassesWindow(30)
-  const students = getStudentsListView()
+  const student = getStudents().find((row) => row.id === studentId)
+  if (!student) {
+    return {
+      needsSetup: false,
+      setupHint: '',
+      hasBook: true,
+      hasWeeklySlot: true,
+      hasUpcomingClass: true,
+      weeklySlotSummary: '',
+      nextClassLabel: '',
+    }
+  }
+  const allWeeklySlots = getWeeklySlotAssignments()
+  const weeklySlotStudentIds = new Set(
+    allWeeklySlots
+      .map((slot) => slot.studentId)
+      .filter((id): id is string => typeof id === 'string' && id.trim().length > 0),
+  )
+  const scheduledClasses = sortClassesByDate(
+    (student.scheduledClasses ?? [])
+      .map((session) => sanitizeClassSession(session))
+      .filter((session): session is StudentClassSession => !!session),
+  )
+  const nextClass = computeNextClass(scheduledClasses)
+  return resolveStudentSetupStatus({
+    studentId: student.id,
+    assignedBookIds: student.assignedBookIds,
+    nextClass,
+    weeklySlotStudentIds,
+    weeklySlots: allWeeklySlots,
+    nextClassLabel: formatNextClassLabel(nextClass),
+    hasBookedClass: studentHasBookedClass(scheduledClasses),
+  })
+}
+
+export function getStudentProfileView(
+  studentId: string,
+  library?: BookLibraryPayload | null,
+): StudentProfileView | null {
+  generateScheduledClassesWindow(30)
+  const students = getStudentsListView(library, { includeOnBreak: true })
   const student =
     students.find((item) => item.id === studentId) ??
     students.find((item) =>
@@ -941,10 +1105,12 @@ export function getStudentProfileView(studentId: string): StudentProfileView | n
     assignedBookIds: dedupeStrings(registryRecord?.assignedBookIds ?? []),
     assignedUnitRefs: dedupeUnitRefs(registryRecord?.assignedUnitRefs ?? []),
     curriculumAnchorSectionId: registryRecord?.curriculumAnchorSectionId?.trim() || undefined,
+    curriculumBookStarts: sanitizeCurriculumBookStarts(registryRecord?.curriculumBookStarts),
     curriculumHistory: [...(registryRecord?.curriculumHistory ?? [])].sort(
       (a, b) => new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime(),
     ),
     scheduledClasses,
+    showFirstClassWelcome: studentShowsFirstClassWelcome(registryRecord),
   }
 }
 
@@ -1063,6 +1229,30 @@ function resolveCurriculumForStudentCard(
     }
   }
 
+  const bookStarts = sanitizeCurriculumBookStarts(record.curriculumBookStarts)
+  const startEntries = Object.entries(bookStarts).sort(
+    (a, b) => new Date(b[1].updatedAt).getTime() - new Date(a[1].updatedAt).getTime(),
+  )
+  if (startEntries.length > 0) {
+    const [bookId, start] = startEntries[0]!
+    const pageNum =
+      typeof start.mappedPage === 'number' && Number.isFinite(start.mappedPage) && start.mappedPage >= 1
+        ? Math.floor(start.mappedPage)
+        : 1
+    const startBook = bookMap.get(bookId)
+    const startUnit = startBook?.units.find((u) => u.id === start.unitId)
+    const displayPage = mapPdfPageToDisplayLabel(pageNum, startBook, startUnit, null, numberingMode)
+    const fp = unitFilePath(bookId, start.unitId)
+    return {
+      book: resolveBook(bookId),
+      unit: resolveUnit(bookId, start.unitId),
+      page: displayPage,
+      thumbFilePath: fp,
+      thumbUnitId: fp ? start.unitId : null,
+      thumbPage: fp ? pageNum : null,
+    }
+  }
+
   const refs = dedupeUnitRefs(record.assignedUnitRefs ?? [])
   if (refs.length > 0) {
     const r = refs[0]
@@ -1110,6 +1300,12 @@ export function getStudentAssignedQuizIds(studentId: string): string[] | null {
 
 export function getTeacherWeeklyScheduleConfig(): TeacherWeeklyScheduleConfig {
   if (typeof window === 'undefined') return sanitizeWeeklyScheduleConfig(null)
+  if (isWeeklyScheduleDiskActive()) {
+    const disk = getWeeklyScheduleDiskCache()
+    return sanitizeWeeklyScheduleConfig(
+      (disk?.config ?? null) as Partial<TeacherWeeklyScheduleConfig> | null,
+    )
+  }
   try {
     const raw = localStorage.getItem(WEEKLY_SCHEDULE_CONFIG_KEY)
     const parsed = raw ? (JSON.parse(raw) as Partial<TeacherWeeklyScheduleConfig>) : null
@@ -1122,7 +1318,11 @@ export function getTeacherWeeklyScheduleConfig(): TeacherWeeklyScheduleConfig {
 export function saveTeacherWeeklyScheduleConfig(input: Partial<TeacherWeeklyScheduleConfig>): { ok: true } {
   if (typeof window !== 'undefined') {
     const next = sanitizeWeeklyScheduleConfig(input)
-    localStorage.setItem(WEEKLY_SCHEDULE_CONFIG_KEY, JSON.stringify(next))
+    if (isWeeklyScheduleDiskActive()) {
+      setWeeklyScheduleConfigOnDiskCache(next as unknown as Record<string, unknown>)
+    } else {
+      localStorage.setItem(WEEKLY_SCHEDULE_CONFIG_KEY, JSON.stringify(next))
+    }
   }
   generateScheduledClassesWindow(30)
   return { ok: true }
@@ -1131,8 +1331,16 @@ export function saveTeacherWeeklyScheduleConfig(input: Partial<TeacherWeeklySche
 export function getWeeklySlotAssignments(): WeeklySlotAssignment[] {
   if (typeof window === 'undefined') return []
   try {
-    const raw = localStorage.getItem(WEEKLY_SLOT_ASSIGNMENTS_KEY)
-    const parsed = raw ? (JSON.parse(raw) as Array<Partial<WeeklySlotAssignment>>) : []
+    let parsed: Array<Partial<WeeklySlotAssignment>> = []
+    if (isWeeklyScheduleDiskActive()) {
+      const disk = getWeeklyScheduleDiskCache()
+      parsed = Array.isArray(disk?.assignments)
+        ? (disk.assignments as Array<Partial<WeeklySlotAssignment>>)
+        : []
+    } else {
+      const raw = localStorage.getItem(WEEKLY_SLOT_ASSIGNMENTS_KEY)
+      parsed = raw ? (JSON.parse(raw) as Array<Partial<WeeklySlotAssignment>>) : []
+    }
     return parsed
       .map((item) => sanitizeWeeklySlotAssignment(item))
       .filter((item): item is WeeklySlotAssignment => !!item)
@@ -1142,49 +1350,1005 @@ export function getWeeklySlotAssignments(): WeeklySlotAssignment[] {
   }
 }
 
-function saveWeeklySlotAssignments(next: WeeklySlotAssignment[]): void {
-  if (typeof window === 'undefined') return
-  localStorage.setItem(WEEKLY_SLOT_ASSIGNMENTS_KEY, JSON.stringify(next))
+function isBrowserStorageQuotaError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+  const name = 'name' in err && typeof (err as { name?: unknown }).name === 'string' ? (err as { name: string }).name : ''
+  const message =
+    'message' in err && typeof (err as { message?: unknown }).message === 'string'
+      ? (err as { message: string }).message
+      : ''
+  return (
+    name === 'QuotaExceededError' ||
+    name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+    /exceeded the quota|quotaexceeded/i.test(message)
+  )
 }
 
-export function upsertWeeklySlotAssignment(
-  input: WeeklySlotAssignmentInput,
-): { ok: true; assignment: WeeklySlotAssignment } | { ok: false; error: string } {
+const BROWSER_STORAGE_FULL_MESSAGE =
+  'Browser storage is full. Download a backup in Settings, free some space, then try again.'
+
+/** Drop schedule exceptions older than keepDays (local calendar days). */
+function pruneStaleWeeklySlotExceptions(
+  rows: WeeklySlotException[],
+  keepDays: number = 45,
+): WeeklySlotException[] {
+  const cutoff = new Date()
+  cutoff.setHours(0, 0, 0, 0)
+  cutoff.setDate(cutoff.getDate() - Math.max(1, Math.floor(keepDays)))
+  const cutoffKey = localDateKey(cutoff)
+  return rows.filter((row) => row.localDate >= cutoffKey)
+}
+
+function saveWeeklySlotAssignments(next: WeeklySlotAssignment[]): void {
+  if (typeof window === 'undefined') return
+  if (isWeeklyScheduleDiskActive()) {
+    setWeeklySlotAssignmentsOnDiskCache(next)
+    return
+  }
+  try {
+    localStorage.setItem(WEEKLY_SLOT_ASSIGNMENTS_KEY, JSON.stringify(next))
+  } catch (err) {
+    if (isBrowserStorageQuotaError(err)) {
+      throw new Error(BROWSER_STORAGE_FULL_MESSAGE)
+    }
+    throw err
+  }
+}
+
+export function getWeeklySlotExceptions(): WeeklySlotException[] {
+  if (typeof window === 'undefined') return []
+  try {
+    let parsed: Array<Partial<WeeklySlotException>> = []
+    if (isWeeklyScheduleDiskActive()) {
+      const disk = getWeeklyScheduleDiskCache()
+      parsed = Array.isArray(disk?.exceptions)
+        ? (disk.exceptions as Array<Partial<WeeklySlotException>>)
+        : []
+    } else {
+      const raw = localStorage.getItem(WEEKLY_SLOT_EXCEPTIONS_KEY)
+      parsed = raw ? (JSON.parse(raw) as Array<Partial<WeeklySlotException>>) : []
+    }
+    return parsed
+      .map((item) => sanitizeWeeklySlotException(item))
+      .filter((item): item is WeeklySlotException => !!item)
+  } catch {
+    return []
+  }
+}
+
+function saveWeeklySlotExceptions(next: WeeklySlotException[]): void {
+  if (typeof window === 'undefined') return
+  const pruned = pruneStaleWeeklySlotExceptions(next, 45)
+  if (isWeeklyScheduleDiskActive()) {
+    setWeeklySlotExceptionsOnDiskCache(pruned)
+    return
+  }
+  const write = (rows: WeeklySlotException[]) => {
+    localStorage.setItem(WEEKLY_SLOT_EXCEPTIONS_KEY, JSON.stringify(rows))
+  }
+  try {
+    write(pruned)
+  } catch (err) {
+    if (!isBrowserStorageQuotaError(err)) throw err
+    const tighter = pruneStaleWeeklySlotExceptions(pruned, 14)
+    try {
+      write(tighter)
+    } catch (retryErr) {
+      if (isBrowserStorageQuotaError(retryErr)) {
+        throw new Error(BROWSER_STORAGE_FULL_MESSAGE)
+      }
+      throw retryErr
+    }
+  }
+}
+
+function upsertWeeklySlotException(input: {
+  slotId: string
+  localDate: string
+  type: WeeklySlotException['type']
+}): WeeklySlotException {
+  const nowIso = new Date().toISOString()
+  const existing = getWeeklySlotExceptions()
+  const found = existing.find(
+    (row) => row.slotId === input.slotId && row.localDate === input.localDate,
+  )
+  if (found) {
+    const next = existing.map((row) =>
+      row.id === found.id
+        ? { ...row, type: input.type, updatedAt: nowIso }
+        : row,
+    )
+    saveWeeklySlotExceptions(next)
+    return { ...found, type: input.type, updatedAt: nowIso }
+  }
+  const created: WeeklySlotException = {
+    id: `slot-ex-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    slotId: input.slotId,
+    localDate: input.localDate,
+    type: input.type,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  }
+  saveWeeklySlotExceptions([...existing, created])
+  return created
+}
+
+function removeWeeklySlotExceptionsForSlot(slotId: string): void {
+  const next = getWeeklySlotExceptions().filter((row) => row.slotId !== slotId)
+  saveWeeklySlotExceptions(next)
+}
+
+function studentNameForId(studentId: string): string {
+  return getStudents().find((row) => row.id === studentId)?.name.trim() || 'Student'
+}
+
+function isSchedulableStudent(student: StudentRecord | undefined): student is StudentRecord {
+  return !!student && !isStudentOnBreak(student)
+}
+
+function weeklySlotConflictMessage(collision: WeeklySlotAssignment): string {
+  return formatScheduleConflictError({
+    kind: 'weekly_slot',
+    studentName: studentNameForId(collision.studentId),
+    dayOfWeek: collision.dayOfWeek,
+    startMinute: collision.startMinute,
+    durationMinutes: collision.durationMinutes,
+  })
+}
+
+function slotHasExceptionOnDate(slotId: string, targetDay: Date): boolean {
+  const occurrenceDate = localDateKey(targetDay)
+  return getWeeklySlotExceptions().some(
+    (row) => row.slotId === slotId && row.localDate === occurrenceDate,
+  )
+}
+
+function slotWouldBlockTimeOnDate(
+  slot: WeeklySlotAssignment,
+  targetDay: Date,
+  snappedStart: number,
+  durationMinutes: number,
+): boolean {
+  if (slot.dayOfWeek !== targetDay.getDay()) return false
+  if (slotHasExceptionOnDate(slot.id, targetDay)) return false
+
+  const student = getStudents().find((row) => row.id === slot.studentId)
+  if (!isSchedulableStudent(student)) return false
+
+  const occurrenceDate = localDateKey(targetDay)
+  const sessionsOnDate = (student.scheduledClasses ?? []).filter((session) => {
+    if (session.sourceSlotId !== slot.id) return false
+    const when = new Date(session.scheduledFor)
+    return Number.isFinite(when.getTime()) && localDateKey(when) === occurrenceDate
+  })
+
+  if (
+    sessionsOnDate.some(
+      (session) => session.status !== 'cancelled' && session.status !== 'completed',
+    )
+  ) {
+    return false
+  }
+
+  if (sessionsOnDate.length > 0) {
+    return false
+  }
+
+  return sessionMinutesOverlap(snappedStart, durationMinutes, slot.startMinute, slot.durationMinutes)
+}
+
+export function findScheduleConflictOnDate(
+  excludeSessionId: string | null,
+  targetDay: Date,
+  startMinute: number,
+  durationMinutes: number,
+  options?: { excludeSlotId?: string },
+): ScheduleConflict | null {
+  const snappedStart = Math.floor(startMinute / SLOT_MINUTES) * SLOT_MINUTES
+  const excludeSlotId = options?.excludeSlotId?.trim() || null
+  const targetStartMs = new Date(
+    targetDay.getFullYear(),
+    targetDay.getMonth(),
+    targetDay.getDate(),
+    0,
+    0,
+    0,
+    0,
+  ).getTime()
+  const targetEndMs = targetStartMs + 24 * 60 * 60 * 1000
+
+  for (const student of getActiveStudents()) {
+    for (const session of student.scheduledClasses ?? []) {
+      if (excludeSessionId && session.id === excludeSessionId) continue
+      if (excludeSlotId && session.sourceSlotId?.trim() === excludeSlotId) continue
+      if (session.status === 'completed' || session.status === 'cancelled') continue
+      const when = new Date(session.scheduledFor)
+      const t = when.getTime()
+      if (!Number.isFinite(t) || t < targetStartMs || t >= targetEndMs) continue
+      const otherStart = when.getHours() * 60 + when.getMinutes()
+      const otherDur = session.durationMin
+      if (sessionMinutesOverlap(snappedStart, durationMinutes, otherStart, otherDur)) {
+        return {
+          kind: 'session',
+          studentName: student.name.trim() || 'Student',
+          scheduledFor: session.scheduledFor,
+          durationMin: otherDur,
+        }
+      }
+    }
+  }
+
+  for (const slot of getWeeklySlotAssignments()) {
+    if (excludeSlotId && slot.id === excludeSlotId) continue
+    if (!slotWouldBlockTimeOnDate(slot, targetDay, snappedStart, durationMinutes)) continue
+    return {
+      kind: 'weekly_slot',
+      studentName: studentNameForId(slot.studentId),
+      dayOfWeek: slot.dayOfWeek,
+      startMinute: slot.startMinute,
+      durationMinutes: slot.durationMinutes,
+      onDate: localDateKey(targetDay),
+    }
+  }
+
+  return null
+}
+
+/** True when a weekly pattern would collide with sessions/slots over the next N days. */
+function findWeeklyPatternHorizonConflict(
+  assignment: WeeklySlotAssignment,
+  excludeSlotId?: string,
+  daysAhead: number = 30,
+): ScheduleConflict | null {
+  const windowDays = Math.max(1, Math.min(90, Math.floor(daysAhead)))
+  generateScheduledClassesWindow(windowDays)
+
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const horizon = new Date(today)
+  horizon.setDate(horizon.getDate() + windowDays)
+  const cursor = new Date(today)
+
+  while (cursor < horizon) {
+    if (cursor.getDay() === assignment.dayOfWeek) {
+      const occurrenceDate = localDateKey(cursor)
+      if (excludeSlotId) {
+        const exception = getWeeklySlotExceptions().find(
+          (row) => row.slotId === excludeSlotId && row.localDate === occurrenceDate,
+        )
+        if (exception) {
+          cursor.setDate(cursor.getDate() + 1)
+          continue
+        }
+      }
+      const conflict = findScheduleConflictOnDate(
+        null,
+        cursor,
+        assignment.startMinute,
+        assignment.durationMinutes,
+        { excludeSlotId },
+      )
+      if (conflict) return conflict
+    }
+    cursor.setDate(cursor.getDate() + 1)
+  }
+
+  return null
+}
+
+export function validateSingleOccurrenceReschedule(
+  studentId: string,
+  sessionId: string | null,
+  targetDay: Date,
+  startMinute: number,
+  durationMinutes: number,
+): { ok: true } | { ok: false; error: string } {
+  const config = getTeacherWeeklyScheduleConfig()
+  if (!config.workingDays.includes(targetDay.getDay())) {
+    return { ok: false, error: 'Unavailable that day.' }
+  }
+  const endMinute = startMinute + durationMinutes
+  if (startMinute < config.startMinute || endMinute > config.endMinute) {
+    return { ok: false, error: 'Time is outside your configured teaching hours.' }
+  }
+
+  generateScheduledClassesWindow(daysAheadToCover(targetDay))
+
+  const conflict = findScheduleConflictOnDate(sessionId, targetDay, startMinute, durationMinutes)
+  if (conflict) {
+    return { ok: false, error: formatScheduleConflictError(conflict) }
+  }
+
+  return { ok: true }
+}
+
+export function rescheduleSingleClassOccurrence(
+  studentId: string,
+  sessionId: string,
+  targetDay: Date,
+  startMinute: number,
+  durationMinutes: number,
+): { ok: true } | { ok: false; error: string } {
+  const validated = validateSingleOccurrenceReschedule(
+    studentId,
+    sessionId,
+    targetDay,
+    startMinute,
+    durationMinutes,
+  )
+  if (!validated.ok) return validated
+
   const students = getStudents()
-  if (!students.some((student) => student.id === input.studentId)) {
+  const idx = students.findIndex((row) => row.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  const session = (student.scheduledClasses ?? []).find((row) => row.id === sessionId)
+  if (!session) return { ok: false, error: 'Class session not found.' }
+  const slotId = session.sourceSlotId?.trim()
+  if (!slotId) return { ok: false, error: 'This class is not tied to a weekly slot.' }
+
+  const originalDate = new Date(session.scheduledFor)
+  if (!Number.isFinite(originalDate.getTime())) {
+    return { ok: false, error: 'Invalid class date.' }
+  }
+  const originalLocalDate = localDateKey(originalDate)
+
+  const snappedStart = Math.floor(startMinute / SLOT_MINUTES) * SLOT_MINUTES
+  const scheduledFor = isoForSlotDate(
+    new Date(targetDay.getFullYear(), targetDay.getMonth(), targetDay.getDate()),
+    snappedStart,
+  )
+  const nowIso = new Date().toISOString()
+
+  upsertWeeklySlotException({
+    slotId,
+    localDate: originalLocalDate,
+    type: 'rescheduled',
+  })
+
+  const nextSessions = sortClassesByDate(
+    (student.scheduledClasses ?? [])
+      .map((row) => {
+        if (row.id !== sessionId) return row
+        return {
+          ...row,
+          scheduledFor,
+          durationMin: durationMinutes,
+          updatedAt: nowIso,
+        }
+      })
+      .map((row) => sanitizeClassSession(row))
+      .filter((row): row is StudentClassSession => !!row),
+  )
+
+  saveStudent({ ...student, scheduledClasses: nextSessions, updatedAt: nowIso })
+  notifyStudentLocalDataChanged(studentId)
+  return { ok: true }
+}
+
+export function createOneOffClassSession(
+  studentId: string,
+  targetDay: Date,
+  startMinute: number,
+  durationMinutes: number,
+): { ok: true; session: StudentClassSession } | { ok: false; error: string } {
+  const studentCheck = getStudents().find((row) => row.id === studentId)
+  if (!studentCheck) return { ok: false, error: 'Student not found.' }
+  if (isStudentOnBreak(studentCheck)) {
+    return { ok: false, error: 'This student is on break. Restore them before scheduling a class.' }
+  }
+
+  const validated = validateSingleOccurrenceReschedule(
+    studentId,
+    null,
+    targetDay,
+    startMinute,
+    durationMinutes,
+  )
+  if (!validated.ok) return validated
+
+  const student = getStudents().find((row) => row.id === studentId)
+  if (!student) return { ok: false, error: 'Student not found.' }
+
+  const snappedStart = Math.floor(startMinute / SLOT_MINUTES) * SLOT_MINUTES
+  const scheduledFor = isoForSlotDate(
+    new Date(targetDay.getFullYear(), targetDay.getMonth(), targetDay.getDate()),
+    snappedStart,
+  )
+
+  return upsertStudentClassSession(studentId, {
+    title: `${student.name.trim() || 'Student'} class`,
+    scheduledFor,
+    durationMin: durationMinutes,
+    status: 'planned',
+  })
+}
+
+export function updateOneOffClassSession(
+  studentId: string,
+  sessionId: string,
+  targetDay: Date,
+  startMinute: number,
+  durationMinutes: number,
+): { ok: true } | { ok: false; error: string } {
+  const validated = validateSingleOccurrenceReschedule(
+    studentId,
+    sessionId,
+    targetDay,
+    startMinute,
+    durationMinutes,
+  )
+  if (!validated.ok) return validated
+
+  const students = getStudents()
+  const idx = students.findIndex((row) => row.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  const session = (student.scheduledClasses ?? []).find((row) => row.id === sessionId)
+  if (!session) return { ok: false, error: 'Class session not found.' }
+  if (session.sourceSlotId?.trim()) {
+    return { ok: false, error: 'This class is tied to a weekly slot. Use the recurring edit flow.' }
+  }
+
+  const snappedStart = Math.floor(startMinute / SLOT_MINUTES) * SLOT_MINUTES
+  const scheduledFor = isoForSlotDate(
+    new Date(targetDay.getFullYear(), targetDay.getMonth(), targetDay.getDate()),
+    snappedStart,
+  )
+  const nowIso = new Date().toISOString()
+
+  const nextSessions = sortClassesByDate(
+    (student.scheduledClasses ?? [])
+      .map((row) => {
+        if (row.id !== sessionId) return row
+        return {
+          ...row,
+          scheduledFor,
+          durationMin: durationMinutes,
+          updatedAt: nowIso,
+        }
+      })
+      .map((row) => sanitizeClassSession(row))
+      .filter((row): row is StudentClassSession => !!row),
+  )
+
+  saveStudent({ ...student, scheduledClasses: nextSessions, updatedAt: nowIso })
+  notifyStudentLocalDataChanged(studentId)
+  return { ok: true }
+}
+
+/** Restore planned vs prepared after leaving live without completing. */
+function statusAfterLeavingLive(session: StudentClassSession): 'planned' | 'prepared' {
+  const hasOutline = Boolean(session.prepTimeBlocks?.length)
+  const hasPrepContent =
+    hasOutline || Boolean(session.prepNotes?.trim()) || hasPrepExtras(session) || Boolean(session.prepOutlineSummary?.trim())
+  return hasPrepContent ? 'prepared' : 'planned'
+}
+
+/**
+ * Leave a live session without completing: clear live start, no bookmark, no completed.
+ * Idempotent when the class is already planned/prepared.
+ */
+export function leaveLiveClassSessionWithoutCompleting(
+  studentId: string,
+  sessionId: string,
+): { ok: true; status: 'planned' | 'prepared' } | { ok: false; error: string } {
+  const students = getStudents()
+  const idx = students.findIndex((row) => row.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  const session = (student.scheduledClasses ?? []).find((row) => row.id === sessionId)
+  if (!session) return { ok: false, error: 'Class session not found.' }
+
+  if (session.status === 'planned' || session.status === 'prepared') {
+    return { ok: true, status: session.status }
+  }
+  if (session.status === 'completed' || session.status === 'cancelled') {
+    return { ok: false, error: 'This class is already finished.' }
+  }
+  if (session.status !== 'in_progress') {
+    return { ok: false, error: 'This class cannot leave live.' }
+  }
+
+  const nowIso = new Date().toISOString()
+  const nextStatus = statusAfterLeavingLive(session)
+  const nextSessions = sortClassesByDate(
+    (student.scheduledClasses ?? [])
+      .map((row) => {
+        if (row.id !== sessionId) return row
+        return {
+          ...row,
+          status: nextStatus,
+          classStartedAt: undefined,
+          classEndedAt: undefined,
+          extendedMinutesTotal: undefined,
+          updatedAt: nowIso,
+        }
+      })
+      .map((row) => sanitizeClassSession(row))
+      .filter((row): row is StudentClassSession => !!row),
+  )
+
+  saveStudent({ ...student, scheduledClasses: nextSessions, updatedAt: nowIso })
+  notifyStudentLocalDataChanged(studentId)
+  return { ok: true, status: nextStatus }
+}
+
+/**
+ * Move this class occurrence only (weekly pattern unchanged).
+ * Supports planned/prepared, live (R2), and missed (Phase 5 reschedule).
+ */
+export function moveClassOccurrence(
+  studentId: string,
+  sessionId: string,
+  targetDay: Date,
+  startMinute: number,
+  durationMinutes: number,
+): { ok: true; scheduledFor: string } | { ok: false; error: string } {
+  try {
+    const students = getStudents()
+    const student = students.find((row) => row.id === studentId)
+    if (!student) return { ok: false, error: 'Student not found.' }
+    const session = (student.scheduledClasses ?? []).find((row) => row.id === sessionId)
+    if (!session) return { ok: false, error: 'Class session not found.' }
+
+    if (session.status === 'completed' || session.status === 'cancelled') {
+      return { ok: false, error: 'This class is already finished.' }
+    }
+    if (
+      session.status !== 'planned' &&
+      session.status !== 'prepared' &&
+      session.status !== 'in_progress' &&
+      session.status !== 'missed'
+    ) {
+      return { ok: false, error: 'This class cannot be moved.' }
+    }
+
+    const wasMissed = session.status === 'missed'
+
+    if (session.status === 'in_progress') {
+      const left = leaveLiveClassSessionWithoutCompleting(studentId, sessionId)
+      if (!left.ok) return left
+    }
+
+    const refreshed = getStudentScheduledClasses(studentId).find((row) => row.id === sessionId)
+    if (!refreshed) return { ok: false, error: 'Class session not found.' }
+
+    const isOneOff = !refreshed.sourceSlotId?.trim()
+    const result = isOneOff
+      ? updateOneOffClassSession(studentId, sessionId, targetDay, startMinute, durationMinutes)
+      : rescheduleSingleClassOccurrence(studentId, sessionId, targetDay, startMinute, durationMinutes)
+
+    if (!result.ok) return result
+
+    if (wasMissed) {
+      const afterMove = getStudents().find((row) => row.id === studentId)
+      const row = (afterMove?.scheduledClasses ?? []).find((s) => s.id === sessionId)
+      if (afterMove && row) {
+        const nowIso = new Date().toISOString()
+        const nextStatus = statusAfterLeavingLive(row)
+        const nextSessions = sortClassesByDate(
+          (afterMove.scheduledClasses ?? [])
+            .map((s) =>
+              s.id === sessionId
+                ? { ...s, status: nextStatus, classStartedAt: undefined, classEndedAt: undefined, updatedAt: nowIso }
+                : s,
+            )
+            .map((s) => sanitizeClassSession(s))
+            .filter((s): s is StudentClassSession => !!s),
+        )
+        saveStudent({ ...afterMove, scheduledClasses: nextSessions, updatedAt: nowIso })
+        notifyStudentLocalDataChanged(studentId)
+      }
+    }
+
+    const updated = getStudentScheduledClasses(studentId).find((row) => row.id === sessionId)
+    if (!updated) return { ok: false, error: 'Class moved but could not reload the new time.' }
+    return { ok: true, scheduledFor: updated.scheduledFor }
+  } catch (err) {
+    if (isBrowserStorageQuotaError(err)) {
+      return { ok: false, error: BROWSER_STORAGE_FULL_MESSAGE }
+    }
+    const msg = err instanceof Error ? err.message : 'Could not move class.'
+    if (/storage is full/i.test(msg)) return { ok: false, error: msg }
+    return { ok: false, error: msg }
+  }
+}
+
+export function cancelClassSession(
+  studentId: string,
+  sessionId: string,
+): { ok: true } | { ok: false; error: string } {
+  return transitionStudentClassStatus(studentId, sessionId, 'cancelled')
+}
+
+/**
+ * Cancel this class occurrence. For weekly-linked sessions, also writes a
+ * `cancelled` slot exception so the generator does not recreate that day.
+ * Live sessions leave without bookmark / completed — clear live clock fields.
+ */
+export function cancelClassOccurrence(
+  studentId: string,
+  sessionId: string,
+): { ok: true } | { ok: false; error: string } {
+  try {
+    const students = getStudents()
+    const idx = students.findIndex((row) => row.id === studentId)
+    if (idx < 0) return { ok: false, error: 'Student not found.' }
+    const student = students[idx]
+    const session = (student.scheduledClasses ?? []).find((row) => row.id === sessionId)
+    if (!session) return { ok: false, error: 'Class session not found.' }
+    if (session.status === 'completed' || session.status === 'cancelled') {
+      return { ok: false, error: 'This class is already finished.' }
+    }
+
+    const slotId = session.sourceSlotId?.trim()
+    const when = new Date(session.scheduledFor)
+    const occurrenceDate = Number.isFinite(when.getTime()) ? localDateKey(when) : null
+    const wasLive = session.status === 'in_progress'
+    const nowIso = new Date().toISOString()
+
+    const nextSessions = sortClassesByDate(
+      (student.scheduledClasses ?? [])
+        .map((row) => {
+          if (row.id !== sessionId) return row
+          return {
+            ...row,
+            status: 'cancelled' as const,
+            ...(wasLive
+              ? {
+                  classStartedAt: undefined,
+                  classEndedAt: undefined,
+                  extendedMinutesTotal: undefined,
+                }
+              : {}),
+            updatedAt: nowIso,
+          }
+        })
+        .map((row) => sanitizeClassSession(row))
+        .filter((row): row is StudentClassSession => !!row),
+    )
+
+    saveStudent({ ...student, scheduledClasses: nextSessions, updatedAt: nowIso })
+
+    if (slotId && occurrenceDate) {
+      upsertWeeklySlotException({
+        slotId,
+        localDate: occurrenceDate,
+        type: 'cancelled',
+      })
+    }
+
+    notifyStudentLocalDataChanged(studentId)
+    return { ok: true }
+  } catch (err) {
+    if (isBrowserStorageQuotaError(err)) {
+      return { ok: false, error: BROWSER_STORAGE_FULL_MESSAGE }
+    }
+    const msg = err instanceof Error ? err.message : 'Could not cancel class.'
+    if (/storage is full/i.test(msg)) return { ok: false, error: msg }
+    return { ok: false, error: msg }
+  }
+}
+
+/**
+ * Cancel all planned/prepared classes in [rangeStart, rangeEnd] (inclusive local days).
+ * Weekly slot assignments are kept; cancelled exceptions prevent regeneration.
+ */
+export function clearScheduledClassesInDateRange(
+  rangeStart: Date,
+  rangeEnd: Date,
+): { ok: true; cancelledCount: number } {
+  const start = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), rangeStart.getDate())
+  const end = new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), rangeEnd.getDate())
+  const rows = getClassSessionsForDateRange(start, end, {
+    daysAhead: daysAheadToCover(end),
+  })
+
+  let cancelledCount = 0
+  const touchedStudents = new Set<string>()
+  for (const row of rows) {
+    if (row.session.status !== 'planned' && row.session.status !== 'prepared') continue
+    const result = cancelClassOccurrence(row.studentId, row.session.id)
+    if (result.ok) {
+      cancelledCount += 1
+      touchedStudents.add(row.studentId)
+    }
+  }
+
+  for (const studentId of touchedStudents) {
+    notifyStudentLocalDataChanged(studentId)
+  }
+
+  return { ok: true, cancelledCount }
+}
+
+/**
+ * Cancel one student's planned/prepared classes in [rangeStart, rangeEnd].
+ * Weekly slot assignments stay; cancelled exceptions prevent regeneration.
+ */
+export function clearStudentClassesInDateRange(
+  studentId: string,
+  rangeStart: Date,
+  rangeEnd: Date,
+): { ok: true; cancelledCount: number } | { ok: false; error: string } {
+  const student = getStudents().find((row) => row.id === studentId)
+  if (!student) return { ok: false, error: 'Student not found.' }
+
+  const start = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), rangeStart.getDate())
+  const end = new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), rangeEnd.getDate())
+  const startMs = start.getTime()
+  const endMs = new Date(end.getFullYear(), end.getMonth(), end.getDate() + 1).getTime()
+
+  generateScheduledClassesWindow(daysAheadToCover(end))
+
+  let cancelledCount = 0
+  const sessions = [...(student.scheduledClasses ?? [])]
+  for (const session of sessions) {
+    if (session.status !== 'planned' && session.status !== 'prepared') continue
+    const t = new Date(session.scheduledFor).getTime()
+    if (!Number.isFinite(t) || t < startMs || t >= endMs) continue
+    const result = cancelClassOccurrence(studentId, session.id)
+    if (result.ok) cancelledCount += 1
+  }
+
+  if (cancelledCount > 0) notifyStudentLocalDataChanged(studentId)
+  return { ok: true, cancelledCount }
+}
+
+/**
+ * Remove this student from the teaching calendar: drop all their weekly times and
+ * cancel planned / prepared / live classes. Completed history stays. Other students untouched.
+ */
+export function removeStudentFromCalendar(studentId: string): {
+  ok: true
+  removedSlots: number
+  cancelledSessions: number
+} | { ok: false; error: string } {
+  if (typeof window === 'undefined') return { ok: false, error: 'Not available.' }
+  const students = getStudents()
+  const idx = students.findIndex((row) => row.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+
+  const removedSlots = removeWeeklySlotsForStudent(studentId)
+
+  const nowIso = new Date().toISOString()
+  const student = getStudents().find((row) => row.id === studentId)
+  if (!student) return { ok: false, error: 'Student not found.' }
+
+  let cancelledSessions = 0
+  const nextSessions = (student.scheduledClasses ?? []).map((session) => {
+    if (
+      session.status !== 'planned' &&
+      session.status !== 'prepared' &&
+      session.status !== 'in_progress'
+    ) {
+      return session
+    }
+    cancelledSessions += 1
+    return {
+      ...session,
+      status: 'cancelled' as const,
+      updatedAt: nowIso,
+      classStartedAt: undefined,
+      classEndedAt: undefined,
+    }
+  })
+
+  if (cancelledSessions > 0) {
+    saveStudent({
+      ...student,
+      scheduledClasses: sortClassesByDate(
+        nextSessions.map((s) => sanitizeClassSession(s)).filter((s): s is StudentClassSession => !!s),
+      ),
+      updatedAt: nowIso,
+    })
+  }
+
+  notifyStudentLocalDataChanged(studentId)
+  flushWeeklyScheduleToDisk()
+  return { ok: true, removedSlots, cancelledSessions }
+}
+
+/**
+ * Wipe the teaching calendar: remove all weekly times + exceptions, and cancel
+ * every planned / prepared / live class. Students and completed class history stay.
+ */
+export function resetTeacherCalendar(): {
+  ok: true
+  removedSlots: number
+  cancelledSessions: number
+} {
+  if (typeof window === 'undefined') {
+    return { ok: true, removedSlots: 0, cancelledSessions: 0 }
+  }
+
+  const assignments = getWeeklySlotAssignments()
+  const removedSlots = assignments.length
+  saveWeeklySlotAssignments([])
+  saveWeeklySlotExceptions([])
+
+  const nowIso = new Date().toISOString()
+  let cancelledSessions = 0
+  const students = getStudents()
+  for (const student of students) {
+    let changed = false
+    const nextSessions = (student.scheduledClasses ?? []).map((session) => {
+      if (
+        session.status !== 'planned' &&
+        session.status !== 'prepared' &&
+        session.status !== 'in_progress'
+      ) {
+        return session
+      }
+      changed = true
+      cancelledSessions += 1
+      return {
+        ...session,
+        status: 'cancelled' as const,
+        updatedAt: nowIso,
+        // Clear live markers so nothing looks mid-class after reset
+        classStartedAt: undefined,
+        classEndedAt: undefined,
+      }
+    })
+    if (!changed) continue
+    saveStudent({
+      ...student,
+      scheduledClasses: sortClassesByDate(
+        nextSessions.map((s) => sanitizeClassSession(s)).filter((s): s is StudentClassSession => !!s),
+      ),
+      updatedAt: nowIso,
+    })
+    notifyStudentLocalDataChanged(student.id)
+  }
+
+  flushWeeklyScheduleToDisk()
+  return { ok: true, removedSlots, cancelledSessions }
+}
+
+function buildWeeklySlotFromInput(
+  input: WeeklySlotAssignmentInput,
+  existing?: WeeklySlotAssignment,
+): { ok: true; assignment: WeeklySlotAssignment } | { ok: false; error: string } {
+  const student = getStudents().find((row) => row.id === input.studentId)
+  if (!student) {
     return { ok: false, error: 'Student not found.' }
+  }
+  if (isStudentOnBreak(student)) {
+    return { ok: false, error: 'This student is on break. Restore them before setting a weekly time.' }
   }
   const dayOfWeek = Number(input.dayOfWeek)
   const startMinute = Number(input.startMinute)
-  const durationMinutes = input.durationMinutes === 60 ? 60 : 30
+  const durationMinutes = normalizeClassDurationMinutes(input.durationMinutes, 30)
   if (!Number.isInteger(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6) {
     return { ok: false, error: 'Invalid day of week.' }
   }
   if (!Number.isFinite(startMinute) || startMinute < 0 || startMinute > 23 * 60 + 30) {
     return { ok: false, error: 'Invalid start time.' }
   }
+  const nowIso = new Date().toISOString()
   const assignment: WeeklySlotAssignment = {
-    id: `slot-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    id: existing?.id ?? `slot-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     dayOfWeek,
     startMinute: Math.floor(startMinute / SLOT_MINUTES) * SLOT_MINUTES,
     durationMinutes,
     studentId: input.studentId,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    createdAt: existing?.createdAt ?? nowIso,
+    updatedAt: nowIso,
   }
   const config = getTeacherWeeklyScheduleConfig()
+  if (!config.workingDays.includes(assignment.dayOfWeek)) {
+    return { ok: false, error: 'Unavailable that day.' }
+  }
   const assignmentEnd = assignment.startMinute + assignment.durationMinutes
   if (assignment.startMinute < config.startMinute || assignmentEnd > config.endMinute) {
     return { ok: false, error: 'Slot is outside your configured teaching time range.' }
   }
-  const assignments = getWeeklySlotAssignments()
-  const collision = assignments.find((existing) => overlapsSlot(existing, assignment))
-  if (collision) {
-    return { ok: false, error: 'This slot overlaps with another scheduled class.' }
+  return { ok: true, assignment }
+}
+
+function cancelFutureSessionsForSlot(slotId: string): void {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const todayMs = today.getTime()
+  const nowIso = new Date().toISOString()
+  for (const student of getStudents()) {
+    let changed = false
+    const nextSessions = (student.scheduledClasses ?? []).map((session) => {
+      if (session.sourceSlotId !== slotId) return session
+      if (session.status !== 'planned' && session.status !== 'prepared') return session
+      const t = new Date(session.scheduledFor).getTime()
+      if (!Number.isFinite(t) || t < todayMs) return session
+      changed = true
+      return { ...session, status: 'cancelled' as const, updatedAt: nowIso }
+    })
+    if (changed) {
+      saveStudent({
+        ...student,
+        scheduledClasses: sortClassesByDate(
+          nextSessions.map((s) => sanitizeClassSession(s)).filter((s): s is StudentClassSession => !!s),
+        ),
+        updatedAt: nowIso,
+      })
+    }
   }
-  const next = [...assignments, assignment].sort((a, b) => (a.dayOfWeek - b.dayOfWeek) || (a.startMinute - b.startMinute))
+}
+
+function findActiveWeeklySlotCollision(
+  assignment: WeeklySlotAssignment,
+  excludeSlotId?: string,
+): WeeklySlotAssignment | undefined {
+  const keepIds = activeStudentIds()
+  return getWeeklySlotAssignments().find(
+    (row) =>
+      row.id !== excludeSlotId &&
+      keepIds.has(row.studentId) &&
+      overlapsSlot(row, assignment),
+  )
+}
+
+export function upsertWeeklySlotAssignment(
+  input: WeeklySlotAssignmentInput,
+): { ok: true; assignment: WeeklySlotAssignment } | { ok: false; error: string } {
+  pruneOrphanWeeklySlots()
+  const built = buildWeeklySlotFromInput(input)
+  if (!built.ok) return built
+  const assignment = built.assignment
+  const collision = findActiveWeeklySlotCollision(assignment)
+  if (collision) {
+    return { ok: false, error: weeklySlotConflictMessage(collision) }
+  }
+  const horizonConflict = findWeeklyPatternHorizonConflict(assignment)
+  if (horizonConflict) {
+    return { ok: false, error: formatScheduleConflictError(horizonConflict) }
+  }
+  const next = [...getWeeklySlotAssignments(), assignment].sort(
+    (a, b) => a.dayOfWeek - b.dayOfWeek || a.startMinute - b.startMinute,
+  )
   saveWeeklySlotAssignments(next)
   generateScheduledClassesWindow(30)
+  notifyStudentLocalDataChanged(input.studentId)
+  return { ok: true, assignment }
+}
+
+export function validateWeeklySlotUpdate(
+  slotId: string,
+  input: WeeklySlotAssignmentInput,
+): { ok: true; assignment: WeeklySlotAssignment } | { ok: false; error: string } {
+  pruneOrphanWeeklySlots()
+  const assignments = getWeeklySlotAssignments()
+  const existing = assignments.find((assignment) => assignment.id === slotId)
+  if (!existing) return { ok: false, error: 'Slot assignment not found.' }
+  const built = buildWeeklySlotFromInput(input, existing)
+  if (!built.ok) return built
+  const assignment = built.assignment
+  const collision = findActiveWeeklySlotCollision(assignment, slotId)
+  if (collision) {
+    return { ok: false, error: weeklySlotConflictMessage(collision) }
+  }
+  const horizonConflict = findWeeklyPatternHorizonConflict(assignment, slotId)
+  if (horizonConflict) {
+    return { ok: false, error: formatScheduleConflictError(horizonConflict) }
+  }
+  return { ok: true, assignment }
+}
+
+export function updateWeeklySlotAssignment(
+  slotId: string,
+  input: WeeklySlotAssignmentInput,
+): { ok: true; assignment: WeeklySlotAssignment } | { ok: false; error: string } {
+  const validated = validateWeeklySlotUpdate(slotId, input)
+  if (!validated.ok) return validated
+  const assignment = validated.assignment
+  const assignments = getWeeklySlotAssignments()
+  const next = assignments
+    .map((row) => (row.id === slotId ? assignment : row))
+    .sort((a, b) => (a.dayOfWeek - b.dayOfWeek) || (a.startMinute - b.startMinute))
+  saveWeeklySlotAssignments(next)
+  cancelFutureSessionsForSlot(slotId)
+  generateScheduledClassesWindow(30)
+  notifyStudentLocalDataChanged(input.studentId)
   return { ok: true, assignment }
 }
 
@@ -1192,8 +2356,79 @@ export function removeWeeklySlotAssignment(slotId: string): { ok: true } | { ok:
   const assignments = getWeeklySlotAssignments()
   const next = assignments.filter((assignment) => assignment.id !== slotId)
   if (next.length === assignments.length) return { ok: false, error: 'Slot assignment not found.' }
+  cancelFutureSessionsForSlot(slotId)
+  removeWeeklySlotExceptionsForSlot(slotId)
   saveWeeklySlotAssignments(next)
   generateScheduledClassesWindow(30)
+  return { ok: true }
+}
+
+/** Drop all weekly teaching slots for a student (e.g. when removing or putting on break). */
+export function removeWeeklySlotsForStudent(studentId: string): number {
+  const assignments = getWeeklySlotAssignments()
+  const removedSlots = assignments.filter((assignment) => assignment.studentId === studentId)
+  if (removedSlots.length === 0) return 0
+  for (const slot of removedSlots) {
+    cancelFutureSessionsForSlot(slot.id)
+    removeWeeklySlotExceptionsForSlot(slot.id)
+  }
+  const next = assignments.filter((assignment) => assignment.studentId !== studentId)
+  saveWeeklySlotAssignments(next)
+  flushWeeklyScheduleToDisk()
+  return removedSlots.length
+}
+
+/** Put a student on break: hide from roster, free weekly times, cancel future planned classes. */
+export function putStudentOnBreak(studentId: string): { ok: true } | { ok: false; error: string } {
+  if (typeof window === 'undefined') return { ok: false, error: 'Not available.' }
+  const students = getStudents()
+  const idx = students.findIndex((row) => row.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  if (isStudentOnBreak(student)) return { ok: true }
+
+  removeWeeklySlotsForStudent(studentId)
+
+  const nowIso = new Date().toISOString()
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const todayMs = today.getTime()
+  const nextSessions = (student.scheduledClasses ?? []).map((session) => {
+    if (session.status !== 'planned' && session.status !== 'prepared') return session
+    const t = new Date(session.scheduledFor).getTime()
+    if (!Number.isFinite(t) || t < todayMs) return session
+    return { ...session, status: 'cancelled' as const, updatedAt: nowIso }
+  })
+
+  saveStudent({
+    ...student,
+    rosterStatus: 'on_break',
+    onBreakAt: nowIso,
+    scheduledClasses: sortClassesByDate(
+      nextSessions.map((s) => sanitizeClassSession(s)).filter((s): s is StudentClassSession => !!s),
+    ),
+    updatedAt: nowIso,
+  })
+  notifyStudentLocalDataChanged(studentId)
+  return { ok: true }
+}
+
+/** Restore a student from on break to the active roster. */
+export function restoreStudentFromBreak(studentId: string): { ok: true } | { ok: false; error: string } {
+  if (typeof window === 'undefined') return { ok: false, error: 'Not available.' }
+  const students = getStudents()
+  const idx = students.findIndex((row) => row.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  if (!isStudentOnBreak(student)) return { ok: true }
+
+  const { onBreakAt: _cleared, ...rest } = student
+  saveStudent({
+    ...rest,
+    rosterStatus: 'active',
+    updatedAt: new Date().toISOString(),
+  })
+  notifyStudentLocalDataChanged(studentId)
   return { ok: true }
 }
 
@@ -1223,10 +2458,24 @@ export function getLocalDayBoundsMs(day: Date = new Date()): { startMs: number; 
 
 /** All students’ class sessions scheduled for today (local), not completed/cancelled. */
 export function getTodaysClassSessionsForTeacher(day: Date = new Date()): TodaysClassSessionRow[] {
-  generateScheduledClassesWindow(30)
   const { startMs, endMs } = getLocalDayBoundsMs(day)
+  const rangeStart = new Date(startMs)
+  const rangeEnd = new Date(endMs - 1)
+  return getClassSessionsForDateRange(rangeStart, rangeEnd)
+}
+
+/** Class sessions in a local date range (inclusive), excluding completed/cancelled. */
+export function getClassSessionsForDateRange(
+  start: Date,
+  end: Date,
+  options?: { daysAhead?: number },
+): TodaysClassSessionRow[] {
+  pruneOrphanWeeklySlots()
+  generateScheduledClassesWindow(options?.daysAhead ?? 30)
+  const startMs = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 0, 0, 0, 0).getTime()
+  const endMs = new Date(end.getFullYear(), end.getMonth(), end.getDate() + 1, 0, 0, 0, 0).getTime()
   const out: TodaysClassSessionRow[] = []
-  for (const row of getStudents()) {
+  for (const row of getActiveStudents()) {
     const sessions = sortClassesByDate(
       (row.scheduledClasses ?? [])
         .map((session) => sanitizeClassSession(session))
@@ -1241,6 +2490,147 @@ export function getTodaysClassSessionsForTeacher(day: Date = new Date()): Todays
   }
   out.sort((a, b) => new Date(a.session.scheduledFor).getTime() - new Date(b.session.scheduledFor).getTime())
   return out
+}
+
+/** Prefer end time for “which day did this class land on”; else scheduled start. */
+function classDayAnchorMs(session: StudentClassSession): number | null {
+  const ended = session.classEndedAt ? new Date(session.classEndedAt).getTime() : NaN
+  if (Number.isFinite(ended)) return ended
+  const scheduled = new Date(session.scheduledFor).getTime()
+  return Number.isFinite(scheduled) ? scheduled : null
+}
+
+/** Completed classes that belong to this local calendar day (for Dashboard “Done”). */
+export function getTodaysCompletedClassSessionsForTeacher(day: Date = new Date()): TodaysClassSessionRow[] {
+  pruneOrphanWeeklySlots()
+  generateScheduledClassesWindow(30)
+  const { startMs, endMs } = getLocalDayBoundsMs(day)
+  const out: TodaysClassSessionRow[] = []
+  for (const row of getActiveStudents()) {
+    const sessions = (row.scheduledClasses ?? [])
+      .map((session) => sanitizeClassSession(session))
+      .filter((session): session is StudentClassSession => !!session)
+    for (const session of sessions) {
+      if (session.status !== 'completed') continue
+      const anchor = classDayAnchorMs(session)
+      if (anchor == null || anchor < startMs || anchor >= endMs) continue
+      out.push({ studentId: row.id, studentName: row.name.trim() || 'Student', session })
+    }
+  }
+  out.sort((a, b) => {
+    const aMs = classDayAnchorMs(a.session) ?? 0
+    const bMs = classDayAnchorMs(b.session) ?? 0
+    return aMs - bMs
+  })
+  return out
+}
+
+export type DashboardStillOpenKind = 'needs_recap' | 'missed' | 'needs_prep'
+
+export interface DashboardStillOpenItem extends TodaysClassSessionRow {
+  kind: DashboardStillOpenKind
+}
+
+/** Soft after-class recap still waiting (same rule as Past classes). */
+export function sessionNeedsPostClassRecap(session: StudentClassSession): boolean {
+  return (
+    session.status === 'completed' &&
+    !session.classEndNote?.trim() &&
+    session.postClassRecapPromptDismissed !== true
+  )
+}
+
+const DASHBOARD_RECAP_LOOKBACK_DAYS = 7
+
+/**
+ * Cross-student leftovers for the Dashboard Still open band.
+ * Recaps: last 7 local days. Prep: planned on today or tomorrow. Missed: any open missed.
+ */
+export function getDashboardStillOpenItems(nowMs: number = Date.now()): DashboardStillOpenItem[] {
+  pruneOrphanWeeklySlots()
+  generateScheduledClassesWindow(30)
+  const now = new Date(nowMs)
+  const todayBounds = getLocalDayBoundsMs(now)
+  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+  const tomorrowBounds = getLocalDayBoundsMs(tomorrow)
+  const prepEndMs = tomorrowBounds.endMs
+  const recapStartMs = getLocalDayBoundsMs(
+    new Date(now.getFullYear(), now.getMonth(), now.getDate() - (DASHBOARD_RECAP_LOOKBACK_DAYS - 1)),
+  ).startMs
+
+  const out: DashboardStillOpenItem[] = []
+  for (const row of getActiveStudents()) {
+    const studentName = row.name.trim() || 'Student'
+    const sessions = (row.scheduledClasses ?? [])
+      .map((session) => sanitizeClassSession(session))
+      .filter((session): session is StudentClassSession => !!session)
+    for (const session of sessions) {
+      if (session.status === 'missed') {
+        out.push({ kind: 'missed', studentId: row.id, studentName, session })
+        continue
+      }
+      if (session.status === 'planned') {
+        const t = new Date(session.scheduledFor).getTime()
+        if (Number.isFinite(t) && t >= todayBounds.startMs && t < prepEndMs) {
+          out.push({ kind: 'needs_prep', studentId: row.id, studentName, session })
+        }
+        continue
+      }
+      if (sessionNeedsPostClassRecap(session)) {
+        const anchor = classDayAnchorMs(session)
+        if (anchor != null && anchor >= recapStartMs && anchor < todayBounds.endMs) {
+          out.push({ kind: 'needs_recap', studentId: row.id, studentName, session })
+        }
+      }
+    }
+  }
+
+  const kindRank: Record<DashboardStillOpenKind, number> = {
+    missed: 0,
+    needs_recap: 1,
+    needs_prep: 2,
+  }
+  out.sort((a, b) => {
+    const kr = kindRank[a.kind] - kindRank[b.kind]
+    if (kr !== 0) return kr
+    const aMs = classDayAnchorMs(a.session) ?? new Date(a.session.scheduledFor).getTime()
+    const bMs = classDayAnchorMs(b.session) ?? new Date(b.session.scheduledFor).getTime()
+    return aMs - bMs
+  })
+  return out
+}
+
+const NOW_LIVE_STATES: TodayClassTeachingState[] = ['ending', 'grace', 'live', 'starting']
+
+/** One class in focus for the Dashboard Now band (live/starting first, else soonest upcoming today). */
+export function pickDashboardNowRow(
+  todaysOpenRows: TodaysClassSessionRow[],
+  nowMs: number = Date.now(),
+): TodaysClassSessionRow | null {
+  if (todaysOpenRows.length === 0) return null
+
+  const withState = todaysOpenRows.map((row) => ({
+    row,
+    state: resolveTodayClassTeachingState(row.session, nowMs),
+  }))
+
+  for (const state of NOW_LIVE_STATES) {
+    const matches = withState
+      .filter((item) => item.state === state)
+      .sort(
+        (a, b) =>
+          new Date(a.row.session.scheduledFor).getTime() - new Date(b.row.session.scheduledFor).getTime(),
+      )
+    if (matches[0]) return matches[0].row
+  }
+
+  const upcoming = withState
+    .filter((item) => item.state === 'upcoming')
+    .sort(
+      (a, b) =>
+        new Date(a.row.session.scheduledFor).getTime() - new Date(b.row.session.scheduledFor).getTime(),
+    )
+  return upcoming[0]?.row ?? null
 }
 
 export function updateStudentClassEndNote(
@@ -1390,6 +2780,7 @@ function getStudentSectionOptionsForRecord(
   library: BookLibraryPayload | null,
 ): StudentSectionOption[] {
   if (!library?.books?.length) return []
+  const assignedBookIds = dedupeStrings(student.assignedBookIds ?? [])
   const assignedUnitRefs = dedupeUnitRefs(student.assignedUnitRefs ?? [])
   const out: StudentSectionOption[] = []
   const pushUnitSections = (bookId: string, unitId: string) => {
@@ -1398,14 +2789,14 @@ function getStudentSectionOptionsForRecord(
     if (!book || !unit) return
     out.push(...flattenUnitSections(book, unit))
   }
-  if (assignedUnitRefs.length) {
-    for (const ref of assignedUnitRefs) pushUnitSections(ref.bookId, ref.unitId)
-  } else {
-    for (const bookId of dedupeStrings(student.assignedBookIds ?? [])) {
+  if (assignedBookIds.length) {
+    for (const bookId of assignedBookIds) {
       const book = library.books.find((item) => item.id === bookId)
       if (!book) continue
       for (const unit of book.units) out.push(...flattenUnitSections(book, unit))
     }
+  } else {
+    for (const ref of assignedUnitRefs) pushUnitSections(ref.bookId, ref.unitId)
   }
   return out
 }
@@ -1438,6 +2829,9 @@ export function resolveNextSectionForClass(
   const lastCompletedId = completed[0]?.selectedSection?.id
   if (!lastCompletedId) {
     const studentRec = getStudents().find((s) => s.id === studentId)
+    const bookStarts = resolveCurriculumBookStarts(studentRec, library, options)
+    const fromBookStart = mostRecentCurriculumBookStart(bookStarts, options)
+    if (fromBookStart) return fromBookStart
     const anchorId = studentRec?.curriculumAnchorSectionId?.trim()
     if (anchorId) {
       const anchorHit = options.find((o) => o.id === anchorId)
@@ -1478,6 +2872,101 @@ function pageInSectionOptionRange(
 
   if (end == null || !Number.isFinite(end)) return pdfPage >= start
   return pdfPage >= start && pdfPage <= end
+}
+
+/**
+ * Find the curriculum section (lesson/part) that contains a PDF page for a book+unit.
+ * Walks options newest-to-oldest so nested parts resolve to the most specific match.
+ */
+export function resolveStudentSectionAtPdfPage(
+  studentId: string,
+  library: BookLibraryPayload | null,
+  bookId: string,
+  unitId: string,
+  pdfPage: number,
+  totalPdfPages: number | null = null,
+): StudentSectionOption | null {
+  if (!library?.books?.length) return null
+  const page = Math.floor(pdfPage)
+  if (!Number.isFinite(page) || page < 1) return null
+  const bid = bookId.trim()
+  const uid = unitId.trim()
+  if (!bid || !uid) return null
+  const book = library.books.find((b) => b.id === bid)
+  const unit = book?.units.find((u) => u.id === uid)
+  if (!book || !unit) return null
+
+  const options = getStudentSectionOptions(studentId, library)
+  for (let i = options.length - 1; i >= 0; i--) {
+    const o = options[i]!
+    if (o.bookId !== bid || o.unitId !== uid) continue
+    if (pageInSectionOptionRange(o, page, book, unit, totalPdfPages)) return o
+  }
+  return null
+}
+
+/**
+ * Find the curriculum section for a **book / mapped page** (printed page from TOC).
+ * Converts to PDF index using page alignment, then delegates to resolveStudentSectionAtPdfPage.
+ */
+export function resolveStudentSectionAtMappedPage(
+  studentId: string,
+  library: BookLibraryPayload | null,
+  bookId: string,
+  unitId: string,
+  mappedPage: number,
+  totalPdfPages: number | null,
+): StudentSectionOption | null {
+  if (!library?.books?.length) return null
+  const page = Math.floor(mappedPage)
+  if (!Number.isFinite(page) || page < 1) return null
+  const bid = bookId.trim()
+  const uid = unitId.trim()
+  const book = library.books.find((b) => b.id === bid)
+  const unit = book?.units.find((u) => u.id === uid)
+  const pdf =
+    resolveMappedPageToPdfPage(page, book, unit, totalPdfPages) ??
+    page
+  return resolveStudentSectionAtPdfPage(studentId, library, bid, uid, pdf, totalPdfPages)
+}
+
+/** Whether a printed / mapped book page falls inside a section's TOC page hints. */
+export function mappedPageInSectionOptionRange(
+  option: StudentSectionOption,
+  mappedPage: number,
+): boolean {
+  const page = Math.floor(mappedPage)
+  if (!Number.isFinite(page) || page < 1) return false
+  const start = option.startPageHint ?? 1
+  const endHint = option.endPageHint ?? option.startPageHint
+  const end = endHint != null && Number.isFinite(endHint) ? Math.max(start, Math.floor(endHint)) : null
+  if (end == null || !Number.isFinite(end)) return page >= start
+  return page >= start && page <= end
+}
+
+/**
+ * Find the curriculum section for a **book-wide mapped page** (printed page from TOC).
+ * Searches all units in the book; walks options newest-to-oldest for specificity.
+ */
+export function resolveStudentSectionAtMappedBookPage(
+  studentId: string,
+  library: BookLibraryPayload | null,
+  bookId: string,
+  mappedPage: number,
+): StudentSectionOption | null {
+  if (!library?.books?.length) return null
+  const page = Math.floor(mappedPage)
+  if (!Number.isFinite(page) || page < 1) return null
+  const bid = bookId.trim()
+  if (!bid) return null
+
+  const options = getStudentSectionOptions(studentId, library)
+  for (let i = options.length - 1; i >= 0; i--) {
+    const o = options[i]!
+    if (o.bookId !== bid) continue
+    if (mappedPageInSectionOptionRange(o, page)) return o
+  }
+  return null
 }
 
 function displaySectionTitleForHeadline(option: StudentSectionOption): string {
@@ -1553,6 +3042,9 @@ export function getNextClassResumeHeadline(
 /**
  * Best PDF page to open for this student on this book+unit: most recent signal wins
  * (end-of-class bookmark vs reader session history). Returns null to fall back to generic saved page.
+ *
+ * Prefer {@link getStudentTeachingOpenPdfPageForBookUnit} when opening the teaching reader —
+ * that ladder puts the teacher plan pin above casual browse history.
  */
 export function getStudentResumePdfPageForBookUnit(studentId: string, bookId: string, unitId: string): number | null {
   const student = getStudents().find((row) => row.id === studentId)
@@ -1586,9 +3078,272 @@ export function getStudentResumePdfPageForBookUnit(studentId: string, bookId: st
   return bestPage
 }
 
+/** End-of-class bookmark for this book+unit (newest completed class), with timestamp. */
+export function getStudentLastClassBookmarkForBookUnit(
+  studentId: string,
+  bookId: string,
+  unitId: string,
+): { pdfPage: number; atMs: number } | null {
+  const student = getStudents().find((row) => row.id === studentId)
+  if (!student || !bookId.trim() || !unitId.trim()) return null
+  const bid = bookId.trim()
+  const uid = unitId.trim()
+  let best: { pdfPage: number; atMs: number } | null = null
+  for (const s of student.scheduledClasses ?? []) {
+    if (s.status !== 'completed') continue
+    const bm = s.bookmarkAtEnd
+    if (!bm?.bookId?.trim() || bm.bookId.trim() !== bid) continue
+    const u = bm.unitId?.trim()
+    if (u && u !== uid) continue
+    const page = bm.pdfPage
+    if (!Number.isFinite(page) || page < 1) continue
+    const t = Date.parse(s.classEndedAt ?? s.updatedAt ?? s.scheduledFor)
+    if (!Number.isFinite(t)) continue
+    if (!best || t >= best.atMs) {
+      best = { pdfPage: Math.max(1, Math.floor(page)), atMs: t }
+    }
+  }
+  return best
+}
+
+/** Newest end-of-class bookmark for this book (any unit), with timestamp. */
+export function getStudentLastClassBookmarkForBook(
+  studentId: string,
+  bookId: string,
+): { pdfPage: number; unitId?: string; atMs: number } | null {
+  const student = getStudents().find((row) => row.id === studentId)
+  if (!student || !bookId.trim()) return null
+  const bid = bookId.trim()
+  let best: { pdfPage: number; unitId?: string; atMs: number } | null = null
+  for (const s of student.scheduledClasses ?? []) {
+    if (s.status !== 'completed') continue
+    const bm = s.bookmarkAtEnd
+    if (!bm?.bookId?.trim() || bm.bookId.trim() !== bid) continue
+    const page = bm.pdfPage
+    if (!Number.isFinite(page) || page < 1) continue
+    const t = Date.parse(s.classEndedAt ?? s.updatedAt ?? s.scheduledFor)
+    if (!Number.isFinite(t)) continue
+    if (!best || t >= best.atMs) {
+      best = {
+        pdfPage: Math.max(1, Math.floor(page)),
+        unitId: bm.unitId?.trim() || undefined,
+        atMs: t,
+      }
+    }
+  }
+  return best
+}
+
+/** End-of-class bookmark PDF page for this book+unit (newest completed class). */
+export function getStudentLastClassBookmarkPdfPageForBookUnit(
+  studentId: string,
+  bookId: string,
+  unitId: string,
+): number | null {
+  return getStudentLastClassBookmarkForBookUnit(studentId, bookId, unitId)?.pdfPage ?? null
+}
+
+function pdfPageFromCurriculumBookStart(
+  bookStart: StudentCurriculumBookStart,
+  bookId: string,
+  library: BookLibraryPayload | null,
+  totalPdfPages: number | null,
+): number | null {
+  const book = library?.books.find((b) => b.id === bookId)
+  const unit = book?.units.find((u) => u.id === bookStart.unitId)
+  if (book && unit) {
+    const pdf =
+      resolveMappedPageToPdfPage(bookStart.mappedPage, book, unit, totalPdfPages) ?? bookStart.mappedPage
+    if (Number.isFinite(pdf) && pdf >= 1) return Math.max(1, Math.floor(pdf))
+    return null
+  }
+  if (Number.isFinite(bookStart.mappedPage) && bookStart.mappedPage >= 1) {
+    return Math.max(1, Math.floor(bookStart.mappedPage))
+  }
+  return null
+}
+
+/** True when this book’s plan pin was saved more recently than its last class stop. */
+export function isStudentCurriculumBookStartFresherThanLastStop(
+  studentId: string,
+  bookId: string,
+  library: BookLibraryPayload | null = null,
+): boolean {
+  const bookStart = getStudentCurriculumBookStart(studentId, bookId, library)
+  if (!bookStart) return false
+  const startMs = Date.parse(bookStart.updatedAt)
+  if (!Number.isFinite(startMs)) return false
+  const last = getStudentLastClassBookmarkForBook(studentId, bookId)
+  if (!last) return true
+  return startMs > last.atMs
+}
+
 /**
- * Default book + unit for `/books` deep links when `book` / `unit` are omitted but a student is selected.
- * Uses first valid assigned unit ref in the library, else the first assigned book’s first unit.
+ * PDF page for opening the teaching reader on a book+unit.
+ * Ladder: last-class bookmark (if ≥ plan pin time) → teacher starting place → weak reader history → null.
+ * Re-saving a starting place beats an older last-class stop until the next end-class.
+ */
+export function getStudentTeachingOpenPdfPageForBookUnit(
+  studentId: string,
+  bookId: string,
+  unitId: string,
+  library: BookLibraryPayload | null = null,
+  totalPdfPages: number | null = null,
+): number | null {
+  const bid = bookId.trim()
+  const uid = unitId.trim()
+  if (!bid || !uid) return null
+
+  const bookStart = getStudentCurriculumBookStart(studentId, bid, library)
+  const startMs = bookStart ? Date.parse(bookStart.updatedAt) : Number.NaN
+  const startOnThisUnit = Boolean(bookStart && bookStart.unitId === uid)
+  const startPdf =
+    startOnThisUnit && bookStart
+      ? pdfPageFromCurriculumBookStart(bookStart, bid, library, totalPdfPages)
+      : null
+
+  const lastStop = getStudentLastClassBookmarkForBookUnit(studentId, bid, uid)
+  if (lastStop != null) {
+    const startBeatsStop =
+      startOnThisUnit && startPdf != null && Number.isFinite(startMs) && startMs > lastStop.atMs
+    if (!startBeatsStop) return lastStop.pdfPage
+  }
+
+  if (startPdf != null) return startPdf
+
+  const student = getStudents().find((row) => row.id === studentId)
+  if (!student) return null
+  let bestPage: number | null = null
+  let bestTime = Number.NEGATIVE_INFINITY
+  for (const h of student.curriculumHistory ?? []) {
+    if (h.bookId !== bid || h.unitId !== uid) continue
+    const page = h.page
+    if (!Number.isFinite(page) || page < 1) continue
+    const t = Date.parse(h.closedAt ?? h.openedAt)
+    if (!Number.isFinite(t)) continue
+    if (bestPage === null || t >= bestTime) {
+      bestPage = Math.max(1, Math.floor(page))
+      bestTime = t
+    }
+  }
+  return bestPage
+}
+
+/**
+ * Best unit + PDF page when opening a book without an explicit unit.
+ * Prefers fresher plan pin’s unit, else last-class bookmark unit, else first unit page ladder.
+ */
+export function getStudentOpenTargetForBook(
+  studentId: string,
+  bookId: string,
+  library: BookLibraryPayload | null = null,
+  totalPdfPages: number | null = null,
+): { unitId: string; pdfPage: number } | null {
+  const bid = bookId.trim()
+  if (!bid) return null
+  const book = library?.books.find((b) => b.id === bid)
+  if (!book?.units.length) return null
+
+  const bookStart = getStudentCurriculumBookStart(studentId, bid, library)
+  const startFresher = isStudentCurriculumBookStartFresherThanLastStop(studentId, bid, library)
+  if (startFresher && bookStart) {
+    const unit = book.units.find((u) => u.id === bookStart.unitId)
+    if (unit) {
+      const pdf =
+        getStudentTeachingOpenPdfPageForBookUnit(studentId, bid, unit.id, library, totalPdfPages) ??
+        pdfPageFromCurriculumBookStart(bookStart, bid, library, totalPdfPages)
+      if (pdf != null) return { unitId: unit.id, pdfPage: pdf }
+    }
+  }
+
+  const last = getStudentLastClassBookmarkForBook(studentId, bid)
+  if (last) {
+    const unit =
+      (last.unitId ? book.units.find((u) => u.id === last.unitId) : null) ?? book.units[0] ?? null
+    if (unit) {
+      const pdf =
+        getStudentTeachingOpenPdfPageForBookUnit(studentId, bid, unit.id, library, totalPdfPages) ??
+        last.pdfPage
+      return { unitId: unit.id, pdfPage: pdf }
+    }
+  }
+
+  if (bookStart) {
+    const unit = book.units.find((u) => u.id === bookStart.unitId) ?? book.units[0]
+    if (unit) {
+      const pdf =
+        getStudentTeachingOpenPdfPageForBookUnit(studentId, bid, unit.id, library, totalPdfPages) ??
+        pdfPageFromCurriculumBookStart(bookStart, bid, library, totalPdfPages) ??
+        1
+      return { unitId: unit.id, pdfPage: pdf }
+    }
+  }
+
+  const first = book.units[0]
+  if (!first) return null
+  const pdf = getStudentTeachingOpenPdfPageForBookUnit(studentId, bid, first.id, library, totalPdfPages) ?? 1
+  return { unitId: first.id, pdfPage: pdf }
+}
+
+/** Book + unit for a class session: saved section → auto next section → assignment default. */
+export function resolveClassTeachingBookUnit(
+  studentId: string,
+  classSessionId: string,
+  library: BookLibraryPayload | null | undefined,
+): { bookId: string; unitId: string; section: StudentSectionOption | null } | null {
+  const sessions = getStudentScheduledClasses(studentId)
+  const session = sessions.find((s) => s.id === classSessionId)
+  if (!session) return null
+
+  const options = library?.books?.length ? getStudentSectionOptions(studentId, library) : []
+  const savedId = session.selectedSection?.id?.trim()
+  const fromSaved = savedId ? (options.find((o) => o.id === savedId) ?? null) : null
+  if (fromSaved) {
+    return { bookId: fromSaved.bookId, unitId: fromSaved.unitId, section: fromSaved }
+  }
+  if (session.selectedSection?.bookId?.trim() && session.selectedSection.unitId?.trim()) {
+    return {
+      bookId: session.selectedSection.bookId.trim(),
+      unitId: session.selectedSection.unitId.trim(),
+      section: null,
+    }
+  }
+
+  const fromNext = library?.books?.length
+    ? resolveNextSectionForClass(studentId, classSessionId, library)
+    : null
+  if (fromNext) {
+    return { bookId: fromNext.bookId, unitId: fromNext.unitId, section: fromNext }
+  }
+
+  const fallback = getStudentDefaultBookUnitForReader(studentId, library)
+  if (!fallback) return null
+  return { bookId: fallback.bookId, unitId: fallback.unitId, section: null }
+}
+
+/** Drop pathLabel when persisting a section option onto a class session. */
+export function toStudentBookSectionRef(option: StudentSectionOption): StudentBookSectionRef {
+  return {
+    id: option.id,
+    type: option.type,
+    bookId: option.bookId,
+    bookTitle: option.bookTitle,
+    unitId: option.unitId,
+    unitTitle: option.unitTitle,
+    title: option.title,
+    ...(option.lessonId ? { lessonId: option.lessonId } : {}),
+    ...(option.lessonTitle ? { lessonTitle: option.lessonTitle } : {}),
+    ...(option.partId ? { partId: option.partId } : {}),
+    ...(option.partTitle ? { partTitle: option.partTitle } : {}),
+    ...(option.partStructureTag ? { partStructureTag: option.partStructureTag } : {}),
+    ...(typeof option.startPageHint === 'number' ? { startPageHint: option.startPageHint } : {}),
+    ...(typeof option.endPageHint === 'number' ? { endPageHint: option.endPageHint } : {}),
+  }
+}
+
+/**
+ * Default book + unit when opening the teaching reader for a student without explicit `book` / `unit` in the URL.
+ * Prefers each assigned book’s starting-place unit when set; else assigned unit refs; else first unit.
  */
 export function getStudentDefaultBookUnitForReader(
   studentId: string,
@@ -1597,6 +3352,22 @@ export function getStudentDefaultBookUnitForReader(
   const student = getStudents().find((row) => row.id === studentId)
   if (!student || !library?.books?.length) return null
   const bookMap = new Map(library.books.map((b) => [b.id, b]))
+
+  for (const bid of student.assignedBookIds ?? []) {
+    const book = bookMap.get(bid)
+    if (!book) continue
+    const openTarget = getStudentOpenTargetForBook(studentId, bid, library)
+    if (openTarget) {
+      const unit = book.units.find((u) => u.id === openTarget.unitId)
+      if (unit) return { bookId: bid, unitId: unit.id }
+    }
+    const start = getStudentCurriculumBookStart(studentId, bid, library)
+    if (start) {
+      const unit = book.units.find((u) => u.id === start.unitId)
+      if (unit) return { bookId: bid, unitId: unit.id }
+    }
+  }
+
   for (const ref of dedupeUnitRefs(student.assignedUnitRefs ?? [])) {
     const book = bookMap.get(ref.bookId)
     const unit = book?.units.find((u) => u.id === ref.unitId)
@@ -1611,7 +3382,8 @@ export function getStudentDefaultBookUnitForReader(
 }
 
 /**
- * Short “last time we stopped…” line for the next/live class card (same book+unit as today’s section).
+ * Short “last time we stopped…” line for the next/live class card.
+ * Prefers the prior class bookmark (any book), then same-book reader history.
  */
 export function getLastStoppedCarryLine(
   studentId: string,
@@ -1643,18 +3415,22 @@ export function getLastStoppedCarryLine(
   const histBook = library.books.find((b) => b.id === bid)
   const histUnit = histBook?.units.find((u) => u.id === uid)
 
-  if (bookmark?.bookId?.trim() === bid) {
-    const bu = bookmark.unitId?.trim()
-    if (!bu || bu === uid) {
-      const page = bookmark.pdfPage
-      if (Number.isFinite(page) && page >= 1) {
+  if (bookmark?.bookId?.trim()) {
+    const bmBookId = bookmark.bookId.trim()
+    const bmUnitId = bookmark.unitId?.trim()
+    const page = bookmark.pdfPage
+    if (Number.isFinite(page) && page >= 1) {
+      const bmBook = library.books.find((b) => b.id === bmBookId)
+      const bmUnit = bmUnitId ? bmBook?.units.find((u) => u.id === bmUnitId) : bmBook?.units[0]
+      const pageLabel = mapPdfPageToDisplayLabel(Math.floor(page), bmBook, bmUnit, null, 'mapped')
+      const sameBookUnit = bmBookId === bid && (!bmUnitId || bmUnitId === uid)
+      if (sameBookUnit) {
         const options = getStudentSectionOptions(studentId, library)
         let piece: StudentSectionOption | null = null
-        const unitFilter = bookmark.unitId?.trim()
         for (let i = options.length - 1; i >= 0; i--) {
           const o = options[i]
           if (o.bookId !== bid) continue
-          if (unitFilter && o.unitId !== unitFilter) continue
+          if (bmUnitId && o.unitId !== bmUnitId) continue
           const b = library.books.find((bk) => bk.id === o.bookId)
           const u = b?.units.find((un) => un.id === o.unitId)
           if (pageInSectionOptionRange(o, page, b, u, null)) {
@@ -1662,12 +3438,13 @@ export function getLastStoppedCarryLine(
             break
           }
         }
-        const pageLabel = mapPdfPageToDisplayLabel(Math.floor(page), histBook, histUnit, null, 'mapped')
         const pieceTitle = piece ? displaySectionTitleForHeadline(piece) : null
         return pieceTitle
           ? `Last time: Page ${pageLabel} (${pieceTitle})`
           : `Last time: Page ${pageLabel}`
       }
+      const bookTitle = (bmBook?.title ?? 'Book').trim() || 'Book'
+      return `Last time: ${bookTitle} · p. ${pageLabel}`
     }
   }
 
@@ -1680,7 +3457,7 @@ export function getLastStoppedCarryLine(
       const ta = Date.parse(a.closedAt ?? a.openedAt)
       return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0)
     })
-  const last = rows[rows.length - 1]
+  const last = rows[0]
   if (!last) return null
   const pageLabel = mapPdfPageToDisplayLabel(last.page, histBook, histUnit, null, 'mapped')
   return `Last time: Page ${pageLabel} (last reader session)`
@@ -1692,7 +3469,7 @@ export function generateScheduledClassesWindow(daysAhead: number = 30): { ok: tr
   const assignments = getWeeklySlotAssignments()
   if (assignments.length === 0) return { ok: true }
 
-  const students = getStudents()
+  const students = getActiveStudents()
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   const horizon = new Date(today)
@@ -1706,6 +3483,11 @@ export function generateScheduledClassesWindow(daysAhead: number = 30): { ok: tr
     for (const slot of dayAssignments) {
       const student = students.find((row) => row.id === slot.studentId)
       if (!student) continue
+      const occurrenceDate = localDateKey(dayCursor)
+      const exception = getWeeklySlotExceptions().find(
+        (row) => row.slotId === slot.id && row.localDate === occurrenceDate,
+      )
+      if (exception) continue
       const scheduledFor = isoForSlotDate(dayCursor, slot.startMinute)
       const existing = (student.scheduledClasses ?? []).find(
         (session) => session.sourceSlotId === slot.id && new Date(session.scheduledFor).toISOString() === new Date(scheduledFor).toISOString(),
@@ -1755,11 +3537,155 @@ export function generateScheduledClassesWindow(daysAhead: number = 30): { ok: tr
   return { ok: true }
 }
 
+function resolveSpotlightClassSession(sessions: StudentClassSession[]): StudentClassSession | null {
+  const inProgress = sessions.find((session) => session.status === 'in_progress')
+  if (inProgress) return inProgress
+  return computeNextClass(sessions)
+}
+
+function collectWordReviewAggregatedRows(
+  student: StudentRecord,
+  savedWordEntries?: unknown[],
+): StudentWordReviewRow[] {
+  const prepSignals = collectClassPrepSignals({
+    student,
+    savedWordEntries,
+  })
+  return combineAggregatedWordReviewRows(prepSignals.vocabSignals, student.scheduledClasses ?? [])
+}
+
+export function getStudentWordReviewView(
+  studentId: string,
+  savedWordEntries?: unknown[],
+): StudentWordReviewView | { error: string } {
+  const student = getStudents().find((row) => row.id === studentId)
+  if (!student) return { error: 'Student not found.' }
+  const aggregatedRows = collectWordReviewAggregatedRows(student, savedWordEntries)
+  return buildStudentWordReviewView(
+    {
+      wordReviewEntries: student.wordReviewEntries,
+      wordReviewHidden: student.wordReviewHidden,
+    },
+    aggregatedRows,
+  )
+}
+
+export function upsertStudentWordReviewEntry(
+  studentId: string,
+  word: string,
+  strength: StudentWordReviewStrength,
+): { ok: true } | { ok: false; error: string } {
+  const trimmed = word.trim()
+  if (!trimmed) return { ok: false, error: 'Enter a word.' }
+  const students = getStudents()
+  const idx = students.findIndex((row) => row.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  const nowIso = new Date().toISOString()
+  const key = trimmed.toLowerCase()
+  const entries = sanitizeWordReviewEntries(student.wordReviewEntries).filter(
+    (entry) => entry.word.toLowerCase() !== key,
+  )
+  entries.push({ word: trimmed, strength, source: 'manual', updatedAt: nowIso })
+  const hidden = sanitizeWordReviewHidden(student.wordReviewHidden).filter((item) => item !== key)
+  saveStudent({
+    ...student,
+    wordReviewEntries: entries,
+    wordReviewHidden: hidden,
+    updatedAt: nowIso,
+  })
+  return { ok: true }
+}
+
+export function removeStudentWordReviewEntry(
+  studentId: string,
+  word: string,
+): { ok: true } | { ok: false; error: string } {
+  const trimmed = word.trim()
+  if (!trimmed) return { ok: false, error: 'Word not found.' }
+  const students = getStudents()
+  const idx = students.findIndex((row) => row.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  const nowIso = new Date().toISOString()
+  const key = trimmed.toLowerCase()
+  const entries = sanitizeWordReviewEntries(student.wordReviewEntries).filter(
+    (entry) => entry.word.toLowerCase() !== key,
+  )
+  const hidden = sanitizeWordReviewHidden(student.wordReviewHidden)
+  if (!hidden.includes(key)) hidden.push(key)
+  saveStudent({
+    ...student,
+    wordReviewEntries: entries,
+    wordReviewHidden: hidden,
+    updatedAt: nowIso,
+  })
+  return { ok: true }
+}
+
+export function seedStudentWordReviewFromSignals(
+  studentId: string,
+  savedWordEntries?: unknown[],
+): { ok: true; count: number } | { ok: false; error: string } {
+  const students = getStudents()
+  const idx = students.findIndex((row) => row.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  const existing = sanitizeWordReviewEntries(student.wordReviewEntries)
+  if (existing.length > 0) return { ok: false, error: 'Word list already has saved entries.' }
+  const aggregatedRows = collectWordReviewAggregatedRows(student, savedWordEntries)
+  if (!aggregatedRows.length) return { ok: false, error: 'No words to import from class history yet.' }
+  const nowIso = new Date().toISOString()
+  const seeded = buildSeedEntriesFromRows(aggregatedRows, nowIso)
+  saveStudent({
+    ...student,
+    wordReviewEntries: seeded,
+    updatedAt: nowIso,
+  })
+  return { ok: true, count: seeded.length }
+}
+
+export function applyWordReviewToNextClass(
+  studentId: string,
+  savedWordEntries?: unknown[],
+): { ok: true; wordCount: number } | { ok: false; error: string } {
+  const students = getStudents()
+  const idx = students.findIndex((row) => row.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  const viewResult = getStudentWordReviewView(studentId, savedWordEntries)
+  if ('error' in viewResult) return { ok: false, error: viewResult.error }
+  const words = viewResult.needsPractice.map((row) => row.word)
+  if (!words.length) return { ok: false, error: 'Add at least one word that needs practice first.' }
+
+  const sessions = sortClassesByDate(
+    (student.scheduledClasses ?? [])
+      .map((session) => sanitizeClassSession(session))
+      .filter((session): session is StudentClassSession => !!session),
+  )
+  const target = resolveSpotlightClassSession(sessions)
+  if (!target) return { ok: false, error: 'No upcoming class to update.' }
+
+  const nowIso = new Date().toISOString()
+  const nextSessions = sessions.map((session) =>
+    session.id === target.id
+      ? { ...session, plannedVocabulary: dedupeTrimmed(words), updatedAt: nowIso }
+      : session,
+  )
+  saveStudent({
+    ...student,
+    scheduledClasses: nextSessions,
+    updatedAt: nowIso,
+  })
+  return { ok: true, wordCount: words.length }
+}
+
 export function buildStudentClassPrepContext(
   studentId: string,
   classId: string,
   library?: BookLibraryPayload | null,
   bookContext?: BookContextRecord | null,
+  options?: BuildStudentClassPrepContextOptions,
 ): StudentClassPrepContext | { error: string } {
   const student = getStudents().find((row) => row.id === studentId)
   if (!student) return { error: 'Student not found.' }
@@ -1773,15 +3699,20 @@ export function buildStudentClassPrepContext(
     sectionOptions[0] ??
     undefined
   const resolvedOption = resolvedSection ? sectionOptions.find((option) => option.id === resolvedSection.id) : undefined
-  const sectionVocabulary = dedupeTrimmed([
+  const heuristicSectionVocabulary = dedupeTrimmed([
     ...target.plannedVocabulary,
     ...target.goals.flatMap((goal) => goal.split(/\s+/)),
     ...target.activities.flatMap((activity) => activity.split(/\s+/)),
   ]).filter((token) => token.length >= 4)
+  const sectionVocabulary = dedupeTrimmed([
+    ...(options?.partSectionVocabulary ?? []),
+    ...heuristicSectionVocabulary,
+  ]).slice(0, 12)
   const checkpointIdeas: string[] =
     resolvedOption?.type === 'part' && /vocab|word/i.test(resolvedOption.title)
       ? ['Tap each target word and explain meaning in context.', 'Finish with a quick 4-item retrieval check.']
       : ['Pause halfway for a comprehension check question.', 'End with a short recap and one transfer question.']
+  const nowMs = Date.now()
   const recentHistory = sessions
     .filter((session) => session.id !== classId)
     .sort((a, b) => new Date(b.scheduledFor).getTime() - new Date(a.scheduledFor).getTime())
@@ -1796,7 +3727,34 @@ export function buildStudentClassPrepContext(
       reviewedWords: session.reviewedWords,
       learnedWords: session.learnedWords,
       notes: session.teacherNotes,
+      sessionNote: sessionNoteForHistory(session),
+      dueReviewWords: dueReviewWordsForSession(session, nowMs),
     }))
+  const prepSignals = collectClassPrepSignals({
+    student,
+    resolvedSection: resolvedSection
+      ? { bookId: resolvedSection.bookId, unitId: resolvedSection.unitId }
+      : undefined,
+    sectionOption: resolvedOption,
+    savedWordEntries: options?.savedWordEntries,
+    namedRecurringIssues: [],
+  })
+  const aggregatedWordRows = combineAggregatedWordReviewRows(
+    prepSignals.vocabSignals,
+    student.scheduledClasses ?? [],
+  )
+  const wordReviewView = buildStudentWordReviewView(
+    {
+      wordReviewEntries: student.wordReviewEntries,
+      wordReviewHidden: student.wordReviewHidden,
+    },
+    aggregatedWordRows,
+  )
+  const vocabSignals = resolveVocabSignalsFromWordReview(wordReviewView)
+  const hasVocabSignals =
+    vocabSignals.strongWords.length > 0 ||
+    vocabSignals.needsPracticeWords.length > 0 ||
+    vocabSignals.savedNotebookWords.length > 0
   return {
     studentName: student.name,
     classTitle: target.title,
@@ -1813,7 +3771,7 @@ export function buildStudentClassPrepContext(
           pathLabel: resolvedOption?.pathLabel ?? resolvedSection.title,
           startPageHint: resolvedOption?.startPageHint,
           endPageHint: resolvedOption?.endPageHint,
-          sectionVocabulary: sectionVocabulary.slice(0, 12),
+          sectionVocabulary,
           checkpointIdeas,
           contentSummary:
             resolvedOption?.type === 'part'
@@ -1840,10 +3798,17 @@ export function buildStudentClassPrepContext(
     studentSnapshot: {
       levelLabel: estimateLevel(getKnownStudentSummaries().find((row) => normalizeStudentKey(row.name) === normalizeStudentKey(student.name))?.totalQuizzes ?? 0),
       motivation: recentHistory.length === 0 ? 'medium' : 'high',
-      firstOrEarlyClasses:
-        recentHistory.filter((entry) => entry.status === 'completed').length < 3,
+      firstOrEarlyClasses: prepSignals.prepContextFlags.completedClassCount < 3,
     },
     recentHistory,
+    readingPosition: prepSignals.readingPosition,
+    vocabSignals,
+    namedRecurringIssues: prepSignals.namedRecurringIssues,
+    prepContextMode: prepSignals.prepContextMode,
+    prepContextFlags: {
+      ...prepSignals.prepContextFlags,
+      hasVocabSignals,
+    },
   }
 }
 
@@ -1861,56 +3826,214 @@ export function updateStudentCurriculumAssignments(
   const prev = students[idx]
   const bookIds = dedupeStrings(next.assignedBookIds)
   const refs = dedupeUnitRefs(next.assignedUnitRefs)
+  const merged: StudentRecord = { ...prev, assignedBookIds: bookIds, assignedUnitRefs: refs }
+  const optsWithNext = library ? getStudentSectionOptionsForRecord(merged, library) : []
+  let curriculumBookStarts = resolveCurriculumBookStarts(prev, library, optsWithNext)
   let curriculumAnchorSectionId = prev.curriculumAnchorSectionId?.trim() || undefined
+
   if (bookIds.length === 0) {
+    curriculumBookStarts = {}
     curriculumAnchorSectionId = undefined
-  } else if (library) {
-    const merged: StudentRecord = { ...prev, assignedBookIds: bookIds, assignedUnitRefs: refs }
-    const optsWithNext = getStudentSectionOptionsForRecord(merged, library)
-    const anchorOk = curriculumAnchorSectionId && optsWithNext.some((o) => o.id === curriculumAnchorSectionId)
-    if (!anchorOk) curriculumAnchorSectionId = undefined
+  } else {
+    curriculumBookStarts = Object.fromEntries(
+      Object.entries(curriculumBookStarts).filter(([bookId, start]) => {
+        if (!bookIds.includes(bookId)) return false
+        if (!library) return true
+        return optsWithNext.some((o) => o.id === start.sectionId)
+      }),
+    )
+    const anchorOk =
+      curriculumAnchorSectionId && optsWithNext.some((o) => o.id === curriculumAnchorSectionId)
+    if (!anchorOk) {
+      curriculumAnchorSectionId = mostRecentCurriculumBookStart(curriculumBookStarts, optsWithNext)?.id
+    }
   }
+
+  const nextStarts =
+    Object.keys(curriculumBookStarts).length > 0 ? curriculumBookStarts : undefined
   saveStudent({
     ...prev,
     assignedBookIds: bookIds,
     assignedUnitRefs: refs,
     curriculumAnchorSectionId,
+    curriculumBookStarts: nextStarts,
     updatedAt: new Date().toISOString(),
   })
+  notifyStudentLocalDataChanged(studentId)
   return { ok: true }
 }
 
-export function updateStudentCurriculumReadingAnchor(
+/** Live class if any, else soonest planned/prepared session. */
+export function getSpotlightClassSessionId(studentId: string): string | null {
+  const sessions = getStudentScheduledClasses(studentId)
+  const live = sessions.find((s) => s.status === 'in_progress')
+  if (live) return live.id
+  const next = [...sessions]
+    .filter((s) => s.status === 'planned' || s.status === 'prepared')
+    .sort((a, b) => new Date(a.scheduledFor).getTime() - new Date(b.scheduledFor).getTime())[0]
+  return next?.id ?? null
+}
+
+/** Point the spotlight class at this lesson piece (Books ↔ Next class sync). */
+export function syncSpotlightClassSectionFromBookStart(
   studentId: string,
-  sectionId: string | null,
+  section: StudentBookSectionRef | StudentSectionOption,
+): { ok: true } | { ok: false; error: string } {
+  const classId = getSpotlightClassSessionId(studentId)
+  if (!classId) return { ok: true }
+  const ref =
+    'pathLabel' in section && typeof (section as StudentSectionOption).pathLabel === 'string'
+      ? toStudentBookSectionRef(section as StudentSectionOption)
+      : (section as StudentBookSectionRef)
+  const result = updateStudentClassSelectedSection(studentId, classId, ref)
+  if (result.ok) notifyStudentLocalDataChanged(studentId)
+  return result
+}
+
+/**
+ * Set or clear the teacher starting place for one book.
+ * Does not overwrite starts on other books. Pass `sectionId: null` to clear that book only.
+ * Setting a start also updates the spotlight class “what we’re teaching” to match.
+ */
+export function updateStudentCurriculumBookStart(
+  studentId: string,
+  input: {
+    bookId: string
+    sectionId: string | null
+    /** Mapped / printed page; defaults to the section’s start hint when omitted. */
+    mappedPage?: number | null
+    /** When false, skip spotlight class sync (Next class already wrote the section). Default true. */
+    syncSpotlight?: boolean
+  },
   library: BookLibraryPayload | null,
 ): { ok: true } | { ok: false; error: string } {
   const students = getStudents()
   const idx = students.findIndex((s) => s.id === studentId)
   if (idx < 0) return { ok: false, error: 'Student not found.' }
   const prev = students[idx]
-  const trimmed = sectionId?.trim() ?? ''
-  if (!trimmed) {
+  const bookId = input.bookId.trim()
+  if (!bookId) return { ok: false, error: 'Book is required.' }
+
+  const options = library?.books?.length ? getStudentSectionOptions(studentId, library) : []
+  let curriculumBookStarts = resolveCurriculumBookStarts(prev, library, options)
+
+  const trimmedSection = input.sectionId?.trim() ?? ''
+  if (!trimmedSection) {
+    const { [bookId]: _removed, ...rest } = curriculumBookStarts
+    curriculumBookStarts = rest
+    const nextAnchor = mostRecentCurriculumBookStart(curriculumBookStarts, options)?.id
     saveStudent({
       ...prev,
-      curriculumAnchorSectionId: undefined,
+      curriculumBookStarts: Object.keys(curriculumBookStarts).length > 0 ? curriculumBookStarts : undefined,
+      curriculumAnchorSectionId: nextAnchor,
       updatedAt: new Date().toISOString(),
     })
+    notifyStudentLocalDataChanged(studentId)
     return { ok: true }
+  }
+
+  if (!library?.books?.length) {
+    return { ok: false, error: 'Load the book library before setting a reading place.' }
+  }
+  const section = options.find((o) => o.id === trimmedSection)
+  if (!section || section.bookId !== bookId) {
+    return { ok: false, error: 'That lesson piece is not available for this student’s current assignments.' }
+  }
+  const mappedFromInput =
+    typeof input.mappedPage === 'number' && Number.isFinite(input.mappedPage) && input.mappedPage >= 1
+      ? Math.floor(input.mappedPage)
+      : null
+  const mappedFromSection =
+    typeof section.startPageHint === 'number' && section.startPageHint >= 1
+      ? Math.floor(section.startPageHint)
+      : null
+  const previousMapped =
+    typeof curriculumBookStarts[bookId]?.mappedPage === 'number' &&
+    curriculumBookStarts[bookId]!.mappedPage >= 1
+      ? Math.floor(curriculumBookStarts[bookId]!.mappedPage)
+      : null
+  // Prefer explicit page → section hint → keep prior start for this book → 1 last resort.
+  const mappedPage = mappedFromInput ?? mappedFromSection ?? previousMapped ?? 1
+  const nowIso = new Date().toISOString()
+  curriculumBookStarts = {
+    ...curriculumBookStarts,
+    [bookId]: {
+      sectionId: section.id,
+      unitId: section.unitId,
+      mappedPage,
+      updatedAt: nowIso,
+    },
+  }
+  saveStudent({
+    ...prev,
+    curriculumBookStarts,
+    curriculumAnchorSectionId: section.id,
+    updatedAt: nowIso,
+  })
+  notifyStudentLocalDataChanged(studentId)
+  if (input.syncSpotlight !== false) {
+    syncSpotlightClassSectionFromBookStart(studentId, section)
+  }
+  return { ok: true }
+}
+
+/** @deprecated Use `updateStudentCurriculumBookStart` (per book). */
+export function updateStudentCurriculumReadingAnchor(
+  studentId: string,
+  sectionId: string | null,
+  library: BookLibraryPayload | null,
+): { ok: true } | { ok: false; error: string } {
+  const trimmed = sectionId?.trim() ?? ''
+  if (!trimmed) {
+    const students = getStudents()
+    const prev = students.find((s) => s.id === studentId)
+    if (!prev) return { ok: false, error: 'Student not found.' }
+    const options = library?.books?.length ? getStudentSectionOptions(studentId, library) : []
+    const starts = resolveCurriculumBookStarts(prev, library, options)
+    const legacyBookId =
+      options.find((o) => o.id === prev.curriculumAnchorSectionId?.trim())?.bookId ??
+      Object.keys(starts)[0]
+    if (!legacyBookId) {
+      saveStudent({
+        ...prev,
+        curriculumAnchorSectionId: undefined,
+        curriculumBookStarts: undefined,
+        updatedAt: new Date().toISOString(),
+      })
+      notifyStudentLocalDataChanged(studentId)
+      return { ok: true }
+    }
+    return updateStudentCurriculumBookStart(studentId, { bookId: legacyBookId, sectionId: null }, library)
   }
   if (!library?.books?.length) {
     return { ok: false, error: 'Load the book library before setting a reading anchor.' }
   }
   const options = getStudentSectionOptions(studentId, library)
-  if (!options.some((o) => o.id === trimmed)) {
+  const section = options.find((o) => o.id === trimmed)
+  if (!section) {
     return { ok: false, error: 'That lesson piece is not available for this student’s current assignments.' }
   }
-  saveStudent({
-    ...prev,
-    curriculumAnchorSectionId: trimmed,
-    updatedAt: new Date().toISOString(),
-  })
-  return { ok: true }
+  return updateStudentCurriculumBookStart(
+    studentId,
+    {
+      bookId: section.bookId,
+      sectionId: section.id,
+      mappedPage: section.startPageHint ?? 1,
+    },
+    library,
+  )
+}
+
+export function getStudentCurriculumBookStart(
+  studentId: string,
+  bookId: string,
+  library: BookLibraryPayload | null = null,
+): StudentCurriculumBookStart | null {
+  const student = getStudents().find((row) => row.id === studentId)
+  if (!student) return null
+  const options = library?.books?.length ? getStudentSectionOptions(studentId, library) : []
+  const starts = resolveCurriculumBookStarts(student, library, options)
+  return starts[bookId.trim()] ?? null
 }
 
 export function appendStudentCurriculumSession(
@@ -1998,40 +4121,92 @@ function endOtherInProgressClassSessions(
   return { ok: true }
 }
 
-/** Creates a lesson notebook on in-progress classes that predate notebook storage. */
-export function ensureStudentClassLessonNotebookSession(
+const BOOK_OVERLAY_CLASS_STATUSES: ReadonlySet<StudentClassStatus> = new Set([
+  'planned',
+  'prepared',
+  'in_progress',
+])
+
+/** Planned, prepared, or live — book + lesson board bind to this class session. */
+export function isBookOverlayClassSessionStatus(status: StudentClassStatus): boolean {
+  return BOOK_OVERLAY_CLASS_STATUSES.has(status)
+}
+
+/**
+ * Class session id for book/board storage.
+ * When the URL names a session, use it only if status is planned/prepared/live (not completed/cancelled).
+ * With no URL session, fall back to any live class (map opened without class context).
+ */
+export function resolveBookOverlayClassSessionId(args: {
+  urlClassSessionId: string | null | undefined
+  sessions: readonly { id: string; status: StudentClassStatus }[] | null | undefined
+}): string | null {
+  const urlId = args.urlClassSessionId?.trim() || null
+  const sessions = args.sessions ?? []
+  if (urlId) {
+    const match = sessions.find((s) => s.id === urlId)
+    if (!match) return null
+    return isBookOverlayClassSessionStatus(match.status) ? match.id : null
+  }
+  return sessions.find((s) => s.status === 'in_progress')?.id ?? null
+}
+
+export interface BuildStudentMapReaderHrefArgs {
+  studentId: string
+  bookId?: string | null
+  unitId?: string | null
+  classSessionId?: string | null
+  /** When true (default), map opens the teaching reader once pages are ready. */
+  openBook?: boolean
+}
+
+/** Fullscreen map teaching reader — use for “Open book”, not the Books library page. */
+export function buildStudentMapReaderHref({
+  studentId,
+  bookId,
+  unitId,
+  classSessionId,
+  openBook = true,
+}: BuildStudentMapReaderHrefArgs): string {
+  const params = new URLSearchParams()
+  const sessionId = classSessionId?.trim()
+  if (sessionId) params.set('classSession', sessionId)
+  if (openBook) params.set('openBook', '1')
+  const bid = bookId?.trim()
+  const uid = unitId?.trim()
+  if (bid) params.set('book', bid)
+  if (uid) params.set('unit', uid)
+  const qs = params.toString()
+  return `/students/${encodeURIComponent(studentId)}/map${qs ? `?${qs}` : ''}`
+}
+
+/**
+ * Fullscreen map for a class session — lands on the book shelf (no auto-open).
+ * Teacher picks Workshop / Literature; `book`/`unit` hint the planned title for badges.
+ */
+export function buildPrepareLessonMapHref(
   studentId: string,
-  classId: string,
-): { ok: true } | { ok: false; error: string } {
-  const students = getStudents()
-  const idx = students.findIndex((s) => s.id === studentId)
-  if (idx < 0) return { ok: false, error: 'Student not found.' }
-  const student = students[idx]
-  const sessions = student.scheduledClasses ?? []
-  const target = sessions.find((s) => s.id === classId)
-  if (!target) return { ok: false, error: 'Class session not found.' }
-  if (target.status !== 'in_progress') {
-    return { ok: false, error: 'Notebook is only available during a live class.' }
-  }
-  if (target.lessonNotebookSession?.sections?.length) {
-    return { ok: true }
-  }
-  const nowIso = new Date().toISOString()
-  const nextSessions = sessions.map((session) =>
-    session.id === classId
-      ? {
-          ...session,
-          lessonNotebookSession: createInitialLessonNotebookSession(student, session),
-          updatedAt: nowIso,
-        }
-      : session,
-  )
-  saveStudent({
-    ...student,
-    scheduledClasses: nextSessions,
-    updatedAt: nowIso,
+  classSessionId: string,
+  library?: BookLibraryPayload | null,
+): string {
+  const resolved = resolveClassTeachingBookUnit(studentId, classSessionId, library ?? null)
+  return buildStudentMapReaderHref({
+    studentId,
+    classSessionId,
+    openBook: false,
+    bookId: resolved?.bookId,
+    unitId: resolved?.unitId,
   })
-  return { ok: true }
+}
+
+/** Prep map with reading-checks side panel open (`?checksPrep=1`). */
+export function buildReadingChecksPrepHref(
+  studentId: string,
+  classSessionId: string,
+  library?: BookLibraryPayload | null,
+): string {
+  const base = buildPrepareLessonMapHref(studentId, classSessionId, library)
+  return base.includes('?') ? `${base}&checksPrep=1` : `${base}?checksPrep=1`
 }
 
 /** Marks a class as live teaching: `in_progress` + `classStartedAt`. */
@@ -2049,11 +4224,11 @@ export function startStudentClassSession(
   const sessions = student.scheduledClasses ?? []
   const target = sessions.find((s) => s.id === classId)
   if (!target) return { ok: false, error: 'Class session not found.' }
-  if (target.status === 'completed' || target.status === 'cancelled') {
+  if (target.status === 'completed' || target.status === 'cancelled' || target.status === 'missed') {
     return { ok: false, error: 'This class cannot be started.' }
   }
   if (target.status === 'in_progress') {
-    return ensureStudentClassLessonNotebookSession(studentId, classId)
+    return { ok: true }
   }
   const nowIso = new Date().toISOString()
   const nextSessions = sessions.map((session) =>
@@ -2062,7 +4237,7 @@ export function startStudentClassSession(
           ...session,
           status: 'in_progress' as const,
           classStartedAt: nowIso,
-          lessonNotebookSession: session.lessonNotebookSession ?? createInitialLessonNotebookSession(student, session),
+          extendedMinutesTotal: undefined,
           updatedAt: nowIso,
         }
       : session,
@@ -2079,11 +4254,320 @@ export function startStudentClassSession(
   return { ok: true }
 }
 
+/**
+ * Add overtime minutes while live. Cap is +15 past the original scheduled end.
+ */
+export function extendStudentClassSession(
+  studentId: string,
+  classId: string,
+  addMinutes: number,
+): { ok: true; extendedMinutesTotal: number } | { ok: false; error: string } {
+  const students = getStudents()
+  const idx = students.findIndex((s) => s.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  const sessions = student.scheduledClasses ?? []
+  const target = sessions.find((s) => s.id === classId)
+  if (!target) return { ok: false, error: 'Class session not found.' }
+  if (target.status !== 'in_progress') {
+    return { ok: false, error: 'Only a live class can be extended.' }
+  }
+  const current = sanitizeExtendedMinutesTotal(target.extendedMinutesTotal) ?? 0
+  if (!canExtendClassBy(current, addMinutes)) {
+    return { ok: false, error: 'That would go past the +15 minute overtime cap.' }
+  }
+  const nextTotal = sanitizeExtendedMinutesTotal(current + Math.floor(addMinutes))
+  if (nextTotal == null) {
+    return { ok: false, error: 'Invalid extend amount.' }
+  }
+  const nowIso = new Date().toISOString()
+  const nextSessions = sessions.map((session) =>
+    session.id === classId
+      ? {
+          ...session,
+          extendedMinutesTotal: nextTotal,
+          updatedAt: nowIso,
+        }
+      : session,
+  )
+  const sanitized = nextSessions
+    .map((session) => sanitizeClassSession(session))
+    .filter((session): session is StudentClassSession => !!session)
+  saveStudent({
+    ...student,
+    scheduledClasses: sortClassesByDate(sanitized),
+    updatedAt: nowIso,
+  })
+  notifyStudentLocalDataChanged(studentId)
+  return { ok: true, extendedMinutesTotal: nextTotal }
+}
+
+/** Any live class across active students (app-wide one-live rule). */
+export function findAppWideLiveClass(): TodaysClassSessionRow | null {
+  for (const row of getActiveStudents()) {
+    const live = (row.scheduledClasses ?? []).find((session) => session.status === 'in_progress')
+    if (!live) continue
+    const session = sanitizeClassSession(live)
+    if (!session) continue
+    return {
+      studentId: row.id,
+      studentName: row.name.trim() || 'Student',
+      session,
+    }
+  }
+  return null
+}
+
+export type SoftAutoStartReconcileResult = {
+  started: TodaysClassSessionRow | null
+  blocked: Array<TodaysClassSessionRow & { blockedByStudentName: string }>
+}
+
+/**
+ * Soft auto-start while the app is open: planned/prepared whose start ≤ now and
+ * still inside end+grace become live. At most one live app-wide; conflicts stay planned.
+ * Idempotent. Does not navigate or write bookmarks.
+ */
+export function reconcileSoftClassAutoStart(
+  nowMs: number = Date.now(),
+): SoftAutoStartReconcileResult {
+  const candidates = getTodaysClassSessionsForTeacher(new Date(nowMs))
+    .filter((row) => isSessionEligibleForSoftAutoStart(row.session, nowMs))
+    .sort(
+      (a, b) =>
+        new Date(a.session.scheduledFor).getTime() - new Date(b.session.scheduledFor).getTime(),
+    )
+
+  if (candidates.length === 0) {
+    return { started: null, blocked: [] }
+  }
+
+  const live = findAppWideLiveClass()
+  if (live) {
+    return {
+      started: null,
+      blocked: candidates.map((row) => ({
+        ...row,
+        blockedByStudentName: live.studentName,
+      })),
+    }
+  }
+
+  const [first, ...rest] = candidates
+  const started = startStudentClassSession(first.studentId, first.session.id)
+  if (!started.ok) {
+    return { started: null, blocked: [] }
+  }
+
+  const refreshed = getStudentScheduledClasses(first.studentId).find((s) => s.id === first.session.id)
+  const startedRow: TodaysClassSessionRow = {
+    studentId: first.studentId,
+    studentName: first.studentName,
+    session: refreshed ?? { ...first.session, status: 'in_progress' },
+  }
+
+  const blocked =
+    rest.length > 0
+      ? rest.map((row) => ({
+          ...row,
+          blockedByStudentName: first.studentName,
+        }))
+      : []
+
+  return { started: startedRow, blocked }
+}
+
+/** Best-effort bookmark for hard auto-end (no blocking recap). */
+export function resolveHardAutoEndBookmark(
+  studentId: string,
+  session: StudentClassSession,
+): { bookId: string; pdfPage: number; unitId?: string } | undefined {
+  const student = getStudents().find((row) => row.id === studentId)
+  const assignedBookIds = student?.assignedBookIds ?? []
+  const bookId = (session.selectedSection?.bookId ?? assignedBookIds[0] ?? '').trim()
+  if (!bookId) return undefined
+
+  const unitId = session.selectedSection?.unitId?.trim() || undefined
+  const hint = session.selectedSection?.endPageHint ?? session.selectedSection?.startPageHint
+  let pdfPage =
+    typeof hint === 'number' && Number.isFinite(hint) && hint >= 1 ? Math.floor(hint) : 1
+
+  if (unitId) {
+    const teachingPage = getStudentTeachingOpenPdfPageForBookUnit(studentId, bookId, unitId)
+    if (teachingPage != null && teachingPage >= 1) pdfPage = teachingPage
+  }
+
+  return unitId ? { bookId, pdfPage, unitId } : { bookId, pdfPage }
+}
+
+/**
+ * Complete a live class because grace expired (Phase 4).
+ * Idempotent if already completed. No recap prompt — soft “add note later” stays available on Past.
+ */
+export function hardAutoEndStudentClassSession(
+  studentId: string,
+  classId: string,
+  input?: { readingCheckWrapLine?: string },
+): { ok: true; alreadyEnded: boolean; studentName: string } | { ok: false; error: string } {
+  const student = getStudents().find((row) => row.id === studentId)
+  if (!student) return { ok: false, error: 'Student not found.' }
+  const studentName = student.name.trim() || 'Student'
+  const session = (student.scheduledClasses ?? []).find((row) => row.id === classId)
+  if (!session) return { ok: false, error: 'Class session not found.' }
+
+  if (session.status === 'completed') {
+    return { ok: true, alreadyEnded: true, studentName }
+  }
+  if (session.status !== 'in_progress') {
+    return { ok: false, error: 'This class is not in progress.' }
+  }
+
+  const bookmark = resolveHardAutoEndBookmark(studentId, session)
+  const ended = endStudentClassSession(studentId, classId, {
+    ...(bookmark ? { bookmarkAtEnd: bookmark } : {}),
+    ...(input?.readingCheckWrapLine ? { readingCheckWrapLine: input.readingCheckWrapLine } : {}),
+  })
+  if (!ended.ok) return ended
+  return { ok: true, alreadyEnded: false, studentName }
+}
+
+export type HardAutoEndReconcileResult = {
+  ended: Array<{ studentId: string; studentName: string; sessionId: string; alreadyEnded: boolean }>
+}
+
+/**
+ * Hard auto-end while the app is open: any live class past end+grace is completed.
+ * Run before soft auto-start so a freed slot can start. Idempotent.
+ */
+export function reconcileHardClassAutoEnd(nowMs: number = Date.now()): HardAutoEndReconcileResult {
+  const ended: HardAutoEndReconcileResult['ended'] = []
+
+  for (const row of getActiveStudents()) {
+    const liveSessions = (row.scheduledClasses ?? []).filter((session) => session.status === 'in_progress')
+    for (const raw of liveSessions) {
+      const session = sanitizeClassSession(raw)
+      if (!session) continue
+      if (!isSessionDueForHardAutoEnd(session, nowMs)) continue
+      const result = hardAutoEndStudentClassSession(row.id, session.id)
+      if (!result.ok) continue
+      ended.push({
+        studentId: row.id,
+        studentName: result.studentName,
+        sessionId: session.id,
+        alreadyEnded: result.alreadyEnded,
+      })
+    }
+  }
+
+  return { ended }
+}
+
+/**
+ * Mark overdue planned/prepared sessions as missed (never taught past end+grace).
+ */
+export function reconcileMissedClassSessions(nowMs: number = Date.now()): {
+  missed: Array<{ studentId: string; studentName: string; sessionId: string }>
+} {
+  const missed: Array<{ studentId: string; studentName: string; sessionId: string }> = []
+  const nowIso = new Date(nowMs).toISOString()
+
+  for (const row of getActiveStudents()) {
+    let changed = false
+    const nextSessions = (row.scheduledClasses ?? []).map((raw) => {
+      const session = sanitizeClassSession(raw)
+      if (!session) return raw
+      if (!isSessionDueForMissed(session, nowMs)) return session
+      changed = true
+      missed.push({
+        studentId: row.id,
+        studentName: row.name.trim() || 'Student',
+        sessionId: session.id,
+      })
+      return {
+        ...session,
+        status: 'missed' as const,
+        classStartedAt: undefined,
+        updatedAt: nowIso,
+      }
+    })
+
+    if (!changed) continue
+    const sanitized = sortClassesByDate(
+      nextSessions.map((s) => sanitizeClassSession(s)).filter((s): s is StudentClassSession => !!s),
+    )
+    saveStudent({ ...row, scheduledClasses: sanitized, updatedAt: nowIso })
+    notifyStudentLocalDataChanged(row.id)
+  }
+
+  return { missed }
+}
+
+/**
+ * Mark a missed class as taught anyway → completed (optional short note).
+ */
+export function markMissedClassTaughtAnyway(
+  studentId: string,
+  classId: string,
+  note?: string,
+): { ok: true } | { ok: false; error: string } {
+  const students = getStudents()
+  const idx = students.findIndex((s) => s.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const student = students[idx]
+  const sessions = student.scheduledClasses ?? []
+  const target = sessions.find((s) => s.id === classId)
+  if (!target) return { ok: false, error: 'Class session not found.' }
+  if (target.status !== 'missed') {
+    return { ok: false, error: 'Only a missed class can be marked taught.' }
+  }
+  const nowIso = new Date().toISOString()
+  const classEndNote = sanitizeClassEndNote(note)
+  const nextSessions = sessions.map((session) =>
+    session.id === classId
+      ? {
+          ...session,
+          status: 'completed' as const,
+          classEndedAt: nowIso,
+          classEndNote,
+          updatedAt: nowIso,
+        }
+      : session,
+  )
+  const sanitized = sortClassesByDate(
+    nextSessions.map((s) => sanitizeClassSession(s)).filter((s): s is StudentClassSession => !!s),
+  )
+  saveStudent({ ...student, scheduledClasses: sanitized, updatedAt: nowIso })
+  notifyStudentLocalDataChanged(studentId)
+  return { ok: true }
+}
+
+export type ClassScheduleCatchUpResult = {
+  autoEnded: HardAutoEndReconcileResult['ended']
+  missed: Array<{ studentId: string; studentName: string; sessionId: string }>
+  started: SoftAutoStartReconcileResult
+}
+
+/**
+ * On app open / tick: auto-end overdue live → mark no-shows missed → soft auto-start in-window.
+ */
+export function reconcileClassScheduleCatchUp(nowMs: number = Date.now()): ClassScheduleCatchUpResult {
+  const autoEnded = reconcileHardClassAutoEnd(nowMs)
+  const missedResult = reconcileMissedClassSessions(nowMs)
+  const started = reconcileSoftClassAutoStart(nowMs)
+  return {
+    autoEnded: autoEnded.ended,
+    missed: missedResult.missed,
+    started,
+  }
+}
+
 export type EndStudentClassSessionInput = {
   classEndNote?: string
   /** Longer log: what you did this call, pages, plan for next time (optional). */
   sessionNote?: string
   bookmarkAtEnd?: { bookId: string; pdfPage: number; unitId?: string }
+  /** Auto reading-check wrap line for teacher glance / past classes. */
+  readingCheckWrapLine?: string
 }
 
 /** Prefer bookmark unit; else first assigned unit ref for that book (reader needs a unit id). */
@@ -2116,6 +4600,7 @@ export function endStudentClassSession(
   const nowIso = new Date().toISOString()
   const classEndNote = sanitizeClassEndNote(input?.classEndNote)
   const sessionNote = sanitizeSessionNote(input?.sessionNote)
+  const readingCheckWrapLine = sanitizeReadingCheckWrapLine(input?.readingCheckWrapLine)
   const bookmarkSanitized =
     input?.bookmarkAtEnd !== undefined && input.bookmarkAtEnd !== null
       ? sanitizeBookmarkAtEnd(input.bookmarkAtEnd)
@@ -2129,9 +4614,7 @@ export function endStudentClassSession(
       classEndedAt: nowIso,
       classEndNote,
       sessionNote,
-      lessonNotebookSession: session.lessonNotebookSession
-        ? { ...session.lessonNotebookSession, endedAt: nowIso }
-        : session.lessonNotebookSession,
+      ...(readingCheckWrapLine ? { readingCheckWrapLine } : {}),
       ...(bookmarkSanitized ? { bookmarkAtEnd: bookmarkSanitized } : {}),
       updatedAt: nowIso,
     }
@@ -2156,10 +4639,12 @@ export function endStudentClassSession(
     }
   }
 
+  const clearFirstClassWelcome = Boolean(student.firstClassWelcome)
   saveStudent({
     ...student,
     scheduledClasses: sortClassesByDate(sanitized),
     curriculumHistory: nextCurriculumHistory,
+    ...(clearFirstClassWelcome ? { firstClassWelcome: undefined } : {}),
     updatedAt: nowIso,
   })
   notifyStudentLocalDataChanged(studentId)
@@ -2256,6 +4741,7 @@ export function updateStudentClassSelectedSection(
     scheduledClasses: nextSessions,
     updatedAt: nowIso,
   })
+  notifyStudentLocalDataChanged(studentId)
   return { ok: true }
 }
 
@@ -2263,6 +4749,22 @@ export function updateStudentClassPrepSummary(
   studentId: string,
   classId: string,
   aiPrepSummary: string,
+): { ok: true } | { ok: false; error: string } {
+  return updateStudentClassPrep(studentId, classId, { prepNotes: aiPrepSummary })
+}
+
+export interface StudentClassPrepUpdate extends ClassPrepExtrasPayload {
+  prepTimeBlocks?: ClassPrepTimeBlock[]
+  prepOutlineSummary?: string
+  prepNotes?: string
+  /** When set, replaces planned vocabulary (e.g. seed from words to revisit). */
+  plannedVocabulary?: string[]
+}
+
+export function updateStudentClassPrep(
+  studentId: string,
+  classId: string,
+  payload: StudentClassPrepUpdate,
 ): { ok: true } | { ok: false; error: string } {
   const students = getStudents()
   const idx = students.findIndex((s) => s.id === studentId)
@@ -2273,10 +4775,35 @@ export function updateStudentClassPrepSummary(
   const nextSessions = (student.scheduledClasses ?? []).map((session) => {
     if (session.id !== classId) return session
     found = true
+    const prepTimeBlocks =
+      payload.prepTimeBlocks !== undefined ? sanitizePrepTimeBlocks(payload.prepTimeBlocks) : session.prepTimeBlocks
+    const prepOutlineSummary =
+      payload.prepOutlineSummary !== undefined
+        ? payload.prepOutlineSummary.trim() || undefined
+        : session.prepOutlineSummary
+    const prepNotes = payload.prepNotes !== undefined ? payload.prepNotes.trim() || undefined : session.prepNotes
+    const extras = sanitizeClassPrepExtras({
+      prepPriorities: payload.prepPriorities ?? session.prepPriorities,
+      prepSuggestedActivities: payload.prepSuggestedActivities ?? session.prepSuggestedActivities,
+      prepCheckpointMoments: payload.prepCheckpointMoments ?? session.prepCheckpointMoments,
+      prepWordsToRevisit: payload.prepWordsToRevisit ?? session.prepWordsToRevisit,
+      prepDifferentiationTips: payload.prepDifferentiationTips ?? session.prepDifferentiationTips,
+      prepCarryOver: payload.prepCarryOver ?? session.prepCarryOver,
+    })
+    const hasOutline = Boolean(prepTimeBlocks?.length)
+    const mergedSession = { ...session, ...extras }
+    const hasPrepContent = hasOutline || Boolean(prepNotes) || hasPrepExtras(mergedSession)
     return {
       ...session,
-      status: session.status === 'planned' ? 'prepared' : session.status,
-      aiPrepSummary: aiPrepSummary.trim() || undefined,
+      status: session.status === 'planned' && hasPrepContent ? 'prepared' : session.status,
+      prepTimeBlocks,
+      prepOutlineSummary,
+      prepNotes,
+      ...extras,
+      plannedVocabulary:
+        payload.plannedVocabulary !== undefined
+          ? dedupeTrimmed(payload.plannedVocabulary)
+          : session.plannedVocabulary,
       updatedAt: nowIso,
     }
   })
@@ -2295,598 +4822,6 @@ export function getStudentClassSessionById(studentId: string, classId: string): 
   const raw = (student.scheduledClasses ?? []).find((session) => session.id === classId)
   if (!raw) return null
   return sanitizeClassSession(raw)
-}
-
-export function upsertStudentClassLessonNotebookDoc(
-  studentId: string,
-  classId: string,
-  input: {
-    sectionId?: string
-    html: string
-    clientDocUpdatedAt?: string
-  },
-):
-  | { ok: true; docUpdatedAt: string }
-  | { ok: false; error: string; conflict?: true; latestHtml?: string; latestUpdatedAt?: string } {
-  const students = getStudents()
-  const idx = students.findIndex((s) => s.id === studentId)
-  if (idx < 0) return { ok: false, error: 'Student not found.' }
-  const student = students[idx]
-  const nowIso = new Date().toISOString()
-  let found = false
-  let updated = false
-  const conflictSnapshots: { latestHtml: string; latestUpdatedAt: string }[] = []
-  const nextSessions = (student.scheduledClasses ?? []).map((session) => {
-    if (session.id !== classId) return session
-    found = true
-    const notebook = session.lessonNotebookSession
-    if (!notebook || !Array.isArray(notebook.sections) || notebook.sections.length === 0) return session
-    const targetSectionId = input.sectionId?.trim() || notebook.sections[0]?.sectionId
-    if (!targetSectionId) return session
-    const sections = notebook.sections.map((section) => {
-      if (section.sectionId !== targetSectionId) return section
-      const nextHtml = input.html.trim()
-      const existingDocIndex = section.entries.findIndex(
-        (entry) => entry.layer === 'doc' && entry.payload?.kind === 'doc_richtext',
-      )
-      if (existingDocIndex >= 0) {
-        const existing = section.entries[existingDocIndex]
-        const existingHtml = typeof existing.payload?.html === 'string' ? existing.payload.html : ''
-        const existingUpdatedAt = existing.updatedAt
-        const hasConflict =
-          typeof input.clientDocUpdatedAt === 'string' &&
-          input.clientDocUpdatedAt.trim() &&
-          input.clientDocUpdatedAt !== existingUpdatedAt &&
-          nextHtml !== existingHtml
-        if (hasConflict) {
-          const mergeNoteEntry: LessonNotebookEntry = {
-            entryId: makeNotebookId('lesson-notebook-entry'),
-            sectionId: section.sectionId,
-            layer: 'doc',
-            payload: {
-              kind: 'merge_note',
-              message: 'Save conflict: newer content exists. Review and merge manually.',
-              latestHtml: existingHtml,
-              incomingHtml: nextHtml,
-            },
-            createdAt: nowIso,
-            updatedAt: nowIso,
-          }
-          conflictSnapshots.push({ latestHtml: existingHtml, latestUpdatedAt: existingUpdatedAt })
-          updated = true
-          return { ...section, entries: [...section.entries, mergeNoteEntry] }
-        }
-        const nextEntries = [...section.entries]
-        if (nextHtml !== existingHtml && existingHtml.trim()) {
-          const historyIndex = nextEntries.findIndex(
-            (entry) => entry.layer === 'doc' && entry.payload?.kind === 'doc_history',
-          )
-          const snapshot = {
-            id: makeNotebookId('lesson-notebook-snapshot'),
-            html: existingHtml,
-            savedAt: existingUpdatedAt,
-          }
-          if (historyIndex >= 0) {
-            const historyEntry = nextEntries[historyIndex]
-            const existingSnapshots = Array.isArray(historyEntry.payload?.snapshots)
-              ? historyEntry.payload.snapshots
-              : []
-            nextEntries[historyIndex] = {
-              ...historyEntry,
-              payload: {
-                ...historyEntry.payload,
-                kind: 'doc_history',
-                snapshots: [snapshot, ...existingSnapshots].slice(0, 20),
-              },
-              updatedAt: nowIso,
-            }
-          } else {
-            nextEntries.push({
-              entryId: makeNotebookId('lesson-notebook-entry'),
-              sectionId: section.sectionId,
-              layer: 'doc',
-              payload: {
-                kind: 'doc_history',
-                snapshots: [snapshot],
-              },
-              createdAt: nowIso,
-              updatedAt: nowIso,
-            })
-          }
-        }
-        nextEntries[existingDocIndex] = {
-          ...existing,
-          payload: {
-            ...existing.payload,
-            kind: 'doc_richtext',
-            html: nextHtml,
-          },
-          updatedAt: nowIso,
-        }
-        updated = true
-        return { ...section, entries: nextEntries }
-      }
-      const nextEntry: LessonNotebookEntry = {
-        entryId: makeNotebookId('lesson-notebook-entry'),
-        sectionId: section.sectionId,
-        layer: 'doc',
-        payload: {
-          kind: 'doc_richtext',
-          html: nextHtml,
-        },
-        createdAt: nowIso,
-        updatedAt: nowIso,
-      }
-      updated = true
-      return { ...section, entries: [...section.entries, nextEntry] }
-    })
-    return {
-      ...session,
-      lessonNotebookSession: {
-        ...notebook,
-        sections,
-      },
-      updatedAt: nowIso,
-    }
-  })
-  if (!found) return { ok: false, error: 'Class session not found.' }
-  if (!updated) return { ok: false, error: 'Lesson notebook is not ready yet for this class.' }
-  saveStudent({
-    ...student,
-    scheduledClasses: nextSessions,
-    updatedAt: nowIso,
-  })
-  const conflictResult = conflictSnapshots.at(-1)
-  if (conflictResult) {
-    return {
-      ok: false,
-      error: 'Save conflict detected. Latest version kept with merge note.',
-      conflict: true,
-      latestHtml: conflictResult.latestHtml,
-      latestUpdatedAt: conflictResult.latestUpdatedAt,
-    }
-  }
-  return { ok: true, docUpdatedAt: nowIso }
-}
-
-export function appendStudentClassLessonNotebookWhiteboardCapture(
-  studentId: string,
-  classId: string,
-  input: {
-    sectionId?: string
-    imageSrc: string
-    storagePath?: string
-    caption: string
-    bookId: string
-    unitId?: string
-    pageSpanKey: string
-    whiteboardPage: number
-    tocPartKey?: string
-    lessonPartLabel?: string
-    clientDocUpdatedAt?: string
-    /** Live editor HTML when intent headings are not persisted yet. */
-    baseHtml?: string
-  },
-):
-  | { ok: true; html: string; docUpdatedAt: string }
-  | { ok: false; error: string; conflict?: true; latestHtml?: string; latestUpdatedAt?: string } {
-  const ensured = ensureStudentClassLessonNotebookSession(studentId, classId)
-  if (!ensured.ok) return ensured
-
-  const session = getStudentClassSessionById(studentId, classId)
-  const notebook = session?.lessonNotebookSession
-  if (!notebook?.sections?.length) {
-    return { ok: false, error: 'Lesson notebook is not ready yet for this class.' }
-  }
-
-  const targetSectionId = input.sectionId?.trim() || notebook.sections[0]?.sectionId
-  if (!targetSectionId) return { ok: false, error: 'Notebook section not found.' }
-
-  const section = notebook.sections.find((row) => row.sectionId === targetSectionId)
-  if (!section) return { ok: false, error: 'Notebook section not found.' }
-
-  const richDocEntry = section.entries.find(
-    (entry) => entry.layer === 'doc' && entry.payload?.kind === 'doc_richtext',
-  )
-  const existingHtml =
-    typeof input.baseHtml === 'string' && input.baseHtml.trim()
-      ? input.baseHtml
-      : typeof richDocEntry?.payload?.html === 'string' && richDocEntry.payload.html.trim()
-        ? richDocEntry.payload.html
-        : '<p><br></p>'
-
-  const capturedAtIso = new Date().toISOString()
-  const nextHtml = appendWhiteboardCaptureToNotebookHtml(existingHtml, {
-    imageSrc: input.imageSrc,
-    caption: input.caption,
-    bookId: input.bookId,
-    unitId: input.unitId,
-    sessionKey: classId,
-    pageSpanKey: input.pageSpanKey,
-    whiteboardPage: input.whiteboardPage,
-    tocPartKey: input.tocPartKey,
-    storagePath: input.storagePath,
-    capturedAtIso,
-  })
-
-  const students = getStudents()
-  const idx = students.findIndex((s) => s.id === studentId)
-  if (idx < 0) return { ok: false, error: 'Student not found.' }
-  const student = students[idx]
-  const nowIso = capturedAtIso
-  let found = false
-  let updated = false
-  const conflictSnapshots: { latestHtml: string; latestUpdatedAt: string }[] = []
-
-  const nextSessions: StudentClassSession[] = (student.scheduledClasses ?? []).map((sessionRow) => {
-    if (sessionRow.id !== classId) return sessionRow
-    found = true
-    const nb = sessionRow.lessonNotebookSession
-    if (!nb?.sections?.length) return sessionRow
-
-    const sections: LessonNotebookSection[] = nb.sections.map((sectionRow) => {
-      if (sectionRow.sectionId !== targetSectionId) return sectionRow
-      const existingDocIndex = sectionRow.entries.findIndex(
-        (entry) => entry.layer === 'doc' && entry.payload?.kind === 'doc_richtext',
-      )
-      const captureEntry: LessonNotebookEntry = {
-        entryId: makeNotebookId('lesson-notebook-entry'),
-        sectionId: sectionRow.sectionId,
-        layer: 'doc',
-        payload: {
-          kind: 'whiteboard_capture',
-          createdByTrigger: 'whiteboard_capture',
-          src: input.imageSrc,
-          storagePath: input.storagePath,
-          caption: input.caption,
-          bookId: input.bookId,
-          unitId: input.unitId,
-          pageSpanKey: input.pageSpanKey,
-          whiteboardPage: input.whiteboardPage,
-          tocPartKey: input.tocPartKey,
-          lessonPartLabel: input.lessonPartLabel,
-          capturedAt: capturedAtIso,
-        },
-        createdAt: nowIso,
-        updatedAt: nowIso,
-      }
-
-      if (existingDocIndex >= 0) {
-        const existing = sectionRow.entries[existingDocIndex]
-        const existingUpdatedAt = existing.updatedAt
-        const hasConflict =
-          typeof input.clientDocUpdatedAt === 'string' &&
-          input.clientDocUpdatedAt.trim() &&
-          input.clientDocUpdatedAt !== existingUpdatedAt &&
-          nextHtml !== (typeof existing.payload?.html === 'string' ? existing.payload.html : '')
-        if (hasConflict) {
-          conflictSnapshots.push({
-            latestHtml: typeof existing.payload?.html === 'string' ? existing.payload.html : '',
-            latestUpdatedAt: existingUpdatedAt,
-          })
-          updated = true
-          return {
-            ...sectionRow,
-            entries: [
-              ...sectionRow.entries,
-              {
-                ...captureEntry,
-                payload: {
-                  ...captureEntry.payload,
-                  kind: 'merge_note',
-                  message: 'Whiteboard capture skipped due to notebook save conflict.',
-                },
-              } satisfies LessonNotebookEntry,
-            ],
-          }
-        }
-        const nextEntries = [...sectionRow.entries]
-        nextEntries[existingDocIndex] = {
-          ...existing,
-          payload: { ...existing.payload, kind: 'doc_richtext', html: nextHtml },
-          updatedAt: nowIso,
-        }
-        nextEntries.push(captureEntry)
-        updated = true
-        return { ...sectionRow, entries: nextEntries }
-      }
-
-      updated = true
-      return {
-        ...sectionRow,
-        entries: [
-          ...sectionRow.entries,
-          {
-            entryId: makeNotebookId('lesson-notebook-entry'),
-            sectionId: sectionRow.sectionId,
-            layer: 'doc',
-            payload: { kind: 'doc_richtext', html: nextHtml },
-            createdAt: nowIso,
-            updatedAt: nowIso,
-          } satisfies LessonNotebookEntry,
-          captureEntry,
-        ],
-      }
-    })
-
-    return {
-      ...sessionRow,
-      lessonNotebookSession: { ...nb, sections },
-      updatedAt: nowIso,
-    }
-  })
-
-  if (!found) return { ok: false, error: 'Class session not found.' }
-  if (!updated) return { ok: false, error: 'Lesson notebook is not ready yet for this class.' }
-
-  saveStudent({
-    ...student,
-    scheduledClasses: nextSessions,
-    updatedAt: nowIso,
-  })
-
-  const conflictResult = conflictSnapshots.at(-1)
-  if (conflictResult) {
-    return {
-      ok: false,
-      error: 'Save conflict detected. Refresh the notebook and try again.',
-      conflict: true,
-      latestHtml: conflictResult.latestHtml,
-      latestUpdatedAt: conflictResult.latestUpdatedAt,
-    }
-  }
-
-  return { ok: true, html: nextHtml, docUpdatedAt: nowIso }
-}
-
-export function upsertStudentClassLessonNotebookOverlayImages(
-  studentId: string,
-  classId: string,
-  input: {
-    sectionId?: string
-    images: Array<{
-      id: string
-      src: string
-      xNorm: number
-      yNorm: number
-      widthNorm: number
-    }>
-  },
-): { ok: true } | { ok: false; error: string } {
-  const students = getStudents()
-  const idx = students.findIndex((s) => s.id === studentId)
-  if (idx < 0) return { ok: false, error: 'Student not found.' }
-  const student = students[idx]
-  const nowIso = new Date().toISOString()
-  let found = false
-  let updated = false
-  const sanitizeNorm = (n: number, min = 0, max = 1) => Math.max(min, Math.min(max, n))
-  const sanitizedImages = input.images
-    .filter((row) => typeof row.id === 'string' && row.id.trim() && typeof row.src === 'string' && row.src.trim())
-    .slice(0, 40)
-    .map((row) => ({
-      id: row.id.trim(),
-      src: row.src.trim(),
-      xNorm: sanitizeNorm(Number(row.xNorm), 0, 0.95),
-      yNorm: sanitizeNorm(Number(row.yNorm), 0, 0.98),
-      widthNorm: sanitizeNorm(Number(row.widthNorm), 0.08, 0.9),
-    }))
-  const nextSessions = (student.scheduledClasses ?? []).map((session) => {
-    if (session.id !== classId) return session
-    found = true
-    const notebook = session.lessonNotebookSession
-    if (!notebook || !Array.isArray(notebook.sections) || notebook.sections.length === 0) return session
-    const targetSectionId = input.sectionId?.trim() || notebook.sections[0]?.sectionId
-    if (!targetSectionId) return session
-    const sections = notebook.sections.map((section) => {
-      if (section.sectionId !== targetSectionId) return section
-      const existingOverlayIndex = section.entries.findIndex(
-        (entry) => entry.layer === 'overlay' && entry.payload?.kind === 'overlay_images',
-      )
-      if (existingOverlayIndex >= 0) {
-        const existing = section.entries[existingOverlayIndex]
-        const nextEntries = [...section.entries]
-        nextEntries[existingOverlayIndex] = {
-          ...existing,
-          payload: {
-            ...existing.payload,
-            kind: 'overlay_images',
-            images: sanitizedImages,
-          },
-          updatedAt: nowIso,
-        }
-        updated = true
-        return { ...section, entries: nextEntries }
-      }
-      const nextOverlayEntry: LessonNotebookEntry = {
-        entryId: makeNotebookId('lesson-notebook-entry'),
-        sectionId: section.sectionId,
-        layer: 'overlay',
-        payload: {
-          kind: 'overlay_images',
-          images: sanitizedImages,
-        },
-        createdAt: nowIso,
-        updatedAt: nowIso,
-      }
-      updated = true
-      return { ...section, entries: [...section.entries, nextOverlayEntry] }
-    })
-    return {
-      ...session,
-      lessonNotebookSession: {
-        ...notebook,
-        sections,
-      },
-      updatedAt: nowIso,
-    }
-  })
-  if (!found) return { ok: false, error: 'Class session not found.' }
-  if (!updated) return { ok: false, error: 'Lesson notebook is not ready yet for this class.' }
-  saveStudent({
-    ...student,
-    scheduledClasses: nextSessions,
-    updatedAt: nowIso,
-  })
-  return { ok: true }
-}
-
-export function ensureStudentClassLessonNotebookPageSpanSection(
-  studentId: string,
-  classId: string,
-  input: {
-    pageSpanKey: string
-    title?: string
-    tocPartKey?: string
-    breadcrumb?: string
-    lessonPartLabel?: string
-  },
-): { ok: true; sectionId: string } | { ok: false; error: string } {
-  const students = getStudents()
-  const idx = students.findIndex((s) => s.id === studentId)
-  if (idx < 0) return { ok: false, error: 'Student not found.' }
-  const student = students[idx]
-  const nowIso = new Date().toISOString()
-  const pageSpanKey = input.pageSpanKey.trim()
-  if (!/^p\d+(?:-\d+)?$/i.test(pageSpanKey)) {
-    return { ok: false, error: 'Invalid page span key.' }
-  }
-  let foundClass = false
-  let resolvedSectionId: string | null = null
-  const nextSessions = (student.scheduledClasses ?? []).map((session) => {
-    if (session.id !== classId) return session
-    foundClass = true
-    const notebook = session.lessonNotebookSession
-    if (!notebook) return session
-    const existing = notebook.sections.find(
-      (section) => section.anchorType === 'page_span' && section.anchorKey === pageSpanKey,
-    )
-    if (existing) {
-      resolvedSectionId = existing.sectionId
-      return session
-    }
-    const sectionId = makeNotebookId('lesson-notebook-section')
-    resolvedSectionId = sectionId
-    const title = input.title?.trim() || pageSpanKey
-    const pageLabel = pageSpanKey.replace(/^p/i, '')
-    const headerEntry: LessonNotebookEntry = {
-      entryId: makeNotebookId('lesson-notebook-entry'),
-      sectionId,
-      layer: 'doc',
-      payload: {
-        kind: 'header_block',
-        title,
-        dateLabel: new Date(session.scheduledFor).toLocaleDateString('en-US', {
-          month: 'short',
-          day: 'numeric',
-          year: 'numeric',
-        }),
-        lessonPartLabel: input.lessonPartLabel?.trim() || title,
-        pageLabel,
-        pageSpan: pageSpanKey,
-        tocPartKey: input.tocPartKey?.trim() || undefined,
-        breadcrumb: input.breadcrumb?.trim() || undefined,
-      },
-      createdAt: nowIso,
-      updatedAt: nowIso,
-    }
-    const nextOrder = notebook.sections.length
-    return {
-      ...session,
-      lessonNotebookSession: {
-        ...notebook,
-        sections: [
-          ...notebook.sections,
-          {
-            sectionId,
-            sessionId: notebook.sessionId,
-            anchorType: 'page_span' as const,
-            anchorKey: pageSpanKey,
-            title,
-            order: nextOrder,
-            entries: [headerEntry],
-          },
-        ],
-      },
-      updatedAt: nowIso,
-    }
-  })
-  if (!foundClass) return { ok: false, error: 'Class session not found.' }
-  if (!resolvedSectionId) return { ok: false, error: 'Lesson notebook is not ready yet for this class.' }
-  saveStudent({
-    ...student,
-    scheduledClasses: nextSessions,
-    updatedAt: nowIso,
-  })
-  return { ok: true, sectionId: resolvedSectionId }
-}
-
-export function upsertStudentClassLessonNotebookSectionTocAnchor(
-  studentId: string,
-  classId: string,
-  sectionId: string,
-  input: {
-    tocPartKey?: string
-    breadcrumb?: string
-    lessonPartLabel?: string
-    title?: string
-  },
-): { ok: true } | { ok: false; error: string } {
-  const students = getStudents()
-  const idx = students.findIndex((s) => s.id === studentId)
-  if (idx < 0) return { ok: false, error: 'Student not found.' }
-  const student = students[idx]
-  const nowIso = new Date().toISOString()
-  let foundClass = false
-  let foundSection = false
-  const nextSessions = (student.scheduledClasses ?? []).map((session) => {
-    if (session.id !== classId) return session
-    foundClass = true
-    const notebook = session.lessonNotebookSession
-    if (!notebook) return session
-    const sections = notebook.sections.map((section) => {
-      if (section.sectionId !== sectionId) return section
-      foundSection = true
-      const headerIndex = section.entries.findIndex(
-        (entry) => entry.layer === 'doc' && entry.payload?.kind === 'header_block',
-      )
-      if (headerIndex < 0) return section
-      const header = section.entries[headerIndex]
-      const nextEntries = [...section.entries]
-      nextEntries[headerIndex] = {
-        ...header,
-        payload: {
-          ...header.payload,
-          ...(input.tocPartKey !== undefined ? { tocPartKey: input.tocPartKey.trim() || undefined } : {}),
-          ...(input.breadcrumb !== undefined ? { breadcrumb: input.breadcrumb.trim() || undefined } : {}),
-          ...(input.lessonPartLabel !== undefined ? { lessonPartLabel: input.lessonPartLabel.trim() || undefined } : {}),
-          ...(input.title !== undefined ? { title: input.title.trim() || undefined } : {}),
-        },
-        updatedAt: nowIso,
-      }
-      return {
-        ...section,
-        title: input.title?.trim() || section.title,
-        entries: nextEntries,
-      }
-    })
-    return {
-      ...session,
-      lessonNotebookSession: {
-        ...notebook,
-        sections,
-      },
-      updatedAt: nowIso,
-    }
-  })
-  if (!foundClass) return { ok: false, error: 'Class session not found.' }
-  if (!foundSection) return { ok: false, error: 'Notebook section not found.' }
-  saveStudent({
-    ...student,
-    scheduledClasses: nextSessions,
-    updatedAt: nowIso,
-  })
-  return { ok: true }
 }
 
 export function updateStudentClassPublishedVocabulary(
@@ -3338,12 +5273,46 @@ export function updateStudentDefaultDifficultyTier(
   return { ok: true }
 }
 
+export function setStudentFirstClassWelcome(
+  studentId: string,
+  firstClassWelcome: boolean,
+): { ok: true } | { ok: false; error: string } {
+  const students = getStudents()
+  const idx = students.findIndex((s) => s.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const prev = students[idx]
+  const completedCount = (prev.scheduledClasses ?? []).filter(
+    (session) => session.status === 'completed',
+  ).length
+  if (firstClassWelcome && completedCount > 0) {
+    return { ok: false, error: 'This student already has a completed class.' }
+  }
+  saveStudent({
+    ...prev,
+    firstClassWelcome: firstClassWelcome ? true : undefined,
+    updatedAt: new Date().toISOString(),
+  })
+  notifyStudentLocalDataChanged(studentId)
+  return { ok: true }
+}
+
+export function studentShowsFirstClassWelcome(
+  student: Pick<StudentRecord, 'firstClassWelcome' | 'scheduledClasses'> | null | undefined,
+): boolean {
+  if (!student?.firstClassWelcome) return false
+  const completedCount = (student.scheduledClasses ?? []).filter(
+    (session) => session.status === 'completed',
+  ).length
+  return completedCount === 0
+}
+
 export function addStudentRecord(input: {
   name: string
   note?: string
   className?: string
   defaultDifficultyTier?: DifficultyTier
-}): { ok: true } | { ok: false; error: string } {
+  firstClassWelcome?: boolean
+}): { ok: true; studentId: string } | { ok: false; error: string } {
   const name = input.name.trim()
   if (!name) return { ok: false, error: 'Name is required.' }
 
@@ -3354,18 +5323,56 @@ export function addStudentRecord(input: {
   if (alreadyExists) return { ok: false, error: 'Student already exists.' }
 
   const now = new Date().toISOString()
+  const studentId = generateStudentId()
   saveStudent({
-    id: generateStudentId(),
+    id: studentId,
     name,
     note: input.note?.trim() || undefined,
     className: input.className?.trim() || undefined,
     defaultDifficultyTier: input.defaultDifficultyTier ?? DEFAULT_PLAY_TIER,
+    firstClassWelcome: input.firstClassWelcome === true ? true : undefined,
     createdAt: now,
     updatedAt: now,
     assignedQuizIds: [],
   })
 
-  return { ok: true }
+  return { ok: true, studentId }
+}
+
+export function addStudentRecords(
+  names: string[],
+  options?: { firstClassWelcome?: boolean },
+): {
+  added: Array<{ name: string; studentId: string }>
+  failed: Array<{ name: string; error: string }>
+} {
+  const added: Array<{ name: string; studentId: string }> = []
+  const failed: Array<{ name: string; error: string }> = []
+  const seenInPaste = new Set<string>()
+
+  for (const rawName of names) {
+    const name = rawName.trim()
+    if (!name) continue
+
+    const key = normalizeStudentKey(name)
+    if (seenInPaste.has(key)) {
+      failed.push({ name, error: 'Duplicate name in this list.' })
+      continue
+    }
+    seenInPaste.add(key)
+
+    const result = addStudentRecord({
+      name,
+      firstClassWelcome: options?.firstClassWelcome,
+    })
+    if (!result.ok) {
+      failed.push({ name, error: result.error })
+      continue
+    }
+    added.push({ name, studentId: result.studentId })
+  }
+
+  return { added, failed }
 }
 
 export type StudentMapQaScenario = 'no-assigned' | 'first-unlocked' | 'mid-path' | 'all-completed' | 'long-path'
@@ -3438,4 +5445,19 @@ export function setStudentMapQaScenario(
   }
   saveStudentProgressMap(progressMap)
   return { ok: true }
+}
+
+/**
+ * Permanently delete a student: free weekly times, wipe profile data, optionally delete local files.
+ * Prefer this over calling storage delete alone so schedule cleanup cannot be skipped.
+ */
+export function deleteStudentPermanently(
+  studentId: string,
+): { ok: true; name: string } | { ok: false; error: string } {
+  if (typeof window === 'undefined') return { ok: false, error: 'Not available.' }
+  removeWeeklySlotsForStudent(studentId)
+  const removed = removeStudentFromBrowserStorage(studentId)
+  if (!removed.ok) return { ok: false, error: 'Student was not found.' }
+  notifyStudentLocalDataChanged(studentId)
+  return { ok: true, name: removed.name }
 }

@@ -1,7 +1,7 @@
 'use client'
 
 import type { AnnotationCommand } from '@/lib/books/annotation-command-types'
-import type { CSSProperties, MutableRefObject } from 'react'
+import type { CSSProperties, ClipboardEvent, DragEvent, MutableRefObject } from 'react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { LiveEraserLineDraft, LiveStrokeDraft } from '@/components/students/book-page-annotation-layer'
 import { BookSpreadSessionLayer } from '@/components/students/book-spread-session-layer'
@@ -12,7 +12,7 @@ import {
   type BookPageAnnotationHandle,
 } from '@/components/students/book-page-annotation-layer'
 import type { BookPageAnnotationLayerProps } from '@/components/students/book-page-annotation-layer'
-import { whiteboardInkSessionEnabled } from '@/lib/books/feature-flags'
+import { inkSessionReactBoundaryEnabled, whiteboardInkSessionEnabled } from '@/lib/books/feature-flags'
 import { lessonBoardAllowsRunwayGrowth, type LessonBoardPageOrientation } from '@/lib/books/lesson-board-types'
 import type { WhiteboardSessionDocument } from '@/lib/books/whiteboard-session-types'
 import type { WhiteboardSessionStore } from '@/lib/books/whiteboard-session-store'
@@ -29,26 +29,72 @@ import {
   isWhiteboardViewportInkActive,
   type WhiteboardViewportInkConfig,
 } from '@/lib/books/whiteboard-viewport-ink'
-import { appendCommandWithPenAutoGroup } from '@/lib/books/annotation-pen-auto-group'
-import { isWritableStickerInteraction } from '@/lib/books/sticker-tool'
+import { notifyStampPlacedFromCommand } from '@/lib/books/notify-stamp-placed'
+import { alignSelectedCommands, distributeVerticalSpacingSelectedCommands, type HorizontalAlignAxis } from '@/lib/books/annotation-align'
+import {
+  patchSelectedImageCommands,
+  patchSelectedInkStrokeCommands,
+  patchSelectedShapeCommands,
+  patchSelectedStickyCommands,
+  patchSelectedTextCommands,
+  type ImageSelectionPatch,
+  type InkStrokeSelectionPatch,
+  type ShapeSelectionPatch,
+} from '@/lib/books/patch-selected-commands'
+import {
+  isSessionTapCanvasToolInteraction,
+  isWritableStickerInteraction,
+} from '@/lib/books/sticker-tool'
 import { commitRotatedAnnotationCommands } from '@/lib/books/annotation-rotation'
 import { scaleAnnotationCommandsFromOrientedFrames } from '@/lib/books/annotation-scale'
 import type { NormRect, OrientedSelectionFrame } from '@/lib/books/annotation-select'
 import type { SelectionMoveClampContext } from '@/lib/books/annotation-scale'
 import { cn } from '@/lib/utils'
 import {
-  WHITEBOARD_HEADER_HEIGHT_PX,
+  boardPasteAnchorFromElementRect,
+  setBoardPasteAnchorNorm,
+  shouldSkipBoardPasteAnchorPointerEvent,
+} from '@/lib/books/board-paste-placement'
+import {
+  WHITEBOARD_CHROME_HEIGHT_PX,
+  WHITEBOARD_FOOTER_HEIGHT_PX,
   WHITEBOARD_PANEL_CHROME,
 } from '../constants'
 import type { WhiteboardLayoutMode, WhiteboardSlotSide } from '../hooks/useWhiteboardPlacement'
 import { useWhiteboardSlotMotion } from '../hooks/useWhiteboardSlotMotion'
 import type { WhiteboardSlotMotionApi } from '../hooks/useWhiteboardSlotMotion'
 import { WhiteboardHeader } from './WhiteboardChrome'
+import { LessonBoardFooter } from './LessonBoardFooter'
+import { LessonBoardNextUnitPrompt } from './LessonBoardNextUnitPrompt'
 import type { SpreadSessionDomConfig } from '@/components/students/fullscreen-book-overlay/hooks/useSpreadSessionDomInteraction'
 import type {
   StickyAnnotationCommand,
   TextAnnotationCommand,
 } from '@/lib/books/annotation-command-types'
+import {
+  extractImageUrlFromPlainText,
+  pasteImageOutcomeToastKind,
+  type PasteImageOutcome,
+} from '@/lib/books/clipboard-image'
+import {
+  isBoardImageDragEvent,
+  preventBoardImageDragDefaults,
+  resolveDroppedBoardImage,
+} from '@/lib/books/board-image-drop'
+import {
+  readPlainTextFromClipboardData,
+  shouldDeferClipboardPasteToBrowser,
+} from '@/lib/books/clipboard-text'
+import { toast } from 'sonner'
+import { BoardImageSearchPanel } from '@/components/students/lesson-board/BoardImageSearchPanel'
+import { useSavedWords } from '@/components/students/fullscreen-book-overlay/hooks/useSavedWords'
+import type { BoardImageInsertRequest } from '@/lib/lesson-board/board-image-insert'
+import {
+  fetchFlashcardTranslation,
+  formatFlashcardChineseLine,
+  parseFlashcardChineseLineParts,
+} from '@/lib/lesson-board/flashcard-translate-client'
+import { FLASHCARD_PLACEHOLDER_ZH } from '@/lib/lesson-board/lesson-board-flashcard-layout'
 
 const SCROLLBAR_HIDDEN =
   'overflow-y-auto overscroll-y-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
@@ -88,6 +134,7 @@ type LayerProps = Pick<
   | 'textFontSizeNorm'
   | 'textFontId'
   | 'textVisualStyle'
+  | 'textAlign'
   | 'textFillColor'
   | 'stickyFillColor'
   | 'stickyFontSizeNorm'
@@ -99,6 +146,10 @@ export interface InfiniteWhiteboardPanelProps extends LayerProps {
   widthPx: number
   /** Ink coordinate width; defaults to panel width when omitted. */
   logicalCanvasWidthPx?: number
+  /** Wide-board width used for paste sizing on standard notebook pages. */
+  widePasteImageSizingWidthPx?: number
+  /** Wide-board viewport height used for paste sizing on standard notebook pages. */
+  widePasteImageSizingViewportHeightPx?: number
   viewportHeightPx: number
   contentHeightPx: number
   storagePageKey: string
@@ -129,23 +180,51 @@ export interface InfiniteWhiteboardPanelProps extends LayerProps {
   whiteboardSessionStoreRef?: MutableRefObject<WhiteboardSessionStore | null>
   selectionMoveClampRef?: MutableRefObject<SelectionMoveClampContext | null>
   whiteboardSessionDoc?: WhiteboardSessionDocument | null
+  whiteboardInkRevision?: number
   appendWhiteboardSessionCommand?: (cmd: AnnotationCommand) => void
   whiteboardSessionUndo?: () => boolean
   whiteboardSessionRedo?: () => boolean
   whiteboardSessionClear?: () => void
   wbStrokeCaptureEnabled?: boolean
   onWhiteboardOverlayCaps?: (caps: AnnotationCapabilities) => void
+  hideSelectionContextBar?: boolean
   captureRootRef: MutableRefObject<HTMLDivElement | null>
   onCapabilitiesChange: (caps: AnnotationCapabilities) => void
   onEyedropperPick: (clientX: number, clientY: number) => void
-  onExtendRunway?: () => void
+  /** Keep ~one clean screen below the current scroll view (standard pages). */
+  onEnsureRunwayBelowView?: (scrollTopPx: number) => void
   onNewLessonBoardPage?: (orientation: LessonBoardPageOrientation) => void
+  onSaveLessonBoard?: () => void
+  onDeleteLessonBoardPage?: () => void
+  canDeleteLessonBoardPage?: boolean
+  onStartBoardLinkPlacement?: () => void
+  onRemoveBoardLink?: () => void
+  activeBoardPageLinkPdfPage?: number | null
+  boardLinkPlacementActive?: boolean
+  /** Prep mode: keep link-to-book as a header icon. */
+  boardLinkInHeader?: boolean
+  /** After finishing a writable sticker, switch to Move. */
+  onEnterSelectMode?: () => void
   className?: string
+  boardFooterLabel?: string
+  boardBookFullTitle?: string
+  boardBookAccentColor?: string
+  boardShelf?: import('@/lib/books/lesson-board-nav').LessonBoardShelfEntry[]
+  onSelectBoardNotebook?: (next: { bookId: string; unitId: string }) => void
+  /** Soft near-end / Boards shortcut: existing next unit only. */
+  nextUnitBoard?: { id: string; title: string } | null
+  showNextUnitBoardPrompt?: boolean
+  onOpenNextUnitBoard?: () => void
+  onDismissNextUnitBoardPrompt?: () => void
+  /** Current PDF page — stamped as bookPageHint when the board page is edited. */
+  readerBookPageNumber?: number
 }
 
 export function InfiniteWhiteboardPanel({
   widthPx,
   logicalCanvasWidthPx: logicalCanvasWidthPxProp,
+  widePasteImageSizingWidthPx,
+  widePasteImageSizingViewportHeightPx,
   viewportHeightPx,
   contentHeightPx,
   storagePageKey,
@@ -174,18 +253,39 @@ export function InfiniteWhiteboardPanel({
   whiteboardSessionStoreRef,
   selectionMoveClampRef,
   whiteboardSessionDoc = null,
+  whiteboardInkRevision = 0,
   appendWhiteboardSessionCommand,
   whiteboardSessionUndo,
   whiteboardSessionRedo,
   whiteboardSessionClear,
   wbStrokeCaptureEnabled = false,
   onWhiteboardOverlayCaps,
+  hideSelectionContextBar = false,
   captureRootRef,
   onCapabilitiesChange,
   onEyedropperPick,
-  onExtendRunway,
+  onEnsureRunwayBelowView,
   onNewLessonBoardPage,
+  onSaveLessonBoard,
+  onDeleteLessonBoardPage,
+  canDeleteLessonBoardPage,
+  onStartBoardLinkPlacement,
+  onRemoveBoardLink,
+  activeBoardPageLinkPdfPage,
+  boardLinkPlacementActive,
+  boardLinkInHeader = false,
+  onEnterSelectMode,
   className,
+  boardFooterLabel,
+  boardBookFullTitle,
+  boardBookAccentColor,
+  boardShelf,
+  onSelectBoardNotebook,
+  nextUnitBoard = null,
+  showNextUnitBoardPrompt = false,
+  onOpenNextUnitBoard,
+  onDismissNextUnitBoardPrompt,
+  readerBookPageNumber,
   studentId,
   bookId,
   unitId,
@@ -196,7 +296,9 @@ export function InfiniteWhiteboardPanel({
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const wbInkLayerRef = useRef<HTMLDivElement | null>(null)
   const wbContentCaptureRef = useRef<HTMLDivElement | null>(null)
+  const pasteAnchorNormRef = useRef<{ x: number; y: number } | null>(null)
   const [scrollTopPx, setScrollTopPx] = useState(0)
+  const [imageDragActive, setImageDragActive] = useState(false)
   const [wbEraserLineDraft, setWbEraserLineDraft] = useState<LiveEraserLineDraft | null>(null)
   const [wbMarkerStrokeDraft, setWbMarkerStrokeDraft] = useState<LiveStrokeDraft | null>(null)
   const [wbSessionSelectedIds, setWbSessionSelectedIds] = useState<string[]>([])
@@ -204,6 +306,11 @@ export function InfiniteWhiteboardPanel({
     dx: number
     dy: number
   } | null>(null)
+
+  const { saveWord } = useSavedWords({
+    studentId,
+    onPersistenceError: (message) => toast.error(message),
+  })
 
   const setWbSessionSelected = useCallback(
     (ids: string[]) => {
@@ -221,7 +328,7 @@ export function InfiniteWhiteboardPanel({
   )
 
   const panelWidthPx = widthPx
-  const canvasViewportHeightPx = viewportHeightPx - WHITEBOARD_HEADER_HEIGHT_PX
+  const canvasViewportHeightPx = Math.max(1, viewportHeightPx - WHITEBOARD_CHROME_HEIGHT_PX)
   const isFloatingLayout = layoutMode === 'floating'
   const paintWidthPx = panelWidthPx
   const paintContentHeightPx =
@@ -342,22 +449,33 @@ export function InfiniteWhiteboardPanel({
     (cmd: AnnotationCommand) => {
       const store = whiteboardSessionStoreRef?.current
       if (!store) return
-      if (penAutoGroupConnected && cmd.kind === 'stroke' && cmd.tool === 'pen') {
-        store.patchCommands((commands) =>
-          appendCommandWithPenAutoGroup(commands, cmd, {
-            penAutoGroupConnected: true,
-            widthPx: paintWidthPx,
-            heightPx: effectivePaintContentHeightPx,
-          }),
-        )
-        return
+      if (cmd.kind === 'stroke' && cmd.tool === 'eraser-line') {
+        store.commitEraserLine(cmd.points, cmd.widthScale)
+        notifyStampPlacedFromCommand(cmd, { studentId })
+      } else if (penAutoGroupConnected && cmd.kind === 'stroke' && cmd.tool === 'pen') {
+        store.appendPenWithAutoGroup(cmd, {
+          penAutoGroupConnected: true,
+          widthPx: paintWidthPx,
+          heightPx: effectivePaintContentHeightPx,
+        })
+        notifyStampPlacedFromCommand(cmd, { studentId })
+      } else {
+        store.appendCommand(cmd)
+        notifyStampPlacedFromCommand(cmd, { studentId })
       }
-      store.appendCommand(cmd)
+      const hint = readerBookPageNumber
+      const pageId = whiteboardSessionDoc?.activePageId
+      if (pageId && typeof hint === 'number' && hint >= 1) {
+        store.setLessonBoardPageBookPageHint(pageId, hint)
+      }
     },
     [
       effectivePaintContentHeightPx,
       paintWidthPx,
       penAutoGroupConnected,
+      readerBookPageNumber,
+      studentId,
+      whiteboardSessionDoc?.activePageId,
       whiteboardSessionStoreRef,
     ],
   )
@@ -373,6 +491,9 @@ export function InfiniteWhiteboardPanel({
   const wbDomToolsActive =
     whiteboardInkDelegated &&
     (mode === 'text' || isWritableStickerInteraction(mode, layerProps.stickerKind ?? 'quick'))
+  const wbTapToolsActive =
+    whiteboardInkDelegated &&
+    isSessionTapCanvasToolInteraction(mode, layerProps.stickerKind ?? 'quick')
 
   const patchWhiteboardSessionDomCommand = useCallback(
     (id: string, partial: Partial<TextAnnotationCommand | StickyAnnotationCommand>) => {
@@ -396,6 +517,328 @@ export function InfiniteWhiteboardPanel({
     [whiteboardSessionStoreRef],
   )
 
+  const patchWhiteboardSessionTextSelected = useCallback(
+    (partial: Partial<TextAnnotationCommand>) => {
+      const store = whiteboardSessionStoreRef?.current
+      if (!store) return
+      const ids = store.getState().selectedIds
+      store.patchCommands((cmds) => patchSelectedTextCommands(cmds, ids, partial))
+    },
+    [whiteboardSessionStoreRef],
+  )
+
+  const patchWhiteboardSessionStickySelected = useCallback(
+    (partial: Partial<StickyAnnotationCommand>) => {
+      const store = whiteboardSessionStoreRef?.current
+      if (!store) return
+      const ids = store.getState().selectedIds
+      store.patchCommands((cmds) => patchSelectedStickyCommands(cmds, ids, partial))
+    },
+    [whiteboardSessionStoreRef],
+  )
+
+  const patchWhiteboardSessionShapeSelected = useCallback(
+    (patch: ShapeSelectionPatch) => {
+      const store = whiteboardSessionStoreRef?.current
+      if (!store) return
+      const ids = store.getState().selectedIds
+      store.patchCommands((cmds) => patchSelectedShapeCommands(cmds, ids, patch))
+    },
+    [whiteboardSessionStoreRef],
+  )
+
+  const patchWhiteboardSessionImageSelected = useCallback(
+    (patch: ImageSelectionPatch) => {
+      const store = whiteboardSessionStoreRef?.current
+      if (!store) return
+      const ids = store.getState().selectedIds
+      store.patchCommands((cmds) => patchSelectedImageCommands(cmds, ids, patch))
+    },
+    [whiteboardSessionStoreRef],
+  )
+
+  const patchWhiteboardSessionStrokeSelected = useCallback(
+    (patch: InkStrokeSelectionPatch) => {
+      const store = whiteboardSessionStoreRef?.current
+      if (!store) return
+      const ids = store.getState().selectedIds
+      store.patchCommands((cmds) => patchSelectedInkStrokeCommands(cmds, ids, patch))
+    },
+    [whiteboardSessionStoreRef],
+  )
+
+  const toggleWhiteboardSessionGroupSelected = useCallback(() => {
+    whiteboardSessionStoreRef?.current?.toggleGroupSelected()
+  }, [whiteboardSessionStoreRef])
+
+  const deleteWhiteboardSessionSelected = useCallback(() => {
+    whiteboardSessionStoreRef?.current?.deleteSelected()
+  }, [whiteboardSessionStoreRef])
+
+  const duplicateWhiteboardSessionSelected = useCallback(() => {
+    whiteboardSessionStoreRef?.current?.duplicateSelected()
+  }, [whiteboardSessionStoreRef])
+
+  const arrangeWhiteboardSessionSelected = useCallback(
+    (axis: HorizontalAlignAxis) => {
+      const store = whiteboardSessionStoreRef?.current
+      if (!store || !(paintWidthPx > 0) || !(effectivePaintContentHeightPx > 0)) return
+      const ids = store.getState().selectedIds
+      if (ids.length < 2) return
+      store.patchCommands((cmds) =>
+        alignSelectedCommands(cmds, ids, axis, paintWidthPx, effectivePaintContentHeightPx),
+      )
+    },
+    [effectivePaintContentHeightPx, paintWidthPx, whiteboardSessionStoreRef],
+  )
+
+  const distributeWhiteboardSessionVertical = useCallback(() => {
+    const store = whiteboardSessionStoreRef?.current
+    if (!store || !(paintWidthPx > 0) || !(effectivePaintContentHeightPx > 0)) return
+    const ids = store.getState().selectedIds
+    if (ids.length < 3) return
+    store.patchCommands((cmds) =>
+      distributeVerticalSpacingSelectedCommands(
+        cmds,
+        ids,
+        paintWidthPx,
+        effectivePaintContentHeightPx,
+      ),
+    )
+  }, [effectivePaintContentHeightPx, paintWidthPx, whiteboardSessionStoreRef])
+
+  const moveWhiteboardSessionSelectedForward = useCallback(() => {
+    whiteboardSessionStoreRef?.current?.moveSelectedForward()
+  }, [whiteboardSessionStoreRef])
+
+  const moveWhiteboardSessionSelectedBackward = useCallback(() => {
+    whiteboardSessionStoreRef?.current?.moveSelectedBackward()
+  }, [whiteboardSessionStoreRef])
+
+  const getImagePastePlacement = useCallback(
+    () => {
+      const orientation = lessonBoardPageNav.page?.orientation ?? 'standard'
+      const useWideSizing =
+        orientation === 'standard' &&
+        widePasteImageSizingWidthPx != null &&
+        widePasteImageSizingWidthPx > 0
+      return {
+        scrollTopPx: scrollRef.current?.scrollTop ?? scrollTopPx,
+        viewportHeightPx: canvasViewportHeightPx,
+        anchorNorm: pasteAnchorNormRef.current,
+        ...(useWideSizing
+          ? {
+              sizingWidthPx: widePasteImageSizingWidthPx,
+              sizingViewportHeightPx: widePasteImageSizingViewportHeightPx,
+            }
+          : {}),
+      }
+    },
+    [
+      canvasViewportHeightPx,
+      lessonBoardPageNav.page?.orientation,
+      scrollTopPx,
+      widePasteImageSizingViewportHeightPx,
+      widePasteImageSizingWidthPx,
+    ],
+  )
+
+  useEffect(() => {
+    const el = wbContentCaptureRef.current
+    if (!el) return
+
+    const onCapturePointerDown = (event: PointerEvent) => {
+      if (shouldSkipBoardPasteAnchorPointerEvent(event)) return
+      const anchor = boardPasteAnchorFromElementRect(event.clientX, event.clientY, el.getBoundingClientRect())
+      if (!anchor) return
+      pasteAnchorNormRef.current = anchor
+      setBoardPasteAnchorNorm(anchor)
+    }
+
+    el.addEventListener('pointerdown', onCapturePointerDown, true)
+    return () => {
+      el.removeEventListener('pointerdown', onCapturePointerDown, true)
+      pasteAnchorNormRef.current = null
+      setBoardPasteAnchorNorm(null)
+    }
+  }, [effectivePaintContentHeightPx, paintWidthPx])
+
+  const showPasteImageOutcomeToast = useCallback((outcome: PasteImageOutcome) => {
+    const kind = pasteImageOutcomeToastKind(outcome)
+    if (kind === 'gif') toast.success('GIF pasted')
+    else if (kind === 'frozen-fallback') {
+      toast.warning(
+        'Picture pasted as still image — try GIF search on the board for animation.',
+      )
+    } else if (kind === 'picture') toast.success('Picture pasted')
+  }, [])
+
+  const handleTextPasted = useCallback(() => {
+    toast.success('Text pasted')
+  }, [])
+
+  const handleWhiteboardPaste = useCallback(
+    (e: ClipboardEvent<HTMLDivElement>) => {
+      if (shouldDeferClipboardPasteToBrowser()) return
+
+      const hasImageItem = Array.from(e.clipboardData.items).some((item) =>
+        item.type.startsWith('image/'),
+      )
+      const hasGifFile = e.clipboardData.files?.length
+        ? Array.from(e.clipboardData.files).some((f) =>
+            f.name.toLowerCase().endsWith('.gif'),
+          )
+        : false
+
+      if (hasImageItem || hasGifFile) {
+        e.preventDefault()
+        void wbAnnRef.current?.pasteImageFromClipboardData?.(e.clipboardData).then((outcome) => {
+          if (outcome.ok) {
+            onEnterSelectMode?.()
+            showPasteImageOutcomeToast(outcome)
+          } else {
+            toast.error(
+              'Could not paste image — try a smaller GIF (max 8 MB) or use GIF search on the board.',
+            )
+          }
+        })
+        return
+      }
+
+      const imageUrl = extractImageUrlFromPlainText(e.clipboardData.getData('text/plain') ?? '')
+      if (imageUrl) {
+        e.preventDefault()
+        void wbAnnRef.current?.insertImageFromSearchUrl?.(imageUrl).then((ok) => {
+          if (ok) {
+            const isGifUrl =
+              imageUrl.toLowerCase().includes('.gif') ||
+              imageUrl.toLowerCase().includes('giphy') ||
+              imageUrl.toLowerCase().includes('tenor')
+            toast.success(isGifUrl ? 'GIF pasted' : 'Picture pasted')
+          } else {
+            toast.error('Could not paste image from that link.')
+          }
+        })
+        return
+      }
+
+      const text = readPlainTextFromClipboardData(e.clipboardData)
+      if (!text) return
+      e.preventDefault()
+      if (!wbAnnRef.current?.pasteTextFromClipboardString?.(text)) {
+        toast.error('Could not paste text.')
+      }
+    },
+    [onEnterSelectMode, showPasteImageOutcomeToast, wbAnnRef],
+  )
+
+  const handleWhiteboardImageDrop = useCallback(
+    async (event: DragEvent<HTMLDivElement>) => {
+      if (!isBoardImageDragEvent(event)) return
+      preventBoardImageDragDefaults(event)
+      setImageDragActive(false)
+
+      const content = wbContentCaptureRef.current
+      if (content) {
+        const anchor = boardPasteAnchorFromElementRect(
+          event.clientX,
+          event.clientY,
+          content.getBoundingClientRect(),
+        )
+        if (anchor) {
+          pasteAnchorNormRef.current = anchor
+          setBoardPasteAnchorNorm(anchor)
+        }
+      }
+
+      const resolution = await resolveDroppedBoardImage(event.dataTransfer)
+      if (!resolution) {
+        toast.error('Only pictures (PNG, JPEG, GIF, WebP) can be dropped here.')
+        return
+      }
+      const outcome = await wbAnnRef.current?.pasteImageFromResolution?.(resolution)
+      if (outcome?.ok) {
+        onEnterSelectMode?.()
+        showPasteImageOutcomeToast(outcome)
+      } else {
+        toast.error('Could not add that picture — try a smaller file.')
+      }
+    },
+    [onEnterSelectMode, showPasteImageOutcomeToast, wbAnnRef],
+  )
+
+  const handleInsertSearchImage = useCallback(
+    async (request: BoardImageInsertRequest) => {
+      const word = request.word.trim()
+      const showPinyin = request.showPinyin !== false
+      const isGif = request.mediaType === 'gif'
+      let ok = false
+      let savedToVocab = false
+      if (request.mode === 'flashcard') {
+        if (!word) {
+          toast.error('Type a word to search before adding a flashcard.')
+          return false
+        }
+        let chineseLine = request.chineseLine?.trim()
+        let vocabChinese = request.vocabChinese?.trim()
+        let vocabPinyin = request.vocabPinyin?.trim() ?? ''
+        if (!chineseLine) {
+          const translation = await fetchFlashcardTranslation(word, request.contextHint)
+          if (translation) {
+            vocabChinese = translation.chinese
+            vocabPinyin = translation.pinyin
+            chineseLine = formatFlashcardChineseLine(translation, { showPinyin })
+          } else {
+            chineseLine = FLASHCARD_PLACEHOLDER_ZH
+          }
+        }
+        ok =
+          (await wbAnnRef.current?.insertFlashcardFromSearchUrl?.(
+            request.fullUrl,
+            word,
+            chineseLine,
+          )) ?? false
+        if (ok) {
+          if (
+            request.saveToVocab &&
+            chineseLine !== FLASHCARD_PLACEHOLDER_ZH
+          ) {
+            const parsed = parseFlashcardChineseLineParts(chineseLine)
+            const chinese = vocabChinese || parsed?.chinese
+            if (chinese) {
+              saveWord({
+                source: word,
+                chinese,
+                pinyin: vocabPinyin || parsed?.pinyin || '',
+                imageUrl: request.fullUrl,
+              })
+              savedToVocab = true
+            }
+          }
+          if (chineseLine !== FLASHCARD_PLACEHOLDER_ZH) {
+            const base = isGif ? 'Flashcard added (GIF)' : 'Flashcard added'
+            toast.success(savedToVocab ? `${base} · saved to your word list` : base)
+          } else {
+            toast.warning('Flashcard added — could not translate; edit Chinese on the board.')
+          }
+        } else {
+          toast.error('Could not add flashcard — try another image.')
+        }
+      } else {
+        ok =
+          (await wbAnnRef.current?.insertImageFromSearchUrl?.(request.fullUrl, word || undefined)) ??
+          false
+        if (ok) {
+          toast.success(isGif ? 'GIF added' : 'Picture added')
+        } else {
+          toast.error('Could not add picture — try another image.')
+        }
+      }
+      return ok
+    },
+    [saveWord, wbAnnRef],
+  )
+
   const whiteboardDomConfig = useMemo((): SpreadSessionDomConfig | null => {
     if (!whiteboardInkDelegated || !whiteboardSessionDoc) return null
     return {
@@ -407,12 +850,12 @@ export function InfiniteWhiteboardPanel({
       textFontSizeNorm: layerProps.textFontSizeNorm,
       textFontId: layerProps.textFontId,
       textVisualStyle: layerProps.textVisualStyle ?? 'plain',
+      textAlign: layerProps.textAlign ?? 'left',
       textFillColor: layerProps.textFillColor ?? '#ffffff',
       stickyFillColor: layerProps.stickyFillColor ?? '#fef3c7',
       stickyFontSizeNorm: layerProps.stickyFontSizeNorm,
       defaultStickyWNorm: layerProps.defaultStickyWNorm ?? 0.22,
       defaultStickyHNorm: layerProps.defaultStickyHNorm ?? 0.11,
-      commands: whiteboardSessionDoc.commands,
       widthPx: paintWidthPx,
       heightPx: effectivePaintContentHeightPx,
       selectEnabled: mode === 'select',
@@ -422,10 +865,30 @@ export function InfiniteWhiteboardPanel({
       onDeleteText: deleteWhiteboardSessionDomCommand,
       onDeleteSticky: deleteWhiteboardSessionDomCommand,
       onSelectedIdsChange: setWbSessionSelected,
+      onPatchSelectedText: patchWhiteboardSessionTextSelected,
+      onPatchSelectedSticky: patchWhiteboardSessionStickySelected,
+      onPatchSelectedShape: patchWhiteboardSessionShapeSelected,
+      onPatchSelectedImage: patchWhiteboardSessionImageSelected,
+      onPatchSelectedStroke: patchWhiteboardSessionStrokeSelected,
+      onMoveSelectedForward: moveWhiteboardSessionSelectedForward,
+      onMoveSelectedBackward: moveWhiteboardSessionSelectedBackward,
+      onToggleGroupSelected: toggleWhiteboardSessionGroupSelected,
+      onDeleteSelected: deleteWhiteboardSessionSelected,
+      onDuplicateSelected: duplicateWhiteboardSessionSelected,
+      onArrangeSelected: arrangeWhiteboardSessionSelected,
+      onDistributeVerticalSelected: distributeWhiteboardSessionVertical,
+      onEnterSelectMode,
+      onMoveSelectedBy: moveWbSessionSelected,
     }
   }, [
+    arrangeWhiteboardSessionSelected,
+    distributeWhiteboardSessionVertical,
+    onEnterSelectMode,
+    moveWbSessionSelected,
     appendWhiteboardSessionCommandWithAutoGroup,
     deleteWhiteboardSessionDomCommand,
+    deleteWhiteboardSessionSelected,
+    duplicateWhiteboardSessionSelected,
     effectivePaintContentHeightPx,
     layerProps.defaultStickyHNorm,
     layerProps.defaultStickyWNorm,
@@ -436,14 +899,34 @@ export function InfiniteWhiteboardPanel({
     layerProps.textFontId,
     layerProps.textFontSizeNorm,
     layerProps.textVisualStyle,
+    layerProps.textAlign,
     mode,
     paintWidthPx,
     patchWhiteboardSessionDomCommand,
+    patchWhiteboardSessionImageSelected,
+    patchWhiteboardSessionShapeSelected,
+    patchWhiteboardSessionStrokeSelected,
+    patchWhiteboardSessionStickySelected,
+    patchWhiteboardSessionTextSelected,
+    moveWhiteboardSessionSelectedForward,
+    moveWhiteboardSessionSelectedBackward,
     setWbSessionSelected,
+    toggleWhiteboardSessionGroupSelected,
     wbSessionSelectedIds,
     whiteboardInkDelegated,
     whiteboardSessionDoc,
   ])
+
+  const whiteboardSessionLayerInkProps = useMemo(
+    () =>
+      inkSessionReactBoundaryEnabled && whiteboardSessionStoreRef
+        ? {
+            sessionStoreRef: whiteboardSessionStoreRef,
+            commandsRevision: whiteboardInkRevision,
+          }
+        : { commands: whiteboardSessionDoc?.commands ?? [] },
+    [whiteboardInkRevision, whiteboardSessionDoc, whiteboardSessionStoreRef],
+  )
 
   const activePageOrientation = lessonBoardPageNav.page?.orientation ?? 'standard'
   const slotDragEnabled = layoutMode === 'slot' && activePageOrientation !== 'wide'
@@ -503,21 +986,19 @@ export function InfiniteWhiteboardPanel({
     const el = scrollRef.current
     if (!el) return
     const onScroll = () => {
-      setScrollTopPx(el.scrollTop)
-      const scrollable = el.scrollHeight > el.clientHeight + 1
+      const top = el.scrollTop
+      setScrollTopPx(top)
       if (
-        onExtendRunway &&
-        lessonBoardAllowsRunwayGrowth(activePageOrientation) &&
-        scrollable &&
-        el.scrollTop + el.clientHeight >= el.scrollHeight - canvasViewportHeightPx * 0.12
+        onEnsureRunwayBelowView &&
+        lessonBoardAllowsRunwayGrowth(activePageOrientation)
       ) {
-        onExtendRunway()
+        onEnsureRunwayBelowView(top)
       }
     }
     onScroll()
     el.addEventListener('scroll', onScroll, { passive: true })
     return () => el.removeEventListener('scroll', onScroll)
-  }, [activePageOrientation, canvasViewportHeightPx, lessonBoardActivePageId, onExtendRunway])
+  }, [activePageOrientation, lessonBoardActivePageId, onEnsureRunwayBelowView])
 
   return (
     <div
@@ -540,6 +1021,7 @@ export function InfiniteWhiteboardPanel({
         suppressChrome={suppressChrome}
         deferChromeActions={deferHeaderChromeActions}
         layoutMode={layoutMode}
+        pageOrientation={activePageOrientation}
         onFloat={onFloat}
         onDock={onDock}
         swapSlotSide={() => moveTo(slotSide === 'left' ? 'right' : 'left')}
@@ -554,11 +1036,30 @@ export function InfiniteWhiteboardPanel({
         onFloatDragPointerMove={onFloatDragPointerMove}
         onFloatDragPointerUp={onFloatDragPointerUp}
         onFloatDragPointerCancel={onFloatDragPointerCancel}
-        lessonBoardPageIndex={lessonBoardPageNav.index}
-        lessonBoardPageCount={lessonBoardPageNav.total}
-        onNewLessonBoardPage={whiteboardSessionActive ? onNewLessonBoardPage : undefined}
-        onPrevLessonBoardPage={whiteboardSessionActive ? handlePrevLessonBoardPage : undefined}
-        onNextLessonBoardPage={whiteboardSessionActive ? handleNextLessonBoardPage : undefined}
+        onSaveLessonBoard={whiteboardSessionActive ? onSaveLessonBoard : undefined}
+        onDeleteLessonBoardPage={whiteboardSessionActive ? onDeleteLessonBoardPage : undefined}
+        canDeleteLessonBoardPage={whiteboardSessionActive ? canDeleteLessonBoardPage : false}
+        onStartBoardLinkPlacement={whiteboardSessionActive ? onStartBoardLinkPlacement : undefined}
+        onRemoveBoardLink={whiteboardSessionActive ? onRemoveBoardLink : undefined}
+        activeBoardPageLinkPdfPage={whiteboardSessionActive ? activeBoardPageLinkPdfPage : null}
+        boardLinkPlacementActive={whiteboardSessionActive ? boardLinkPlacementActive : false}
+        boardLinkInHeader={boardLinkInHeader}
+        imageSearchControl={
+          <BoardImageSearchPanel
+            onInsertImage={handleInsertSearchImage}
+            disabled={deferHeaderChromeActions}
+            compact={activePageOrientation !== 'wide'}
+          />
+        }
+        boardFooterLabel={boardFooterLabel}
+        boardBookFullTitle={boardBookFullTitle}
+        boardBookAccentColor={boardBookAccentColor}
+        boardShelf={boardShelf}
+        boardActiveBookId={bookId}
+        boardActiveUnitId={unitId}
+        onSelectBoardNotebook={onSelectBoardNotebook}
+        nextUnitBoard={nextUnitBoard}
+        onOpenNextUnitBoard={onOpenNextUnitBoard}
       />
 
       <div
@@ -566,9 +1067,36 @@ export function InfiniteWhiteboardPanel({
           scrollRef.current = node
           captureRootRef.current = node
         }}
+        tabIndex={-1}
+        onPaste={handleWhiteboardPaste}
+        onDragEnter={(event) => {
+          if (!isBoardImageDragEvent(event)) return
+          preventBoardImageDragDefaults(event)
+          setImageDragActive(true)
+        }}
+        onDragOver={(event) => {
+          if (!isBoardImageDragEvent(event)) return
+          preventBoardImageDragDefaults(event)
+        }}
+        onDragLeave={(event) => {
+          if (
+            event.relatedTarget instanceof Node &&
+            event.currentTarget.contains(event.relatedTarget)
+          ) {
+            return
+          }
+          setImageDragActive(false)
+        }}
+        onDrop={(event) => void handleWhiteboardImageDrop(event)}
+        onPointerDown={(event) => {
+          if (event.button === 0) {
+            scrollRef.current?.focus({ preventScroll: true })
+          }
+        }}
         className={cn(
-          'relative z-0 min-h-0 flex-1 overflow-x-hidden',
+          'relative z-0 min-h-0 flex-1 overflow-x-hidden outline-none',
           wideFixedCanvas || !boardScrollable ? 'overflow-y-hidden' : SCROLLBAR_HIDDEN,
+          imageDragActive && 'ring-2 ring-inset ring-sky-400',
         )}
         style={{
           height: canvasViewportHeightPx,
@@ -605,13 +1133,14 @@ export function InfiniteWhiteboardPanel({
               <BookSpreadSessionLayer
                 widthPx={paintWidthPx}
                 heightPx={effectivePaintContentHeightPx}
-                commands={whiteboardSessionDoc.commands}
+                {...whiteboardSessionLayerInkProps}
                 viewportInk={viewportInk}
                 scrollportRef={scrollRef}
                 contentCaptureRef={wbContentCaptureRef}
                 trailingEraserLineDraft={wbEraserLineDraft}
                 trailingMarkerStrokeDraft={wbMarkerStrokeDraft}
                 selectEnabled={mode === 'select'}
+                hideSelectionContextBar={hideSelectionContextBar}
                 selectedIds={wbSessionSelectedIds}
                 nudgePreview={wbSessionNudgePreview}
                 onSelectedIdsChange={setWbSessionSelected}
@@ -661,7 +1190,6 @@ export function InfiniteWhiteboardPanel({
                 rightPenInkPatternOriginXPx={0}
                 spreadSeamNormX={1}
                 spreadSessionMode
-                spreadSessionCommands={whiteboardSessionDoc.commands}
                 onSpreadSessionAppendCommand={appendWhiteboardSessionCommandWithAutoGroup}
                 spreadSessionUndo={whiteboardSessionUndo}
                 spreadSessionRedo={whiteboardSessionRedo}
@@ -674,7 +1202,9 @@ export function InfiniteWhiteboardPanel({
           <div
             className={
               useLessonBoardSessionInk && whiteboardInkDelegated
-                ? 'pointer-events-none absolute inset-0 z-[32]'
+                ? wbTapToolsActive
+                  ? 'pointer-events-auto absolute inset-0 z-[40]'
+                  : 'pointer-events-none absolute inset-0 z-[32]'
                 : useLessonBoardSessionInk
                   ? 'absolute inset-0 z-[20]'
                   : 'relative h-full w-full'
@@ -697,12 +1227,39 @@ export function InfiniteWhiteboardPanel({
               delegatePointerToWhiteboardPen={wbStrokeCaptureEnabled}
               whiteboardInkDelegated={whiteboardInkDelegated}
               whiteboardSessionStoreRef={whiteboardSessionStoreRef}
+              getImagePastePlacement={getImagePastePlacement}
+              onTextPasted={handleTextPasted}
               onEyedropperPick={onEyedropperPick}
               onCapabilitiesChange={onCapabilitiesChange}
             />
           </div>
         </div>
       </div>
+
+      {showNextUnitBoardPrompt && nextUnitBoard && onOpenNextUnitBoard && onDismissNextUnitBoardPrompt ? (
+        <div
+          className="pointer-events-none absolute inset-x-0 z-30 flex justify-center px-2"
+          style={{ bottom: WHITEBOARD_FOOTER_HEIGHT_PX + 8 }}
+        >
+          <LessonBoardNextUnitPrompt
+            nextUnitTitle={nextUnitBoard.title}
+            onOpen={onOpenNextUnitBoard}
+            onDismiss={onDismissNextUnitBoardPrompt}
+          />
+        </div>
+      ) : null}
+
+      <LessonBoardFooter
+        suppressChrome={suppressChrome}
+        deferChromeActions={deferHeaderChromeActions}
+        pageOrientation={activePageOrientation}
+        lessonBoardPageIndex={lessonBoardPageNav.index}
+        lessonBoardPageCount={lessonBoardPageNav.total}
+        onNewLessonBoardPage={whiteboardSessionActive ? onNewLessonBoardPage : undefined}
+        onPrevLessonBoardPage={whiteboardSessionActive ? handlePrevLessonBoardPage : undefined}
+        onNextLessonBoardPage={whiteboardSessionActive ? handleNextLessonBoardPage : undefined}
+      />
+
       {layoutMode === 'floating' && floatDragEnabled ? (
         <div
           role="separator"

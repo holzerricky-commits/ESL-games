@@ -113,6 +113,12 @@ Exact “success metrics” can evolve; update this section when you lock them.
 |------|------|
 | `MILESTONE.md` | **Phased roadmap** (0–6+), **current sprint** checklist, next-sprint preview, and notes—execution path to a teachable build. |
 | `docs/PHASE0.md` | Operator checklist: run target, backup, one-student lesson-path try (Phase 0). |
+| `docs/STUDENT_HOME_PRODUCT.md` | Student roster + one teacher home per kid (locked product). |
+| `docs/STUDENT_HOME_PHASED_PLAN.md` | Student home implementation phases (test after each). |
+| `docs/CLASS_TOOLBOX_PRODUCT.md` | In-class toolbox (coin, dice, countdown, stopwatch) — locked product. |
+| `docs/CLASS_TOOLBOX_PHASED_PLAN.md` | Class toolbox implementation phases (test after each). |
+| `docs/READING_CHECKS_PRODUCT.md` | Interactive reading checks (story map, text fuel, check packs) — locked product. |
+| `docs/READING_CHECKS_PHASED_PLAN.md` | Reading checks implementation phases (test after each). |
 | `PARKING_LOT.md` | Deferred polish and ideas (optional). |
 | `.cursor/rules/milestone-first.mdc` | Agent behavior: milestone-first, anti-drift, parking-lot handoff. |
 
@@ -120,6 +126,9 @@ Exact “success metrics” can evolve; update this section when you lock them.
 
 ## Changelog
 
+- **2026-08-03** — Reading checks track: `docs/READING_CHECKS_PRODUCT.md` + `READING_CHECKS_PHASED_PLAN.md`; story beats + approve-before-class (see Related files).
+- **2026-07-28** — Class toolbox track: `docs/CLASS_TOOLBOX_PRODUCT.md` + `CLASS_TOOLBOX_PHASED_PLAN.md`; in-lesson helpers from book left strip (see Related files).
+- **2026-07-26** — Student home track: `docs/STUDENT_HOME_PRODUCT.md` + `STUDENT_HOME_PHASED_PLAN.md`; roster → one teacher home (see Related files).
 - **2026-06-10** — **Spread-only v1:** reader is always a two-page spread (right slot optional); no single-page-centered reader until explicitly designed; new ink/selection work assumes spread model (see section above).
 - **2026-05-03** — Phase 0 marked complete in `MILESTONE.md`; run target = `npm run dev`; bookmark rule (last viewed at end class); renamed “smoke test” → “lesson-path try” in docs.
 - **2026-05-02** — Phase 0 tooling: `docs/PHASE0.md`, Settings backup/restore for `esl_*` localStorage (`lib/local-data-backup.ts`).

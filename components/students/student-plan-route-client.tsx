@@ -2,9 +2,14 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import type { BookLibraryPayload } from '@/lib/books/types'
+import { fetchBooksLibraryCached, getBooksLibraryCached } from '@/lib/books/fetch-books-library-cached'
 import { StudentPlanPage } from '@/components/students/student-plan-page'
-import { getStudentDefaultBookUnitForReader, getStudentProfileView, isValidStudentProfileTab } from '@/lib/students/selectors'
-import type { StudentProfileTab } from '@/lib/students/types'
+import {
+  getStudentProfileView,
+  getStudentSetupStatus,
+  STUDENT_LOCAL_DATA_CHANGED_EVENT,
+} from '@/lib/students/selectors'
+import { resolveStudentPlanTab } from '@/lib/students/student-setup-status'
 
 interface StudentPlanRouteClientProps {
   studentId: string
@@ -13,40 +18,44 @@ interface StudentPlanRouteClientProps {
 
 export function StudentPlanRouteClient({ studentId, requestedTab }: StudentPlanRouteClientProps) {
   const [version, setVersion] = useState(0)
-  const [bookLibrary, setBookLibrary] = useState<BookLibraryPayload | null>(null)
+  const [bookLibrary, setBookLibrary] = useState<BookLibraryPayload | null>(() => getBooksLibraryCached())
+  const [libraryLoading, setLibraryLoading] = useState(() => getBooksLibraryCached() === null)
   const student = useMemo(() => getStudentProfileView(studentId), [studentId, version])
+  const setup = useMemo(() => getStudentSetupStatus(studentId), [studentId, version])
+
+  useEffect(() => {
+    const bump = () => setVersion((v) => v + 1)
+    window.addEventListener('focus', bump)
+    window.addEventListener(STUDENT_LOCAL_DATA_CHANGED_EVENT, bump)
+    return () => {
+      window.removeEventListener('focus', bump)
+      window.removeEventListener(STUDENT_LOCAL_DATA_CHANGED_EVENT, bump)
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
-    void fetch('/api/books')
-      .then(async (res) => {
-        const payload = (await res.json()) as BookLibraryPayload | { error?: string }
-        if (!res.ok || !payload || !Array.isArray((payload as BookLibraryPayload).books)) {
-          return { books: [] } as BookLibraryPayload
-        }
-        return payload as BookLibraryPayload
-      })
+    const cached = getBooksLibraryCached()
+    if (cached) {
+      setBookLibrary(cached)
+      setLibraryLoading(false)
+      return
+    }
+    setLibraryLoading(true)
+    void fetchBooksLibraryCached()
       .then((lib) => {
         if (!cancelled) setBookLibrary(lib)
       })
       .catch(() => {
         if (!cancelled) setBookLibrary({ books: [] })
       })
+      .finally(() => {
+        if (!cancelled) setLibraryLoading(false)
+      })
     return () => {
       cancelled = true
     }
   }, [])
-
-  const readerHref = useMemo(() => {
-    const pick = getStudentDefaultBookUnitForReader(studentId, bookLibrary)
-    if (!pick) return null
-    const q = new URLSearchParams({
-      student: studentId,
-      book: pick.bookId,
-      unit: pick.unitId,
-    })
-    return `/books?${q.toString()}`
-  }, [studentId, bookLibrary])
 
   if (!student) {
     return (
@@ -59,7 +68,7 @@ export function StudentPlanRouteClient({ studentId, requestedTab }: StudentPlanR
     )
   }
 
-  const activeTab: StudentProfileTab = isValidStudentProfileTab(requestedTab) ? requestedTab : 'challenges'
+  const activeTab = resolveStudentPlanTab(requestedTab)
 
   return (
     <StudentPlanPage
@@ -67,7 +76,9 @@ export function StudentPlanRouteClient({ studentId, requestedTab }: StudentPlanR
       studentId={studentId}
       activeTab={activeTab}
       onDataUpdated={() => setVersion((v) => v + 1)}
-      readerHref={readerHref}
+      bookLibrary={bookLibrary}
+      libraryLoading={libraryLoading}
+      setup={setup}
     />
   )
 }

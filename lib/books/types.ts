@@ -22,6 +22,12 @@ export const BOOK_LESSON_PART_TAGS = [
   'making_connections',
   'grammar',
   'writing_narrate',
+  /** Wonders Workshop: Genre / Genre Study row */
+  'genre',
+  /** Wonders Workshop: Vocabulary Strategy (not the Words-to-Know list) */
+  'vocabulary_strategy',
+  /** Wonders Workshop poetry weeks: Literary Element */
+  'literary_element',
 ] as const
 
 export type BookLessonPartTag = (typeof BOOK_LESSON_PART_TAGS)[number]
@@ -76,15 +82,42 @@ export interface BookFilePageAlignment {
   hiddenPdfPages?: number[]
 }
 
+/** How a library PDF is taught. Still a PDF either way; presentation = simplified slide deck. */
+export const BOOK_CONTENT_FORMATS = ['book', 'presentation'] as const
+
+export type BookContentFormat = (typeof BOOK_CONTENT_FORMATS)[number]
+
 export interface BookRecord {
   id: string
   title: string
   description?: string
+  /**
+   * Curriculum family for Library shelves (e.g. Journeys, Wonders).
+   * Missing = infer on load.
+   */
+  series?: string
+  /**
+   * Optional grade label (K, G1–G6).
+   * Missing = infer on load; empty string = explicitly cleared.
+   */
+  grade?: string
+  /**
+   * Optional role within a series (Student book, Workshop, Literature, …).
+   * Missing = infer on load; empty string = explicitly cleared.
+   */
+  role?: string
+  /**
+   * Classic textbook vs simplified slide deck (PowerPoint exported as PDF).
+   * Missing = book.
+   */
+  contentFormat?: BookContentFormat
   pageAlignmentByFile?: Record<string, BookFilePageAlignment>
   /** Fraction of page width pulled at spread seam (default 0.018). */
   spreadGutterPullRatio?: number
   /** Per unit PDF filePath overrides; wins over book default when present. */
   spreadGutterByFile?: Record<string, number>
+  /** Relative path under book-library, e.g. book-library/journeys/cover.jpg */
+  coverImagePath?: string
   units: BookUnitRecord[]
 }
 

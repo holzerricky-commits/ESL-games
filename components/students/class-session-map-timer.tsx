@@ -14,11 +14,38 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { BOOK_OVERLAY_GLASS_CHROME } from '@/components/students/fullscreen-book-overlay/constants'
+import { BOOK_OVERLAY_GLASS_CHROME, CLASS_LAUNCH_CHROME } from '@/components/students/fullscreen-book-overlay/constants'
+import {
+  classAnnotationStateChangedSinceBaseline,
+  discardClassAnnotationChanges,
+  ensureClassAnnotationBaseline,
+  flushAnnotationsForClassEnd,
+  keepClassAnnotationChanges,
+} from '@/lib/books/class-annotation-durability'
+import {
+  ensureBookAnnotationsHydrated,
+  flushBookAnnotationsToDiskAsync,
+} from '@/lib/local-data/book-annotations-disk-client'
 import { computeClassTimerState } from '@/lib/students/class-session-timer'
+import {
+  CLASS_EXTEND_CHIP_MINUTES,
+  canExtendClassBy,
+  computeClassLiveClockPhase,
+  findNextStudentSoon,
+} from '@/lib/students/class-schedule-lifecycle'
 import { cn } from '@/lib/utils'
-import { endStudentClassSession } from '@/lib/students/selectors'
+import {
+  cancelClassOccurrence,
+  endStudentClassSession,
+  extendStudentClassSession,
+  getTodaysClassSessionsForTeacher,
+  hardAutoEndStudentClassSession,
+} from '@/lib/students/selectors'
 import type { StudentClassSessionView } from '@/lib/students/types'
+import { MoveClassDialog } from '@/components/schedule/move-class-dialog'
+import { buildReadingCheckClassWrapSummary } from '@/lib/books/reading-check-class-wrap'
+import type { ReadingCheckClassWrapSummary } from '@/lib/books/reading-check-live-marks'
+import { toast } from 'sonner'
 
 /**
  * TEST ONLY — class timer “time warp” on the map.
@@ -49,10 +76,19 @@ function buildAutoBookmarkAtEnd(
 
 export interface ClassSessionMapTimerProps {
   studentId: string
+  studentName: string
   session: StudentClassSessionView
   assignedBookIds: string[]
   /** Raise above map chrome when the book overlay is open. */
   elevated?: boolean
+  /**
+   * Manual end success — show student wrap instead of leaving immediately.
+   * Hard auto-end still navigates to `/students`.
+   */
+  onClassEnded?: (payload: {
+    sessionId: string
+    summary: ReadingCheckClassWrapSummary
+  }) => void
 }
 
 function multiplierFromHandleOffsetPx(offsetPx: number): number {
@@ -63,9 +99,19 @@ function multiplierFromHandleOffsetPx(offsetPx: number): number {
   return 1 - n * (1 - TIME_WARP_MIN_MULTIPLIER)
 }
 
-export function ClassSessionMapTimer({ studentId, session, assignedBookIds, elevated = false }: ClassSessionMapTimerProps) {
+export function ClassSessionMapTimer({
+  studentId,
+  studentName,
+  session,
+  assignedBookIds,
+  elevated = false,
+  onClassEnded,
+}: ClassSessionMapTimerProps) {
   const router = useRouter()
-  const { title, classStartedAt, durationMin } = session
+  const { scheduledFor, durationMin, extendedMinutesTotal = 0 } = session
+  const [extendBusy, setExtendBusy] = useState(false)
+  const [autoEnding, setAutoEnding] = useState(false)
+  const autoEndStartedRef = useRef(false)
 
   const skewRef = useRef(0)
   const handleOffsetRef = useRef(0)
@@ -73,7 +119,10 @@ export function ClassSessionMapTimer({ studentId, session, assignedBookIds, elev
   const [nowMs, setNowMs] = useState(() => Date.now())
 
   const [endOpen, setEndOpen] = useState(false)
+  const [moveOpen, setMoveOpen] = useState(false)
+  const [annotationPromptOpen, setAnnotationPromptOpen] = useState(false)
   const [endBusy, setEndBusy] = useState(false)
+  const [cancelBusy, setCancelBusy] = useState(false)
   const [endError, setEndError] = useState<string | null>(null)
   const [endRecapDraft, setEndRecapDraft] = useState('')
   const [endSessionNoteDraft, setEndSessionNoteDraft] = useState('')
@@ -108,6 +157,18 @@ export function ClassSessionMapTimer({ studentId, session, assignedBookIds, elev
     }, intervalMs)
     return () => window.clearInterval(id)
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      await ensureBookAnnotationsHydrated()
+      if (cancelled) return
+      ensureClassAnnotationBaseline(studentId, session.id)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [studentId, session.id])
 
   const onPointerDownHandle = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
     if (!ENABLE_TIME_WARP_FOR_TESTING) return
@@ -150,44 +211,95 @@ export function ClassSessionMapTimer({ studentId, session, assignedBookIds, elev
     setNowMs(Date.now())
   }, [])
 
-  const { label, suffix, variant } = useMemo(
-    () => computeClassTimerState(classStartedAt, durationMin, nowMs),
-    [classStartedAt, durationMin, nowMs],
+  const { label, suffix: baseSuffix, variant } = useMemo(
+    () => computeClassTimerState(scheduledFor, durationMin, nowMs, extendedMinutesTotal),
+    [scheduledFor, durationMin, nowMs, extendedMinutesTotal],
   )
-  const notebookHeaderPreview = useMemo(() => {
-    const firstSection = session.lessonNotebookSession?.sections?.[0]
-    if (!firstSection) return null
-    const firstDocEntry = firstSection.entries.find((entry) => entry.layer === 'doc' && entry.payload?.kind === 'header_block')
-    const title = typeof firstDocEntry?.payload?.title === 'string' ? firstDocEntry.payload.title : 'Lesson Notes'
-    return {
-      sectionTitle: firstSection.title,
-      title,
-    }
-  }, [session.lessonNotebookSession])
+
+  const phase = useMemo(
+    () => computeClassLiveClockPhase(scheduledFor, durationMin, nowMs, extendedMinutesTotal),
+    [scheduledFor, durationMin, nowMs, extendedMinutesTotal],
+  )
+
+  const suffix =
+    phase === 'grace' ? 'grace' : phase === 'must_end' ? 'ending' : baseSuffix
+
+  const showExtendChrome = phase === 'grace' || phase === 'must_end'
+  const showExtendChips = phase === 'grace'
+
+  const nextStudentSoon = useMemo(() => {
+    if (phase !== 'grace') return null
+    return findNextStudentSoon(getTodaysClassSessionsForTeacher(), session.id, nowMs)
+  }, [phase, session.id, nowMs])
+
+  useEffect(() => {
+    if (phase !== 'must_end') return
+    if (autoEndStartedRef.current || autoEnding || endBusy) return
+    autoEndStartedRef.current = true
+    setAutoEnding(true)
+    void (async () => {
+      try {
+        await flushAnnotationsForClassEnd()
+        keepClassAnnotationChanges(session.id)
+        let wrapLine: string | undefined
+        try {
+          const wrap = await buildReadingCheckClassWrapSummary({
+            classSessionId: session.id,
+            studentId,
+          })
+          wrapLine = wrap.wrapLine
+        } catch {
+          wrapLine = undefined
+        }
+        const result = hardAutoEndStudentClassSession(
+          studentId,
+          session.id,
+          wrapLine ? { readingCheckWrapLine: wrapLine } : undefined,
+        )
+        if (!result.ok) {
+          autoEndStartedRef.current = false
+          setAutoEnding(false)
+          toast.error(result.error)
+          return
+        }
+        if (!result.alreadyEnded) {
+          toast.message(`${result.studentName}'s class ended (time's up)`, {
+            description: 'You can add a note later from Past classes.',
+          })
+        }
+        router.replace('/students')
+        router.refresh()
+      } catch {
+        autoEndStartedRef.current = false
+        setAutoEnding(false)
+        toast.error('Could not end class automatically. Tap End.')
+      }
+    })()
+  }, [phase, autoEnding, endBusy, studentId, session.id, router])
 
   const shell = (() => {
     if (elevated) {
       if (variant === 'over') {
-        return 'border-red-400/45 bg-red-500/25 text-red-50'
+        return 'border-red-400/45 bg-red-500/25 text-red-50 shadow-[0_6px_18px_rgba(0,0,0,0.18)] backdrop-blur-[1.5px]'
       }
       if (variant === 'warning') {
-        return 'motion-safe:animate-pulse border-amber-400/40 bg-amber-500/20 text-amber-50'
+        return 'motion-safe:animate-pulse border-amber-400/40 bg-amber-500/20 text-amber-50 shadow-[0_6px_18px_rgba(0,0,0,0.18)] backdrop-blur-[1.5px]'
       }
       if (variant === 'muted') {
         return cn(BOOK_OVERLAY_GLASS_CHROME, 'text-white/55')
       }
-      return cn(BOOK_OVERLAY_GLASS_CHROME, 'text-white/80')
+      return cn(BOOK_OVERLAY_GLASS_CHROME, 'text-white/85')
     }
     if (variant === 'over') {
-      return 'border-red-500/45 bg-red-500/12 text-red-950 dark:text-red-50'
+      return 'border-red-700/45 bg-red-200/85 text-red-950 shadow-sm backdrop-blur-sm'
     }
     if (variant === 'warning') {
-      return 'motion-safe:animate-pulse border-amber-500/50 bg-amber-500/20 text-amber-950 dark:text-amber-50'
+      return 'motion-safe:animate-pulse border-[#b48218]/55 bg-[#f0c040]/90 text-[#5c3d0a] shadow-sm backdrop-blur-sm'
     }
     if (variant === 'muted') {
-      return 'border-[var(--border)] bg-[var(--surface-2)] text-muted-foreground'
+      return cn(CLASS_LAUNCH_CHROME, 'opacity-80')
     }
-    return 'border-[var(--border)] bg-[var(--surface-2)]/90 text-foreground backdrop-blur-sm'
+    return CLASS_LAUNCH_CHROME
   })()
 
   const warpMult = ENABLE_TIME_WARP_FOR_TESTING ? multiplierFromHandleOffsetPx(handleOffsetPx) : 1
@@ -198,21 +310,55 @@ export function ClassSessionMapTimer({ studentId, session, assignedBookIds, elev
       setEndError(null)
       setEndRecapDraft('')
       setEndSessionNoteDraft('')
+      setAnnotationPromptOpen(false)
     }
   }
 
-  function finishClass(result: ReturnType<typeof endStudentClassSession>) {
+  function finishClass(
+    result: ReturnType<typeof endStudentClassSession>,
+    wrap?: { summary: ReadingCheckClassWrapSummary },
+  ) {
     setEndBusy(false)
     if (!result.ok) {
       setEndError(result.error)
+      setAnnotationPromptOpen(false)
       return
     }
+    setAnnotationPromptOpen(false)
     setEndOpen(false)
+    if (onClassEnded && wrap) {
+      onClassEnded({ sessionId: session.id, summary: wrap.summary })
+      return
+    }
     router.replace('/students')
     router.refresh()
   }
 
-  function confirmEndClassWithSave() {
+  async function resolveWrapForEnd(): Promise<{
+    summary: ReadingCheckClassWrapSummary
+    wrapLine: string | undefined
+  }> {
+    try {
+      return await buildReadingCheckClassWrapSummary({
+        classSessionId: session.id,
+        studentId,
+      })
+    } catch {
+      return {
+        summary: {
+          attempted: 0,
+          correct: 0,
+          incorrect: 0,
+          skip: 0,
+          storyIds: [],
+          totalInPack: null,
+        },
+        wrapLine: undefined,
+      }
+    }
+  }
+
+  async function confirmEndClassWithSave() {
     setEndError(null)
     const bookmark = buildAutoBookmarkAtEnd(session, assignedBookIds)
     if (!bookmark) {
@@ -220,85 +366,270 @@ export function ClassSessionMapTimer({ studentId, session, assignedBookIds, elev
       return
     }
     setEndBusy(true)
-    const recap = endRecapDraft.trim()
-    const sessionLog = endSessionNoteDraft.trim()
-    const result = endStudentClassSession(studentId, session.id, {
-      bookmarkAtEnd: bookmark,
-      ...(recap ? { classEndNote: recap } : {}),
-      ...(sessionLog ? { sessionNote: sessionLog } : {}),
-    })
-    finishClass(result)
+    try {
+      await flushAnnotationsForClassEnd()
+      keepClassAnnotationChanges(session.id)
+      const { summary, wrapLine } = await resolveWrapForEnd()
+      const recap = endRecapDraft.trim()
+      const sessionLog = endSessionNoteDraft.trim()
+      const result = endStudentClassSession(studentId, session.id, {
+        bookmarkAtEnd: bookmark,
+        ...(recap ? { classEndNote: recap } : {}),
+        ...(sessionLog ? { sessionNote: sessionLog } : {}),
+        ...(wrapLine ? { readingCheckWrapLine: wrapLine } : {}),
+      })
+      finishClass(result, { summary })
+    } catch {
+      setEndBusy(false)
+      setEndError('Could not save book annotations. Try again.')
+    }
   }
 
-  function confirmEndClassWithoutSave() {
+  async function beginEndClassWithoutSave() {
     setEndError(null)
     setEndBusy(true)
-    const result = endStudentClassSession(studentId, session.id)
-    finishClass(result)
+    try {
+      await flushAnnotationsForClassEnd()
+      const changed = classAnnotationStateChangedSinceBaseline(studentId, session.id)
+      if (changed) {
+        setEndBusy(false)
+        setAnnotationPromptOpen(true)
+        return
+      }
+      keepClassAnnotationChanges(session.id)
+      const { summary, wrapLine } = await resolveWrapForEnd()
+      const result = endStudentClassSession(studentId, session.id, {
+        ...(wrapLine ? { readingCheckWrapLine: wrapLine } : {}),
+      })
+      finishClass(result, { summary })
+    } catch {
+      setEndBusy(false)
+      setEndError('Could not save book annotations. Try again.')
+    }
   }
+
+  async function confirmEndWithoutSaveKeepAnnotations() {
+    setEndError(null)
+    setEndBusy(true)
+    try {
+      await flushAnnotationsForClassEnd()
+      keepClassAnnotationChanges(session.id)
+      const { summary, wrapLine } = await resolveWrapForEnd()
+      const result = endStudentClassSession(studentId, session.id, {
+        ...(wrapLine ? { readingCheckWrapLine: wrapLine } : {}),
+      })
+      finishClass(result, { summary })
+    } catch {
+      setEndBusy(false)
+      setEndError('Could not save book annotations. Try again.')
+    }
+  }
+
+  async function confirmEndWithoutSaveDiscardAnnotations() {
+    setEndError(null)
+    setEndBusy(true)
+    try {
+      // Restore class-start marks first (suppresses live ink flush), then force disk write.
+      const restored = discardClassAnnotationChanges(studentId, session.id)
+      if (!restored) {
+        setEndBusy(false)
+        setEndError('Could not restore earlier annotations. Keep them instead, or try again.')
+        return
+      }
+      await flushBookAnnotationsToDiskAsync()
+      const { summary, wrapLine } = await resolveWrapForEnd()
+      const result = endStudentClassSession(studentId, session.id, {
+        ...(wrapLine ? { readingCheckWrapLine: wrapLine } : {}),
+      })
+      finishClass(result, { summary })
+    } catch {
+      setEndBusy(false)
+      setEndError('Could not update book annotations. Try again.')
+    }
+  }
+
+  function cancelAnnotationPrompt() {
+    setAnnotationPromptOpen(false)
+    setEndError(null)
+  }
+
+  async function handleCancelLiveClass() {
+    if (cancelBusy || endBusy) return
+    const ok = window.confirm(
+      `Cancel this class for ${studentName}? It won’t happen. Prep and board stay; this slot won’t count as taught.`,
+    )
+    if (!ok) return
+    setCancelBusy(true)
+    try {
+      await flushAnnotationsForClassEnd()
+      keepClassAnnotationChanges(session.id)
+      const result = cancelClassOccurrence(studentId, session.id)
+      if (!result.ok) {
+        toast.error(result.error)
+        return
+      }
+      toast.success('Class cancelled')
+      router.replace('/dashboard')
+      router.refresh()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not cancel class.')
+    } finally {
+      setCancelBusy(false)
+    }
+  }
+
+  function handleExtend(addMinutes: number) {
+    if (extendBusy || !canExtendClassBy(extendedMinutesTotal, addMinutes)) return
+    setExtendBusy(true)
+    try {
+      const result = extendStudentClassSession(studentId, session.id, addMinutes)
+      if (!result.ok) {
+        toast.error(result.error)
+        return
+      }
+      toast.success(`Extended +${addMinutes} min`)
+    } finally {
+      setExtendBusy(false)
+    }
+  }
+
+  const chipBtn = (elevatedChip: boolean) =>
+    cn(
+      'rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide transition-colors disabled:opacity-40',
+      elevatedChip
+        ? 'bg-white/10 text-white/90 ring-1 ring-white/15 hover:bg-white/15'
+        : 'bg-[#5c3d0a]/12 text-[#5c3d0a] ring-1 ring-[#5c3d0a]/20 hover:bg-[#5c3d0a]/18',
+    )
 
   return (
     <>
       <div
         className={cn(
-          'pointer-events-auto absolute right-3 top-3 flex items-center gap-2 rounded-full border shadow-sm',
-          elevated ? 'z-[55] max-w-[min(100vw-6rem,14rem)] px-2 py-1 text-[10px]' : 'z-40 max-w-[min(100vw-6rem,18rem)] px-3 py-1.5 text-xs backdrop-blur-sm',
+          'pointer-events-auto absolute left-1/2 top-4 flex -translate-x-1/2 flex-col items-center gap-1.5 border px-3 py-1.5 shadow-sm',
+          showExtendChrome ? 'rounded-2xl' : 'rounded-full',
+          elevated
+            ? 'z-[60] max-w-[min(100vw-2rem,28rem)] text-sm'
+            : 'z-40 max-w-[min(100vw-2rem,30rem)] text-sm',
           shell,
         )}
       >
-        <div className="flex items-baseline gap-1.5">
-          <span
-            className={cn(
-              'font-mono tabular-nums tracking-tight',
-              elevated ? 'text-xs font-semibold text-white' : 'text-sm font-bold',
-            )}
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <div className="flex items-baseline gap-1.5">
+            <span
+              className={cn(
+                'font-mono text-sm font-semibold tabular-nums tracking-tight',
+                elevated && 'text-white',
+              )}
+            >
+              {label}
+            </span>
+            <span
+              className={cn(
+                'text-[11px] font-semibold uppercase tracking-wide',
+                elevated ? 'text-white/70' : 'opacity-80',
+              )}
+            >
+              {suffix}
+            </span>
+          </div>
+          <button type="button" className={chipBtn(elevated)} onClick={() => setMoveOpen(true)} disabled={cancelBusy || endBusy}>
+            Move instead
+          </button>
+          <button
+            type="button"
+            className={chipBtn(elevated)}
+            onClick={() => void handleCancelLiveClass()}
+            disabled={cancelBusy || endBusy}
           >
-            {label}
-          </span>
-          <span className="text-[10px] font-semibold uppercase tracking-wide opacity-80">{suffix}</span>
+            {cancelBusy ? '…' : 'Cancel'}
+          </button>
+          <button type="button" className={chipBtn(elevated)} onClick={() => handleEndOpenChange(true)} disabled={cancelBusy || endBusy}>
+            End
+          </button>
         </div>
-        <button
-          type="button"
-          className={cn(
-            'rounded-full font-semibold uppercase tracking-wide opacity-85 transition-colors hover:opacity-100',
-            elevated
-              ? 'px-2 py-0.5 text-[9px] ring-1 ring-white/15'
-              : 'px-2.5 py-0.5 text-[10px] ring-1 ring-black/10 dark:ring-white/15',
-          )}
-          onClick={() => handleEndOpenChange(true)}
-        >
-          End
-        </button>
+
+        {showExtendChrome ? (
+          <div className="flex w-full flex-col items-center gap-1.5 border-t border-black/10 pb-0.5 pt-1.5 dark:border-white/15">
+            {phase === 'must_end' || autoEnding ? (
+              <p
+                className={cn(
+                  'text-center text-[10px] font-medium',
+                  elevated ? 'text-white/80' : 'text-[#5c3d0a]/90',
+                )}
+              >
+                {autoEnding ? 'Ending class…' : "Time's up — ending class now."}
+              </p>
+            ) : (
+              <p
+                className={cn(
+                  'text-center text-[10px] font-medium',
+                  elevated ? 'text-white/80' : 'text-[#5c3d0a]/90',
+                )}
+              >
+                {nextStudentSoon
+                  ? `${nextStudentSoon.studentName} in ${nextStudentSoon.minutesUntilStart} min — End or +2?`
+                  : `Overtime grace — End now or add a little time${
+                      extendedMinutesTotal > 0 ? ` (+${extendedMinutesTotal} so far)` : ''
+                    }.`}
+              </p>
+            )}
+            {showExtendChips ? (
+              <div className="flex flex-wrap items-center justify-center gap-1.5">
+                {CLASS_EXTEND_CHIP_MINUTES.map((mins) => {
+                  const allowed = canExtendClassBy(extendedMinutesTotal, mins)
+                  return (
+                    <button
+                      key={mins}
+                      type="button"
+                      disabled={extendBusy || autoEnding || !allowed}
+                      className={chipBtn(elevated)}
+                      title={
+                        allowed
+                          ? `Add ${mins} minutes (max +15 total overtime)`
+                          : 'Would pass the +15 minute overtime cap'
+                      }
+                      onClick={() => handleExtend(mins)}
+                    >
+                      +{mins}
+                    </button>
+                  )
+                })}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
-      <Dialog open={endOpen} onOpenChange={handleEndOpenChange}>
+      <MoveClassDialog
+        open={moveOpen}
+        onOpenChange={setMoveOpen}
+        studentId={studentId}
+        studentName={studentName}
+        session={session}
+        onMoved={() => {
+          setMoveOpen(false)
+          router.replace('/dashboard')
+          router.refresh()
+        }}
+      />
+
+      <Dialog open={endOpen && !annotationPromptOpen} onOpenChange={handleEndOpenChange}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>End class?</DialogTitle>
-            <DialogDescription asChild>
-              <div className="space-y-2 text-left text-sm text-muted-foreground">
-                <p>Are you sure you want to end this class now?</p>
-                <div>
-                  <p className="font-medium text-foreground">When you choose “End and save”</p>
-                  <ul className="mt-1 list-inside list-disc space-y-0.5 text-xs">
-                    <li>Class finished + end time</li>
-                    <li>Lesson bookmark + reader curriculum page (when a unit can be matched)</li>
-                    <li>Reader annotations (already stored as you mark the book)</li>
-                  </ul>
-                  <p className="mt-1 text-xs text-muted-foreground/90">Later: words or phrases flagged for review.</p>
-                </div>
-              </div>
+            <DialogTitle>Mark finished?</DialogTitle>
+            <DialogDescription>
+              Counts as taught. Add a short note for next time if you want — then save.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
             <Label htmlFor="end-class-recap" className="text-sm font-medium text-foreground">
-              Quick recap (optional)
+              Quick note (optional)
             </Label>
             <Textarea
               id="end-class-recap"
               rows={3}
               className="resize-none text-sm"
-              placeholder="One line for next time, e.g. what to repeat or skip…"
+              placeholder="e.g. parent cut short — finished story; review vocab next time…"
               value={endRecapDraft}
               onChange={(e) => setEndRecapDraft(e.target.value)}
               disabled={endBusy}
@@ -310,7 +641,7 @@ export function ClassSessionMapTimer({ studentId, session, assignedBookIds, elev
               id="end-class-session-note"
               rows={5}
               className="min-h-[100px] text-sm"
-              placeholder="Longer notes for this call: pages you covered, what worked, homework, plan for next time…"
+              placeholder="Longer notes: pages covered, what worked, homework…"
               value={endSessionNoteDraft}
               onChange={(e) => setEndSessionNoteDraft(e.target.value)}
               disabled={endBusy}
@@ -319,13 +650,58 @@ export function ClassSessionMapTimer({ studentId, session, assignedBookIds, elev
           {endError ? <p className="text-sm text-destructive">{endError}</p> : null}
           <DialogFooter className="gap-2 sm:gap-0">
             <Button type="button" variant="outline" onClick={() => handleEndOpenChange(false)} disabled={endBusy}>
+              Keep teaching
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => void beginEndClassWithoutSave()} disabled={endBusy}>
+              {endBusy ? 'Ending…' : 'Finish without bookmark'}
+            </Button>
+            <Button type="button" onClick={() => void confirmEndClassWithSave()} disabled={endBusy}>
+              {endBusy ? 'Saving…' : 'Save & finish'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={annotationPromptOpen}
+        onOpenChange={(open) => {
+          if (!open && !endBusy) cancelAnnotationPrompt()
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Keep book annotations?</DialogTitle>
+            <DialogDescription asChild>
+              <div className="space-y-2 text-left text-sm text-muted-foreground">
+                <p>
+                  You chose not to save the lesson bookmark and notes. Marks you made in the book this class
+                  can still be kept for next time.
+                </p>
+                <p className="text-xs">
+                  Discard only removes marks added during this class. Older marks stay.
+                </p>
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          {endError ? <p className="text-sm text-destructive">{endError}</p> : null}
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={cancelAnnotationPrompt} disabled={endBusy}>
               Cancel
             </Button>
-            <Button type="button" variant="secondary" onClick={confirmEndClassWithoutSave} disabled={endBusy}>
-              {endBusy ? 'Ending…' : 'End without saving'}
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => void confirmEndWithoutSaveDiscardAnnotations()}
+              disabled={endBusy}
+            >
+              {endBusy ? 'Ending…' : 'Discard annotations'}
             </Button>
-            <Button type="button" variant="destructive" onClick={confirmEndClassWithSave} disabled={endBusy}>
-              {endBusy ? 'Saving…' : 'End and save'}
+            <Button
+              type="button"
+              onClick={() => void confirmEndWithoutSaveKeepAnnotations()}
+              disabled={endBusy}
+            >
+              {endBusy ? 'Saving…' : 'Keep annotations'}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -26,6 +26,7 @@ import {
 import {
   isInkSessionDelegatedCanvasCommand,
   isSpreadSessionOwnedCommand,
+  pageLayerCommandsExcludingSpreadSessionIds,
   pageLayerCommandsWhenSpreadDelegated,
   pageLayerCanvasCommandsWhenWhiteboardInkDelegated,
 } from '@/lib/books/ink-session-page-layer'
@@ -48,6 +49,8 @@ import {
   type AnnotationCommand,
   type ArrowAnnotationCommand,
   type EllipseAnnotationCommand,
+  type FlashcardAnnotationCommand,
+  type ImageAnnotationCommand,
   type LineAnnotationCommand,
   type RectAnnotationCommand,
   type TriangleAnnotationCommand,
@@ -61,6 +64,35 @@ import {
   type StrokeTool,
 } from '@/lib/books/annotation-command-types'
 import { mergeWhiteboardLegacyWithSession } from '@/lib/books/whiteboard-session-persist'
+import { inkSessionPageLayerDemotionEnabled } from '@/lib/books/feature-flags'
+import {
+  pageLayerCommandsForLoad,
+  pageLayerCommandsForPersist,
+} from '@/lib/books/ink-session-page-persist'
+import {
+  downscaleImageFile,
+  resolvePastedBoardImage,
+  resolvePastedBoardImageFromNavigatorClipboard,
+  type PasteImageOutcome,
+  type PastedBoardImageResolution,
+} from '@/lib/books/clipboard-image'
+import { buildImageCommandFromEncoded } from '@/lib/books/board-image-commit'
+import { fetchBoardImageAsFile } from '@/lib/board-image-import-client'
+import {
+  fitFlashcardNormBox,
+  FLASHCARD_PLACEHOLDER_ZH,
+} from '@/lib/lesson-board/lesson-board-flashcard-layout'
+import {
+  readPlainTextFromNavigatorClipboard,
+  sanitizePastedPlainText,
+  textPasteNormPoint,
+} from '@/lib/books/clipboard-text'
+import {
+  getBoardPasteAnchorNorm,
+  pasteOffsetForAnchor,
+} from '@/lib/books/board-paste-placement'
+import { registerPasteRevealIds } from '@/lib/books/board-paste-reveal'
+import { notifyStampPlaced } from '@/lib/books/notify-stamp-placed'
 import {
   getAnnotationsForPage,
   getAnnotationsForStorageKey,
@@ -111,12 +143,16 @@ import {
   selectionIdsMatch,
   resolveSelectClickTargetIds,
   translateAnnotationCommands,
+  filterUnlockedTransformIds,
+  selectAllCommandIds,
   type GroupSelectionChrome,
   type MarqueeSelectMode,
   type MarqueeSelectRule,
   type NormRect,
   type OrientedSelectionFrame,
 } from '@/lib/books/annotation-select'
+import { alignSelectedCommands, type HorizontalAlignAxis } from '@/lib/books/annotation-align'
+import { moveCommandsInStack } from '@/lib/books/annotation-layer-order'
 import {
   autoGroupPenStrokeAfterCommit,
   lockPenFigureAutoJoinOnCommands,
@@ -162,6 +198,7 @@ import {
   scaleAnnotationCommandsFromOrientedFrames,
   type ScaleHandleId,
 } from '@/lib/books/annotation-scale'
+import { resolveSelectMoveIdsForDrag } from '@/lib/books/ink-session-select-move'
 import {
   commitBookOverlayTypingTarget,
   endBookOverlayAnnotationEditingFocus,
@@ -177,6 +214,10 @@ import {
   defaultWritableStickerFill,
   defaultWritableStickerSize,
 } from '@/lib/books/writable-sticker-visuals'
+import {
+  textLabelAlignOrDefault,
+  textLabelPlacementFromClick,
+} from '@/lib/books/text-label-layout'
 import {
   resolveTextToolHoverTargetId,
   textToolEditingOutlineFrames,
@@ -217,6 +258,7 @@ import type {
   TwoPointDraft,
 } from '@/components/students/book-page-annotation-layer/types'
 import type { BookPageAnnotationLayerViewProps } from '@/components/students/book-page-annotation-layer/BookPageAnnotationLayerView'
+import { useBoardPasteReveal } from '@/components/students/book-page-annotation-layer/hooks/useBoardPasteReveal'
 import { useInkSessionSelectionInteraction } from '@/components/students/ink-session-selection/useInkSessionSelectionInteraction'
 
 function pageLocalSelectedIds(
@@ -230,6 +272,8 @@ function pageLocalSelectedIds(
     return cmd != null && !isSpreadSessionOwnedCommand(cmd)
   })
 }
+
+const EMPTY_SPREAD_SESSION_PAINT_COMMAND_IDS: readonly string[] = []
 
 export function useBookPageAnnotationLayer(
   props: BookPageAnnotationLayerProps,
@@ -277,6 +321,7 @@ export function useBookPageAnnotationLayer(
       textFontId,
       stickyFontSizeNorm,
       textVisualStyle = 'plain',
+      textAlign = 'left',
       textFillColor = DEFAULT_TEXT_FILL_COLOR,
       stickyFillColor = '#fef3c7',
       defaultStickyWNorm,
@@ -287,14 +332,22 @@ export function useBookPageAnnotationLayer(
       delegatePointerToSpread = false,
       delegatePointerToWhiteboardPen = false,
       spreadInkDelegated = false,
+      spreadSessionOwnsPagePaint = false,
+      spreadSessionPaintCommandIds = EMPTY_SPREAD_SESSION_PAINT_COMMAND_IDS,
       whiteboardPenInkDelegated = false,
       whiteboardInkDelegated = false,
       whiteboardSessionStoreRef,
       onSelectionMoveCommitted,
       onSpreadCanvasCommandCommit,
+      getImagePastePlacement,
+      onImagePasted,
+      onTextPasted,
+      pdfTextRoutingEnabled = false,
   } = props
 
     const isSelect = mode === 'select'
+    const pageSelectViaSessionLayer = (spreadInkDelegated || whiteboardInkDelegated) && isSelect
+    const { pasteRevealIds, pasteRevealTick } = useBoardPasteReveal()
     const { setAnnotationGestureActive } = useLessonCoachSyncActions()
     const overlayRef = useRef<HTMLDivElement | null>(null)
     const paintRef = useRef<
@@ -361,7 +414,15 @@ export function useBookPageAnnotationLayer(
 
     commandsRef.current = commands
 
+    const spreadSessionCommandIdSet = useMemo(
+      () => new Set(spreadSessionPaintCommandIds),
+      [spreadSessionPaintCommandIds],
+    )
+
     const canvasPaintCommands = useMemo(() => {
+      if (spreadSessionOwnsPagePaint) {
+        return pageLayerCommandsExcludingSpreadSessionIds(commands, spreadSessionPaintCommandIds)
+      }
       if (spreadInkDelegated) {
         return pageLayerCommandsWhenSpreadDelegated(commands, true)
       }
@@ -369,7 +430,31 @@ export function useBookPageAnnotationLayer(
         return pageLayerCanvasCommandsWhenWhiteboardInkDelegated(commands, true)
       }
       return [...commands]
-    }, [commands, spreadInkDelegated, whiteboardInkDelegated, whiteboardPenInkDelegated])
+    }, [
+      commands,
+      spreadInkDelegated,
+      spreadSessionOwnsPagePaint,
+      spreadSessionPaintCommandIds,
+      whiteboardInkDelegated,
+      whiteboardPenInkDelegated,
+    ])
+
+    const pageLayerPersistCtx = useMemo(
+      () => ({
+        spreadInkDelegated,
+        spreadSessionOwnsPagePaint,
+        spreadSessionPaintCommandIds,
+        whiteboardInkDelegated,
+        whiteboardPenInkDelegated,
+      }),
+      [
+        spreadInkDelegated,
+        spreadSessionOwnsPagePaint,
+        spreadSessionPaintCommandIds,
+        whiteboardInkDelegated,
+        whiteboardPenInkDelegated,
+      ],
+    )
 
     /** Phase 5: canvas ink commits only on session layer when delegated (no full page replay). */
     const sessionOwnsCanvasInk =
@@ -394,14 +479,12 @@ export function useBookPageAnnotationLayer(
       const raw = resolvedStoragePageKey
         ? getAnnotationsForStorageKey(studentId, bookId, unitId, resolvedStoragePageKey)
         : getAnnotationsForPage(studentId, bookId, unitId, pageNumber, storageChannel)
-      const loaded = raw.filter((c) => c.kind !== 'text' || c.text.trim().length > 0)
-      if (loaded.length !== raw.length) {
-        if (resolvedStoragePageKey) {
-          setAnnotationsForStorageKey(studentId, bookId, unitId, resolvedStoragePageKey, loaded)
-        } else {
-          setAnnotationsForPage(studentId, bookId, unitId, pageNumber, loaded, storageChannel)
-        }
-      }
+      // Demote for in-memory paint only — never write demoted rows back.
+      // Writing stripped text/sticky/stamp here wiped flush projections on page turn.
+      const loaded = pageLayerCommandsForLoad(
+        raw.filter((c) => c.kind !== 'text' || c.text.trim().length > 0),
+        pageLayerPersistCtx,
+      )
       setCommands(loaded)
       redoStackRef.current = []
       snapshotUndoRef.current = []
@@ -412,13 +495,24 @@ export function useBookPageAnnotationLayer(
       erasePreviewDeadKeyRef.current = null
       setFocusNewId(null)
       queueMicrotask(emitCapabilities)
-    }, [studentId, bookId, unitId, pageNumber, storageChannel, resolvedStoragePageKey, emitCapabilities])
+    }, [studentId, bookId, unitId, pageNumber, storageChannel, resolvedStoragePageKey, emitCapabilities, pageLayerPersistCtx])
 
     const persist = useCallback(
       (next: AnnotationCommand[]) => {
         commandsRef.current = next
-        let toSave = next
+        // Session flush owns storage projection; demoted page-layer saves would wipe text/ink.
         if (
+          inkSessionPageLayerDemotionEnabled &&
+          (pageLayerPersistCtx.spreadInkDelegated ||
+            pageLayerPersistCtx.whiteboardInkDelegated ||
+            pageLayerPersistCtx.whiteboardPenInkDelegated)
+        ) {
+          emitCapabilities()
+          return
+        }
+        let toSave = pageLayerCommandsForPersist(next, pageLayerPersistCtx)
+        if (
+          !inkSessionPageLayerDemotionEnabled &&
           whiteboardInkDelegated &&
           whiteboardSessionStoreRef?.current &&
           resolvedStoragePageKey
@@ -445,6 +539,7 @@ export function useBookPageAnnotationLayer(
         emitCapabilities,
         whiteboardInkDelegated,
         whiteboardSessionStoreRef,
+        pageLayerPersistCtx,
       ],
     )
 
@@ -539,17 +634,12 @@ export function useBookPageAnnotationLayer(
     )
 
     const selectMoveIdsForDrag = useCallback(
-      (hitCmd: AnnotationCommand): string[] => {
-        if (
-          groupSelectionChromeRef.current === 'perStroke' &&
-          hitCmd.kind === 'stroke' &&
-          (hitCmd.tool === 'pen' || hitCmd.tool === 'marker') &&
-          selectedIdsRef.current.includes(hitCmd.id)
-        ) {
-          return [hitCmd.id]
-        }
-        return [...selectedIdsRef.current]
-      },
+      (hitCmd: AnnotationCommand, dragSelectionIds?: readonly string[]) =>
+        resolveSelectMoveIdsForDrag(
+          hitCmd,
+          dragSelectionIds ?? selectedIdsRef.current,
+          groupSelectionChromeRef.current,
+        ),
       [],
     )
 
@@ -585,6 +675,8 @@ export function useBookPageAnnotationLayer(
         resolveClickTargetIds: resolveClickTargetForSelection,
         selectMoveIdsForDrag,
         clampMoveDelta: clampMoveDeltaForSelection,
+        pdfTextRoutingEnabled:
+          pdfTextRoutingEnabled && isSelect && !pageSelectViaSessionLayer,
         onGestureLiveChange: () => paintRef.current(null, null),
         onMoveCommitted: (dx, dy, moveIds) => {
           if (dx === 0 && dy === 0) return
@@ -953,6 +1045,282 @@ export function useBookPageAnnotationLayer(
       persist(next)
     }
 
+    const appendWhiteboardCommands = useCallback(
+      (cmds: AnnotationCommand[], selectIds: string[]): void => {
+        if (whiteboardInkDelegated && whiteboardSessionStoreRef?.current) {
+          whiteboardSessionStoreRef.current.patchCommands((existing) => [...existing, ...cmds])
+          whiteboardSessionStoreRef.current.setSelectedIds(selectIds)
+          return
+        }
+        pushUndoSnapshot()
+        const next = [...commandsRef.current, ...cmds]
+        setCommands(next)
+        persist(next)
+        setSelectedIds(selectIds)
+        setEditingId(null)
+      },
+      [
+        persist,
+        pushUndoSnapshot,
+        whiteboardInkDelegated,
+        whiteboardSessionStoreRef,
+      ],
+    )
+
+    const resolvePasteAnchorNorm = useCallback((): { x: number; y: number } | null => {
+      const placement = getImagePastePlacement?.()
+      return placement?.anchorNorm ?? getBoardPasteAnchorNorm()
+    }, [getImagePastePlacement])
+
+    const resolvePasteDuplicateOffset = useCallback(
+      (source: readonly AnnotationCommand[]): [number, number] => {
+        const anchor = resolvePasteAnchorNorm()
+        if (!anchor || !(widthPx > 0) || !(heightPx > 0)) return [0.02, 0.02]
+        return pasteOffsetForAnchor(source, anchor, widthPx, heightPx)
+      },
+      [heightPx, resolvePasteAnchorNorm, widthPx],
+    )
+
+    const commitFlashcardFromEncoded = useCallback(
+      (
+        encoded: { dataUrl: string; naturalWidth: number; naturalHeight: number },
+        english: string,
+        chinese: string,
+        options?: { notify?: boolean },
+      ): boolean => {
+        if (storageChannel !== 'whiteboard') return false
+        const en = english.trim()
+        if (!en) return false
+
+        const placement = getImagePastePlacement?.()
+        const scrollTopPx = placement?.scrollTopPx ?? 0
+        const viewportHeightPx = placement?.viewportHeightPx ?? heightPx
+        const anchorNorm = resolvePasteAnchorNorm()
+        const cardBox = fitFlashcardNormBox(
+          encoded.naturalWidth,
+          encoded.naturalHeight,
+          widthPx,
+          heightPx,
+          viewportHeightPx,
+          scrollTopPx,
+          anchorNorm,
+        )
+
+        const flashcardCmd: FlashcardAnnotationCommand = {
+          kind: 'flashcard',
+          id: newAnnotationId(),
+          x: cardBox.x,
+          y: cardBox.y,
+          w: cardBox.w,
+          h: cardBox.h,
+          src: encoded.dataUrl,
+          english: en,
+          chinese: chinese.trim() || FLASHCARD_PLACEHOLDER_ZH,
+          alt: en,
+        }
+
+        appendWhiteboardCommands([flashcardCmd], [flashcardCmd.id])
+        registerPasteRevealIds([flashcardCmd.id])
+        if (options?.notify !== false) onImagePasted?.()
+        return true
+      },
+      [
+        appendWhiteboardCommands,
+        getImagePastePlacement,
+        heightPx,
+        onImagePasted,
+        resolvePasteAnchorNorm,
+        storageChannel,
+        widthPx,
+      ],
+    )
+
+    const commitImageFromEncoded = useCallback(
+      (
+        encoded: { dataUrl: string; naturalWidth: number; naturalHeight: number },
+        alt: string,
+        options?: { notify?: boolean },
+      ): boolean => {
+        if (storageChannel !== 'whiteboard') return false
+
+        const placement = getImagePastePlacement?.()
+        const scrollTopPx = placement?.scrollTopPx ?? 0
+        const viewportHeightPx = placement?.viewportHeightPx ?? heightPx
+        const anchorNorm = resolvePasteAnchorNorm()
+        const cmd = buildImageCommandFromEncoded(
+          encoded,
+          {
+            widthPx,
+            heightPx,
+            viewportHeightPx,
+            scrollTopPx,
+            anchorNorm,
+            sizingWidthPx: placement?.sizingWidthPx,
+            sizingViewportHeightPx: placement?.sizingViewportHeightPx,
+          },
+          alt,
+        )
+
+        if (whiteboardInkDelegated && whiteboardSessionStoreRef?.current) {
+          whiteboardSessionStoreRef.current.appendCommand(cmd)
+          whiteboardSessionStoreRef.current.setSelectedIds([cmd.id])
+        } else {
+          pushUndoSnapshot()
+          const next = [...commandsRef.current, cmd]
+          setCommands(next)
+          persist(next)
+          setSelectedIds([cmd.id])
+          setEditingId(null)
+        }
+
+        registerPasteRevealIds([cmd.id])
+        if (options?.notify !== false) onImagePasted?.()
+        return true
+      },
+      [
+        getImagePastePlacement,
+        heightPx,
+        onImagePasted,
+        persist,
+        pushUndoSnapshot,
+        resolvePasteAnchorNorm,
+        storageChannel,
+        whiteboardInkDelegated,
+        whiteboardSessionStoreRef,
+        widthPx,
+      ],
+    )
+
+    const commitPastedImageFromResolution = useCallback(
+      async (resolution: PastedBoardImageResolution): Promise<PasteImageOutcome> => {
+        if (storageChannel !== 'whiteboard') return { ok: false }
+        const encoded = await downscaleImageFile(resolution.file)
+        if (!encoded) return { ok: false }
+        const ok = commitImageFromEncoded(encoded, 'Pasted image', { notify: false })
+        return {
+          ok,
+          animated: resolution.animated,
+          usedFrozenRasterFallback: resolution.usedFrozenRasterFallback,
+        }
+      },
+      [commitImageFromEncoded, storageChannel],
+    )
+
+    const commitPastedImageFromFile = useCallback(
+      async (file: File): Promise<PasteImageOutcome> => {
+        return commitPastedImageFromResolution({
+          file,
+          animated: file.type === 'image/gif' || file.name.toLowerCase().endsWith('.gif'),
+        })
+      },
+      [commitPastedImageFromResolution],
+    )
+
+    const commitImageFromSearchUrl = useCallback(
+      async (sourceUrl: string, alt?: string): Promise<boolean> => {
+        if (storageChannel !== 'whiteboard') return false
+        const file = await fetchBoardImageAsFile(sourceUrl)
+        if (!file) return false
+        const encoded = await downscaleImageFile(file)
+        if (!encoded) return false
+        const label = alt?.trim() || 'Picture'
+        return commitImageFromEncoded(encoded, label, { notify: false })
+      },
+      [commitImageFromEncoded, storageChannel],
+    )
+
+    const commitFlashcardFromSearchUrl = useCallback(
+      async (
+        sourceUrl: string,
+        english: string,
+        chinese?: string,
+      ): Promise<boolean> => {
+        if (storageChannel !== 'whiteboard') return false
+        const file = await fetchBoardImageAsFile(sourceUrl)
+        if (!file) return false
+        const encoded = await downscaleImageFile(file)
+        if (!encoded) return false
+        return commitFlashcardFromEncoded(encoded, english, chinese ?? FLASHCARD_PLACEHOLDER_ZH, {
+          notify: false,
+        })
+      },
+      [commitFlashcardFromEncoded, storageChannel],
+    )
+
+    const commitPastedPlainText = useCallback(
+      (rawText: string): boolean => {
+        if (storageChannel !== 'whiteboard') return false
+        const text = sanitizePastedPlainText(rawText)
+        if (!text) return false
+
+        const pasteViewport = getImagePastePlacement?.()
+        const scrollTopPx = pasteViewport?.scrollTopPx ?? 0
+        const viewportHeightPx = pasteViewport?.viewportHeightPx ?? heightPx
+        const anchorNorm = resolvePasteAnchorNorm()
+        const point = textPasteNormPoint(heightPx, viewportHeightPx, scrollTopPx, anchorNorm)
+        const align = textLabelAlignOrDefault(textAlign)
+        const variant = textVisualStyle === 'filled' ? 'filled' : 'plain'
+        const placement = textLabelPlacementFromClick({
+          clickX: point.x,
+          clickY: point.y,
+          align,
+          widthPx,
+          heightPx: viewportHeightPx,
+          variant,
+          fontSizeNorm: textFontSizeNorm,
+        })
+
+        const cmd: TextAnnotationCommand = {
+          kind: 'text',
+          id: newAnnotationId(),
+          x: placement.x,
+          y: placement.y,
+          yAnchor: placement.yAnchor,
+          text,
+          fontSizeNorm: textFontSizeNorm,
+          fontId: textFontId,
+          color: textColor,
+          ...(textAlign !== 'left' ? { textAlign } : {}),
+          ...(textVisualStyle === 'filled'
+            ? { visualStyle: 'filled' as const, fillColor: textFillColor }
+            : {}),
+        }
+
+        if (whiteboardInkDelegated && whiteboardSessionStoreRef?.current) {
+          whiteboardSessionStoreRef.current.appendCommand(cmd)
+          whiteboardSessionStoreRef.current.setSelectedIds([cmd.id])
+        } else {
+          pushUndoSnapshot()
+          const next = [...commandsRef.current, cmd]
+          setCommands(next)
+          persist(next)
+          setSelectedIds([cmd.id])
+          setEditingId(null)
+        }
+
+        registerPasteRevealIds([cmd.id])
+        onTextPasted?.()
+        return true
+      },
+      [
+        getImagePastePlacement,
+        heightPx,
+        onTextPasted,
+        persist,
+        pushUndoSnapshot,
+        resolvePasteAnchorNorm,
+        storageChannel,
+        textAlign,
+        textColor,
+        textFillColor,
+        textFontId,
+        textFontSizeNorm,
+        textVisualStyle,
+        whiteboardInkDelegated,
+        whiteboardSessionStoreRef,
+      ],
+    )
+
     useImperativeHandle(
       ref,
       () => ({
@@ -1067,16 +1435,38 @@ export function useBookPageAnnotationLayer(
             selectedIdsRef.current,
             sessionOwnsCanvasInk,
           )
-          if (ids.length === 0) return false
-          const { dx: cdx, dy: cdy } = clampMoveDeltaForSelection(dx, dy, ids)
+          const transformable = filterUnlockedTransformIds(commandsRef.current, ids)
+          if (transformable.length === 0) return false
+          const { dx: cdx, dy: cdy } = clampMoveDeltaForSelection(dx, dy, transformable)
           if (cdx === 0 && cdy === 0) return false
           pushUndoSnapshot()
-          const targetIds = new Set(ids)
+          const targetIds = new Set(transformable)
           const next = translateAnnotationCommands(commandsRef.current, targetIds, cdx, cdy)
           if (next === commandsRef.current) return false
           setCommands(next)
           persist(next)
-          onSelectionMoveCommitted?.(ids, cdx, cdy)
+          onSelectionMoveCommitted?.(transformable, cdx, cdy)
+          return true
+        },
+        alignSelected: (axis: HorizontalAlignAxis) => {
+          const ids = pageLocalSelectedIds(
+            commandsRef.current,
+            selectedIdsRef.current,
+            sessionOwnsCanvasInk,
+          )
+          if (ids.length < 2) return false
+          if (!(widthPx > 0) || !(heightPx > 0)) return false
+          const next = alignSelectedCommands(
+            commandsRef.current,
+            ids,
+            axis,
+            widthPx,
+            heightPx,
+          )
+          if (next === commandsRef.current) return false
+          pushUndoSnapshot()
+          setCommands(next)
+          persist(next)
           return true
         },
         setNudgePreview: (dx: number, dy: number) => {
@@ -1137,12 +1527,23 @@ export function useBookPageAnnotationLayer(
           )
           const dead = computeEraserLineDeadIndices(commandsRef.current, trailing)
           const eligible = commandsRef.current.filter((_, i) => !dead.has(i))
-          const ids = sessionOwnsCanvasInk
-            ? eligible
-                .filter((c) => !isInkSessionDelegatedCanvasCommand(c))
-                .map((c) => c.id)
-            : eligible.map((c) => c.id)
-          setSelectedIds(ids)
+          const pool = sessionOwnsCanvasInk
+            ? eligible.filter((c) => !isInkSessionDelegatedCanvasCommand(c))
+            : eligible
+          setSelectedIds(selectAllCommandIds(pool, false))
+          setEditingId(null)
+        },
+        selectAllIncludingLocked: () => {
+          const trailing = eraserLineTrailingForReplay(
+            draftStrokeRef.current,
+            liveEraserLineDraftRef.current,
+          )
+          const dead = computeEraserLineDeadIndices(commandsRef.current, trailing)
+          const eligible = commandsRef.current.filter((_, i) => !dead.has(i))
+          const pool = sessionOwnsCanvasInk
+            ? eligible.filter((c) => !isInkSessionDelegatedCanvasCommand(c))
+            : eligible
+          setSelectedIds(selectAllCommandIds(pool, true))
           setEditingId(null)
         },
         deleteSelected: () => {
@@ -1172,14 +1573,38 @@ export function useBookPageAnnotationLayer(
         pasteFromClipboard: () => {
           if (!hasAnnotationClipboard()) return false
           pushUndoSnapshot()
-          const dupes = duplicateCommandsForPaste(getAnnotationClipboard())
+          const source = getAnnotationClipboard()
+          const dupes = duplicateCommandsForPaste(source, resolvePasteDuplicateOffset(source))
           const next = [...commandsRef.current, ...dupes]
           setCommands(next)
           persist(next)
           setSelectedIds(dupes.map((c) => c.id))
           setEditingId(null)
+          registerPasteRevealIds(dupes.map((c) => c.id))
           return true
         },
+        pasteImageFromClipboardFile: (file: File) => commitPastedImageFromFile(file),
+        pasteImageFromClipboardData: async (clipboard: DataTransfer) => {
+          const resolution = await resolvePastedBoardImage(clipboard)
+          if (!resolution) return { ok: false }
+          return commitPastedImageFromResolution(resolution)
+        },
+        pasteImageFromResolution: (resolution: PastedBoardImageResolution) =>
+          commitPastedImageFromResolution(resolution),
+        insertImageFromSearchUrl: (url: string, alt?: string) => commitImageFromSearchUrl(url, alt),
+        insertFlashcardFromSearchUrl: (url: string, english: string, chinese?: string) =>
+          commitFlashcardFromSearchUrl(url, english, chinese),
+        pasteImageFromSystemClipboard: async () => {
+          const resolution = await resolvePastedBoardImageFromNavigatorClipboard()
+          if (!resolution) return { ok: false }
+          return commitPastedImageFromResolution(resolution)
+        },
+        pasteTextFromSystemClipboard: async () => {
+          const text = await readPlainTextFromNavigatorClipboard()
+          if (!text) return false
+          return commitPastedPlainText(text)
+        },
+        pasteTextFromClipboardString: (raw: string) => commitPastedPlainText(raw),
         groupSelected: () => {
           const ids = new Set(selectedIdsRef.current)
           if (ids.size === 0) return false
@@ -1257,12 +1682,46 @@ export function useBookPageAnnotationLayer(
           if (ids.size === 0) return false
           pushUndoSnapshot()
           const picked = commandsRef.current.filter((c) => ids.has(c.id))
-          const dupes = duplicateCommandsForPaste(picked)
+          const dupes = duplicateCommandsForPaste(picked, resolvePasteDuplicateOffset(picked))
           const next = [...commandsRef.current, ...dupes]
           setCommands(next)
           persist(next)
           setSelectedIds(dupes.map((c) => c.id))
           setEditingId(null)
+          return true
+        },
+        moveSelectedForward: () => {
+          const ids = pageLocalSelectedIds(
+            commandsRef.current,
+            selectedIdsRef.current,
+            sessionOwnsCanvasInk,
+          )
+          if (ids.length === 0) return false
+          const next = moveCommandsInStack(commandsRef.current, ids, 1)
+          const unchanged =
+            next.length === commandsRef.current.length &&
+            next.every((c, i) => c.id === commandsRef.current[i]!.id)
+          if (unchanged) return false
+          pushUndoSnapshot()
+          setCommands(next)
+          persist(next)
+          return true
+        },
+        moveSelectedBackward: () => {
+          const ids = pageLocalSelectedIds(
+            commandsRef.current,
+            selectedIdsRef.current,
+            sessionOwnsCanvasInk,
+          )
+          if (ids.length === 0) return false
+          const next = moveCommandsInStack(commandsRef.current, ids, -1)
+          const unchanged =
+            next.length === commandsRef.current.length &&
+            next.every((c, i) => c.id === commandsRef.current[i]!.id)
+          if (unchanged) return false
+          pushUndoSnapshot()
+          setCommands(next)
+          persist(next)
           return true
         },
         selectNextInStack: (direction: 1 | -1) => {
@@ -1276,7 +1735,7 @@ export function useBookPageAnnotationLayer(
           setEditingId(null)
         },
       }),
-      [clampMoveDeltaForSelection, onSelectionMoveCommitted, persist, paint, pushUndoSnapshot],
+      [clampMoveDeltaForSelection, commitFlashcardFromSearchUrl, commitImageFromSearchUrl, commitPastedImageFromFile, commitPastedImageFromResolution, commitPastedPlainText, heightPx, onSelectionMoveCommitted, persist, paint, pushUndoSnapshot, resolvePasteDuplicateOffset, sessionOwnsCanvasInk, widthPx],
     )
 
     useLayoutEffect(() => {
@@ -1320,6 +1779,7 @@ export function useBookPageAnnotationLayer(
       selectScaleLiveFrame,
       selectRotationLiveDelta,
       zoomRepaintRevision,
+      pasteRevealTick,
     ])
 
     useEffect(() => {
@@ -1575,7 +2035,7 @@ export function useBookPageAnnotationLayer(
           beginSelectMove(
             e,
             p,
-            hitCmd != null ? selectMoveIdsForDrag(hitCmd) : undefined,
+            hitCmd != null ? selectMoveIdsForDrag(hitCmd, selectedIdsRef.current) : undefined,
           )
           return
         }
@@ -1842,6 +2302,9 @@ export function useBookPageAnnotationLayer(
         e.currentTarget.releasePointerCapture(e.pointerId)
       }
 
+      /** Same-gesture dismiss guard only — do not block the next click-to-edit. */
+      dismissedTextEditIdRef.current = null
+
       const gesture = gestureRef.current
       gestureRef.current = null
       if (gesture === 'stroke' || gesture === 'two') {
@@ -1911,24 +2374,44 @@ export function useBookPageAnnotationLayer(
             color: stampColorForVariant(stampVariant, stampQuestionColor),
             scale: stampScale,
           }
-          if (spreadInkDelegated && onSpreadCanvasCommandCommit) {
+          if (onSpreadCanvasCommandCommit) {
             onSpreadCanvasCommandCommit(cmd, pageNumber)
+            return
+          }
+          if (whiteboardInkDelegated && whiteboardSessionStoreRef?.current) {
+            whiteboardSessionStoreRef.current.appendCommand(cmd)
+            notifyStampPlaced(
+              { id, variant: stampVariant, center: at },
+              { studentId },
+            )
             return
           }
           const next = [...commandsRef.current, cmd]
           setCommands(next)
           persist(next)
+          notifyStampPlaced(
+            { id, variant: stampVariant, center: at },
+            { studentId },
+          )
         } else if (tapMode === 'callout') {
+          const sessionCmds =
+            whiteboardInkDelegated && whiteboardSessionStoreRef?.current
+              ? whiteboardSessionStoreRef.current.getState().doc.commands
+              : commandsRef.current
           const cmd: AnnotationCommand = {
             kind: 'callout',
             id,
-            index: nextCalloutIndex(commandsRef.current),
+            index: nextCalloutIndex(sessionCmds),
             center: at,
             color: shapeColor,
             scale: stampScale,
           }
-          if (spreadInkDelegated && onSpreadCanvasCommandCommit) {
+          if (onSpreadCanvasCommandCommit) {
             onSpreadCanvasCommandCommit(cmd, pageNumber)
+            return
+          }
+          if (whiteboardInkDelegated && whiteboardSessionStoreRef?.current) {
+            whiteboardSessionStoreRef.current.appendCommand(cmd)
             return
           }
           const next = [...commandsRef.current, cmd]
@@ -1936,16 +2419,28 @@ export function useBookPageAnnotationLayer(
           persist(next)
         } else if (tapMode === 'text') {
           if (spreadInkDelegated || whiteboardInkDelegated) return
+          const align = textLabelAlignOrDefault(textAlign)
+          const variant = textVisualStyle === 'filled' ? 'filled' : 'plain'
+          const placement = textLabelPlacementFromClick({
+            clickX: at[0],
+            clickY: at[1],
+            align,
+            widthPx,
+            heightPx,
+            variant,
+            fontSizeNorm: textFontSizeNorm,
+          })
           const cmd: TextAnnotationCommand = {
             kind: 'text',
             id,
-            x: at[0],
-            y: at[1],
-            yAnchor: 'top',
+            x: placement.x,
+            y: placement.y,
+            yAnchor: placement.yAnchor,
             text: '',
             fontSizeNorm: textFontSizeNorm,
             fontId: textFontId,
             color: textColor,
+            ...(textAlign !== 'left' ? { textAlign } : {}),
             ...(textVisualStyle === 'filled'
               ? { visualStyle: 'filled' as const, fillColor: textFillColor }
               : {}),
@@ -2064,7 +2559,6 @@ export function useBookPageAnnotationLayer(
       }
       if (
         mode === 'text' &&
-        editingId == null &&
         !textToolHoverViaSessionLayer &&
         !pointerUsesSelectInteraction(e) &&
         !selectGestureRef.current &&
@@ -2073,7 +2567,7 @@ export function useBookPageAnnotationLayer(
       ) {
         const p = clientToNorm(e.clientX, e.clientY)
         if (p) {
-          const nextId = resolveTextToolHoverTargetId(
+          const hitId = resolveTextToolHoverTargetId(
             commandsRef.current,
             p[0],
             p[1],
@@ -2082,6 +2576,7 @@ export function useBookPageAnnotationLayer(
             'text',
             deadIndicesForInteraction,
           )
+          const nextId = hitId != null && hitId === editingId ? null : hitId
           setTextToolHoverTargetId((prev) => (prev === nextId ? prev : nextId))
         } else {
           setTextToolHoverTargetId(null)
@@ -2141,7 +2636,11 @@ export function useBookPageAnnotationLayer(
       hasSelection &&
       selectedIds.every((id) => {
         const cmd = commands.find((c) => c.id === id)
-        return cmd != null && isInkSessionDelegatedCanvasCommand(cmd)
+        return (
+          cmd != null &&
+          isInkSessionDelegatedCanvasCommand(cmd) &&
+          spreadSessionCommandIdSet.has(id)
+        )
       })
     const showSelectionChrome = (isSelect || hasSelection) && !selectionOwnedBySessionLayer
 
@@ -2269,5 +2768,6 @@ export function useBookPageAnnotationLayer(
       textToolActive,
       textInputEnabled,
       onEditingTextDraftChange,
+      pasteRevealIds: storageChannel === 'whiteboard' ? pasteRevealIds : undefined,
     }
 }

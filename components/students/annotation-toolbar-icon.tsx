@@ -25,8 +25,8 @@ export function ToolbarIcon({
       <Icon className={cn(TOOLBAR_ICON_CLASS, iconClassName)} strokeWidth={1.75} aria-hidden />
       {colorDot ? (
         <span
-          className="pointer-events-none absolute -bottom-px -right-px h-2 w-2 rounded-full shadow-sm"
-          style={{ backgroundColor: colorDot }}
+          className="toolbar-icon-color-dot pointer-events-none absolute -bottom-px -right-px h-2 w-2 rounded-full shadow-sm"
+          style={{ backgroundColor: colorDot, ['--toolbar-dot-color' as string]: colorDot }}
           aria-hidden
         />
       ) : null}

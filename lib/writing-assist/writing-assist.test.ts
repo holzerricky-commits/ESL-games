@@ -22,7 +22,7 @@ import {
   typoSuggestsAdverbSuffix,
 } from '@/lib/writing-assist/spell-engine'
 import { normalizeBeforePunctuation, runTriggerAutocorrect } from '@/lib/writing-assist/trigger-pipeline'
-import { getPreviousWord, suggestNextWord, suggestNextWords } from '@/lib/writing-assist/ghost-complete'
+import { getPreviousWord, suggestNextWord, suggestNextWords, isBlockedGlueSuggestion } from '@/lib/writing-assist/ghost-complete'
 
 describe('autocorrect token helpers', () => {
   it('extracts word before caret', () => {
@@ -364,42 +364,38 @@ describe('suggestNextWord', () => {
     expect(hit?.suffix).toBe('dent')
   })
 
-  it('suggests next word after common prev without typing partial', () => {
-    const hit = suggestNextWord('you', '', new Map(), new Set(), null)
-    expect(hit?.word).toBe('are')
-    expect(hit?.suffix).toBe('are')
-  })
-
-  it('suggests next word right after you plus space (empty partial)', () => {
-    const hit = suggestNextWord('you', '', new Map(), new Set(), null, {
-      text: 'you ',
-      caret: 4,
-    })
-    expect(hit?.word).toBe('are')
-    expect(hit?.suffix).toBe('are')
-  })
-
-  it('suggests sentence starters in an empty field', () => {
-    const hits = suggestNextWords('', '', new Map(), new Set(), null, { text: '', caret: 0 })
-    expect(hits.length).toBeGreaterThan(0)
-    expect(hits[0]?.suffix.length).toBeGreaterThan(0)
-  })
-
-  it('suggests after hello with expanded bigrams', () => {
-    const hit = suggestNextWord('hello', '', new Map(), new Set(), null)
-    expect(hit?.word).toBeTruthy()
-    expect(hit?.suffix).toBeTruthy()
-  })
-
-  it('keeps suggesting when partial is a valid prefix word (e.g. a → am)', () => {
+  it('returns nothing until at least two characters are typed', () => {
     const engine = createSpellEngineForTest([
-      ['a', 5000],
-      ['am', 4000],
-      ['and', 3000],
+      ['hello', 5000],
+      ['help', 3000],
     ])
-    const hit = suggestNextWord('i', 'a', new Map(), new Set(), engine)
-    expect(hit?.word).toBe('am')
-    expect(hit?.suffix).toBe('m')
+    expect(suggestNextWord('', '', new Map(), new Set(), engine)).toBeNull()
+    expect(suggestNextWord('', 'h', new Map(), new Set(), engine)).toBeNull()
+    expect(suggestNextWords('', '', new Map(), new Set(), null, { text: '', caret: 0 })).toEqual([])
+    expect(suggestNextWord('you', '', new Map(), new Set(), null, { text: 'you ', caret: 4 })).toBeNull()
+  })
+
+  it('does not suggest glue words without typed partial', () => {
+    expect(isBlockedGlueSuggestion('the', '')).toBe(true)
+    expect(isBlockedGlueSuggestion('the', 'th')).toBe(false)
+  })
+
+  it('suggests glue words when the student types them', () => {
+    const engine = createSpellEngineForTest([['the', 5000], ['they', 3000], ['there', 2000]])
+    const hit = suggestNextWord('', 'th', new Map(), new Set(), engine)
+    expect(hit?.word).toBe('the')
+    expect(hit?.suffix).toBe('e')
+  })
+
+  it('keeps suggesting when partial is a valid prefix word (e.g. an → animal)', () => {
+    const engine = createSpellEngineForTest([
+      ['an', 4000],
+      ['animal', 3000],
+      ['and', 2000],
+    ])
+    const hit = suggestNextWord('i', 'an', new Map(), new Set(), engine)
+    expect(hit?.word).toBe('animal')
+    expect(hit?.suffix).toBe('imal')
   })
 
   it('narrows suffix while accept-typing a suggested word', () => {
@@ -407,7 +403,7 @@ describe('suggestNextWord', () => {
       ['hello', 5000],
       ['help', 3000],
     ])
-    expect(suggestNextWord('', 'h', new Map(), new Set(), engine)?.suffix).toBe('ello')
+    expect(suggestNextWord('', 'h', new Map(), new Set(), engine)).toBeNull()
     expect(suggestNextWord('', 'he', new Map(), new Set(), engine)?.suffix).toBe('llo')
     expect(suggestNextWord('', 'hel', new Map(), new Set(), engine)?.suffix).toBe('lo')
   })

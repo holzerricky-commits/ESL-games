@@ -5,7 +5,7 @@ import type {
   BookLibraryPayload,
 } from '@/lib/books/types'
 import { getUnitReaderBounds, getVisiblePdfPages } from '@/lib/books/page-range'
-import { buildNotebookPageSpanKey } from '@/lib/students/selectors'
+import { buildSpreadPageSpanKey } from '@/lib/students/selectors'
 
 type VocabReaderHit = { lesson: BookLessonRecord; part: BookLessonPartRecord }
 
@@ -42,8 +42,8 @@ export function useBookReaderSpreadModel({
   const spreadRightPage = visiblePages[leftVisiblePageIndex + 1] ?? null
   const showSpreadRightPage = spreadRightPage != null
 
-  const currentNotebookPageSpanKey = useMemo(
-    () => buildNotebookPageSpanKey(pageNumber, showSpreadRightPage ? spreadRightPage : pageNumber),
+  const currentSpreadPageSpanKey = useMemo(
+    () => buildSpreadPageSpanKey(pageNumber, showSpreadRightPage ? spreadRightPage : pageNumber),
     [pageNumber, showSpreadRightPage, spreadRightPage],
   )
 
@@ -60,22 +60,22 @@ export function useBookReaderSpreadModel({
   const currentLessonPartPageSpanKey = useMemo(() => {
     const part = vocabReaderHit?.part
     const startRaw = Number(part?.startPageHint)
-    if (!Number.isFinite(startRaw) || startRaw < 1) return currentNotebookPageSpanKey
+    if (!Number.isFinite(startRaw) || startRaw < 1) return currentSpreadPageSpanKey
     const start = Math.max(1, Math.floor(startRaw))
     const endRaw = Number(part?.endPageHint)
     const end = Number.isFinite(endRaw) && endRaw >= start ? Math.floor(endRaw) : start
-    return buildNotebookPageSpanKey(start, end)
-  }, [currentNotebookPageSpanKey, vocabReaderHit?.part?.endPageHint, vocabReaderHit?.part?.startPageHint])
+    return buildSpreadPageSpanKey(start, end)
+  }, [currentSpreadPageSpanKey, vocabReaderHit?.part?.endPageHint, vocabReaderHit?.part?.startPageHint])
 
   const currentTocBreadcrumb = useMemo(() => {
     const unitTitle = selectedUnit?.title?.trim()
     const partTitle = currentTocPartTitle
-    const page = currentNotebookPageSpanKey
+    const page = currentSpreadPageSpanKey
     const chunks = [unitTitle, partTitle, page].filter(
       (item): item is string => Boolean(item && item.trim().length > 0),
     )
     return chunks.join(' > ')
-  }, [currentNotebookPageSpanKey, currentTocPartTitle, selectedUnit?.title])
+  }, [currentSpreadPageSpanKey, currentTocPartTitle, selectedUnit?.title])
 
   const lessonPartOrderByKey = useMemo(() => {
     const out: Record<string, number> = {}
@@ -95,7 +95,7 @@ export function useBookReaderSpreadModel({
     leftVisiblePageIndex,
     spreadRightPage,
     showSpreadRightPage,
-    currentNotebookPageSpanKey,
+    currentSpreadPageSpanKey,
     currentTocPartKey,
     currentTocPartTitle,
     currentLessonPartPageSpanKey,

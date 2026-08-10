@@ -124,6 +124,20 @@ describe('stroke-straight-line', () => {
     ])
   })
 
+  it('forces horizontal axis for straight marker even when movement looks vertical', () => {
+    const draft = { tool: 'marker' as const, points: [[0.1, 0.2]] as [number, number][] }
+    const axis = extendStrokeDraftFromMove(draft, [[0.12, 0.9]], {
+      shiftKey: false,
+      markerStraightStrokeEnabled: true,
+      straightStrokeAxis: null,
+    })
+    expect(axis).toBe('horizontal')
+    expect(draft.points).toEqual([
+      [0.1, 0.2],
+      [0.12, 0.2],
+    ])
+  })
+
   it('extendStrokeDraftFromMove snaps freehand when straightFromHold is set explicitly', () => {
     const draft = { tool: 'pen' as const, points: [[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]] as [number, number][] }
     extendStrokeDraftFromMove(draft, [[0.9, 0.25]], {

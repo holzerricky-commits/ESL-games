@@ -3,6 +3,7 @@
 /**
  * Map pointer position to normalized [0,1]² on the spread overlay canvas.
  * Uses the canvas viewport rect (post-transform) — same as `BookPageAnnotationLayer.clientToNorm`.
+ * Works with book focus zoom: pass `getBoundingClientRect()` after CSS transform is applied.
  * Paint with layout `spreadOverlayWidthPx` / `spreadOverlayHeightPx` (not rect ÷ scale).
  */
 export function clientToSpreadNorm(

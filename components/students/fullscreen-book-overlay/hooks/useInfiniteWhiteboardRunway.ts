@@ -18,8 +18,8 @@ function maxNormY(commands: AnnotationCommand[]): number {
       max = Math.max(max, cmd.from[1], cmd.to[1])
     } else if (cmd.kind === 'callout') {
       max = Math.max(max, cmd.center[1])
-    } else if (cmd.kind === 'text' || cmd.kind === 'sticky') {
-      max = Math.max(max, cmd.y)
+    } else if (cmd.kind === 'text' || cmd.kind === 'sticky' || cmd.kind === 'image' || cmd.kind === 'flashcard') {
+      max = Math.max(max, cmd.y, cmd.y + ('h' in cmd ? cmd.h : 0))
     } else if (cmd.kind === 'stamp') {
       max = Math.max(max, cmd.center[1])
     }

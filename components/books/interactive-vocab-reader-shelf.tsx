@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { BookOpen, ChevronLeft } from 'lucide-react'
 import type { InteractiveVocabPack, InteractiveVocabWord } from '@/lib/books/interactive-vocab'
 import { Button } from '@/components/ui/button'
@@ -11,11 +11,33 @@ import { cn } from '@/lib/utils'
 interface InteractiveVocabReaderShelfProps {
   pack: InteractiveVocabPack
   className?: string
+  /** Controlled open state (e.g. left workspace bar launcher). */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  /** Hide the built-in Vocabulary button when another launcher owns the trigger. */
+  hideTrigger?: boolean
 }
 
-export function InteractiveVocabReaderShelf({ pack, className }: InteractiveVocabReaderShelfProps) {
-  const [open, setOpen] = useState(false)
+export function InteractiveVocabReaderShelf({
+  pack,
+  className,
+  open: openProp,
+  onOpenChange,
+  hideTrigger = false,
+}: InteractiveVocabReaderShelfProps) {
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
   const [active, setActive] = useState<InteractiveVocabWord | null>(null)
+  const isControlled = openProp !== undefined
+  const open = isControlled ? openProp : uncontrolledOpen
+
+  function setOpen(next: boolean) {
+    if (!isControlled) setUncontrolledOpen(next)
+    onOpenChange?.(next)
+  }
+
+  useEffect(() => {
+    if (!open) setActive(null)
+  }, [open])
 
   function openWord(w: InteractiveVocabWord) {
     setActive(w)
@@ -27,22 +49,23 @@ export function InteractiveVocabReaderShelf({ pack, className }: InteractiveVoca
 
   function handleOpenChange(next: boolean) {
     setOpen(next)
-    if (!next) setActive(null)
   }
 
   return (
-    <div className={cn('flex justify-end', className)}>
+    <div className={cn(!hideTrigger && 'flex justify-end', className)}>
       <div>
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          className="gap-2 shadow-md"
-          onClick={() => setOpen(true)}
-        >
-          <BookOpen className="h-4 w-4" aria-hidden />
-          Vocabulary
-        </Button>
+        {!hideTrigger ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            className="gap-2 shadow-md"
+            onClick={() => setOpen(true)}
+          >
+            <BookOpen className="h-4 w-4" aria-hidden />
+            Vocabulary
+          </Button>
+        ) : null}
         <Sheet open={open} onOpenChange={handleOpenChange}>
           <SheetContent side="right" className="flex w-full max-w-md flex-col gap-0 p-0 sm:max-w-md">
             <SheetHeader className="border-b border-border px-4 py-3 text-left">

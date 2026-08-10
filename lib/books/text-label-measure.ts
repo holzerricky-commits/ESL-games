@@ -5,8 +5,20 @@ import {
   type AnnotationTextFontId,
 } from '@/lib/books/annotation-text-fonts'
 import {
+  resolveTextLabelFieldLayout,
+  textLabelNeedsPageMaxWidth,
+  filledPillStackHeightPx,
+  filledPillRowMinPx,
+} from '@/lib/books/filled-text-layout'
+import {
+  textLabelStackHeightPx,
+} from '@/lib/books/text-label-field-layout'
+import {
+  FILLED_EDIT_CHROME_INSET_PX,
   FILLED_TEXT_MEASURE_PAD_PX,
   PLAIN_TEXT_MEASURE_PAD_PX,
+  textLabelBBoxLeft,
+  textLabelLineHeightPx,
   textLabelBlockHeightNorm,
 } from '@/lib/books/text-label-layout'
 
@@ -32,7 +44,15 @@ export type TextLabelBoundsMode = 'placement' | 'tight'
 
 export type TextLabelMeasureInput = Pick<
   TextAnnotationCommand,
-  'x' | 'y' | 'yAnchor' | 'text' | 'fontSizeNorm' | 'fontId' | 'maxWidthNorm' | 'visualStyle'
+  | 'x'
+  | 'y'
+  | 'yAnchor'
+  | 'textAlign'
+  | 'text'
+  | 'fontSizeNorm'
+  | 'fontId'
+  | 'maxWidthNorm'
+  | 'visualStyle'
 >
 
 export type NormRect = { x: number; y: number; w: number; h: number }
@@ -91,6 +111,148 @@ function tightMinWidthNorm(widthPx: number): number {
 }
 
 /**
+ * Filled label bounds — matches on-page pill stack + edit chrome inset (DOM shell).
+ * Uses the same pill layout path as the live editor when DOM is available.
+ */
+export function measureFilledTextLabelBounds(
+  input: TextLabelMeasureInput,
+  widthPx: number,
+  heightPx: number,
+  opts?: {
+    mode?: TextLabelBoundsMode
+    textOverride?: string
+    growOnly?: boolean
+    latchedMaxWidth?: boolean
+  },
+): NormRect {
+  const mode = opts?.mode ?? 'tight'
+  const text = opts?.textOverride ?? input.text
+  const hasContent = text.trim().length > 0
+  const fontSizePx = textLabelFontSizePx(input.fontSizeNorm, heightPx)
+  const fontFamily = annotationTextFontFamily(input.fontId)
+  const rowMinPx = filledPillRowMinPx(fontSizePx)
+  const maxWidthNorm = input.maxWidthNorm ?? 0.88
+  const minWidthNorm =
+    mode === 'placement' ? TEXT_LABEL_PLACEMENT_MIN_WIDTH_NORM : tightMinWidthNorm(widthPx)
+
+  let fieldWidthPx = PLAIN_TEXT_MIN_WIDTH_PX
+  let segmentCount = 1
+
+  if (typeof document !== 'undefined') {
+    const layout = resolveTextLabelFieldLayout(
+      hasContent ? text : '',
+      fontFamily,
+      fontSizePx,
+      input.x,
+      widthPx,
+      {
+        variant: 'filled',
+        maxWidthNorm: input.maxWidthNorm,
+        emptyPlaceholder: hasContent ? undefined : text || opts?.textOverride,
+        growOnly: opts?.growOnly,
+        latchedMaxWidth: opts?.latchedMaxWidth,
+      },
+    )
+    fieldWidthPx = layout.fieldWidthPx
+    segmentCount = Math.max(1, layout.segments.length)
+  } else {
+    const lines = text.length > 0 ? text.split('\n') : [' ']
+    segmentCount = Math.max(1, lines.length)
+    for (const line of lines) {
+      fieldWidthPx = Math.max(
+        fieldWidthPx,
+        measurePlainTextLineWidthPx(line, input.fontId, fontSizePx) + FILLED_TEXT_MEASURE_PAD_PX,
+      )
+    }
+    const maxWidthPx = plainTextMaxWidthPx(input.x, input.maxWidthNorm, widthPx)
+    fieldWidthPx = Math.min(fieldWidthPx, maxWidthPx)
+  }
+
+  const stackHeightPx = filledPillStackHeightPx(
+    segmentCount,
+    rowMinPx,
+    hasContent || Boolean(opts?.textOverride?.trim()),
+  )
+  const outerWidthPx = fieldWidthPx + FILLED_EDIT_CHROME_INSET_PX * 2
+  const outerHeightPx = stackHeightPx + FILLED_EDIT_CHROME_INSET_PX * 2
+  const w = Math.min(maxWidthNorm, Math.max(minWidthNorm, outerWidthPx / widthPx))
+  const h = outerHeightPx / heightPx
+  const y = input.yAnchor === 'center' ? input.y - h / 2 : input.y
+  const x = textLabelBBoxLeft(input.x, w)
+  return { x, y, w, h }
+}
+
+/**
+ * Plain label bounds — same latch/wrap layout path as the on-page textarea.
+ */
+export function measurePlainTextLabelBounds(
+  input: TextLabelMeasureInput,
+  widthPx: number,
+  heightPx: number,
+  opts?: {
+    mode?: TextLabelBoundsMode
+    textOverride?: string
+    growOnly?: boolean
+    latchedMaxWidth?: boolean
+  },
+): NormRect {
+  const mode = opts?.mode ?? 'tight'
+  const text = opts?.textOverride ?? input.text
+  const hasContent = text.trim().length > 0
+  const fontSizePx = textLabelFontSizePx(input.fontSizeNorm, heightPx)
+  const fontFamily = annotationTextFontFamily(input.fontId)
+  const lineRowMinPx = textLabelLineHeightPx(fontSizePx)
+  const maxWidthNorm = input.maxWidthNorm ?? 0.88
+  const minWidthNorm =
+    mode === 'placement' ? TEXT_LABEL_PLACEMENT_MIN_WIDTH_NORM : tightMinWidthNorm(widthPx)
+
+  let fieldWidthPx = PLAIN_TEXT_MIN_WIDTH_PX
+  let segmentCount = 1
+
+  if (typeof document !== 'undefined') {
+    const layout = resolveTextLabelFieldLayout(
+      hasContent ? text : '',
+      fontFamily,
+      fontSizePx,
+      input.x,
+      widthPx,
+      {
+        variant: 'plain',
+        maxWidthNorm: input.maxWidthNorm,
+        emptyPlaceholder: hasContent ? undefined : text || opts?.textOverride,
+        growOnly: opts?.growOnly,
+        latchedMaxWidth: opts?.latchedMaxWidth,
+      },
+    )
+    fieldWidthPx = layout.fieldWidthPx
+    segmentCount = Math.max(1, layout.segments.length)
+  } else {
+    const lines = text.length > 0 ? text.split('\n') : [' ']
+    segmentCount = Math.max(1, lines.length)
+    for (const line of lines) {
+      fieldWidthPx = Math.max(
+        fieldWidthPx,
+        measurePlainTextLineWidthPx(line, input.fontId, fontSizePx) + PLAIN_TEXT_MEASURE_PAD_PX,
+      )
+    }
+    const maxWidthPx = plainTextMaxWidthPx(input.x, input.maxWidthNorm, widthPx)
+    fieldWidthPx = Math.min(fieldWidthPx, maxWidthPx)
+  }
+
+  const stackHeightPx = textLabelStackHeightPx(
+    segmentCount,
+    lineRowMinPx,
+    hasContent || Boolean(opts?.textOverride?.trim()),
+    'plain',
+  )
+  const w = Math.min(maxWidthNorm, Math.max(minWidthNorm, fieldWidthPx / widthPx))
+  const h = stackHeightPx / heightPx
+  const y = input.yAnchor === 'center' ? input.y - h / 2 : input.y
+  const x = textLabelBBoxLeft(input.x, w)
+  return { x, y, w, h }
+}
+
+/**
  * Measured bounds for a plain (non-filled) text label — same rules as the on-page textarea.
  * Use `placement` for empty new labels; `tight` for hover, edit, and select chrome.
  */
@@ -98,34 +260,18 @@ export function measureTextLabelBounds(
   input: TextLabelMeasureInput,
   widthPx: number,
   heightPx: number,
-  opts?: { mode?: TextLabelBoundsMode; textOverride?: string },
+  opts?: {
+    mode?: TextLabelBoundsMode
+    textOverride?: string
+    growOnly?: boolean
+    latchedMaxWidth?: boolean
+  },
 ): NormRect {
-  const mode = opts?.mode ?? 'tight'
-  const text = opts?.textOverride ?? input.text
-  const lines = text.length > 0 ? text.split('\n') : ['']
-  const lineCount = lines.length
-  const fontSizePx = textLabelFontSizePx(input.fontSizeNorm, heightPx)
-  const maxWidthPx = plainTextMaxWidthPx(input.x, input.maxWidthNorm, widthPx)
-  const maxWidthNorm = input.maxWidthNorm ?? 0.88
-
-  let maxLineWidthPx = PLAIN_TEXT_MIN_WIDTH_PX
-  for (const line of lines) {
-    maxLineWidthPx = Math.max(
-      maxLineWidthPx,
-      measurePlainTextLineWidthPx(line, input.fontId, fontSizePx),
-    )
+  if (input.visualStyle === 'filled') {
+    return measureFilledTextLabelBounds(input, widthPx, heightPx, opts)
   }
-  const contentWidthPx = Math.min(
-    maxWidthPx,
-    maxLineWidthPx +
-      (input.visualStyle === 'filled' ? FILLED_TEXT_MEASURE_PAD_PX : PLAIN_TEXT_MEASURE_PAD_PX),
-  )
-  const minWidthNorm =
-    mode === 'placement' ? TEXT_LABEL_PLACEMENT_MIN_WIDTH_NORM : tightMinWidthNorm(widthPx)
-  const w = Math.min(maxWidthNorm, Math.max(minWidthNorm, contentWidthPx / widthPx))
-  const h = textLabelBlockHeightNorm(input.fontSizeNorm, lineCount, heightPx)
-  const y = input.yAnchor === 'center' ? input.y - h / 2 : input.y
-  return { x: input.x, y, w, h }
+
+  return measurePlainTextLabelBounds(input, widthPx, heightPx, opts)
 }
 
 /** Legacy char-count heuristic — eraser hit tests only (no page dimensions available). */
@@ -139,5 +285,6 @@ export function textCommandHeuristicBBox(cmd: TextAnnotationCommand): NormRect {
   )
   const h = textLabelBlockHeightNorm(cmd.fontSizeNorm, lineCount)
   const y = cmd.yAnchor === 'center' ? cmd.y - h / 2 : cmd.y
-  return { x: cmd.x, y, w, h }
+  const x = textLabelBBoxLeft(cmd.x, w)
+  return { x, y, w, h }
 }

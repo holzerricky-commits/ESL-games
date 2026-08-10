@@ -44,6 +44,46 @@ export function readerPageHasDrawablePixelsFromLayers(args: {
   return args.showSharpCache || args.pdfDisplayReady || args.showPlaceholder
 }
 
+/** Layer visibility when PDF text selection shares the page with prefetch cache. */
+export type ReaderPageLayerVisibility = {
+  pdfTextLayerActive: boolean
+  /** Text layer over sharp cache — hide live PDF canvas, keep cache as background. */
+  pdfTextOverCache: boolean
+  pdfHiddenBehindCache: boolean
+  showSharpCacheLayer: boolean
+}
+
+/**
+ * When live PDF is primary, cache is a loading placeholder only — never over live composited PDF.
+ */
+export function resolveReaderPageShowSharpCache(args: {
+  livePdfPrimaryEnabled: boolean
+  cacheBitmap: ImageBitmap | null
+  pdfDisplayReady: boolean
+  preferSharpCacheOverPdf: boolean
+}): boolean {
+  if (args.cacheBitmap == null) return false
+  if (args.livePdfPrimaryEnabled) return !args.pdfDisplayReady
+  return !args.pdfDisplayReady || args.preferSharpCacheOverPdf
+}
+
+export function resolveReaderPageLayerVisibility(args: {
+  bookTextSelectActive: boolean
+  pageHasSelectableText: boolean
+  showSharpCache: boolean
+}): ReaderPageLayerVisibility {
+  const pdfTextLayerActive = args.bookTextSelectActive && args.pageHasSelectableText
+  const showSharpCacheLayer = args.showSharpCache
+  const pdfTextOverCache = pdfTextLayerActive && showSharpCacheLayer
+  const pdfHiddenBehindCache = showSharpCacheLayer && !pdfTextLayerActive
+  return {
+    pdfTextLayerActive,
+    pdfTextOverCache,
+    pdfHiddenBehindCache,
+    showSharpCacheLayer,
+  }
+}
+
 /**
  * Resolve best available placeholder: P0 low-res prefetch, then 240px thumb, then 76px.
  * `prefetchRevision` is an opaque dependency so callers re-run when LRU updates.

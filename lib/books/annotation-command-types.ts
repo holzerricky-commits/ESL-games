@@ -30,12 +30,8 @@ export type StampVariant =
   | 'question'
   | 'star'
   | 'heart'
-  | 'thumbsUp'
-  | 'repeat'
-  | 'yourTurn'
-  | 'newWord'
 
-export type WritableStickerVariant = 'note' | 'speech' | 'thought' | 'caption'
+export type WritableStickerVariant = 'note' | 'caption' | 'speech' | 'thought'
 
 export interface StrokeAnnotationCommand {
   kind: 'stroke'
@@ -55,7 +51,7 @@ export interface StrokeAnnotationCommand {
   lineDashStyle?: AnnotationLineDashStyle
   /** Marker only: themed upper-edge ornaments were enabled when this stroke was drawn. */
   markerDecoratedEdge?: boolean
-  /** Explicit figure group; pen/marker only. Omitted = ungrouped. */
+  /** Explicit figure group; pen only (highlighter never groups). Omitted = ungrouped. */
   figureGroupId?: string
   /** Pen only: wall-clock ms when the stroke was committed (auto-group idle window). */
   committedAtMs?: number
@@ -78,6 +74,8 @@ export interface LineAnnotationCommand {
   color: string
   widthScale?: number
   lineDashStyle?: AnnotationLineDashStyle
+  /** When true, move / scale / rotate are blocked. */
+  locked?: boolean
 }
 
 export interface RectAnnotationCommand {
@@ -101,6 +99,8 @@ export interface RectAnnotationCommand {
   rotationDeg?: number
   /** Default on; explicit false draws sharp 90° corners. */
   roundedCorners?: boolean
+  /** When true, move / scale / rotate are blocked. */
+  locked?: boolean
 }
 
 export interface EllipseAnnotationCommand {
@@ -119,6 +119,8 @@ export interface EllipseAnnotationCommand {
   fillVisible?: boolean
   rotationDeg?: number
   roundedCorners?: boolean
+  /** When true, move / scale / rotate are blocked. */
+  locked?: boolean
 }
 
 export interface TriangleAnnotationCommand {
@@ -137,6 +139,8 @@ export interface TriangleAnnotationCommand {
   fillVisible?: boolean
   rotationDeg?: number
   roundedCorners?: boolean
+  /** When true, move / scale / rotate are blocked. */
+  locked?: boolean
 }
 
 export interface ArrowAnnotationCommand {
@@ -149,6 +153,8 @@ export interface ArrowAnnotationCommand {
   headLengthNorm?: number
   /** Dashed/dotted applies to the shaft; arrowhead stays solid. */
   lineDashStyle?: AnnotationLineDashStyle
+  /** When true, move / scale / rotate are blocked. */
+  locked?: boolean
 }
 
 export interface StampAnnotationCommand {
@@ -176,13 +182,29 @@ export type TextAnnotationVisualStyle = 'plain' | 'filled'
 /** Vertical placement of `y`: top edge of box (legacy) or vertical center of text block. */
 export type TextAnnotationYAnchor = 'top' | 'center'
 
+/** In-box horizontal alignment for ink inside the label field. */
+export type TextAnnotationAlign = 'left' | 'center' | 'right'
+
+/** Pinned translation on a substring of label or sticky text (spread session ink). */
+export interface TextGlossAnchor {
+  id: string
+  start: number
+  end: number
+  source: string
+  chinese: string
+  pinyin: string
+}
+
 export interface TextAnnotationCommand {
   kind: 'text'
   id: string
+  /** Normalized left edge of the label box (page coordinates). */
   x: number
   y: number
   /** When `center`, `y` is the vertical midpoint; `top` = first line stays fixed as lines grow. */
   yAnchor?: TextAnnotationYAnchor
+  /** Left, center, or right alignment of text inside the box; does not move the box. */
+  textAlign?: TextAnnotationAlign
   text: string
   fontSizeNorm: number
   /** Handwriting font preset; omitted on legacy annotations. */
@@ -192,6 +214,8 @@ export interface TextAnnotationCommand {
   visualStyle?: TextAnnotationVisualStyle
   /** Background when `visualStyle` is `filled` (#RRGGBB). */
   fillColor?: string
+  /** Hover-review translations pinned on substrings of `text`. */
+  glosses?: TextGlossAnchor[]
 }
 
 export interface StickyAnnotationCommand {
@@ -209,6 +233,46 @@ export interface StickyAnnotationCommand {
   fillColor?: string
   /** Writable sticker shape; legacy stickies default to `note`. */
   writableVariant?: WritableStickerVariant
+  /** Hover-review translations pinned on substrings of `text`. */
+  glosses?: TextGlossAnchor[]
+}
+
+export interface ImageAnnotationCommand {
+  kind: 'image'
+  id: string
+  x: number
+  y: number
+  w: number
+  h: number
+  /** Data URL (`data:image/...;base64,...`). */
+  src: string
+  alt?: string
+  /** Clockwise rotation in degrees around the box center. */
+  rotationDeg?: number
+  /** Border color (#RRGGBB). */
+  strokeColor?: string
+  strokeWidthScale?: number
+  /** When false, border is not drawn even if strokeColor is set. */
+  strokeVisible?: boolean
+  /** When true, move / scale / rotate are blocked. */
+  locked?: boolean
+}
+
+/** Vocabulary flashcard: image + English + Chinese in one DOM block. */
+export interface FlashcardAnnotationCommand {
+  kind: 'flashcard'
+  id: string
+  x: number
+  y: number
+  w: number
+  h: number
+  /** Data URL for the picture area. */
+  src: string
+  english: string
+  chinese: string
+  alt?: string
+  /** When true, move is blocked (resize / rotate deferred for v1). */
+  locked?: boolean
 }
 
 export type AnnotationCommand =
@@ -222,3 +286,5 @@ export type AnnotationCommand =
   | CalloutAnnotationCommand
   | TextAnnotationCommand
   | StickyAnnotationCommand
+  | ImageAnnotationCommand
+  | FlashcardAnnotationCommand

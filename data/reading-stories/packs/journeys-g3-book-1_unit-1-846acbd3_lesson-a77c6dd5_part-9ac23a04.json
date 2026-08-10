@@ -1,0 +1,97 @@
+{
+  "storyId": "journeys-g3-book-1::unit-1-846acbd3::lesson-a77c6dd5::part-9ac23a04",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-1-846acbd3",
+  "status": "draft",
+  "stops": [
+    {
+      "id": "stop-0f3b9d66",
+      "label": "What they were like",
+      "displayPage": 38,
+      "midPageNote": null,
+      "questions": [
+        {
+          "id": "q-790e7987",
+          "kind": "mcq",
+          "prompt": "How many teachers usually worked in a one-room schoolhouse?",
+          "choices": [
+            "One teacher",
+            "Two teachers",
+            "Many teachers",
+            "No teachers"
+          ],
+          "correctIndex": 0,
+          "correctTrue": null,
+          "evidenceSnippet": "There was usually one teacher and no principal.",
+          "evidenceHighlight": "one teacher"
+        }
+      ]
+    },
+    {
+      "id": "stop-5f6ca711",
+      "label": "Daily life",
+      "displayPage": 39,
+      "midPageNote": null,
+      "questions": [
+        {
+          "id": "q-9eecc847",
+          "kind": "true_false",
+          "prompt": "Students wrote on paper because it was cheap.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "Students wrote on small slates, or blackboards, because paper was too expensive.",
+          "evidenceHighlight": "paper was too expensive"
+        }
+      ]
+    },
+    {
+      "id": "stop-7298637b",
+      "label": "Famous students",
+      "displayPage": 39,
+      "midPageNote": null,
+      "questions": [
+        {
+          "id": "q-e2db0f04",
+          "kind": "mcq",
+          "prompt": "Which famous American President went to a one-room schoolhouse?",
+          "choices": [
+            "George Washington",
+            "Abraham Lincoln",
+            "Lyndon Johnson",
+            "Barack Obama"
+          ],
+          "correctIndex": 2,
+          "correctTrue": null,
+          "evidenceSnippet": "Former United States President Lyndon Johnson attended a one-room schoolhouse in Texas. Johnson was born near Stonewall, Texas, in 1908.",
+          "evidenceHighlight": "Lyndon Johnson"
+        }
+      ]
+    },
+    {
+      "id": "stop-a58851bc",
+      "label": "Schoolhouses today",
+      "displayPage": 40,
+      "midPageNote": null,
+      "questions": [
+        {
+          "id": "q-c1b664db",
+          "kind": "mcq",
+          "prompt": "What happened to many old one-room schoolhouses after they closed as schools?",
+          "choices": [
+            "They were all torn down.",
+            "They became museums, stores, or homes.",
+            "They were moved to other towns.",
+            "They became bigger schools."
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "Some became museums. You can tour a school in South Dakota just like one that writer Laura Ingalls Wilder attended. Other schoolhouses became stores, restaurants, and homes.",
+          "evidenceHighlight": null
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-08-03T23:32:20.577Z",
+  "approvedAt": null
+}

@@ -7,6 +7,19 @@ function asStringArray(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === 'string').map((item) => item.trim()).filter(Boolean)
 }
 
+function asReadingSource(value: unknown) {
+  return value === 'last_class_bookmark' ||
+    value === 'reader_history' ||
+    value === 'section_start_hint' ||
+    value === 'none'
+    ? value
+    : 'none'
+}
+
+function asPrepContextMode(value: unknown) {
+  return value === 'clean_start' || value === 'returning' || value === 'mixed' ? value : undefined
+}
+
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as Partial<ClassPrepSuggestionInput>
@@ -114,8 +127,72 @@ export async function POST(req: Request) {
             reviewedWords: asStringArray(entry.reviewedWords),
             learnedWords: asStringArray(entry.learnedWords),
             notes: typeof entry.notes === 'string' ? entry.notes : undefined,
+            sessionNote: typeof entry.sessionNote === 'string' ? entry.sessionNote : undefined,
+            dueReviewWords: asStringArray(entry.dueReviewWords),
           }))
         : [],
+      readingPosition:
+        body.readingPosition && typeof body.readingPosition === 'object'
+          ? {
+              bookId: typeof body.readingPosition.bookId === 'string' ? body.readingPosition.bookId : '',
+              unitId: typeof body.readingPosition.unitId === 'string' ? body.readingPosition.unitId : undefined,
+              pdfPage:
+                typeof body.readingPosition.pdfPage === 'number' ? body.readingPosition.pdfPage : undefined,
+              sectionPageRange:
+                body.readingPosition.sectionPageRange &&
+                typeof body.readingPosition.sectionPageRange === 'object'
+                  ? {
+                      start:
+                        typeof body.readingPosition.sectionPageRange.start === 'number'
+                          ? body.readingPosition.sectionPageRange.start
+                          : undefined,
+                      end:
+                        typeof body.readingPosition.sectionPageRange.end === 'number'
+                          ? body.readingPosition.sectionPageRange.end
+                          : undefined,
+                    }
+                  : undefined,
+              source: asReadingSource(body.readingPosition.source),
+              label: typeof body.readingPosition.label === 'string' ? body.readingPosition.label : '',
+            }
+          : undefined,
+      vocabSignals:
+        body.vocabSignals && typeof body.vocabSignals === 'object'
+          ? {
+              strongWords: asStringArray(body.vocabSignals.strongWords),
+              needsPracticeWords: asStringArray(body.vocabSignals.needsPracticeWords),
+              savedNotebookWords: asStringArray(body.vocabSignals.savedNotebookWords),
+            }
+          : undefined,
+      namedRecurringIssues: Array.isArray(body.namedRecurringIssues)
+        ? body.namedRecurringIssues.flatMap((issue) => {
+            if (!issue || typeof issue !== 'object') return []
+            const label = typeof issue.label === 'string' ? issue.label.trim() : ''
+            const description = typeof issue.description === 'string' ? issue.description.trim() : ''
+            if (!label || !description) return []
+            const example =
+              typeof issue.example === 'string' ? issue.example.trim() : ''
+            return [
+              example
+                ? { label, description, example }
+                : { label, description },
+            ]
+          })
+        : [],
+      prepContextMode: asPrepContextMode(body.prepContextMode),
+      prepContextFlags:
+        body.prepContextFlags && typeof body.prepContextFlags === 'object'
+          ? {
+              completedClassCount:
+                typeof body.prepContextFlags.completedClassCount === 'number'
+                  ? body.prepContextFlags.completedClassCount
+                  : 0,
+              hasReadingPosition: !!body.prepContextFlags.hasReadingPosition,
+              hasVocabSignals: !!body.prepContextFlags.hasVocabSignals,
+              hasCurriculumAnchor: !!body.prepContextFlags.hasCurriculumAnchor,
+              hasSelectedSection: !!body.prepContextFlags.hasSelectedSection,
+            }
+          : undefined,
     }
     const suggestion = await generateClassPrepSuggestion(input)
     return NextResponse.json({ ok: true, suggestion })

@@ -6,6 +6,7 @@ import {
   snapshotRotationBaseCommands,
   snapshotStrokeRotationBounds,
   strokeUnrotatedBounds,
+  isTransformLocked,
   type NormRect,
   type OrientedSelectionFrame,
 } from '@/lib/books/annotation-select'
@@ -52,8 +53,10 @@ function isRotatablePenMarkerStroke(cmd: AnnotationCommand): boolean {
   )
 }
 
-/** Vector shapes plus freehand pen / highlighter strokes. */
+/** Vector shapes, pasted images, plus freehand pen / highlighter strokes. */
 export function isRotatableShapeCommand(cmd: AnnotationCommand): boolean {
+  if (isTransformLocked(cmd)) return false
+  if (cmd.kind === 'image') return true
   if (ROTATABLE_SHAPE_KINDS.has(cmd.kind as RotatableShapeKind)) return true
   return isRotatablePenMarkerStroke(cmd)
 }
@@ -164,7 +167,7 @@ export function boxShapeRotatedBounds(cmd: {
 }
 
 export function shapeRotationDeg(cmd: AnnotationCommand): number {
-  if (cmd.kind === 'rect' || cmd.kind === 'ellipse' || cmd.kind === 'triangle') {
+  if (cmd.kind === 'rect' || cmd.kind === 'ellipse' || cmd.kind === 'triangle' || cmd.kind === 'image') {
     return cmd.rotationDeg ?? 0
   }
   if (cmd.kind === 'stroke' && isRotatablePenMarkerStroke(cmd)) {
@@ -258,7 +261,8 @@ export function rotateAnnotationCommand(
       }
     case 'rect':
     case 'ellipse':
-    case 'triangle': {
+    case 'triangle':
+    case 'image': {
       const nextDeg = normalizeDeg(shapeRotationDeg(cmd) + radToDeg(deltaRad))
       if (rotateAsRigidGroup && layout) {
         const cx = cmd.x + cmd.w / 2

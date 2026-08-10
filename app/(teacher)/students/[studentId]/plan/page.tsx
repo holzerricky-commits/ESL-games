@@ -1,9 +1,8 @@
-import { PageHeader } from '@/components/page-header'
 import { StudentPlanRouteClient } from '@/components/students/student-plan-route-client'
 
 interface StudentPlanRouteProps {
   params: Promise<{ studentId: string }>
-  searchParams: Promise<{ tab?: string }>
+  searchParams: Promise<{ tab?: string; setup?: string }>
 }
 
 export default async function StudentPlanRoute({ params, searchParams }: StudentPlanRouteProps) {
@@ -12,10 +11,6 @@ export default async function StudentPlanRoute({ params, searchParams }: Student
 
   return (
     <section>
-      <PageHeader
-        title="Plan challenge path"
-        description="Assign Timed Challenge quizzes in order. Only teachers use this screen."
-      />
       <StudentPlanRouteClient studentId={studentId} requestedTab={tab} />
     </section>
   )

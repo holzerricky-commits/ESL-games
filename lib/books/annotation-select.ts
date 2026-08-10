@@ -17,9 +17,13 @@ import {
   rotatePointAroundPivot,
 } from '@/lib/books/annotation-rotation'
 import { penProfileDrawStyle, penProfileWidthScaleMultiplier } from '@/lib/books/pen-stroke-profile'
+import {
+  STAMP_DRAW_RADIUS_FACTOR,
+  stampSymbolBoundsNorm,
+} from '@/lib/books/stamp-symbol-bounds'
 
 /** Stamp / callout hit radius as fraction of min(page width, height). */
-export const STAMP_RADIUS_NORM = 0.06
+export const STAMP_RADIUS_NORM = STAMP_DRAW_RADIUS_FACTOR
 export const CALLOUT_RADIUS_NORM = 0.04
 
 export type NormRect = { x: number; y: number; w: number; h: number }
@@ -96,6 +100,7 @@ export function orientedSelectionFrameForCommand(
     case 'rect':
     case 'ellipse':
     case 'triangle':
+    case 'image':
       if (cmd.w <= 0 || cmd.h <= 0) return null
       return {
         rect: inflateNormRect(
@@ -293,13 +298,24 @@ export function getAnnotationBounds(
       return inflateNormRect(bounds, pad)
     }
     case 'stamp':
-      return circleBounds(cmd.center, (cmd.scale ?? 1) * STAMP_RADIUS_NORM)
+      return inflateNormRect(
+        stampSymbolBoundsNorm(cmd, widthPx, heightPx),
+        selectionChromeBorderPadNorm(widthPx, heightPx),
+      )
     case 'callout':
       return circleBounds(cmd.center, (cmd.scale ?? 1) * CALLOUT_RADIUS_NORM)
     case 'text':
       return textLabelChromeBounds(cmd, widthPx, heightPx, { mode: 'select' })
     case 'sticky':
       return { x: cmd.x, y: cmd.y, w: cmd.w, h: cmd.h }
+    case 'flashcard':
+      return { x: cmd.x, y: cmd.y, w: cmd.w, h: cmd.h }
+    case 'image': {
+      const pad = shapeStrokePadNorm(cmd, widthPx, heightPx)
+      const inner = { x: cmd.x, y: cmd.y, w: cmd.w, h: cmd.h, rotationDeg: cmd.rotationDeg }
+      const bounds = boxShapeRotatedBounds(inner)
+      return inflateNormRect(bounds, pad)
+    }
     default:
       return null
   }
@@ -344,10 +360,10 @@ function isPenOrMarkerStroke(cmd: AnnotationCommand): cmd is StrokeAnnotationCom
   return cmd.kind === 'stroke' && (cmd.tool === 'pen' || cmd.tool === 'marker')
 }
 
-function isFigureGroupedPenMarker(
+function isFigureGroupedPen(
   cmd: AnnotationCommand,
 ): cmd is StrokeAnnotationCommand & { figureGroupId: string } {
-  return isPenOrMarkerStroke(cmd) && cmd.figureGroupId != null
+  return cmd.kind === 'stroke' && cmd.tool === 'pen' && cmd.figureGroupId != null
 }
 
 const NORM_RECT_MATCH_EPS = 1e-5
@@ -441,7 +457,7 @@ export function selectionOutlineRects(
       continue
     }
 
-    if (isFigureGroupedPenMarker(cmd)) {
+    if (isFigureGroupedPen(cmd)) {
       const gid = cmd.figureGroupId
       if (!isFullFigureGroupSelected(commands, selectedIds, gid, deadIndices)) {
         solo.push(bounds)
@@ -536,7 +552,7 @@ export function selectionOrientedOutlineFrames(
       continue
     }
 
-    if (isFigureGroupedPenMarker(cmd)) {
+    if (isFigureGroupedPen(cmd)) {
       const gid = cmd.figureGroupId
       if (!isFullFigureGroupSelected(commands, selectedIds, gid, deadIndices)) {
         solo.push(frame)
@@ -866,6 +882,9 @@ function commandHitAtPoint(
   if (cmd.kind === 'rect' || cmd.kind === 'ellipse' || cmd.kind === 'triangle') {
     return hitTestBoxShapeAtPoint(cmd, cmd.kind, nx, ny)
   }
+  if (cmd.kind === 'image' || cmd.kind === 'flashcard') {
+    return hitTestBoxShapeAtPoint(cmd, 'rect', nx, ny)
+  }
   const bounds = getAnnotationBounds(cmd, widthPx, heightPx)
   if (!bounds) return false
   return normRectContainsPoint(bounds, nx, ny)
@@ -879,9 +898,10 @@ export function resolveSelectClickTargetIds(
   heightPx: number,
   deadIndices?: ReadonlySet<number>,
 ): string[] {
-  if (cmd.kind === 'stroke' && (cmd.tool === 'pen' || cmd.tool === 'marker')) {
+  if (cmd.kind === 'stroke' && cmd.tool === 'pen') {
     return resolvePenMarkerSelectionIds(commands, cmd.id, widthPx, heightPx, deadIndices)
   }
+  // Highlighter and everything else: select only the clicked item (never cluster).
   return [cmd.id]
 }
 
@@ -1038,9 +1058,61 @@ export function translateAnnotationCommand(
       return { ...cmd, x: cmd.x + dx, y: cmd.y + dy }
     case 'sticky':
       return { ...cmd, x: cmd.x + dx, y: cmd.y + dy }
+    case 'flashcard':
+      return { ...cmd, x: cmd.x + dx, y: cmd.y + dy }
+    case 'image':
+      return { ...cmd, x: cmd.x + dx, y: cmd.y + dy }
     default:
       return cmd
   }
+}
+
+/** True when move / scale / rotate are blocked (still selectable). */
+export function isTransformLocked(cmd: AnnotationCommand): boolean {
+  if (cmd.kind === 'image' || cmd.kind === 'flashcard') return cmd.locked === true
+  if (
+    cmd.kind === 'line' ||
+    cmd.kind === 'arrow' ||
+    cmd.kind === 'rect' ||
+    cmd.kind === 'ellipse' ||
+    cmd.kind === 'triangle'
+  ) {
+    return cmd.locked === true
+  }
+  return false
+}
+
+/** @deprecated Prefer `isTransformLocked`. */
+export function isImageTransformLocked(cmd: AnnotationCommand): boolean {
+  return isTransformLocked(cmd)
+}
+
+/** Drop locked items from a transform gesture target set. */
+export function filterUnlockedTransformIds(
+  commands: readonly AnnotationCommand[],
+  ids: readonly string[],
+): string[] {
+  const byId = new Map(commands.map((c) => [c.id, c]))
+  return ids.filter((id) => {
+    const cmd = byId.get(id)
+    return cmd != null && !isTransformLocked(cmd)
+  })
+}
+
+/** Ids for select-all; skips locked shapes/images unless `includeLocked`. */
+export function selectAllCommandIds(
+  commands: readonly AnnotationCommand[],
+  includeLocked: boolean,
+): string[] {
+  const ids: string[] = []
+  const seen = new Set<string>()
+  for (const cmd of commands) {
+    if (!includeLocked && isTransformLocked(cmd)) continue
+    if (seen.has(cmd.id)) continue
+    seen.add(cmd.id)
+    ids.push(cmd.id)
+  }
+  return ids
 }
 
 export function translateAnnotationCommands(

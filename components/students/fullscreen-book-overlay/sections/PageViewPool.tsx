@@ -9,6 +9,7 @@ import {
   resolvePageViewSlotRole,
 } from '@/lib/books/page-view-pool-model'
 import { PageView } from '@/components/students/fullscreen-book-overlay/sections/PageView'
+import { SpreadCanvasWrapper } from '@/components/books/spread-canvas-wrapper'
 
 export interface PageViewPoolRenderContext {
   pageNumber: number
@@ -24,6 +25,7 @@ export interface PageViewPoolProps {
   visiblePages: number[]
   readerBounds: UnitPageBounds
   spreadPageWidth: number
+  spreadOverlayWidthPx: number
   pageCanvasHeightPx: number
   gutterPullPx: number
   pdf: PDFDocumentProxy
@@ -36,6 +38,11 @@ export interface PageViewPoolProps {
   leftCaptureRef: MutableRefObject<HTMLDivElement | null>
   rightCaptureRef: MutableRefObject<HTMLDivElement | null>
   renderPageChrome: (ctx: PageViewPoolRenderContext) => ReactNode
+  bookTextSelectActive?: boolean
+  pageTextCapability?: ReadonlyMap<number, boolean | 'pending'>
+  screenScale?: number
+  /** When false, skip page bulge clip, fore-edge stacks, and page chrome shadows. */
+  showBookFrame?: boolean
 }
 
 /**
@@ -48,8 +55,9 @@ export function PageViewPool({
   visiblePages,
   readerBounds,
   spreadPageWidth,
+  spreadOverlayWidthPx,
   pageCanvasHeightPx,
-  gutterPullPx,
+  gutterPullPx: _gutterPullPx,
   pdf,
   PdfPage,
   prefetchRevision,
@@ -60,6 +68,10 @@ export function PageViewPool({
   leftCaptureRef,
   rightCaptureRef,
   renderPageChrome,
+  bookTextSelectActive = false,
+  pageTextCapability,
+  screenScale = 1,
+  showBookFrame = true,
 }: PageViewPoolProps) {
   const pooledPages = useMemo(
     () =>
@@ -72,7 +84,10 @@ export function PageViewPool({
   )
 
   return (
-    <>
+    <SpreadCanvasWrapper
+      spreadOverlayWidthPx={spreadOverlayWidthPx}
+      pageCanvasHeightPx={pageCanvasHeightPx}
+    >
       {pooledPages.map((pageNumber) => {
         const { role, isActiveSpread } = resolvePageViewSlotRole(
           pageNumber,
@@ -83,9 +98,6 @@ export function PageViewPool({
           role === 'left' ? leftCaptureRef : role === 'right' ? rightCaptureRef : undefined
         const side = role === 'hidden' ? null : role
 
-        const rightStyle =
-          role === 'right' ? ({ marginLeft: -gutterPullPx } as const) : undefined
-
         const elevated = role === elevatedSlot
 
         return (
@@ -95,7 +107,7 @@ export function PageViewPool({
             pageNumber={pageNumber}
             spreadPageWidth={spreadPageWidth}
             pageCanvasHeightPx={pageCanvasHeightPx}
-            pdfClipLeftPx={role === 'right' ? gutterPullPx : 0}
+            pdfClipLeftPx={0}
             pdf={pdf}
             PdfPage={PdfPage}
             prefetchRevision={prefetchRevision}
@@ -109,13 +121,16 @@ export function PageViewPool({
                 ? (p) => onSlotPixelsReady?.(p, side)
                 : undefined
             }
-            style={rightStyle}
             className={elevated ? 'relative z-10' : undefined}
+            bookTextSelectActive={bookTextSelectActive}
+            pageHasSelectableText={pageTextCapability?.get(pageNumber) === true}
+            screenScale={screenScale}
+            showBookFrame={showBookFrame}
           >
             {renderPageChrome({ pageNumber, slotRole: role, isActiveSpread, captureRef })}
           </PageView>
         )
       })}
-    </>
+    </SpreadCanvasWrapper>
   )
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   isInkSessionDelegatedCanvasCommand,
   isSpreadSessionOwnedCommand,
+  pageLayerCommandsExcludingSpreadSessionIds,
   pageLayerCommandsWhenSpreadDelegated,
 } from '@/lib/books/ink-session-page-layer'
 import type { AnnotationCommand } from '@/lib/books/annotation-command-types'
@@ -71,5 +72,68 @@ describe('ink-session-page-layer', () => {
     const all = [stroke, line, stamp, text, sticky]
     expect(pageLayerCommandsWhenSpreadDelegated(all, false)).toEqual(all)
     expect(pageLayerCommandsWhenSpreadDelegated(all, true)).toEqual([])
+  })
+
+  it('pageLayerCommandsExcludingSpreadSessionIds drops flushed duplicates only', () => {
+    const flushedStamp: AnnotationCommand = { ...stamp, id: 'st1' }
+    const pageOnlyStamp: AnnotationCommand = {
+      ...stamp,
+      id: 'st-board-open',
+      center: [0.3, 0.4],
+    }
+    const pageCommands = [flushedStamp, pageOnlyStamp, text]
+
+    expect(pageLayerCommandsExcludingSpreadSessionIds(pageCommands, ['st1'])).toEqual([
+      pageOnlyStamp,
+      text,
+    ])
+    expect(pageLayerCommandsExcludingSpreadSessionIds(pageCommands, [])).toEqual(pageCommands)
+  })
+
+  /** Mirrors BookPageAnnotationLayer canvasPaintCommands branch order. */
+  function pageLayerCanvasPaintCommands(
+    commands: readonly AnnotationCommand[],
+    opts: {
+      spreadSessionOwnsPagePaint: boolean
+      spreadInkDelegated: boolean
+      spreadSessionPaintCommandIds: readonly string[]
+    },
+  ): AnnotationCommand[] {
+    if (opts.spreadSessionOwnsPagePaint) {
+      return pageLayerCommandsExcludingSpreadSessionIds(
+        commands,
+        opts.spreadSessionPaintCommandIds,
+      )
+    }
+    if (opts.spreadInkDelegated) {
+      return pageLayerCommandsWhenSpreadDelegated(commands, true)
+    }
+    return [...commands]
+  }
+
+  it('spread session paint prefers id dedupe over kind filter when session owns page paint', () => {
+    const flushedStamp: AnnotationCommand = { ...stamp, id: 'st1' }
+    const pageOnlyStamp: AnnotationCommand = {
+      ...stamp,
+      id: 'st-board-open',
+      center: [0.3, 0.4],
+    }
+    const pageCommands = [flushedStamp, pageOnlyStamp, text]
+    const spreadSessionIds = ['st1']
+
+    const boardOpen = pageLayerCanvasPaintCommands(pageCommands, {
+      spreadSessionOwnsPagePaint: true,
+      spreadInkDelegated: false,
+      spreadSessionPaintCommandIds: spreadSessionIds,
+    })
+    const boardClosed = pageLayerCanvasPaintCommands(pageCommands, {
+      spreadSessionOwnsPagePaint: true,
+      spreadInkDelegated: true,
+      spreadSessionPaintCommandIds: spreadSessionIds,
+    })
+
+    expect(boardOpen).toEqual([pageOnlyStamp, text])
+    expect(boardClosed).toEqual([pageOnlyStamp, text])
+    expect(pageLayerCommandsWhenSpreadDelegated(pageCommands, true)).toEqual([])
   })
 })

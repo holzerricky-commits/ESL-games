@@ -7,7 +7,10 @@ import {
   selectionOutlineFramesForChrome,
 } from '@/lib/books/annotation-select'
 import { textLabelChromeBounds } from '@/lib/books/text-label-chrome-bounds'
-import { TEXT_LABEL_PLACEHOLDER } from '@/lib/books/text-tool-ux'
+import { resolveFilledTextFieldLayout, resolveTextLabelFieldLayout } from '@/lib/books/filled-text-layout'
+import { measureFilledTextLabelBounds, measurePlainTextLabelBounds } from '@/lib/books/text-label-measure'
+import { annotationTextFontFamily } from '@/lib/books/annotation-text-fonts'
+import { FILLED_EDIT_CHROME_INSET_PX } from '@/lib/books/text-label-layout'
 import {
   textToolEditingOutlineFrames,
   textToolHoverOutlineFrames,
@@ -29,6 +32,9 @@ function textCmd(overrides: Partial<TextAnnotationCommand> = {}): TextAnnotation
   }
 }
 
+/**
+ * @vitest-environment jsdom
+ */
 describe('text-label-chrome-bounds', () => {
   it('select mode matches textCommandTightBBox for non-empty labels', () => {
     const cmd = textCmd()
@@ -42,32 +48,126 @@ describe('text-label-chrome-bounds', () => {
     expect(textLabelChromeBounds(textCmd({ text: '  ' }), widthPx, heightPx, { mode: 'select' })).toBeNull()
   })
 
-  it('edit mode uses placeholder for empty new labels', () => {
+  it('edit mode uses minimal caret-sized bounds for empty new labels', () => {
     const empty = textCmd({ text: '' })
     const bounds = textLabelChromeBounds(empty, widthPx, heightPx, { mode: 'edit' })
-    expect(bounds).toEqual(
-      textCommandTightBBox(empty, widthPx, heightPx, TEXT_LABEL_PLACEHOLDER),
-    )
+    expect(bounds).toEqual(textCommandTightBBox(empty, widthPx, heightPx, ''))
+    expect(bounds!.w).toBeGreaterThan(0)
+  })
+
+  it('edit mode preserves trailing spaces in live draft width', () => {
+    const cmd = textCmd()
+    const noSpace = textLabelChromeBounds(cmd, widthPx, heightPx, {
+      mode: 'edit',
+      liveText: 'hello',
+    })
+    const withSpace = textLabelChromeBounds(cmd, widthPx, heightPx, {
+      mode: 'edit',
+      liveText: 'hello ',
+    })
+    expect(noSpace).not.toBeNull()
+    expect(withSpace).not.toBeNull()
+    expect(withSpace!.w).toBeGreaterThan(noSpace!.w)
   })
 
   it('edit mode tracks live draft width', () => {
     const cmd = textCmd()
-    const short = textLabelChromeBounds(cmd, widthPx, heightPx, { mode: 'edit', liveText: 'ab' })
+    const short = textLabelChromeBounds(cmd, widthPx, heightPx, { mode: 'edit', liveText: 'a' })
     const long = textLabelChromeBounds(cmd, widthPx, heightPx, {
       mode: 'edit',
-      liveText: 'hello world',
+      liveText: 'abcdefghijklmnopqrstuvwxyz',
     })
     expect(short).not.toBeNull()
     expect(long).not.toBeNull()
     expect(long!.w).toBeGreaterThan(short!.w)
   })
 
-  it('filled labels use wider horizontal pad than plain', () => {
+  it('filled labels use pill-layout bounds with chrome inset', () => {
     const plain = textCmd({ visualStyle: 'plain' })
     const filled = textCmd({ visualStyle: 'filled', fillColor: '#fef3c7' })
     const plainBox = textLabelChromeBounds(plain, widthPx, heightPx, { mode: 'select' })
     const filledBox = textLabelChromeBounds(filled, widthPx, heightPx, { mode: 'select' })
-    expect(filledBox!.w).toBeGreaterThan(plainBox!.w)
+    expect(plainBox).not.toBeNull()
+    expect(filledBox).not.toBeNull()
+    expect(filledBox!.h).toBeGreaterThan(0)
+    expect(filledBox!.w).toBeGreaterThan(0)
+  })
+})
+
+/**
+ * @vitest-environment jsdom
+ */
+describe('filled text edit ring parity', () => {
+  it('edit ring outer width matches resolveFilledTextFieldLayout + chrome inset', () => {
+    const cmd = textCmd({ visualStyle: 'filled', fillColor: '#fef3c7', text: 'skupo' })
+    const fontSizePx = Math.max(10, Math.round(cmd.fontSizeNorm * heightPx))
+    const layout = resolveFilledTextFieldLayout(
+      'skupo',
+      annotationTextFontFamily(cmd.fontId),
+      fontSizePx,
+      cmd.x,
+      widthPx,
+      { growOnly: true },
+    )
+    const outerPx = layout.fieldWidthPx + FILLED_EDIT_CHROME_INSET_PX * 2
+    const edit = textLabelChromeBounds(cmd, widthPx, heightPx, {
+      mode: 'edit',
+      liveText: 'skupo',
+    })
+    expect(edit).not.toBeNull()
+    expect(edit!.w * widthPx).toBeCloseTo(outerPx, 0)
+  })
+
+  it('measureFilledTextLabelBounds matches textLabelChromeBounds for filled edit', () => {
+    const cmd = textCmd({ visualStyle: 'filled', fillColor: '#fef3c7', text: 'skupo' })
+    const chrome = textLabelChromeBounds(cmd, widthPx, heightPx, {
+      mode: 'edit',
+      liveText: 'skupo',
+    })
+    const measured = measureFilledTextLabelBounds(cmd, widthPx, heightPx, {
+      mode: 'tight',
+      textOverride: 'skupo',
+      growOnly: true,
+    })
+    expect(chrome).toEqual(measured)
+  })
+})
+
+/**
+ * @vitest-environment jsdom
+ */
+describe('plain text edit ring parity', () => {
+  it('edit ring width matches resolveTextLabelFieldLayout for plain', () => {
+    const cmd = textCmd({ text: 'skupo' })
+    const fontSizePx = Math.max(10, Math.round(cmd.fontSizeNorm * heightPx))
+    const layout = resolveTextLabelFieldLayout(
+      'skupo',
+      annotationTextFontFamily(cmd.fontId),
+      fontSizePx,
+      cmd.x,
+      widthPx,
+      { variant: 'plain', growOnly: true },
+    )
+    const edit = textLabelChromeBounds(cmd, widthPx, heightPx, {
+      mode: 'edit',
+      liveText: 'skupo',
+    })
+    expect(edit).not.toBeNull()
+    expect(edit!.w * widthPx).toBeCloseTo(layout.fieldWidthPx, 0)
+  })
+
+  it('measurePlainTextLabelBounds matches textLabelChromeBounds for plain edit', () => {
+    const cmd = textCmd({ text: 'skupo' })
+    const chrome = textLabelChromeBounds(cmd, widthPx, heightPx, {
+      mode: 'edit',
+      liveText: 'skupo',
+    })
+    const measured = measurePlainTextLabelBounds(cmd, widthPx, heightPx, {
+      mode: 'tight',
+      textOverride: 'skupo',
+      growOnly: true,
+    })
+    expect(chrome).toEqual(measured)
   })
 })
 
@@ -89,9 +189,7 @@ describe('text-label chrome ring parity', () => {
     expect(hover).toEqual(select)
   })
 
-  it('edit ring matches select when draft equals committed text', () => {
-    const edit = textToolEditingOutlineFrames(commands, 't1', widthPx, heightPx, 'hello')[0]!.rect
-    const select = textLabelChromeBounds(cmd, widthPx, heightPx, { mode: 'select' })
-    expect(edit).toEqual(select)
+  it('edit ring is not shown while typing (see textToolEditingOutlineFrames)', () => {
+    expect(textToolEditingOutlineFrames(commands, 't1', widthPx, heightPx, 'hello')).toEqual([])
   })
 })

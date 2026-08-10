@@ -4,6 +4,8 @@ import 'react-pdf/dist/Page/TextLayer.css'
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { InteractiveVocabReaderShelf } from '@/components/books/interactive-vocab-reader-shelf'
+import { ReadingCheckLiveShelf } from '@/components/books/reading-check-live-shelf'
+import { ReadingStoryReaderBadge } from '@/components/books/reading-story-reader-badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { focusHoleRectToCaptureRegion } from '@/lib/books/focus-zoom-transform'
@@ -14,15 +16,28 @@ import { AnnotationRail } from './sections/AnnotationRail'
 import { BookBottomChrome } from './sections/BookViewport'
 import { BookWorkspaceLeftBar } from './sections/BookWorkspaceLeftBar'
 import { ClassLessonSettingsPanel } from '@/components/students/class-lesson-settings-panel'
+import { ClassToolboxHost } from '@/components/students/class-toolbox/ClassToolboxHost'
+import type { ClassToolboxToolId } from '@/lib/class-toolbox/types'
 import { BookCanvasStage } from './sections/BookCanvasStage'
 import { useWhiteboardToolbarLaunch } from './hooks/useWhiteboardToolbarLaunch'
-import { useBrowserFullscreen } from './hooks/useBrowserFullscreen'
 import { TranslateDock } from './sections/TranslateDock'
+import { PlaceTranslationOverlay } from './sections/PlaceTranslationOverlay'
 import { WritableTextTranslatePopover } from './sections/WritableTextTranslatePopover'
 import type { PinWritableTextGlossInput } from './sections/WritableTextTranslatePopover'
 import { useWritableTextTranslateSelection } from './hooks/useWritableTextTranslateSelection'
 import { WritableTextGlossReviewProvider } from './writable-text-gloss-review-context'
 import { appendTextGlossToCommands } from '@/lib/books/text-gloss'
+import {
+  TRANSLATION_CHIP_FILL,
+  TRANSLATION_CHIP_FONT_ID,
+  TRANSLATION_CHIP_TEXT,
+  translationChipFontSizeNorm,
+  translationChipPlacementNorm,
+} from '@/lib/translate/place-translation-chip'
+import { newAnnotationId } from '@/components/students/book-page-annotation-layer/helpers'
+import type { TextAnnotationCommand } from '@/lib/books/annotation-command-types'
+import { toast } from 'sonner'
+import { warmSpeechVoices } from '@/lib/audio/speak-text'
 import { getUnitReaderBounds } from '@/lib/books/page-range'
 import {
   BOOK_BOTTOM_CHROME_HEIGHT,
@@ -54,13 +69,6 @@ export function FullscreenBookOverlayView({
   vm: FullscreenBookOverlayViewModel
   onClose: () => void
 }) {
-  const closeOverlay = () => {
-    flushPendingUnitPageSave()
-    requestSpreadSessionFlush()
-    requestWhiteboardSessionFlush()
-    onClose()
-  }
-
   const overlayRootRef = vm.overlayRootRef
   const [bookTextSpreadCapability, setBookTextSpreadCapability] = useState({
     hasSelectable: false,
@@ -77,12 +85,6 @@ export function FullscreenBookOverlayView({
     dismissToolSettingsRef.current?.()
   }, [])
   const [floatingBottomChrome, setFloatingBottomChrome] = useState(false)
-
-  const {
-    supported: browserFullscreenSupported,
-    isBrowserFullscreen,
-    toggle: toggleBrowserFullscreen,
-  } = useBrowserFullscreen()
 
   const {
     ANIMATION_MS,
@@ -113,6 +115,8 @@ export function FullscreenBookOverlayView({
     hasResolvedUnit,
     hideChromeForCapture,
     interactiveVocabPack,
+    readingStoryHit,
+    liveReadingCheckPack,
     isAnnotationRailVisible,
     isAnnotationRailPinned,
     setIsAnnotationRailPinned,
@@ -271,9 +275,20 @@ export function FullscreenBookOverlayView({
     setTextFontId,
     setWatermarkEnabled,
     whiteboardStorageKey,
+    lessonBoardBookId,
+    lessonBoardUnitId,
+    boardFooterLabel,
+    boardBookFullTitle,
+    boardBookAccentColor,
+    boardShelf,
+    nextUnitBoard,
+    showNextUnitBoardPrompt,
+    openNextUnitBoard,
+    dismissNextUnitBoardPrompt,
+    switchLessonBoardNotebook,
     whiteboardSlotSide,
     whiteboardContentHeightPx,
-    extendWhiteboardRunway,
+    ensureWhiteboardRunwayBelowView,
     activeClassSessionId,
     shapeColor,
     shapeStrokeWidthScale,
@@ -328,6 +343,13 @@ export function FullscreenBookOverlayView({
     placeBoardLinkAt,
     removeActiveBoardPageLink,
     openBoardFromLink,
+    readingCheckHotspotPlacementActive,
+    cancelReadingCheckHotspotPlacement,
+    placeReadingCheckHotspotAt,
+    readingCheckHotspotPreviewPdfPage,
+    readingCheckHotspotPreviewCenter,
+    readingCheckHotspotPreviewLabel,
+    onReadingCheckHotspotPreviewClick,
     onWhiteboardOverlayCaps,
     layoutSpreadPageWidth,
     spreadRightPage,
@@ -372,6 +394,9 @@ export function FullscreenBookOverlayView({
     wbCaptureRootRef,
     translateDockOpen,
     setTranslateDockOpen,
+    browserFullscreenSupported,
+    isBrowserFullscreen,
+    toggleBrowserFullscreen,
   } = vm
 
   const spreadTextSelectionActive = useInkSessionTextSelectionActive(
@@ -385,6 +410,65 @@ export function FullscreenBookOverlayView({
   const textSelectionActive = spreadTextSelectionActive || whiteboardTextSelectionActive
   const writableTranslateSelection = useWritableTextTranslateSelection(
     open && hasResolvedUnit,
+  )
+
+  /** Chinese word picked in the translate dock, waiting for a tap on the spread. */
+  const [placeTranslationText, setPlaceTranslationText] = useState<string | null>(null)
+
+  const placeTranslationOnSpread = useCallback(
+    (clientX: number, clientY: number) => {
+      const text = placeTranslationText
+      setPlaceTranslationText(null)
+      if (!text) return
+
+      const store = spreadSessionStoreRef.current
+      const leftEl = leftPageCaptureRef.current
+      if (!store || !leftEl) {
+        toast.error('Could not place the word — open a book page and try again.')
+        return
+      }
+      const leftRect = leftEl.getBoundingClientRect()
+      const rightRect = rightPageCaptureRef.current?.getBoundingClientRect() ?? null
+      const spreadLeftPx = leftRect.left
+      const spreadRightPx =
+        rightRect && rightRect.width > 0 ? rightRect.right : leftRect.right
+      const spreadWidthPx = spreadRightPx - spreadLeftPx
+      const spreadHeightPx = leftRect.height
+      if (spreadWidthPx <= 0 || spreadHeightPx <= 0) {
+        toast.error('Could not place the word — open a book page and try again.')
+        return
+      }
+
+      const fontSizeNorm = translationChipFontSizeNorm(spreadHeightPx)
+      const placement = translationChipPlacementNorm({
+        clientX,
+        clientY,
+        spreadLeftPx,
+        spreadTopPx: leftRect.top,
+        spreadWidthPx,
+        spreadHeightPx,
+      })
+      const cmd: TextAnnotationCommand = {
+        kind: 'text',
+        id: newAnnotationId(),
+        x: placement.x,
+        y: placement.y,
+        yAnchor: placement.yAnchor,
+        text,
+        fontSizeNorm,
+        fontId: TRANSLATION_CHIP_FONT_ID,
+        color: TRANSLATION_CHIP_TEXT,
+        visualStyle: 'filled',
+        fillColor: TRANSLATION_CHIP_FILL,
+      }
+      store.appendCommand(cmd)
+    },
+    [
+      placeTranslationText,
+      spreadSessionStoreRef,
+      leftPageCaptureRef,
+      rightPageCaptureRef,
+    ],
   )
   const pinWritableTextGloss = useCallback(
     (input: PinWritableTextGlossInput) => {
@@ -466,12 +550,56 @@ export function FullscreenBookOverlayView({
   const [coachSessionId, setCoachSessionId] = useState<string | null>(null)
   const [coachUrl, setCoachUrl] = useState<string | null>(null)
   const [interactiveVocabOpen, setInteractiveVocabOpen] = useState(false)
+  const [readingChecksOpen, setReadingChecksOpen] = useState(false)
   const [lessonSettingsOpen, setLessonSettingsOpen] = useState(false)
+  const [toolboxMenuOpen, setToolboxMenuOpen] = useState(false)
+  const [activeToolboxTool, setActiveToolboxTool] = useState<ClassToolboxToolId | null>(null)
   const whiteboardLaunch = useWhiteboardToolbarLaunch()
+
+  const clearToolbox = useCallback(() => {
+    setToolboxMenuOpen(false)
+    setActiveToolboxTool(null)
+  }, [])
+
+  useEffect(() => {
+    if (userPresented) return
+    clearToolbox()
+  }, [userPresented, clearToolbox])
+
+  const closeOverlay = useCallback(() => {
+    flushPendingUnitPageSave()
+    requestSpreadSessionFlush()
+    requestWhiteboardSessionFlush()
+    clearToolbox()
+    onClose()
+  }, [clearToolbox, onClose])
+
+  const toolboxChromeOpen = toolboxMenuOpen || activeToolboxTool != null
+
+  const toggleToolbox = useCallback(() => {
+    if (toolboxMenuOpen) {
+      setToolboxMenuOpen(false)
+      return
+    }
+    if (activeToolboxTool) {
+      setActiveToolboxTool(null)
+      return
+    }
+    setLessonSettingsOpen(false)
+    setToolboxMenuOpen(true)
+  }, [toolboxMenuOpen, activeToolboxTool])
+
+  useEffect(() => {
+    warmSpeechVoices()
+  }, [])
 
   useEffect(() => {
     if (!interactiveVocabPack) setInteractiveVocabOpen(false)
   }, [interactiveVocabPack])
+
+  useEffect(() => {
+    if (!liveReadingCheckPack) setReadingChecksOpen(false)
+  }, [liveReadingCheckPack])
 
   useEffect(() => {
     registerWhiteboardToolbarLaunch({
@@ -572,6 +700,12 @@ export function FullscreenBookOverlayView({
   }, [bookStageEnterVisible])
 
   const hideFocusPresentationChrome = suppressChrome || focusZoomActive
+
+  useEffect(() => {
+    if (!hideFocusPresentationChrome) return
+    setToolboxMenuOpen(false)
+    setActiveToolboxTool(null)
+  }, [hideFocusPresentationChrome])
 
   return (
     <WritingAssistProvider
@@ -798,6 +932,19 @@ export function FullscreenBookOverlayView({
             <span className="ml-2 text-white/55">({SC.deselectAll} to cancel)</span>
           </div>
         ) : null}
+        {readingCheckHotspotPlacementActive ? (
+          <div
+            className={cn(
+              'pointer-events-none absolute left-1/2 top-3 z-[45] -translate-x-1/2 rounded-full px-4 py-2 text-sm text-white/90',
+              BOOK_OVERLAY_GLASS_CHROME,
+            )}
+            role="status"
+            aria-live="polite"
+          >
+            Tap where this question should appear
+            <span className="ml-2 text-white/55">({SC.deselectAll} to cancel)</span>
+          </div>
+        ) : null}
 
         <div className="absolute inset-0 overscroll-none">
           <WritableTextGlossReviewProvider openReview={writableTranslateSelection.openFromGloss}>
@@ -849,6 +996,17 @@ export function FullscreenBookOverlayView({
             onPdfPageLoadSuccess={onPdfPageLoadSuccess}
             selectedBookId={selectedBookId}
             selectedUnitId={selectedUnit?.id}
+            lessonBoardBookId={lessonBoardBookId ?? undefined}
+            lessonBoardUnitId={lessonBoardUnitId ?? undefined}
+            boardFooterLabel={boardFooterLabel}
+            boardBookFullTitle={boardBookFullTitle}
+            boardBookAccentColor={boardBookAccentColor}
+            boardShelf={boardShelf}
+            onSelectBoardNotebook={switchLessonBoardNotebook}
+            nextUnitBoard={nextUnitBoard}
+            showNextUnitBoardPrompt={showNextUnitBoardPrompt}
+            onOpenNextUnitBoard={openNextUnitBoard}
+            onDismissNextUnitBoardPrompt={dismissNextUnitBoardPrompt}
             pageCanvasHeightPx={pageCanvasHeightPx}
             annotationMode={effectiveAnnotationMode}
             onEnterSelectMode={() => setAnnotationMode('select')}
@@ -907,7 +1065,7 @@ export function FullscreenBookOverlayView({
             forceDockWhiteboard={forceDockWhiteboard}
             commitWhiteboardFloatRect={commitWhiteboardFloatRect}
             whiteboardContentHeightPx={whiteboardContentHeightPx}
-            extendWhiteboardRunway={extendWhiteboardRunway}
+            ensureWhiteboardRunwayBelowView={ensureWhiteboardRunwayBelowView}
             createLessonBoardPage={createLessonBoardPage}
             saveLessonBoardNow={saveLessonBoardNow}
             deleteActiveLessonBoardPage={deleteActiveLessonBoardPage}
@@ -920,6 +1078,12 @@ export function FullscreenBookOverlayView({
             removeActiveBoardPageLink={removeActiveBoardPageLink}
             activeBoardPageLink={activeBoardPageLink}
             boardLinkInHeader={isPrepMode}
+            readingCheckHotspotPlacementActive={readingCheckHotspotPlacementActive}
+            onPlaceReadingCheckHotspot={placeReadingCheckHotspotAt}
+            readingCheckHotspotPreviewPdfPage={readingCheckHotspotPreviewPdfPage}
+            readingCheckHotspotPreviewCenter={readingCheckHotspotPreviewCenter}
+            readingCheckHotspotPreviewLabel={readingCheckHotspotPreviewLabel}
+            onReadingCheckHotspotPreviewClick={onReadingCheckHotspotPreviewClick}
             wbAnnRef={wbAnnRef}
             onWhiteboardCaps={onWhiteboardCaps}
             regionSelectOpen={regionSelectOpen}
@@ -966,6 +1130,14 @@ export function FullscreenBookOverlayView({
           onOpenChange={setTranslateDockOpen}
           suppressChrome={hideFocusPresentationChrome}
           pageListOpen={isPageListOpen}
+          onPlaceText={hasResolvedUnit ? setPlaceTranslationText : undefined}
+        />
+        <PlaceTranslationOverlay
+          text={placeTranslationText}
+          leftPageCaptureRef={leftPageCaptureRef}
+          rightPageCaptureRef={rightPageCaptureRef}
+          onCancel={() => setPlaceTranslationText(null)}
+          onPlace={placeTranslationOnSpread}
         />
         <WritableTextTranslatePopover
           studentId={studentId}
@@ -1070,16 +1242,38 @@ export function FullscreenBookOverlayView({
         onOpenCoachDialog={() => setCoachDialogOpen(true)}
         onClose={closeOverlay}
         lessonSettingsOpen={lessonSettingsOpen}
-        onLessonSettingsToggle={() => setLessonSettingsOpen((open) => !open)}
+        onLessonSettingsToggle={() => {
+          setToolboxMenuOpen(false)
+          setActiveToolboxTool(null)
+          setLessonSettingsOpen((open) => !open)
+        }}
+        toolboxOpen={toolboxChromeOpen}
+        onToolboxToggle={toggleToolbox}
         hasInteractiveVocab={!!interactiveVocabPack}
         interactiveVocabOpen={interactiveVocabOpen}
         onInteractiveVocabToggle={() => setInteractiveVocabOpen((open) => !open)}
+        hasReadingChecks={!!liveReadingCheckPack}
+        readingChecksOpen={readingChecksOpen}
+        onReadingChecksToggle={() => setReadingChecksOpen((open) => !open)}
       />
+
+      {userPresented ? (
+        <ClassToolboxHost
+          menuOpen={toolboxMenuOpen}
+          onMenuOpenChange={setToolboxMenuOpen}
+          activeTool={activeToolboxTool}
+          onActiveToolChange={setActiveToolboxTool}
+        />
+      ) : null}
 
       <ClassLessonSettingsPanel
         open={lessonSettingsOpen}
         onClose={() => setLessonSettingsOpen(false)}
       />
+
+      {readingStoryHit && !isWhiteboardOpen ? (
+        <ReadingStoryReaderBadge story={readingStoryHit.story} range={readingStoryHit.range} />
+      ) : null}
 
       {interactiveVocabPack ? (
         <InteractiveVocabReaderShelf
@@ -1087,6 +1281,25 @@ export function FullscreenBookOverlayView({
           hideTrigger
           open={interactiveVocabOpen}
           onOpenChange={setInteractiveVocabOpen}
+        />
+      ) : null}
+
+      {liveReadingCheckPack && readingStoryHit ? (
+        <ReadingCheckLiveShelf
+          pack={liveReadingCheckPack}
+          storyTitle={readingStoryHit.story.title}
+          studentId={studentId}
+          classSessionId={activeClassSessionId}
+          hideTrigger
+          open={readingChecksOpen}
+          onOpenChange={setReadingChecksOpen}
+          selectedBook={selectedBook}
+          selectedUnit={selectedUnit}
+          totalPdfPages={numPages}
+          leftPdfPage={pageNumber}
+          rightPdfPage={spreadRightPage}
+          leftPageCaptureRef={leftPageCaptureRef}
+          rightPageCaptureRef={rightPageCaptureRef}
         />
       ) : null}
 

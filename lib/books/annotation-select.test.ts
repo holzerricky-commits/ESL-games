@@ -12,6 +12,7 @@ import {
   resolveSelectionHandleFrame,
   selectionOutlineFramesForChrome,
   selectionOutlineRects,
+  selectAllCommandIds,
   sharedRotationFrameFromStrokeMembers,
   translateAnnotationCommand,
   unionNormRects,
@@ -580,5 +581,61 @@ describe('annotation-select', () => {
       expect(stroke.rotationBounds).toEqual({ x: 0.38, y: 0.38, w: 0.24, h: 0.06 })
       expect(stroke.rotationDeg).toBeCloseTo(45, 3)
     }
+  })
+})
+
+describe('selectAllCommandIds', () => {
+  it('skips locked shapes unless includeLocked is true', () => {
+    const commands = [
+      {
+        kind: 'rect' as const,
+        id: 'free',
+        x: 0.1,
+        y: 0.1,
+        w: 0.2,
+        h: 0.1,
+        strokeColor: '#111827',
+      },
+      {
+        kind: 'rect' as const,
+        id: 'locked',
+        x: 0.4,
+        y: 0.1,
+        w: 0.2,
+        h: 0.1,
+        strokeColor: '#111827',
+        locked: true,
+      },
+    ]
+    expect(selectAllCommandIds(commands, false)).toEqual(['free'])
+    expect(selectAllCommandIds(commands, true)).toEqual(['free', 'locked'])
+  })
+})
+
+describe('selectAllCommandIds', () => {
+  it('skips locked shapes unless includeLocked is true', () => {
+    const commands = [
+      {
+        kind: 'rect' as const,
+        id: 'free',
+        x: 0.1,
+        y: 0.1,
+        w: 0.2,
+        h: 0.1,
+        strokeColor: '#111827',
+      },
+      {
+        kind: 'rect' as const,
+        id: 'locked',
+        x: 0.4,
+        y: 0.1,
+        w: 0.2,
+        h: 0.1,
+        strokeColor: '#111827',
+        locked: true,
+      },
+    ]
+    expect(selectAllCommandIds(commands, false)).toEqual(['free'])
+    expect(selectAllCommandIds(commands, true)).toEqual(['free', 'locked'])
   })
 })

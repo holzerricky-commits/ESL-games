@@ -2,368 +2,311 @@
 
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
-import { formatEffectivePageSpan, mapPdfPageToDisplayLabel } from '@/lib/books/page-numbering'
+import { Plus } from 'lucide-react'
+import { toast } from 'sonner'
 import type { BookLibraryPayload } from '@/lib/books/types'
+import { fetchBooksLibraryCached } from '@/lib/books/fetch-books-library-cached'
 import {
-  getStudentDefaultBookUnitForReader,
   getStudentProfileView,
   getStudentSectionOptions,
+  resolveClassTeachingBookUnit,
   updateStudentCurriculumAssignments,
-  updateStudentCurriculumReadingAnchor,
 } from '@/lib/students/selectors'
 import type { StudentProfileView } from '@/lib/students/types'
+import { StudentBookCurriculumCard } from '@/components/students/tabs/student-book-curriculum-card'
+import { StudentBookPickerSheet } from '@/components/students/tabs/student-book-picker-sheet'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
+
+interface OpenPreviewState {
+  bookId: string
+  unitId?: string
+  page?: number
+}
 
 interface StudentCurriculumTabProps {
   student: StudentProfileView
   onDataUpdated?: () => void
+  /** When provided by Plan route, avoids a second library fetch. */
+  bookLibrary?: BookLibraryPayload | null
+  libraryLoading?: boolean
 }
 
-/** First assigned book in order that exists in the library with at least one unit — primary spell-book target. */
-function primaryAssignedUnitRefs(
-  lib: BookLibraryPayload | null,
-  bookIds: string[],
-): Array<{ bookId: string; unitId: string }> {
-  if (!lib?.books?.length || bookIds.length === 0) return []
-  const byId = new Map(lib.books.map((b) => [b.id, b]))
-  for (const bookId of bookIds) {
-    const book = byId.get(bookId)
-    const first = book?.units?.[0]
-    if (book && first) return [{ bookId, unitId: first.id }]
-  }
-  return []
-}
-
-export function StudentCurriculumTab({ student, onDataUpdated }: StudentCurriculumTabProps) {
+export function StudentCurriculumTab({
+  student,
+  onDataUpdated,
+  bookLibrary: bookLibraryFromParent,
+  libraryLoading: libraryLoadingFromParent,
+}: StudentCurriculumTabProps) {
   const liveStudent = useMemo(() => getStudentProfileView(student.id) ?? student, [student])
-  const [library, setLibrary] = useState<BookLibraryPayload | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [localLibrary, setLocalLibrary] = useState<BookLibraryPayload | null>(bookLibraryFromParent ?? null)
+  const [localLoading, setLocalLoading] = useState(bookLibraryFromParent === undefined)
+  const [localError, setLocalError] = useState<string | null>(null)
+  const usesParentLibrary = bookLibraryFromParent !== undefined
+
+  const library = usesParentLibrary ? (bookLibraryFromParent ?? null) : localLibrary
+  const loading = usesParentLibrary ? (libraryLoadingFromParent ?? false) : localLoading
+  const error = usesParentLibrary ? null : localError
+
+  const [pdfReady, setPdfReady] = useState(false)
   const [assignedBookIds, setAssignedBookIds] = useState<string[]>(liveStudent.assignedBookIds ?? [])
   const [isSaving, setIsSaving] = useState(false)
-  const [isSavingAnchor, setIsSavingAnchor] = useState(false)
-  const [anchorPick, setAnchorPick] = useState<string>(liveStudent.curriculumAnchorSectionId ?? '')
-  const [anchorError, setAnchorError] = useState<string | null>(null)
-  const [showBookModal, setShowBookModal] = useState(false)
+  const [showBookPicker, setShowBookPicker] = useState(false)
+  const [openPreview, setOpenPreview] = useState<OpenPreviewState | null>(null)
 
   useEffect(() => {
     setAssignedBookIds(liveStudent.assignedBookIds ?? [])
   }, [liveStudent.assignedBookIds])
 
   useEffect(() => {
-    setAnchorPick(liveStudent.curriculumAnchorSectionId ?? '')
-  }, [liveStudent.curriculumAnchorSectionId])
+    if (usesParentLibrary) return
+    let active = true
+    setLocalLoading(true)
+    setLocalError(null)
+    void fetchBooksLibraryCached()
+      .then((payload) => {
+        if (active) setLocalLibrary(payload)
+      })
+      .catch((e) => {
+        if (!active) return
+        setLocalError(e instanceof Error ? e.message : 'Could not load books.')
+      })
+      .finally(() => {
+        if (active) setLocalLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [usesParentLibrary])
+
+  useEffect(() => {
+    if (!usesParentLibrary) return
+    setLocalLibrary(bookLibraryFromParent ?? null)
+  }, [usesParentLibrary, bookLibraryFromParent])
 
   useEffect(() => {
     let active = true
-    async function loadLibrary() {
-      setLoading(true)
-      setError(null)
-      try {
-        const res = await fetch('/api/books')
-        const payload = (await res.json()) as BookLibraryPayload | { error: string }
-        if (!res.ok) {
-          const message = 'error' in payload ? payload.error : 'Could not load books.'
-          throw new Error(message)
-        }
-        if (active) setLibrary(payload as BookLibraryPayload)
-      } catch (e) {
-        if (!active) return
-        setError(e instanceof Error ? e.message : 'Could not load books.')
-      } finally {
-        if (active) setLoading(false)
-      }
+    async function setupPdfWorker() {
+      const { pdfjs } = await import('react-pdf')
+      pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString()
+      if (active) setPdfReady(true)
     }
-    void loadLibrary()
+    void setupPdfWorker()
     return () => {
       active = false
     }
   }, [])
 
-  const anchorOptions = useMemo(() => {
-    if (!library) return []
-    const set = new Set(assignedBookIds)
-    return getStudentSectionOptions(liveStudent.id, library).filter((o) => set.has(o.bookId))
-  }, [library, liveStudent.id, assignedBookIds])
-
-  const libraryReaderHref = useMemo(() => {
-    const base = `/books?student=${encodeURIComponent(liveStudent.id)}`
-    const pick = library ? getStudentDefaultBookUnitForReader(liveStudent.id, library) : null
-    if (!pick) return base
-    return `${base}&book=${encodeURIComponent(pick.bookId)}&unit=${encodeURIComponent(pick.unitId)}`
-  }, [liveStudent.id, library])
-
-  const lastClassBookmarkSummary = useMemo(() => {
-    const sessions = liveStudent.scheduledClasses ?? []
-    const withBm = sessions.filter((s) => s.status === 'completed' && s.bookmarkAtEnd?.bookId)
+  const globalLatestBookmarkBookId = useMemo(() => {
+    const withBm = (liveStudent.scheduledClasses ?? []).filter(
+      (s) => s.status === 'completed' && s.bookmarkAtEnd?.bookId,
+    )
     if (!withBm.length) return null
     const latest = [...withBm].sort(
       (a, b) => new Date(b.scheduledFor).getTime() - new Date(a.scheduledFor).getTime(),
     )[0]
-    const bm = latest.bookmarkAtEnd!
-    const book = library?.books.find((b) => b.id === bm.bookId)
-    const unit = bm.unitId ? book?.units.find((u) => u.id === bm.unitId) : undefined
-    const pageLabel = mapPdfPageToDisplayLabel(bm.pdfPage, book, unit, null, 'mapped')
-    const bits: string[] = [book?.title ?? bm.bookId]
-    if (unit?.title) bits.push(unit.title)
-    bits.push(`PDF p. ${pageLabel}`)
-    return bits.join(' · ')
-  }, [liveStudent.scheduledClasses, library])
+    return latest?.bookmarkAtEnd?.bookId ?? null
+  }, [liveStudent.scheduledClasses])
 
-  function toggleBook(bookId: string) {
-    const hasBook = assignedBookIds.includes(bookId)
-    setAssignedBookIds((prev) => {
-      if (hasBook) return prev.filter((id) => id !== bookId)
-      return [...prev, bookId]
+  const todayTeachingBookId = useMemo(() => {
+    const sessions = liveStudent.scheduledClasses ?? []
+    const live = sessions.find((s) => s.status === 'in_progress')
+    const next =
+      live ??
+      [...sessions]
+        .filter((s) => s.status === 'planned' || s.status === 'prepared')
+        .sort((a, b) => new Date(a.scheduledFor).getTime() - new Date(b.scheduledFor).getTime())[0]
+    const fromSaved = next?.selectedSection?.bookId?.trim()
+    if (fromSaved) return fromSaved
+    if (!next || !library) return null
+    const resolved = resolveClassTeachingBookUnit(liveStudent.id, next.id, library)
+    return resolved?.section?.bookId ?? null
+  }, [liveStudent.scheduledClasses, liveStudent.id, library])
+
+  const assignedBooks = useMemo(() => {
+    if (!library) return []
+    const books = assignedBookIds
+      .map((id) => library.books.find((b) => b.id === id))
+      .filter((b): b is NonNullable<typeof b> => Boolean(b))
+    if (!globalLatestBookmarkBookId) return books
+    return [...books].sort((a, b) => {
+      if (a.id === globalLatestBookmarkBookId) return -1
+      if (b.id === globalLatestBookmarkBookId) return 1
+      return 0
     })
+  }, [library, assignedBookIds, globalLatestBookmarkBookId])
+
+  const hasClassBookmark = useMemo(() => {
+    return (liveStudent.scheduledClasses ?? []).some(
+      (s) => s.status === 'completed' && s.bookmarkAtEnd?.bookId,
+    )
+  }, [liveStudent.scheduledClasses])
+
+  const singleBookNeedsStart = useMemo(() => {
+    if (assignedBooks.length !== 1 || hasClassBookmark || !library) return false
+    const book = assignedBooks[0]!
+    const onBook = (liveStudent.scheduledClasses ?? []).some(
+      (s) => s.status === 'completed' && s.bookmarkAtEnd?.bookId === book.id,
+    )
+    if (onBook) return false
+    const starts = liveStudent.curriculumBookStarts ?? {}
+    if (starts[book.id]) return false
+    // Legacy single anchor still counts for this book.
+    const legacyId = liveStudent.curriculumAnchorSectionId?.trim()
+    if (legacyId) {
+      const hit = getStudentSectionOptions(liveStudent.id, library).find((o) => o.id === legacyId)
+      if (hit?.bookId === book.id) return false
+    }
+    return true
+  }, [
+    assignedBooks,
+    hasClassBookmark,
+    library,
+    liveStudent.scheduledClasses,
+    liveStudent.curriculumBookStarts,
+    liveStudent.curriculumAnchorSectionId,
+    liveStudent.id,
+  ])
+
+  function openPreviewFor(bookId: string, unitId?: string, page?: number) {
+    setOpenPreview({ bookId, unitId, page })
   }
 
-  async function saveAssignments() {
+  function closePreview() {
+    setOpenPreview(null)
+  }
+
+  async function saveAssignments(nextIds: string[]) {
     setIsSaving(true)
     try {
+      setAssignedBookIds(nextIds)
       updateStudentCurriculumAssignments(
         liveStudent.id,
         {
-          assignedBookIds,
-          assignedUnitRefs: primaryAssignedUnitRefs(library, assignedBookIds),
+          assignedBookIds: nextIds,
+          assignedUnitRefs: [],
         },
         library,
       )
-      setShowBookModal(false)
+      setShowBookPicker(false)
+      if (!nextIds.includes(openPreview?.bookId ?? '')) {
+        closePreview()
+      }
       onDataUpdated?.()
+      toast.success('Books updated.')
     } finally {
       setIsSaving(false)
     }
   }
 
-  function clearAssignments() {
-    setAssignedBookIds([])
+  function removeBook(bookId: string) {
+    const next = assignedBookIds.filter((id) => id !== bookId)
+    setAssignedBookIds(next)
     updateStudentCurriculumAssignments(
       liveStudent.id,
       {
-        assignedBookIds: [],
+        assignedBookIds: next,
         assignedUnitRefs: [],
       },
       library,
     )
-    setAnchorPick('')
+    if (openPreview?.bookId === bookId) closePreview()
     onDataUpdated?.()
+    toast.success('Book removed.')
   }
 
-  async function saveAnchor() {
-    setAnchorError(null)
-    setIsSavingAnchor(true)
-    try {
-      const id = anchorPick.trim() || null
-      const result = updateStudentCurriculumReadingAnchor(liveStudent.id, id, library)
-      if (!result.ok) {
-        setAnchorError(result.error)
-        return
-      }
-      onDataUpdated?.()
-    } finally {
-      setIsSavingAnchor(false)
-    }
-  }
-
-  const history = liveStudent.curriculumHistory ?? []
+  const showAssignedGrid = assignedBooks.length > 0 || (loading && assignedBookIds.length > 0)
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[1.3fr_minmax(0,1fr)]">
-      <section className="space-y-4 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4">
-        <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-5">
-          <h3 className="text-base font-semibold text-foreground">Curriculum assignments</h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Manage which books this student should follow from your local library.
+    <div className="mx-auto w-full max-w-5xl space-y-6">
+      <header className="space-y-1">
+        <h2 className="text-xl font-semibold text-foreground">Books for {liveStudent.name}</h2>
+        <p className="text-sm text-muted-foreground">
+          Assign books and set a starting page on each one. Today’s lesson is chosen under Classes —
+          Prepare and Enter follow that plan.
+        </p>
+        {assignedBooks.length > 0 ? (
+          <p className="text-xs text-muted-foreground">
+            Go to{' '}
+            <Link href={`/students/${liveStudent.id}?tab=classes`} className="underline-offset-2 hover:underline">
+              Classes
+            </Link>{' '}
+            to see or change what you’re teaching today.
           </p>
-          {loading ? <p className="mt-4 text-sm text-muted-foreground">Loading library...</p> : null}
-          {error ? <p className="mt-4 text-sm text-[var(--brand-red)]">{error}</p> : null}
+        ) : null}
+      </header>
 
-          {assignedBookIds.length === 0 ? (
-            <div className="mt-5 rounded-xl border border-dashed border-[var(--border)] bg-[var(--card)] p-8 text-center">
-              <p className="text-base font-semibold text-foreground">No curriculum assigned yet</p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Add books for this student to create a clear learning path.
-              </p>
-              <Button type="button" className="mt-5" onClick={() => setShowBookModal(true)} disabled={loading || !!error}>
-                Add curriculum
-              </Button>
-            </div>
-          ) : (
-            <div className="mt-5 space-y-3">
-              {assignedBookIds.map((bookId) => {
-                const book = (library?.books ?? []).find((item) => item.id === bookId)
-                return (
-                  <article key={bookId} className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
-                    <p className="font-semibold text-foreground">{book?.title ?? bookId}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {book?.units?.length ? `${book.units.length} unit(s)` : 'Book metadata unavailable'}
-                    </p>
-                  </article>
-                )
-              })}
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" onClick={() => setShowBookModal(true)} disabled={loading || !!error}>
-                  Edit curriculum
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={clearAssignments}
-                  disabled={isSaving}
-                >
-                  Clear all
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
+      {error ? <p className="text-sm text-[var(--brand-red)]">{error}</p> : null}
 
-        <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-5">
-          <h3 className="text-base font-semibold text-foreground">Where reading starts</h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Choose the first lesson piece you plan to use for new classes until a completed class sets the chain. This
-            does not change the class list by itself.
-          </p>
-          <p className="mt-3 text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">Last class bookmark: </span>
-            {lastClassBookmarkSummary ?? 'None yet.'}
-          </p>
-          {assignedBookIds.length === 0 ? (
-            <p className="mt-4 text-sm text-muted-foreground">Assign books above to pick a starting lesson piece.</p>
-          ) : loading || error ? (
-            <p className="mt-4 text-sm text-muted-foreground">{loading ? 'Loading options…' : 'Fix library errors to set an anchor.'}</p>
-          ) : anchorOptions.length === 0 ? (
-            <p className="mt-4 text-sm text-muted-foreground">No lesson pieces found for the assigned books in the library.</p>
-          ) : (
-            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
-              <label className="block min-w-0 flex-1">
-                <span className="mb-1 block text-xs font-medium text-muted-foreground">Starting lesson piece</span>
-                <select
-                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-foreground"
-                  value={anchorPick}
-                  onChange={(e) => setAnchorPick(e.target.value)}
-                  disabled={isSavingAnchor}
-                >
-                  <option value="">First in list (default)</option>
-                  {anchorOptions.map((o) => {
-                    const b = library?.books.find((bk) => bk.id === o.bookId)
-                    const u = b?.units.find((un) => un.id === o.unitId)
-                    const span =
-                      b && u && typeof o.startPageHint === 'number'
-                        ? formatEffectivePageSpan(o.startPageHint, o.endPageHint ?? null, b, u, null, 'mapped')
-                        : ''
-                    const suffix = span && span !== 'pages —' && !span.startsWith('pages —') ? ` · ${span}` : ''
-                    return (
-                      <option key={o.id} value={o.id}>
-                        {o.pathLabel}
-                        {suffix}
-                      </option>
-                    )
-                  })}
-                </select>
-              </label>
-              <Button type="button" onClick={() => void saveAnchor()} disabled={isSavingAnchor}>
-                {isSavingAnchor ? 'Saving…' : 'Save anchor'}
-              </Button>
-            </div>
-          )}
-          {anchorError ? <p className="mt-2 text-sm text-[var(--brand-red)]">{anchorError}</p> : null}
-        </div>
-      </section>
-
-      <section className="space-y-3 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="text-base font-semibold text-foreground">Reading history</h3>
-          <Button asChild variant="outline" size="sm">
-            <Link href={libraryReaderHref}>Open Library Reader</Link>
+      {!showAssignedGrid ? (
+        <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--card)] p-10 text-center">
+          <p className="text-base font-semibold text-foreground">No books yet</p>
+          <p className="mt-2 text-sm text-muted-foreground">Add a book from your library to get started.</p>
+          <Button type="button" className="mt-5" onClick={() => setShowBookPicker(true)} disabled={!!error}>
+            Add a book
           </Button>
         </div>
-        {history.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No session history yet. Open a unit from this student context to start tracking progress.
-          </p>
-        ) : (
-          <div className="space-y-2">
-            {history.map((entry) => (
-              (() => {
-                const histBook = library?.books.find((b) => b.id === entry.bookId)
-                const histUnit = histBook?.units.find((u) => u.id === entry.unitId)
-                const pageLabel = mapPdfPageToDisplayLabel(entry.page, histBook, histUnit, null, 'mapped')
-                return (
-                  <article key={entry.id} className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm">
-                    <p className="font-medium text-foreground">
-                      {entry.bookId} / {entry.unitId}
-                    </p>
-                    <p className="mt-1 text-muted-foreground">Page {pageLabel}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Opened {new Date(entry.openedAt).toLocaleString('en-US')}
-                      {entry.closedAt ? ` · Closed ${new Date(entry.closedAt).toLocaleString('en-US')}` : ''}
-                    </p>
-                    <div className="mt-2">
-                      <Button asChild size="sm" variant="outline">
-                        <Link href={`/books?student=${liveStudent.id}&book=${entry.bookId}&unit=${entry.unitId}`}>Reopen this unit</Link>
-                      </Button>
-                    </div>
-                  </article>
-                )
-              })()
-            ))}
-          </div>
-        )}
-      </section>
-
-      {showBookModal ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
-          <div className="w-full max-w-2xl rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-xl">
-            <div className="mb-4 flex items-start justify-between gap-2">
-              <div>
-                <h4 className="text-lg font-semibold text-foreground">Select books</h4>
-                <p className="text-sm text-muted-foreground">
-                  Choose which books are assigned to {liveStudent.name}.
-                </p>
-              </div>
-              <Button type="button" variant="outline" size="sm" onClick={() => setShowBookModal(false)}>
-                Close
-              </Button>
-            </div>
-
-            <div className="max-h-[55vh] space-y-2 overflow-auto pr-1">
-              {(library?.books ?? []).map((book) => {
-                const checked = assignedBookIds.includes(book.id)
-                return (
-                  <label
-                    key={book.id}
-                    className="flex cursor-pointer items-start gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-3"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleBook(book.id)}
-                      className="mt-1 h-4 w-4 accent-[var(--brand-blue)]"
-                    />
-                    <span className="min-w-0">
-                      <span className="block text-sm font-semibold text-foreground">{book.title}</span>
-                      <span className="block text-xs text-muted-foreground">
-                        {book.units.length} unit(s){book.description ? ` · ${book.description}` : ''}
-                      </span>
-                    </span>
-                  </label>
-                )
-              })}
-            </div>
-
-            <div className="mt-5 flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setShowBookModal(false)}>
-                Cancel
-              </Button>
-              <Button type="button" onClick={() => void saveAssignments()} disabled={isSaving}>
-                {isSaving ? 'Saving...' : 'Save curriculum'}
-              </Button>
-            </div>
-          </div>
+      ) : loading && assignedBooks.length === 0 ? (
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-8 text-center">
+          <p className="text-sm text-muted-foreground">Loading assigned books…</p>
         </div>
-      ) : null}
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {assignedBooks.map((book) => {
+            const previewOpen = openPreview?.bookId === book.id
+            return (
+              <div
+                key={book.id}
+                className={cn(previewOpen && 'sm:col-span-2 lg:col-span-3')}
+              >
+                <StudentBookCurriculumCard
+                  book={book}
+                  library={library!}
+                  student={liveStudent}
+                  pdfReady={pdfReady}
+                  scheduledClasses={liveStudent.scheduledClasses ?? []}
+                  isGlobalLatestStop={book.id === globalLatestBookmarkBookId}
+                  isTodayTeachingBook={book.id === todayTeachingBookId}
+                  autoOpenPreview={singleBookNeedsStart && book.id === assignedBooks[0]?.id}
+                  previewOpen={previewOpen}
+                  previewUnitId={previewOpen ? openPreview?.unitId : undefined}
+                  previewPage={previewOpen ? openPreview?.page : undefined}
+                  onOpenPreview={(unitId, page) => openPreviewFor(book.id, unitId, page)}
+                  onClosePreview={closePreview}
+                  onRemove={() => removeBook(book.id)}
+                  onDataUpdated={() => onDataUpdated?.()}
+                />
+              </div>
+            )
+          })}
+
+          <button
+            type="button"
+            onClick={() => setShowBookPicker(true)}
+            disabled={!!error}
+            className={cn(
+              'flex min-h-[180px] flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-[var(--border)]',
+              'bg-[var(--surface-2)]/50 p-6 text-muted-foreground transition-colors hover:border-[var(--brand-blue)]/40 hover:bg-[var(--card)] hover:text-foreground',
+            )}
+          >
+            <Plus className="h-8 w-8 opacity-60" />
+            <span className="text-sm font-medium">Add a book</span>
+          </button>
+        </div>
+      )}
+
+      <StudentBookPickerSheet
+        open={showBookPicker}
+        onOpenChange={setShowBookPicker}
+        library={library}
+        libraryLoading={loading}
+        pdfReady={pdfReady}
+        studentName={liveStudent.name}
+        assignedBookIds={assignedBookIds}
+        onAssignedBookIdsChange={setAssignedBookIds}
+        onSave={(ids) => saveAssignments(ids)}
+        isSaving={isSaving}
+      />
     </div>
   )
 }

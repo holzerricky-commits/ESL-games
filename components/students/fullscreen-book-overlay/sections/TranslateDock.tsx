@@ -1,43 +1,75 @@
 'use client'
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { BookmarkPlus, BookOpen, Image as ImageIcon, Languages, Loader2, X } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { BookmarkPlus, ChevronRight, Image as ImageIcon, Languages, Loader2, Volume2, X } from 'lucide-react'
+import { CHINESE_SPEECH_INSTALL_HINT, CHINESE_SPEECH_INSTALL_HINT_SHORT, speakChinese, speakEnglish, warmSpeechVoices } from '@/lib/audio/speak-text'
+import { useSpeechVoiceReady } from '@/lib/audio/use-speech-voice-ready'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
-import { useVocabNotebook } from '@/components/students/fullscreen-book-overlay/hooks/useVocabNotebook'
+import { useSavedWords } from '@/components/students/fullscreen-book-overlay/hooks/useSavedWords'
+import {
+  contextFromWindowSelection,
+  fetchTranslation,
+  type TranslationResult,
+} from '@/lib/translate/translate-client'
 import { toast } from 'sonner'
 
-const DOCK_SURFACE =
-  'rounded-2xl border border-white/10 bg-black/30 text-white shadow-[0_8px_24px_rgba(0,0,0,0.28)] backdrop-blur-md'
+import { ANNOTATION_CHROME_SURFACE_PILL } from '@/components/students/annotation-chrome-styles'
+import {
+  BOOK_PAGE_LIST_RAIL_WIDTH_PX,
+  BOOK_WORKSPACE_LEFT_BAR_WIDTH_PX,
+} from '@/components/students/fullscreen-book-overlay/constants'
+
+/** Solid charcoal chrome — same family as the annotation toolbars and page list. */
+const DOCK_SURFACE = cn(ANNOTATION_CHROME_SURFACE_PILL, 'text-[#d4d4d8]')
 
 const DOCK_BOTTOM_INSET_PX = 56
-const DOCK_SIDE_INSET_PX = 12
-const PAGE_LIST_LEFT_INSET_PX = 152
+/** Gap between the left rail's translate button and the dock when it flies out. */
+const ANCHOR_GAP_PX = 10
+const DOCK_SIDE_INSET_PX = BOOK_WORKSPACE_LEFT_BAR_WIDTH_PX + ANCHOR_GAP_PX
+const PAGE_LIST_LEFT_INSET_PX = BOOK_WORKSPACE_LEFT_BAR_WIDTH_PX + BOOK_PAGE_LIST_RAIL_WIDTH_PX
 
-type TranslateResult = {
-  source: string
-  chinese: string
-  pinyin: string
-  exampleEn: string
-  exampleZh: string
-  alternatives: Array<{
-    chinese: string
-    pinyin: string
-    partOfSpeech: string
-    exampleEn: string
-    exampleZh: string
-  }>
-}
+/** Compact icon on the search row and result actions. */
+const RESULT_ICON_BTN =
+  'flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg text-[#a1a1aa] transition-colors hover:bg-[#3f3f46] hover:text-[#f4f4f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#71717a] disabled:pointer-events-none disabled:opacity-40'
 
-type DockPosition = { x: number; y: number }
+/** Matches search input height — English hear on the query row. */
+const SEARCH_ROW_ICON_BTN = cn(RESULT_ICON_BTN, 'h-10 w-10')
+
+/** Clickable Chinese result — press pulse confirms copy + pick-up. */
+const CHINESE_PICK_BTN =
+  '-mx-1 origin-left cursor-pointer rounded-lg px-1 text-left font-semibold leading-tight text-[#f4f4f5] transition-[transform,background-color] duration-150 hover:bg-[#3f3f46] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#71717a]'
+
+const CHINESE_PICK_PULSE = 'scale-90 bg-[#52525b]'
+
+const PICK_PULSE_MS = 240
+
+/** Slim charcoal scrollbar for the result area — matches the panel chrome. */
+const RESULT_SCROLLBAR = cn(
+  '[scrollbar-width:thin] [scrollbar-color:#52525b_transparent]',
+  '[&::-webkit-scrollbar]:w-2',
+  '[&::-webkit-scrollbar-track]:bg-transparent',
+  '[&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#52525b]',
+  '[&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-solid [&::-webkit-scrollbar-thumb]:border-[#2a2a2e]',
+  'hover:[&::-webkit-scrollbar-thumb]:bg-[#71717a]',
+)
+
+/**
+ * Anchored from the parent's bottom edge so a growing result expands upward
+ * (the dock lives near the bottom rail button; growing down would run off-screen).
+ */
+type DockPosition = { x: number; bottom: number }
 
 interface TranslateDockProps {
+  studentId: string
   open: boolean
   onOpenChange: (open: boolean) => void
   suppressChrome: boolean
   pageListOpen: boolean
-  onOpenNotebook?: () => void
+  /** When set, clicking a Chinese result copies it and starts tap-to-place on the spread. */
+  onPlaceText?: (text: string) => void
 }
 
 function isInteractiveDragTarget(target: EventTarget | null): boolean {
@@ -49,50 +81,48 @@ function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n))
 }
 
-function contextFromSelection(query: string): string {
-  if (typeof window === 'undefined') return ''
-  const selected = window.getSelection()?.toString().trim() ?? ''
-  if (!selected) return ''
-  if (selected.length < 4) return ''
-  if (selected.length > 360) return selected.slice(0, 360)
-  const q = query.trim().toLowerCase()
-  if (!q) return ''
-  const s = selected.toLowerCase()
-  // Prefer context that likely contains the lookup token/phrase.
-  if (!s.includes(q) && s.length <= q.length + 8) return ''
-  return selected
-}
-
 export function TranslateDock({
+  studentId,
   open,
   onOpenChange,
   suppressChrome,
   pageListOpen,
-  onOpenNotebook,
+  onPlaceText,
 }: TranslateDockProps) {
   const dockRef = useRef<HTMLDivElement>(null)
-  const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null)
+  const dragRef = useRef<{ startX: number; startY: number; originX: number; originBottom: number } | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const [draft, setDraft] = useState('')
   const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<TranslateResult | null>(null)
+  const [result, setResult] = useState<TranslationResult | null>(null)
   const [resultImageUrl, setResultImageUrl] = useState('')
   const [imageLoading, setImageLoading] = useState(false)
   const [savingWord, setSavingWord] = useState(false)
+  /** "Other meanings" starts collapsed on every new lookup. */
+  const [altsOpen, setAltsOpen] = useState(false)
+  /** Chinese string currently flashing its press pulse. */
+  const [pickPulse, setPickPulse] = useState<string | null>(null)
+  const pickPulseTimerRef = useRef<number | null>(null)
+  const [mounted, setMounted] = useState(false)
   const [position, setPosition] = useState<DockPosition | null>(null)
   const [dragging, setDragging] = useState(false)
-  const clientCacheRef = useRef<Map<string, TranslateResult>>(new Map())
-  const {
-    entries: notebookEntries,
-    saveWord,
-  } = useVocabNotebook({
+  const clientCacheRef = useRef<Map<string, TranslationResult>>(new Map())
+  const { saveWord } = useSavedWords({
+    studentId,
     onPersistenceError: (message) => toast.error(message),
   })
+  const enReady = useSpeechVoiceReady('en')
+  const zhReady = useSpeechVoiceReady('zh')
 
   const defaultLeftInset = pageListOpen ? PAGE_LIST_LEFT_INSET_PX : DOCK_SIDE_INSET_PX
 
   useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  useEffect(() => {
     if (!open) return
+    warmSpeechVoices()
     const id = window.requestAnimationFrame(() => inputRef.current?.focus())
     return () => window.cancelAnimationFrame(id)
   }, [open])
@@ -105,13 +135,24 @@ export function TranslateDock({
     }
   }, [open])
 
+  /** Fly out beside the rail button that opened the dock (bottom edges aligned, viewport coords). */
   const placeAtDefault = useCallback(() => {
     const el = dockRef.current
-    const parent = el?.offsetParent as HTMLElement | null
-    if (!el || !parent) return
-    const x = defaultLeftInset
-    const y = Math.max(0, parent.clientHeight - el.offsetHeight - DOCK_BOTTOM_INSET_PX)
-    setPosition({ x, y })
+    if (!el) return
+
+    const maxX = Math.max(0, window.innerWidth - el.offsetWidth)
+    const maxBottom = Math.max(0, window.innerHeight - el.offsetHeight)
+    let x = defaultLeftInset
+    let bottom = DOCK_BOTTOM_INSET_PX
+
+    const anchor = document.querySelector('[data-book-translate-anchor]')
+    if (anchor instanceof HTMLElement) {
+      const anchorRect = anchor.getBoundingClientRect()
+      x = Math.max(defaultLeftInset, anchorRect.right + ANCHOR_GAP_PX)
+      bottom = window.innerHeight - anchorRect.bottom
+    }
+
+    setPosition({ x: clamp(x, 0, maxX), bottom: clamp(bottom, 0, maxBottom) })
   }, [defaultLeftInset])
 
   useLayoutEffect(() => {
@@ -124,87 +165,29 @@ export function TranslateDock({
     setPosition((prev) => {
       if (!prev) return prev
       const el = dockRef.current
-      const parent = el?.offsetParent as HTMLElement | null
-      if (!el || !parent) return prev
-      const x = clamp(prev.x, 0, Math.max(0, parent.clientWidth - el.offsetWidth))
-      const y = clamp(prev.y, 0, Math.max(0, parent.clientHeight - el.offsetHeight))
-      if (x === prev.x && y === prev.y) return prev
-      return { x, y }
+      if (!el) return prev
+      const x = clamp(prev.x, 0, Math.max(0, window.innerWidth - el.offsetWidth))
+      const bottom = clamp(prev.bottom, 0, Math.max(0, window.innerHeight - el.offsetHeight))
+      if (x === prev.x && bottom === prev.bottom) return prev
+      return { x, bottom }
     })
   }, [open, pageListOpen, dragging, position])
 
   const runTranslate = useCallback(async (raw: string) => {
     const text = raw.trim()
     if (!text) return
-    const context = contextFromSelection(text)
-    const cacheId = context ? `${text.toLowerCase()}::ctx:${context.toLowerCase()}` : text.toLowerCase()
-
-    const cached = clientCacheRef.current.get(cacheId)
-    if (cached) {
-      setResult(cached)
-      return
-    }
+    const context = contextFromWindowSelection(text)
 
     setLoading(true)
     try {
-      const res = await fetch('/api/translate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, context }),
-      })
-      const data = (await res.json()) as {
-        ok?: boolean
-        chinese?: string
-        pinyin?: string
-        exampleEn?: string
-        exampleZh?: string
-        alternatives?: Array<{
-          chinese?: string
-          pinyin?: string
-          partOfSpeech?: string
-          exampleEn?: string
-          exampleZh?: string
-        }>
-        error?: string
-      }
-      if (!res.ok || !data.ok || !data.chinese) {
-        toast.error(data.error ?? 'Translation failed.')
+      const outcome = await fetchTranslation(text, context, { cache: clientCacheRef.current })
+      if (!outcome.ok) {
+        toast.error(outcome.error)
         return
       }
-      const entry: TranslateResult = {
-        source: text,
-        chinese: data.chinese,
-        pinyin: data.pinyin ?? '',
-        exampleEn: typeof data.exampleEn === 'string' ? data.exampleEn.trim() : '',
-        exampleZh: typeof data.exampleZh === 'string' ? data.exampleZh.trim() : '',
-        alternatives: Array.isArray(data.alternatives)
-          ? data.alternatives
-              .map((item) => {
-                const chinese = typeof item?.chinese === 'string' ? item.chinese.trim() : ''
-                const pinyin = typeof item?.pinyin === 'string' ? item.pinyin.trim() : ''
-                const partOfSpeech = typeof item?.partOfSpeech === 'string' ? item.partOfSpeech.trim() : ''
-                const exampleEn = typeof item?.exampleEn === 'string' ? item.exampleEn.trim() : ''
-                const exampleZh = typeof item?.exampleZh === 'string' ? item.exampleZh.trim() : ''
-                if (!chinese) return null
-                return { chinese, pinyin, partOfSpeech, exampleEn, exampleZh }
-              })
-              .filter(
-                (item): item is {
-                  chinese: string
-                  pinyin: string
-                  partOfSpeech: string
-                  exampleEn: string
-                  exampleZh: string
-                } => item != null,
-              )
-              .slice(0, 3)
-          : [],
-      }
-      clientCacheRef.current.set(cacheId, entry)
-      setResult(entry)
+      setResult(outcome.result)
       setResultImageUrl('')
-    } catch {
-      toast.error('Translation failed. Check your connection.')
+      setAltsOpen(false)
     } finally {
       setLoading(false)
     }
@@ -228,6 +211,29 @@ export function TranslateDock({
     }
   }, [result?.source])
 
+  /** Copy the Chinese and hand it off for tap-to-place on the book page. */
+  const pickChineseForPlacement = useCallback(
+    (chinese: string) => {
+      const text = chinese.trim()
+      if (!text || !onPlaceText) return
+      void navigator.clipboard.writeText(text).catch(() => {})
+      setPickPulse(text)
+      if (pickPulseTimerRef.current != null) window.clearTimeout(pickPulseTimerRef.current)
+      pickPulseTimerRef.current = window.setTimeout(() => {
+        pickPulseTimerRef.current = null
+        setPickPulse(null)
+      }, PICK_PULSE_MS)
+      onPlaceText(text)
+    },
+    [onPlaceText],
+  )
+
+  useEffect(() => {
+    return () => {
+      if (pickPulseTimerRef.current != null) window.clearTimeout(pickPulseTimerRef.current)
+    }
+  }, [])
+
   const saveCurrentWord = useCallback(() => {
     if (!result) return
     setSavingWord(true)
@@ -240,7 +246,7 @@ export function TranslateDock({
         exampleZh: result.exampleZh,
         imageUrl: resultImageUrl,
       })
-      toast.success(mode === 'updated' ? 'Word updated in notebook.' : 'Word saved to notebook.')
+      toast.success(mode === 'updated' ? 'Word updated in saved words.' : 'Word saved.')
     } finally {
       setSavingWord(false)
     }
@@ -250,19 +256,17 @@ export function TranslateDock({
     if (e.button !== 0 || isInteractiveDragTarget(e.target)) return
 
     const el = dockRef.current
-    const parent = el?.offsetParent as HTMLElement | null
-    if (!el || !parent) return
+    if (!el) return
 
     e.preventDefault()
 
-    const parentRect = parent.getBoundingClientRect()
     const rect = el.getBoundingClientRect()
-    const originX = position?.x ?? rect.left - parentRect.left
-    const originY = position?.y ?? rect.top - parentRect.top
+    const originX = position?.x ?? rect.left
+    const originBottom = position?.bottom ?? window.innerHeight - rect.bottom
 
-    if (!position) setPosition({ x: originX, y: originY })
+    if (!position) setPosition({ x: originX, bottom: originBottom })
 
-    dragRef.current = { startX: e.clientX, startY: e.clientY, originX, originY }
+    dragRef.current = { startX: e.clientX, startY: e.clientY, originX, originBottom }
     setDragging(true)
     el.setPointerCapture(e.pointerId)
   }
@@ -270,19 +274,18 @@ export function TranslateDock({
   const onDockPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current
     const el = dockRef.current
-    const parent = el?.offsetParent as HTMLElement | null
-    if (!drag || !el || !parent) return
+    if (!drag || !el) return
 
     setPosition({
       x: clamp(
         drag.originX + e.clientX - drag.startX,
         0,
-        Math.max(0, parent.clientWidth - el.offsetWidth),
+        Math.max(0, window.innerWidth - el.offsetWidth),
       ),
-      y: clamp(
-        drag.originY + e.clientY - drag.startY,
+      bottom: clamp(
+        drag.originBottom - (e.clientY - drag.startY),
         0,
-        Math.max(0, parent.clientHeight - el.offsetHeight),
+        Math.max(0, window.innerHeight - el.offsetHeight),
       ),
     })
   }
@@ -296,19 +299,19 @@ export function TranslateDock({
     }
   }
 
-  if (suppressChrome || !open) return null
+  if (suppressChrome || !open || !mounted) return null
 
-  return (
+  return createPortal(
     <div
       ref={dockRef}
       className={cn(
         DOCK_SURFACE,
-        'pointer-events-auto absolute z-[62] flex w-[min(100%,23rem)] flex-col gap-2 p-3 select-none',
+        'pointer-events-auto fixed z-[90] flex max-h-[min(75vh,40rem)] w-[min(100vw,29rem)] flex-col gap-2 p-3 select-none',
         dragging ? 'cursor-grabbing touch-none' : 'cursor-grab',
       )}
       style={
         position
-          ? { left: position.x, top: position.y }
+          ? { left: position.x, bottom: position.bottom }
           : { left: defaultLeftInset, bottom: DOCK_BOTTOM_INSET_PX }
       }
       role="dialog"
@@ -319,7 +322,7 @@ export function TranslateDock({
       onPointerCancel={endDockDrag}
     >
       <div className={cn('flex items-center justify-between gap-2', dragging ? 'cursor-grabbing' : 'cursor-grab')}>
-        <div className="flex items-center gap-1.5 text-sm font-semibold text-white">
+        <div className="flex items-center gap-1.5 text-sm font-semibold text-[#f4f4f5]">
           <Languages className="h-4 w-4 shrink-0 opacity-90" aria-hidden />
           Translate
         </div>
@@ -327,7 +330,7 @@ export function TranslateDock({
           type="button"
           variant="ghost"
           size="icon"
-          className="h-7 w-7 shrink-0 cursor-pointer rounded-full text-white/70 hover:bg-white/15 hover:text-white"
+          className="h-7 w-7 shrink-0 cursor-pointer rounded-full text-[#a1a1aa] hover:bg-[#3f3f46] hover:text-[#f4f4f5]"
           onClick={() => onOpenChange(false)}
           aria-label="Close translate dock"
           data-translate-no-drag
@@ -343,15 +346,32 @@ export function TranslateDock({
           onChange={(e) => setDraft(e.target.value)}
           placeholder="English word or phrase…"
           disabled={loading}
-          className="h-9 flex-1 cursor-text border-white/15 bg-white/10 text-sm text-white placeholder:text-white/45 focus-visible:ring-white/30"
+          className="h-10 min-w-0 flex-1 cursor-text border-[#3f3f46] bg-[#353539] text-base text-[#f4f4f5] placeholder:text-[#71717a] focus-visible:ring-[#71717a] md:text-base"
           autoComplete="off"
           spellCheck={false}
         />
+        {result && enReady ? (
+          <button
+            type="button"
+            className={SEARCH_ROW_ICON_BTN}
+            aria-label="Hear English"
+            title="Hear English"
+            onClick={() => {
+              const text = result.source.trim() || draft.trim()
+              if (!text) return
+              if (!speakEnglish(text)) {
+                toast.error('Speech is not available in this browser.')
+              }
+            }}
+          >
+            <Volume2 className="h-4 w-4" aria-hidden />
+          </button>
+        ) : null}
         <Button
           type="submit"
           size="sm"
           disabled={loading || !draft.trim()}
-          className="h-9 shrink-0 cursor-pointer bg-white/20 px-3 text-white hover:bg-white/30"
+          className="h-10 shrink-0 cursor-pointer bg-[#3f3f46] px-3 text-base text-[#f4f4f5] hover:bg-[#52525b]"
         >
           {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : 'Go'}
         </Button>
@@ -359,102 +379,152 @@ export function TranslateDock({
 
       {result ? (
         <div
-          className="cursor-auto space-y-1 rounded-xl border border-white/10 bg-white/5 px-2.5 py-2 select-text"
+          className={cn(
+            'min-h-0 cursor-auto space-y-2 overflow-y-auto border-t border-[#3f3f46] pt-2.5 pr-1 select-text',
+            RESULT_SCROLLBAR,
+          )}
           data-translate-no-drag
         >
-          <p className="text-2xl font-semibold leading-tight text-white">{result.chinese}</p>
-          <div className="flex flex-wrap gap-1.5 pt-0.5">
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              className="h-7 bg-white/20 px-2.5 text-[11px] text-white hover:bg-white/30"
-              data-translate-no-drag
-              onClick={() => void requestResultImage()}
-              disabled={imageLoading}
-            >
-              {imageLoading ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" aria-hidden /> : <ImageIcon className="mr-1 h-3.5 w-3.5" aria-hidden />}
-              {resultImageUrl ? 'Change image' : 'Show image'}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              className="h-7 bg-white/20 px-2.5 text-[11px] text-white hover:bg-white/30"
-              data-translate-no-drag
-              onClick={saveCurrentWord}
-              disabled={savingWord}
-            >
-              {savingWord ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" aria-hidden /> : <BookmarkPlus className="mr-1 h-3.5 w-3.5" aria-hidden />}
-              Save word
-            </Button>
-            {onOpenNotebook ? (
-              <Button
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="flex items-start gap-1">
+                {onPlaceText ? (
+                  <button
+                    type="button"
+                    className={cn(
+                      CHINESE_PICK_BTN,
+                      'text-4xl',
+                      pickPulse === result.chinese.trim() && CHINESE_PICK_PULSE,
+                    )}
+                    title="Copy and place on the page"
+                    onClick={() => pickChineseForPlacement(result.chinese)}
+                  >
+                    {result.chinese}
+                  </button>
+                ) : (
+                  <p className="text-4xl font-semibold leading-tight text-[#f4f4f5]">{result.chinese}</p>
+                )}
+                {zhReady ? (
+                  <button
+                    type="button"
+                    className={cn(RESULT_ICON_BTN, 'mt-1')}
+                    aria-label="Hear Chinese"
+                    title="Hear Chinese"
+                    onClick={() => {
+                      if (!speakChinese(result.chinese)) {
+                        toast.error(CHINESE_SPEECH_INSTALL_HINT)
+                      }
+                    }}
+                  >
+                    <Volume2 className="h-4 w-4" aria-hidden />
+                  </button>
+                ) : null}
+              </div>
+              {result.pinyin ? <p className="pt-1 text-lg text-[#d4d4d8]">{result.pinyin}</p> : null}
+              {result && !zhReady ? (
+                <p className="pt-1 text-[11px] leading-snug text-[#71717a]">{CHINESE_SPEECH_INSTALL_HINT_SHORT}</p>
+              ) : null}
+            </div>
+            <div className="flex shrink-0 items-center gap-0.5 pt-0.5">
+              <button
                 type="button"
-                size="sm"
-                variant="secondary"
-                className="h-7 bg-white/20 px-2.5 text-[11px] text-white hover:bg-white/30"
-                data-translate-no-drag
-                onClick={() => onOpenNotebook()}
+                className={RESULT_ICON_BTN}
+                aria-label={resultImageUrl ? 'Change image' : 'Show image'}
+                title={resultImageUrl ? 'Change image' : 'Show image'}
+                onClick={() => void requestResultImage()}
+                disabled={imageLoading}
               >
-                <BookOpen className="mr-1 h-3.5 w-3.5" aria-hidden />
-                Notebook ({notebookEntries.length})
-              </Button>
-            ) : null}
+                {imageLoading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <ImageIcon className="h-4 w-4" aria-hidden />}
+              </button>
+              <button
+                type="button"
+                className={RESULT_ICON_BTN}
+                aria-label="Save word"
+                title="Save word"
+                onClick={saveCurrentWord}
+                disabled={savingWord}
+              >
+                {savingWord ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <BookmarkPlus className="h-4 w-4" aria-hidden />}
+              </button>
+            </div>
           </div>
           {resultImageUrl ? (
-            <div className="overflow-hidden rounded-lg border border-white/15 bg-black/25">
+            <div className="overflow-hidden rounded-lg border border-[#3f3f46] bg-black/25">
               <img
                 src={resultImageUrl}
                 alt={`Visual for ${result.source}`}
-                className="block h-28 w-full object-cover"
+                className="block h-36 w-full object-cover"
                 loading="lazy"
                 draggable={false}
               />
             </div>
           ) : null}
-          {result.pinyin ? <p className="text-sm text-white/70">{result.pinyin}</p> : null}
           {result.exampleEn && result.exampleZh ? (
-            <p className="pt-0.5 text-[11px] leading-relaxed text-white/65">
-              {result.exampleEn}
-              {' -> '}
-              {result.exampleZh}
-            </p>
+            <div className="space-y-1.5 border-l-2 border-[#3f3f46] pl-3 leading-relaxed">
+              <p className="text-lg text-[#e4e4e7]">{result.exampleEn}</p>
+              <p className="text-2xl text-[#f4f4f5]">{result.exampleZh}</p>
+            </div>
           ) : null}
           {result.alternatives.length > 0 ? (
-            <div className="mt-2 space-y-2 border-t border-white/10 pt-2">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-white/50">Other common meanings</p>
-              <ul className="space-y-2">
-                {result.alternatives.map((alt, idx) => (
-                  <li
-                    key={`${alt.chinese}-${alt.pinyin}-${idx}`}
-                    className="space-y-1.5 border-b border-white/10 pb-2.5 text-xs leading-tight text-white/75 last:border-b-0 last:pb-0"
-                  >
-                    <p className="flex flex-wrap items-center gap-x-1 gap-y-1">
-                      {alt.partOfSpeech ? (
-                        <span className="mr-1 rounded bg-white/10 px-1 py-[1px] text-[9px] uppercase tracking-wide text-white/55">
-                          {alt.partOfSpeech}
-                        </span>
-                      ) : null}
-                      <span className="text-base font-semibold leading-tight text-white">{alt.chinese}</span>
-                      {alt.pinyin ? <span className="text-[11px] text-white/50">({alt.pinyin})</span> : null}
-                    </p>
-                    {alt.exampleEn && alt.exampleZh ? (
-                      <p className="pt-0.5 text-[12px] leading-relaxed text-white/65">
-                        {alt.exampleEn}
-                        {' -> '}
-                        {alt.exampleZh}
+            <div className="border-t border-[#3f3f46] pt-1.5">
+              <button
+                type="button"
+                className="flex w-full cursor-pointer items-center gap-1 rounded-lg px-1 py-1.5 text-xs font-medium uppercase tracking-wide text-[#71717a] transition-colors hover:bg-[#3f3f46] hover:text-[#a1a1aa] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#71717a]"
+                aria-expanded={altsOpen}
+                onClick={() => setAltsOpen((v) => !v)}
+              >
+                <ChevronRight
+                  className={cn('h-4 w-4 shrink-0 transition-transform', altsOpen && 'rotate-90')}
+                  aria-hidden
+                />
+                Other meanings ({result.alternatives.length})
+              </button>
+              {altsOpen ? (
+                <ul className="space-y-3 pt-2">
+                  {result.alternatives.map((alt, idx) => (
+                    <li
+                      key={`${alt.chinese}-${alt.pinyin}-${idx}`}
+                      className="space-y-1.5 border-b border-[#3f3f46] pb-3 leading-tight text-[#d4d4d8] last:border-b-0 last:pb-0"
+                    >
+                      <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                        {onPlaceText ? (
+                          <button
+                            type="button"
+                            className={cn(
+                              CHINESE_PICK_BTN,
+                              'text-2xl',
+                              pickPulse === alt.chinese.trim() && CHINESE_PICK_PULSE,
+                            )}
+                            title="Copy and place on the page"
+                            onClick={() => pickChineseForPlacement(alt.chinese)}
+                          >
+                            {alt.chinese}
+                          </button>
+                        ) : (
+                          <span className="text-2xl font-semibold leading-tight text-[#f4f4f5]">{alt.chinese}</span>
+                        )}
+                        {alt.pinyin ? <span className="text-sm text-[#a1a1aa]">{alt.pinyin}</span> : null}
+                        {alt.partOfSpeech ? (
+                          <span className="ml-0.5 self-center rounded bg-[#3f3f46] px-1 py-[1px] text-[10px] uppercase tracking-wide text-[#a1a1aa]">
+                            {alt.partOfSpeech}
+                          </span>
+                        ) : null}
                       </p>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
+                      {alt.exampleEn && alt.exampleZh ? (
+                        <div className="space-y-1.5 border-l-2 border-[#3f3f46] pl-3 leading-relaxed">
+                          <p className="text-lg text-[#e4e4e7]">{alt.exampleEn}</p>
+                          <p className="text-2xl text-[#f4f4f5]">{alt.exampleZh}</p>
+                        </div>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
             </div>
           ) : null}
         </div>
-      ) : (
-        <p className="text-xs text-white/50">Simplified Chinese + pinyin for your students.</p>
-      )}
-    </div>
+      ) : null}
+    </div>,
+    document.body,
   )
 }

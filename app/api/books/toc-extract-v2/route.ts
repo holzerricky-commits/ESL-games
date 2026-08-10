@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { extractTocWithGeminiV2 } from '@/lib/books/gemini-toc-v2'
+import { extractTocWithGeminiV2, normalizeTocExtractProfile } from '@/lib/books/gemini-toc-v2'
+import { TOC_EXTRACT_PROFILE_IDS } from '@/lib/books/toc-extract-profile'
 
 export const runtime = 'nodejs'
 
@@ -14,6 +15,8 @@ const bodySchema = z.object({
   images: z.array(imageSchema).min(1).max(16),
   totalPdfPages: z.number().int().min(1),
   notCountedPdfPages: z.array(z.number().int().min(1)).max(500).optional(),
+  /** journeys | wonders_workshop | wonders_literature — defaults to journeys */
+  profile: z.enum(TOC_EXTRACT_PROFILE_IDS).optional(),
 })
 
 export async function POST(req: Request) {
@@ -28,8 +31,9 @@ export async function POST(req: Request) {
     if (!parsed.success) {
       return NextResponse.json({ error: 'Validation failed.', details: parsed.error.flatten() }, { status: 400 })
     }
-    const { images, totalPdfPages, notCountedPdfPages = [] } = parsed.data
-    const out = await extractTocWithGeminiV2(images, totalPdfPages, notCountedPdfPages)
+    const { images, totalPdfPages, notCountedPdfPages = [], profile: profileRaw } = parsed.data
+    const profile = normalizeTocExtractProfile(profileRaw)
+    const out = await extractTocWithGeminiV2(images, totalPdfPages, notCountedPdfPages, profile)
     if (!out.ok) {
       return NextResponse.json({ error: out.error }, { status: out.status ?? 502 })
     }

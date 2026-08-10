@@ -8,8 +8,14 @@ export const LESSON_BOARD_STANDARD_ASPECT = 3 / 4
 /** Width ÷ height for a wide / diagram page (16∶9). */
 export const LESSON_BOARD_WIDE_ASPECT = 16 / 9
 
-/** Default stored runway height until a viewport baseline is supplied. */
-export const LESSON_BOARD_DEFAULT_CONTENT_HEIGHT_PX = 2400
+/** Fallback page height when viewport is unknown (before layout). ~two teaching screens. */
+export const LESSON_BOARD_DEFAULT_CONTENT_HEIGHT_PX = 1600
+
+/** Soft cap: standard pages stop growing past this many viewports (use New page instead). */
+export const LESSON_BOARD_MAX_RUNWAY_VIEWPORTS = 8
+
+/** Always keep this many viewports of runway below the top of the current view (current + one blank). */
+export const LESSON_BOARD_VIEWPORTS_BELOW_VIEW_TOP = 2
 
 export type LessonBoardPageOrientation = 'standard' | 'wide'
 
@@ -39,11 +45,38 @@ export function newLessonBoardPageId(): string {
   return `lb-page-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`
 }
 
+/**
+ * Empty / new standard page ≈ two viewports: the screen you see + one clean screen to scroll into.
+ */
 export function defaultLessonBoardContentHeightPx(viewportHeightPx?: number): number {
   if (viewportHeightPx != null && viewportHeightPx > 0) {
-    return Math.max(LESSON_BOARD_DEFAULT_CONTENT_HEIGHT_PX, Math.round(viewportHeightPx * 2.5))
+    return Math.max(1, Math.round(viewportHeightPx * LESSON_BOARD_VIEWPORTS_BELOW_VIEW_TOP))
   }
   return LESSON_BOARD_DEFAULT_CONTENT_HEIGHT_PX
+}
+
+export function lessonBoardMaxContentHeightPx(viewportHeightPx: number): number {
+  if (!(viewportHeightPx > 0)) {
+    return LESSON_BOARD_DEFAULT_CONTENT_HEIGHT_PX * LESSON_BOARD_MAX_RUNWAY_VIEWPORTS
+  }
+  return Math.max(1, Math.round(viewportHeightPx * LESSON_BOARD_MAX_RUNWAY_VIEWPORTS))
+}
+
+/**
+ * Keep at least one full viewport of blank runway below the current view.
+ * Needed height = scrollTop + 2×viewport (visible screen + one clean screen under it).
+ */
+export function lessonBoardHeightToKeepOneViewportBelowView(
+  scrollTopPx: number,
+  viewportHeightPx: number,
+  currentHeightPx: number,
+  maxHeightPx: number,
+): number {
+  if (!(viewportHeightPx > 0)) return Math.max(1, currentHeightPx)
+  const needed = Math.ceil(
+    Math.max(0, scrollTopPx) + viewportHeightPx * LESSON_BOARD_VIEWPORTS_BELOW_VIEW_TOP,
+  )
+  return Math.min(Math.max(1, maxHeightPx), Math.max(1, currentHeightPx, needed))
 }
 
 export function createLessonBoardPage(

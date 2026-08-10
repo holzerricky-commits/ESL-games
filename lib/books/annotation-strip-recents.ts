@@ -92,12 +92,16 @@ export function getStripRecentsSyncSnapshot(kind: StripRecentKind): string {
   }
 }
 
-/** Recents for display: up to 4, excluding the active value. */
-export function stripRecentsForDisplay(kind: StripRecentKind, active: string): string[] {
+/** Recents for display: up to `maxCount` (default 4), excluding the active value. */
+export function stripRecentsForDisplay(
+  kind: StripRecentKind,
+  active: string,
+  maxCount = MAX_RECENTS,
+): string[] {
   const list = readStripRecents(kind)
   const hexKind = kind === 'marker' || kind === 'text' || kind === 'sticky'
   const isSame = (a: string, b: string) => (hexKind ? a.toLowerCase() === b.toLowerCase() : a === b)
-  return list.filter((v) => !isSame(v, active)).slice(0, MAX_RECENTS)
+  return list.filter((v) => !isSame(v, active)).slice(0, maxCount)
 }
 
 export function isValidPenSwatchId(id: string): boolean {

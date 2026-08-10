@@ -6,15 +6,20 @@ import type { AnnotationCommand, StrokeAnnotationCommand } from '@/lib/books/ann
 import {
   applyAnnotationCanvasDpr,
   clearAnnotationCanvas,
-  drawAnnotationCommand,
+  drawAnnotationCommandWithPasteReveal,
   drawStrokePath,
   isMarkerStrokeCommand,
-  replayInkSlice,
-  replayMarkerSlice,
 } from '@/lib/books/annotation-draw'
-import { buildAnnotationRenderSlices } from '@/lib/books/annotation-render-slices'
+import {
+  buildAnnotationRenderSlices,
+  INK_PAINT_SLICE_BATCH_SIZE,
+} from '@/lib/books/annotation-render-slices'
 import { canIncrementallyAppendSpreadSessionCommands } from '@/lib/books/spread-session-incremental-paint'
+import { hasActivePasteReveals } from '@/lib/books/board-paste-reveal'
+import { hasActiveStampPlacementEffects } from '@/lib/books/stamp-placement-effect'
 import type { OrientedSelectionFrame } from '@/lib/books/annotation-select'
+import { inkPaintEngineEnabled } from '@/lib/books/feature-flags'
+import { runInkSessionPaint } from '@/lib/books/ink-paint-engine'
 
 function sizeCanvas(el: HTMLCanvasElement, widthPx: number, heightPx: number): boolean {
   const dpr = window.devicePixelRatio || 1
@@ -42,6 +47,7 @@ export type UseInkSessionCanvasPaintOptions = {
   selectDragLive: { dx: number; dy: number } | null
   zoomRepaintRevision: number
   repaintEpoch: number
+  pasteRevealTick?: number
 }
 
 /** Committed ink replay for spread / lesson-board session surfaces. */
@@ -57,17 +63,23 @@ export function useInkSessionCanvasPaint({
   selectDragLive,
   zoomRepaintRevision,
   repaintEpoch,
+  pasteRevealTick = 0,
 }: UseInkSessionCanvasPaintOptions) {
   const inkSliceRefs = useRef<(HTMLCanvasElement | null)[]>([])
   const markerSliceRefs = useRef<(HTMLCanvasElement | null)[]>([])
   const trailingMarkerCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const paintedCommandsRef = useRef<readonly AnnotationCommand[]>([])
   const paintedDeadKeyRef = useRef('')
+  const prevPasteRevealTickRef = useRef(pasteRevealTick)
 
   useLayoutEffect(() => {
     if (!(widthPx > 0) || !(heightPx > 0)) return
 
-    const slices = buildAnnotationRenderSlices(paintDisplayCommands, deadIndices)
+    const pasteRevealTickAdvanced = prevPasteRevealTickRef.current !== pasteRevealTick
+    prevPasteRevealTickRef.current = pasteRevealTick
+
+    const sliceOptions = inkPaintEngineEnabled ? { inkBatchSize: INK_PAINT_SLICE_BATCH_SIZE } : undefined
+    const slices = buildAnnotationRenderSlices(paintDisplayCommands, deadIndices, sliceOptions)
     const inkCount = slices.filter((s) => s.kind === 'ink').length
     const markerCount = markersOnSessionLayer ? slices.filter((s) => s.kind === 'marker').length : 0
 
@@ -90,46 +102,99 @@ export function useInkSessionCanvasPaint({
 
     const prev = paintedCommandsRef.current
     const prevDeadKey = paintedDeadKeyRef.current
-    const canAppend =
-      selectScaleLiveFrame == null &&
-      selectDragLive == null &&
-      !canvasResized &&
-      deadIndices.size === 0 &&
-      deadKey === prevDeadKey &&
-      canIncrementallyAppendSpreadSessionCommands(prev, paintDisplayCommands)
+    const pasteRevealActive = hasActivePasteReveals()
+    const stampPlacementActive = hasActiveStampPlacementEffects()
+    const selectionTransformActive = selectScaleLiveFrame != null || selectDragLive != null
 
-    if (canAppend) {
-      const cmd = paintDisplayCommands[paintDisplayCommands.length - 1]!
-      const lastSlice = slices[slices.length - 1]
-      if (
-        markersOnSessionLayer &&
-        lastSlice?.kind === 'marker' &&
-        isMarkerStrokeCommand(cmd) &&
-        lastSlice.indices[0] === paintDisplayCommands.length - 1
-      ) {
-        const markerIdx = markerCount - 1
-        const el = markerSliceRefs.current[markerIdx]
-        const ctx = el?.getContext('2d', { alpha: true })
-        if (ctx) {
+    const trailingMarkerDraft =
+      trailingMarkerStrokeDraft &&
+      trailingMarkerStrokeDraft.tool === 'marker' &&
+      trailingMarkerStrokeDraft.points.length >= 1
+        ? trailingMarkerStrokeDraft
+        : null
+
+    if (inkPaintEngineEnabled) {
+      runInkSessionPaint(
+        prev,
+        prevDeadKey,
+        paintDisplayCommands,
+        deadIndices,
+        deadKey,
+        {
+          inkSliceRefs: inkSliceRefs.current,
+          markerSliceRefs: markerSliceRefs.current,
+          markersOnSessionLayer,
+          trailingMarkerCanvasRef,
+        },
+        widthPx,
+        heightPx,
+        {
+          overlayAnimationActive:
+            pasteRevealActive || stampPlacementActive || pasteRevealTickAdvanced,
+          canvasResized,
+          selectionTransformActive,
+        },
+        sliceOptions,
+        trailingMarkerDraft,
+      )
+    } else {
+      paintLegacy()
+    }
+
+    paintedCommandsRef.current = paintDisplayCommands
+    paintedDeadKeyRef.current = deadKey
+
+    function paintLegacy(): void {
+      const canAppend =
+        !pasteRevealActive &&
+        !stampPlacementActive &&
+        !selectionTransformActive &&
+        !canvasResized &&
+        deadKey === prevDeadKey &&
+        canIncrementallyAppendSpreadSessionCommands(prev, paintDisplayCommands)
+
+      if (canAppend) {
+        const cmd = paintDisplayCommands[paintDisplayCommands.length - 1]!
+        const lastSlice = slices[slices.length - 1]
+        const drawCmd = (ctx: CanvasRenderingContext2D, command: AnnotationCommand) => {
           applyAnnotationCanvasDpr(ctx)
-          drawAnnotationCommand(ctx, cmd, widthPx, heightPx)
+          drawAnnotationCommandWithPasteReveal(ctx, command, widthPx, heightPx)
         }
-      } else if (lastSlice?.kind === 'ink' && !isMarkerStrokeCommand(cmd)) {
-        const inkIdx = inkCount - 1
-        const el = inkSliceRefs.current[inkIdx]
-        const ctx = el?.getContext('2d', { alpha: true })
-        if (ctx) {
-          applyAnnotationCanvasDpr(ctx)
-          drawAnnotationCommand(ctx, cmd, widthPx, heightPx)
+        if (
+          markersOnSessionLayer &&
+          lastSlice?.kind === 'marker' &&
+          isMarkerStrokeCommand(cmd) &&
+          lastSlice.indices[0] === paintDisplayCommands.length - 1
+        ) {
+          const markerIdx = markerCount - 1
+          const el = markerSliceRefs.current[markerIdx]
+          const ctx = el?.getContext('2d', { alpha: true })
+          if (ctx) {
+            drawCmd(ctx, cmd)
+          } else {
+            replayAllSlices()
+          }
+        } else if (lastSlice?.kind === 'ink' && !isMarkerStrokeCommand(cmd)) {
+          const inkIdx = inkCount - 1
+          const el = inkSliceRefs.current[inkIdx]
+          const ctx = el?.getContext('2d', { alpha: true })
+          if (ctx) {
+            drawCmd(ctx, cmd)
+          } else {
+            replayAllSlices()
+          }
+        } else {
+          replayAllSlices()
         }
       } else {
         replayAllSlices()
       }
-    } else {
-      replayAllSlices()
+
+      if (markersOnSessionLayer) paintTrailingMarkerDraftLegacy()
     }
 
     function replayAllSlices(): void {
+      const now = Date.now()
       let inkIdx = 0
       let markerIdx = 0
       for (const slice of slices) {
@@ -137,12 +202,22 @@ export function useInkSessionCanvasPaint({
           const el = inkSliceRefs.current[inkIdx++]
           const inkCtx = el?.getContext('2d', { alpha: true })
           if (!inkCtx) continue
-          replayInkSlice(inkCtx, paintDisplayCommands, slice.indices, widthPx, heightPx)
+          clearAnnotationCanvas(inkCtx)
+          applyAnnotationCanvasDpr(inkCtx)
+          for (const index of slice.indices) {
+            const cmd = paintDisplayCommands[index]!
+            drawAnnotationCommandWithPasteReveal(inkCtx, cmd, widthPx, heightPx, undefined, now)
+          }
         } else if (slice.kind === 'marker' && markersOnSessionLayer) {
           const el = markerSliceRefs.current[markerIdx++]
           const markerCtx = el?.getContext('2d', { alpha: true })
           if (!markerCtx) continue
-          replayMarkerSlice(markerCtx, paintDisplayCommands, slice.indices, widthPx, heightPx)
+          clearAnnotationCanvas(markerCtx)
+          applyAnnotationCanvasDpr(markerCtx)
+          for (const index of slice.indices) {
+            const cmd = paintDisplayCommands[index]!
+            drawAnnotationCommandWithPasteReveal(markerCtx, cmd, widthPx, heightPx, undefined, now)
+          }
         }
       }
       for (let i = inkIdx; i < inkSliceRefs.current.length; i++) {
@@ -155,10 +230,10 @@ export function useInkSessionCanvasPaint({
         const ctx = el?.getContext('2d', { alpha: true })
         if (ctx) clearAnnotationCanvas(ctx)
       }
-      if (markersOnSessionLayer) paintTrailingMarkerDraft()
+      if (markersOnSessionLayer) paintTrailingMarkerDraftLegacy()
     }
 
-    function paintTrailingMarkerDraft(): void {
+    function paintTrailingMarkerDraftLegacy(): void {
       const el = trailingMarkerCanvasRef.current
       const ctx = el?.getContext('2d', { alpha: true })
       if (!ctx) return
@@ -178,10 +253,6 @@ export function useInkSessionCanvasPaint({
       }
       drawStrokePath(ctx, trailCmd, widthPx, heightPx)
     }
-
-    paintedCommandsRef.current = paintDisplayCommands
-    paintedDeadKeyRef.current = deadKey
-    if (markersOnSessionLayer) paintTrailingMarkerDraft()
   }, [
     paintDisplayCommands,
     deadIndices,
@@ -194,6 +265,7 @@ export function useInkSessionCanvasPaint({
     selectScaleLiveFrame,
     repaintEpoch,
     selectDragLive,
+    pasteRevealTick,
   ])
 
   return {

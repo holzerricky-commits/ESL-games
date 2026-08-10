@@ -11,6 +11,7 @@ export type InkSessionSelectProxyHandle = Pick<
   | 'getSelectedIds'
   | 'setSelectedIds'
   | 'selectAll'
+  | 'selectAllIncludingLocked'
   | 'deselectAll'
   | 'deleteSelected'
   | 'copySelected'
@@ -20,6 +21,7 @@ export type InkSessionSelectProxyHandle = Pick<
   | 'removeFromGroupSelected'
   | 'selectNextInStack'
   | 'moveSelectedBy'
+  | 'alignSelected'
   | 'setNudgePreview'
   | 'commitNudgePreview'
   | 'clearNudgePreview'
@@ -38,6 +40,7 @@ export function createInkSessionSelectProxy(
     getSelectedIds: () => getStore()?.getState().selectedIds ?? [],
     setSelectedIds: (ids) => getStore()?.setSelectedIds(ids),
     selectAll: () => getStore()?.selectAll(),
+    selectAllIncludingLocked: () => getStore()?.selectAllIncludingLocked(),
     deselectAll: () => getStore()?.setSelectedIds([]),
     deleteSelected: () => getStore()?.deleteSelected() ?? false,
     copySelected: () => getStore()?.copySelected() ?? false,
@@ -49,6 +52,7 @@ export function createInkSessionSelectProxy(
       getStore()?.selectNextInStack(direction)
     },
     moveSelectedBy: (dx, dy) => getStore()?.moveSelectedBy(dx, dy) ?? false,
+    alignSelected: (axis) => getStore()?.alignSelected(axis) ?? false,
     setNudgePreview: (dx, dy) => {
       getStore()?.setNudgePreview(dx, dy)
     },
@@ -105,6 +109,10 @@ export function createCompositeInkSessionSelectProxy(
       session.selectAll()
       forEachPage((h) => h.selectAll?.())
     },
+    selectAllIncludingLocked: () => {
+      session.selectAllIncludingLocked()
+      forEachPage((h) => h.selectAllIncludingLocked?.())
+    },
     deselectAll: () => {
       session.deselectAll()
       forEachPage((h) => h.deselectAll?.())
@@ -122,6 +130,13 @@ export function createCompositeInkSessionSelectProxy(
         if (h.moveSelectedBy?.(dx, dy)) moved = true
       })
       return moved
+    },
+    alignSelected: (axis) => {
+      let aligned = session.alignSelected(axis)
+      forEachPage((h) => {
+        if (h.alignSelected?.(axis)) aligned = true
+      })
+      return aligned
     },
     setNudgePreview: (dx, dy) => {
       session.setNudgePreview(dx, dy)

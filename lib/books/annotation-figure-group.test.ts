@@ -19,10 +19,16 @@ function pen(id: string, points: [number, number][], figureGroupId?: string): An
 }
 
 describe('annotation-figure-group', () => {
-  it('assignFigureGroupId tags selected pen/marker only', () => {
+  it('assignFigureGroupId tags selected pens only (never highlighter)', () => {
     const commands: AnnotationCommand[] = [
       pen('a', [[0.1, 0.1]]),
       pen('b', [[0.2, 0.2]]),
+      {
+        kind: 'stroke',
+        id: 'm',
+        tool: 'marker',
+        points: [[0.3, 0.3]],
+      },
       {
         kind: 'rect',
         id: 'r',
@@ -33,11 +39,16 @@ describe('annotation-figure-group', () => {
         strokeColor: '#000',
       },
     ]
-    const { commands: next, affectedIds } = assignFigureGroupId(commands, new Set(['a', 'b', 'r']), 'grp1')
+    const { commands: next, affectedIds } = assignFigureGroupId(
+      commands,
+      new Set(['a', 'b', 'm', 'r']),
+      'grp1',
+    )
     expect(affectedIds.sort()).toEqual(['a', 'b'])
     expect((next[0] as { figureGroupId?: string }).figureGroupId).toBe('grp1')
     expect((next[1] as { figureGroupId?: string }).figureGroupId).toBe('grp1')
     expect((next[2] as { figureGroupId?: string }).figureGroupId).toBeUndefined()
+    expect((next[3] as { figureGroupId?: string }).figureGroupId).toBeUndefined()
   })
 
   it('clearFigureGroupId removes group from selected strokes', () => {
@@ -51,7 +62,7 @@ describe('annotation-figure-group', () => {
     expect((next[1] as { figureGroupId?: string }).figureGroupId).toBe('grp1')
   })
 
-  it('shouldToggleSelectionToUngroup when all selected pen/marker strokes are grouped', () => {
+  it('shouldToggleSelectionToUngroup when all selected pen strokes are grouped', () => {
     const commands: AnnotationCommand[] = [
       pen('a', [[0.1, 0.1]], 'grp1'),
       pen('b', [[0.2, 0.2]]),

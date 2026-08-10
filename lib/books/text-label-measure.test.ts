@@ -8,9 +8,10 @@ import {
 } from './text-label-measure'
 import {
   TEXT_LABEL_LINE_HEIGHT_RATIO,
-  textLabelBlockHeightNorm,
+  textLabelLineHeightPx,
   textLabelVerticalPadNorm,
 } from './text-label-layout'
+import { textLabelStackHeightPx } from './text-label-field-layout'
 
 const widthPx = 800
 const heightPx = 600
@@ -28,6 +29,9 @@ function textCmd(overrides: Partial<TextAnnotationCommand> = {}): TextAnnotation
   }
 }
 
+/**
+ * @vitest-environment jsdom
+ */
 describe('text-label-measure', () => {
   it('tight bounds hug short text tighter than the legacy heuristic', () => {
     const cmd = textCmd({ text: 'Hi' })
@@ -76,6 +80,35 @@ describe('text-label-measure', () => {
     expect(box.y + box.h / 2).toBeCloseTo(0.5, 5)
   })
 
+  it('center textAlign keeps bbox left at stored x', () => {
+    const anchorX = 0.2
+    const left = measureTextLabelBounds(
+      textCmd({ x: anchorX, textAlign: 'left', text: 'Hello' }),
+      widthPx,
+      heightPx,
+    )
+    const center = measureTextLabelBounds(
+      textCmd({ x: anchorX, textAlign: 'center', text: 'Hello' }),
+      widthPx,
+      heightPx,
+    )
+    const right = measureTextLabelBounds(
+      textCmd({ x: anchorX, textAlign: 'right', text: 'Hello' }),
+      widthPx,
+      heightPx,
+    )
+    expect(left.w).toBeCloseTo(center.w, 5)
+    expect(center.x).toBeCloseTo(anchorX, 5)
+    expect(right.x).toBeCloseTo(anchorX, 5)
+    expect(left.x).toBeCloseTo(anchorX, 5)
+  })
+
+  it('heuristic bbox uses stored x as left edge', () => {
+    const cmd = textCmd({ x: 0.4, textAlign: 'center', text: 'Hello' })
+    const box = textCommandHeuristicBBox(cmd)
+    expect(box.x).toBeCloseTo(0.4, 5)
+  })
+
   it('line width scales with character count in Node fallback', () => {
     const fontSizePx = 24
     const one = measurePlainTextLineWidthPx('a', undefined, fontSizePx)
@@ -88,25 +121,24 @@ describe('text-label-measure', () => {
     const cmd = textCmd({ text: 'Hi' })
     const box = measureTextLabelBounds(cmd, widthPx, heightPx)
     const fontSizeNorm = cmd.fontSizeNorm
-    const expected =
-      textLabelBlockHeightNorm(fontSizeNorm, 1, heightPx)
+    const fontSizePx = Math.round(fontSizeNorm * heightPx)
+    const lineRowMinPx = textLabelLineHeightPx(fontSizePx)
+    const expected = textLabelStackHeightPx(1, lineRowMinPx, true, 'plain') / heightPx
     expect(box.h).toBeCloseTo(expected, 5)
-    expect(box.h).toBeGreaterThan(fontSizeNorm * TEXT_LABEL_LINE_HEIGHT_RATIO)
-    expect(box.h - fontSizeNorm * TEXT_LABEL_LINE_HEIGHT_RATIO).toBeCloseTo(
-      textLabelVerticalPadNorm(heightPx),
-      5,
-    )
+    const lineBlockNorm = lineRowMinPx / heightPx
+    expect(box.h).toBeGreaterThan(lineBlockNorm)
+    expect(box.h - lineBlockNorm).toBeCloseTo(textLabelVerticalPadNorm(heightPx), 5)
   })
 
   it('multiline height adds one line block per line plus vertical pad once', () => {
     const cmd = textCmd({ text: 'a\nb\nc' })
     const box = measureTextLabelBounds(cmd, widthPx, heightPx)
-    const expected =
-      textLabelBlockHeightNorm(cmd.fontSizeNorm, 3, heightPx)
+    const fontSizePx = Math.round(cmd.fontSizeNorm * heightPx)
+    const lineRowMinPx = textLabelLineHeightPx(fontSizePx)
+    const expected = textLabelStackHeightPx(3, lineRowMinPx, true, 'plain') / heightPx
     expect(box.h).toBeCloseTo(expected, 5)
-    expect(expected).toBeCloseTo(
-      cmd.fontSizeNorm * TEXT_LABEL_LINE_HEIGHT_RATIO * 3 + textLabelVerticalPadNorm(heightPx),
-      5,
+    expect(expected).toBeGreaterThan(
+      cmd.fontSizeNorm * TEXT_LABEL_LINE_HEIGHT_RATIO * 3,
     )
   })
 })

@@ -1,11 +1,17 @@
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import type { BookLessonPartRecord, BookLessonRecord } from '@/lib/books/types'
-import { computeStructureTagFromTitleAndIndex } from '@/lib/books/part-structure-tag'
+import { computeStructureTagsForParts } from '@/lib/books/part-structure-tag'
 import type { TocUnitDraft } from '@/lib/books/toc-import'
-import { formatLessonTitleWithNumber } from '@/lib/books/lesson-title'
+import { formatTocChunkTitle } from '@/lib/books/lesson-title'
 import { normalizeNotCountedPdfPages } from '@/lib/books/page-alignment'
 import { resolveGeminiApiKey } from '@/lib/gemini'
+import {
+  isTocExtractProfileId,
+  tocChunkLabelStyleForProfile,
+  tocExtractPromptForProfile,
+  type TocExtractProfileId,
+} from '@/lib/books/toc-extract-profile'
 
 const MODEL_CANDIDATES = [
   'gemini-2.5-flash',
@@ -17,44 +23,8 @@ const UNAVAILABLE_STATUS = 503
 const MAX_UNAVAILABLE_RETRIES_PER_MODEL = 2
 const RETRY_BACKOFF_MS = 2500
 
-const PROMPT = `You extract textbook TOC structure from images.
-
-Return only valid JSON with this shape:
-{
-  "units": [
-    {
-      "unitNumber": 1,
-      "title": "Good Citizens",
-      "lessons": [
-        {
-          "lessonNumber": 1,
-          "title": "Lesson 1",
-          "entries": [
-            { "title": "Vocabulary in Context", "startPrintedPage": 10 },
-            { "title": "Comprehension: Story Structure + Summarize", "startPrintedPage": 13 },
-            { "title": "A Fine, Fine School", "startPrintedPage": 14 }
-          ]
-        }
-      ],
-      "specialSections": [
-        { "title": "READING POWER", "startPrintedPage": 182 },
-        { "title": "Unit Wrap-Up", "startPrintedPage": 184 },
-        { "title": "Glossary", "startPrintedPage": null }
-      ]
-    }
-  ]
-}
-
-Rules:
-- Unit heading appears near top and each unit spans a 2-page TOC spread.
-- Lessons are indicated by red shield lesson markers.
-- Include only section rows that have dotted leaders to a page number, plus story/title rows with a page number.
-- Ignore rows without usable page numbers.
-- Keep exact visible order.
-- Include unit special sections outside lessons: READING POWER and Unit Wrap-Up.
-- If final unit has Glossary without number, set startPrintedPage null and include it anyway.
-- Never invent printed page numbers.
-`
+/** About the Illustrator + Respond to Text when TOC does not list them as separate rows. */
+export const LITERATURE_POST_STORY_TRAILING_PAGES = 2
 
 const imageSchema = z.object({
   pdfPage: z.number().int().min(1),
@@ -96,9 +66,13 @@ export type GeminiTocV2Result =
       ok: true
       drafts: TocUnitDraft[]
       lessonsByUnit: BookLessonRecord[][]
-      diagnostics: { model: string; notCountedPdfPages: number[] }
+      diagnostics: { model: string; notCountedPdfPages: number[]; profile: TocExtractProfileId }
     }
   | { ok: false; error: string; status?: number }
+
+export function normalizeTocExtractProfile(value: unknown): TocExtractProfileId {
+  return isTocExtractProfileId(value) ? value : 'journeys'
+}
 
 function parseJsonObject(raw: string): unknown {
   const trimmed = raw.trim()
@@ -119,6 +93,7 @@ async function callGemini(
   apiKey: string,
   model: string,
   userParts: unknown[],
+  systemPrompt: string,
 ): Promise<
   | { ok: true; text: string }
   | { ok: false; status: number; details?: string }
@@ -133,7 +108,7 @@ async function callGemini(
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          systemInstruction: { parts: [{ text: PROMPT }] },
+          systemInstruction: { parts: [{ text: systemPrompt }] },
           contents: [{ role: 'user', parts: userParts }],
           generationConfig: {
             temperature: 0.1,
@@ -176,23 +151,96 @@ async function callGemini(
   return { ok: true, text }
 }
 
+function isLiteratureStoryPartTag(tag: BookLessonPartRecord['structureTag']): boolean {
+  return tag === 'main_story' || tag === 'paired_story'
+}
+
+/**
+ * Fill missing part ends from next part / lesson end, then for Literature:
+ * when a story is followed by another story, trim LITERATURE_POST_STORY_TRAILING_PAGES
+ * and insert a synthetic "Respond to the Text" part in the gap.
+ * Do **not** trim or insert after the last story in the week (paired selection usually
+ * runs to the next week / lesson with no post-read pages after it).
+ * Skip when the next part is already post-read (TOC-bounded).
+ */
+export function applyLiteratureStoryEndTrims(lesson: BookLessonRecord): void {
+  const parts = lesson.parts
+  if (!parts?.length) return
+
+  for (let i = 0; i < parts.length; i++) {
+    const current = parts[i]
+    if (!current?.startPageHint) continue
+    const next = parts[i + 1]
+    if (current.endPageHint == null) {
+      if (next?.startPageHint) {
+        current.endPageHint = Math.max(current.startPageHint, next.startPageHint - 1)
+      } else if (typeof lesson.endPageHint === 'number') {
+        current.endPageHint = Math.max(current.startPageHint, lesson.endPageHint)
+      }
+    }
+  }
+
+  const nextParts: BookLessonPartRecord[] = []
+  for (let i = 0; i < parts.length; i++) {
+    const current = parts[i]!
+    const next = parts[i + 1]
+
+    if (
+      current.startPageHint != null &&
+      current.endPageHint != null &&
+      isLiteratureStoryPartTag(current.structureTag) &&
+      next != null &&
+      isLiteratureStoryPartTag(next.structureTag)
+    ) {
+      const originalEnd = current.endPageHint
+      const trimmedEnd = Math.max(
+        current.startPageHint,
+        originalEnd - LITERATURE_POST_STORY_TRAILING_PAGES,
+      )
+      current.endPageHint = trimmedEnd
+      nextParts.push(current)
+      if (trimmedEnd < originalEnd) {
+        nextParts.push({
+          id: `part-${randomUUID().slice(0, 8)}`,
+          title: 'Respond to the Text',
+          structureTag: 'your_turn',
+          startPageHint: trimmedEnd + 1,
+          endPageHint: originalEnd,
+          anchorSource: 'toc',
+          anchorConfidence: 'medium',
+        })
+      }
+      continue
+    }
+
+    nextParts.push(current)
+  }
+
+  lesson.parts = nextParts
+}
+
 function lessonFromAi(
   lesson: z.infer<typeof aiLessonSchema>,
+  profile: TocExtractProfileId,
 ): BookLessonRecord {
-  const parts: BookLessonPartRecord[] = lesson.entries.reduce<BookLessonPartRecord[]>((acc, entry, partIndex) => {
-    const startPrinted = entry.startPrintedPage ?? null
-    if (startPrinted == null) return acc
-    const title = entry.title.trim()
-    acc.push({
-      id: `part-${randomUUID().slice(0, 8)}`,
-      title,
-      structureTag: computeStructureTagFromTitleAndIndex({ title }, partIndex),
-      startPageHint: startPrinted,
-      anchorSource: 'toc',
-      anchorConfidence: 'high',
-    })
-    return acc
-  }, [])
+  const withStarts = lesson.entries.reduce<Array<{ title: string; startPageHint: number }>>(
+    (acc, entry) => {
+      const startPrinted = entry.startPrintedPage ?? null
+      if (startPrinted == null) return acc
+      acc.push({ title: entry.title.trim(), startPageHint: startPrinted })
+      return acc
+    },
+    [],
+  )
+  const tags = computeStructureTagsForParts(withStarts, profile)
+  const parts: BookLessonPartRecord[] = withStarts.map((entry, partIndex) => ({
+    id: `part-${randomUUID().slice(0, 8)}`,
+    title: entry.title,
+    structureTag: tags[partIndex]!,
+    startPageHint: entry.startPageHint,
+    anchorSource: 'toc',
+    anchorConfidence: 'high',
+  }))
 
   for (let i = 0; i < parts.length; i++) {
     const current = parts[i]
@@ -203,7 +251,11 @@ function lessonFromAi(
 
   const titleBase = lesson.title.trim()
   const lessonNumOneBased = Math.max(1, Math.floor(lesson.lessonNumber ?? 1))
-  const finalTitle = formatLessonTitleWithNumber(lessonNumOneBased, titleBase)
+  const finalTitle = formatTocChunkTitle(
+    lessonNumOneBased,
+    titleBase,
+    tocChunkLabelStyleForProfile(profile),
+  )
   const startPageHint = parts[0]?.startPageHint
   return {
     id: `lesson-${randomUUID().slice(0, 8)}`,
@@ -217,12 +269,13 @@ function lessonFromAi(
 
 export function normalizeTocV2ToDrafts(
   parsed: z.infer<typeof aiResponseSchema>,
+  profile: TocExtractProfileId = 'journeys',
 ): { drafts: TocUnitDraft[]; lessonsByUnit: BookLessonRecord[][] } {
   const drafts: TocUnitDraft[] = []
   const lessonsByUnit: BookLessonRecord[][] = []
   for (let unitIdx = 0; unitIdx < parsed.units.length; unitIdx++) {
     const unit = parsed.units[unitIdx]!
-    const lessons = unit.lessons.map((lesson) => lessonFromAi(lesson))
+    const lessons = unit.lessons.map((lesson) => lessonFromAi(lesson, profile))
 
     for (const special of unit.specialSections) {
       const specialStartPrinted = special.startPrintedPage ?? null
@@ -279,6 +332,20 @@ export function normalizeTocV2ToDrafts(
     }
   }
 
+  // Literature: week/unit ends must exist before we can attach Respond after the paired story.
+  if (profile === 'wonders_literature') {
+    for (let i = 0; i < lessonsByUnit.length; i++) {
+      const unitEnd = drafts[i]?.endPageHint
+      const lessons = lessonsByUnit[i] ?? []
+      for (const lesson of lessons) {
+        if (lesson.endPageHint == null && typeof unitEnd === 'number') {
+          lesson.endPageHint = Math.max(lesson.startPageHint ?? unitEnd, unitEnd)
+        }
+        applyLiteratureStoryEndTrims(lesson)
+      }
+    }
+  }
+
   return { drafts, lessonsByUnit }
 }
 
@@ -286,13 +353,18 @@ export async function extractTocWithGeminiV2(
   images: TocV2ImagePart[],
   totalPdfPages: number,
   notCountedPdfPagesInput: number[] = [],
+  profileInput: TocExtractProfileId | string = 'journeys',
 ): Promise<GeminiTocV2Result> {
   try {
+    const profile = normalizeTocExtractProfile(profileInput)
+    const systemPrompt = tocExtractPromptForProfile(profile)
     const key = await resolveGeminiApiKey()
     if (!key) return { ok: false, error: 'No GEMINI_API_KEY configured.', status: 503 }
     const notCountedPdfPages = normalizeNotCountedPdfPages(notCountedPdfPagesInput, totalPdfPages)
     const userParts: unknown[] = [
-      { text: `These are consecutive TOC images from one book PDF. totalPdfPages=${totalPdfPages}.` },
+      {
+        text: `These are consecutive TOC images from one book PDF. totalPdfPages=${totalPdfPages}. extractProfile=${profile}.`,
+      },
       { text: `Globally not counted PDF pages: ${notCountedPdfPages.join(', ') || '(none)'}` },
     ]
     for (const image of images) {
@@ -309,12 +381,16 @@ export async function extractTocWithGeminiV2(
     let lastErrorDetails = ''
     const failureMessages: string[] = []
     for (const model of MODEL_CANDIDATES) {
-      let result = await callGemini(key, model, userParts)
-      for (let retry = 0; retry < MAX_UNAVAILABLE_RETRIES_PER_MODEL && !result.ok && result.status === UNAVAILABLE_STATUS; retry++) {
+      let result = await callGemini(key, model, userParts, systemPrompt)
+      for (
+        let retry = 0;
+        retry < MAX_UNAVAILABLE_RETRIES_PER_MODEL && !result.ok && result.status === UNAVAILABLE_STATUS;
+        retry++
+      ) {
         const waitMs = RETRY_BACKOFF_MS * (retry + 1)
         console.warn(`Gemini model ${model} unavailable (503). Retrying in ${waitMs}ms...`)
         await sleep(waitMs)
-        result = await callGemini(key, model, userParts)
+        result = await callGemini(key, model, userParts, systemPrompt)
       }
       if (!result.ok) {
         lastStatus = result.status
@@ -326,7 +402,7 @@ export async function extractTocWithGeminiV2(
       try {
         const raw = parseJsonObject(result.text)
         const parsed = aiResponseSchema.parse(raw)
-        const normalized = normalizeTocV2ToDrafts(parsed)
+        const normalized = normalizeTocV2ToDrafts(parsed, profile)
         if (normalized.drafts.length === 0) {
           return { ok: false, error: 'No units were extracted from TOC.', status: 422 }
         }
@@ -334,7 +410,7 @@ export async function extractTocWithGeminiV2(
           ok: true,
           drafts: normalized.drafts,
           lessonsByUnit: normalized.lessonsByUnit,
-          diagnostics: { model, notCountedPdfPages },
+          diagnostics: { model, notCountedPdfPages, profile },
         }
       } catch {
         lastStatus = 422

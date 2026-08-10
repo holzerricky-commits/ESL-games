@@ -46,6 +46,65 @@ describe('ink-session-selection-display', () => {
     expect(chrome.showUnionOutline).toBe(true)
   })
 
+  it('hides chrome for locked-only selection', () => {
+    const lockedRect: AnnotationCommand = {
+      kind: 'rect',
+      id: 'locked',
+      x: 0.1,
+      y: 0.1,
+      w: 0.2,
+      h: 0.15,
+      strokeColor: '#111827',
+      locked: true,
+    }
+    const chrome = computeInkSessionSelectionChrome({
+      displayCommands: [lockedRect],
+      selectedIds: ['locked'],
+      widthPx: 800,
+      heightPx: 600,
+      enabled: true,
+      editingId: null,
+      marqueeRect: null,
+      selectRotationLiveDelta: null,
+      selectRotationStartFrame: null,
+      rotateCommitFrame: null,
+      selectScaleLiveFrame: null,
+      hoverTargetIds: [],
+    })
+    expect(chrome.selectionOutlineFramesList).toHaveLength(0)
+    expect(chrome.hoverOutlineFramesList).toHaveLength(0)
+    expect(chrome.showScaleHandles).toBe(false)
+    expect(chrome.showRotationHandle).toBe(false)
+  })
+
+  it('skips hover outline for locked targets', () => {
+    const lockedRect: AnnotationCommand = {
+      kind: 'rect',
+      id: 'locked',
+      x: 0.1,
+      y: 0.1,
+      w: 0.2,
+      h: 0.15,
+      strokeColor: '#111827',
+      locked: true,
+    }
+    const chrome = computeInkSessionSelectionChrome({
+      displayCommands: [lockedRect],
+      selectedIds: [],
+      widthPx: 800,
+      heightPx: 600,
+      enabled: true,
+      editingId: null,
+      marqueeRect: null,
+      selectRotationLiveDelta: null,
+      selectRotationStartFrame: null,
+      rotateCommitFrame: null,
+      selectScaleLiveFrame: null,
+      hoverTargetIds: ['locked'],
+    })
+    expect(chrome.hoverOutlineFramesList).toHaveLength(0)
+  })
+
   it('applyInkSessionSelectionLivePreview translates on drag live', () => {
     const next = applyInkSessionSelectionLivePreview(
       commands,

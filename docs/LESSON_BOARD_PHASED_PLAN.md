@@ -4,6 +4,8 @@ Last updated: 2026-06-03
 
 **Product source of truth:** `LESSON_BOARD_PRODUCT.md`
 
+**Related (finding boards / book identity):** `LESSON_BOARD_NAV_PRODUCT.md` · `LESSON_BOARD_NAV_PHASED_PLAN.md` — separate track; do not mix into these page/dock phases unless a phase explicitly depends on it.
+
 **How to use this doc:** Implement **one phase at a time**. After each phase, **you test** in the app, fix issues, then start the next phase. Do not skip phases unless a prerequisite is already done and checked.
 
 **Current codebase baseline (pre–Phase 1):**
@@ -268,7 +270,7 @@ Phase 0 (docs)
 - Zoom/pan inside Standard page (portrait focus without new Wide page).
 - Auto page at bottom (explicitly rejected).
 - Merge with `NOTEBOOK_REBUILD_PHASES` class log entries.
-- Multi-session board search across lessons.
+- Multi-session board search across lessons — see **`LESSON_BOARD_NAV_PHASED_PLAN.md`** instead.
 - Page reorder drag-and-drop in TOC.
 
 ---

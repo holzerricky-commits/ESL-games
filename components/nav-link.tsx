@@ -18,17 +18,16 @@ export function NavLink({ item, collapsed = false }: NavLinkProps) {
   return (
     <Link
       href={item.href}
+      data-active={isActive}
       className={cn(
-        'flex items-center rounded-xl border px-3 py-2.5 text-sm font-semibold transition-all',
-        collapsed ? 'justify-center gap-0' : 'gap-3',
-        isActive
-          ? 'border-[var(--brand-blue)] bg-[var(--brand-blue)]/15 text-foreground shadow-[0_0_14px_rgba(59,130,246,0.2)]'
-          : 'border-transparent text-muted-foreground hover:border-[var(--border)] hover:bg-[var(--surface-3)] hover:text-foreground',
+        'chrome-nav-pill',
+        collapsed ? 'h-10 w-10 justify-center gap-0 px-0' : 'gap-3 px-3.5 py-2.5',
       )}
       title={collapsed ? item.label : undefined}
+      aria-current={isActive ? 'page' : undefined}
     >
-      <Icon size={16} />
-      {!collapsed ? <span>{item.label}</span> : null}
+      <Icon size={collapsed ? 18 : 17} strokeWidth={isActive ? 2.25 : 1.75} />
+      {!collapsed ? <span className="truncate">{item.label}</span> : null}
     </Link>
   )
 }

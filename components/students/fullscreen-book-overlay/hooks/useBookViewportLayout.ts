@@ -6,8 +6,9 @@ import type { BookLibraryPayload } from '@/lib/books/types'
 interface UseBookViewportLayoutArgs {
   open: boolean
   pageAspectRatio: number
-  isLessonPaperOpen: boolean
   spreadResizeScaleEnabled: boolean
+  /** When false, size the spread to fill the page area without hardcover chrome reserves. */
+  includeBookFrame?: boolean
   selectedBookId: string | null
   selectedUnitId: string | null
   selectedUnit: BookLibraryPayload['books'][number]['units'][number] | null
@@ -21,8 +22,8 @@ interface UseBookViewportLayoutArgs {
 export function useBookViewportLayout({
   open,
   pageAspectRatio,
-  isLessonPaperOpen,
   spreadResizeScaleEnabled,
+  includeBookFrame = true,
   selectedBookId,
   selectedUnitId,
   selectedUnit,
@@ -58,14 +59,20 @@ export function useBookViewportLayout({
       lastDevicePixelRatio = nextDpr
 
       const minWidth = 1
-      const baseKey = `${selectedBookId ?? ''}|${selectedUnitId ?? ''}|lp:${isLessonPaperOpen ? 1 : 0}`
-      const nextWidth = computeSpreadPageWidth(bounds.width, bounds.height, pageAspectRatio, minWidth)
+      const baseKey = `${selectedBookId ?? ''}|${selectedUnitId ?? ''}`
+      const nextWidth = computeSpreadPageWidth(
+        bounds.width,
+        bounds.height,
+        pageAspectRatio,
+        minWidth,
+        includeBookFrame,
+      )
 
       setTargetSpreadPageWidth(nextWidth)
       if (spreadRenderBaseKeyRef.current !== baseKey) {
-        setSpreadPageWidth(nextWidth)
         spreadRenderBaseKeyRef.current = baseKey
       }
+      setSpreadPageWidth(nextWidth)
     }
     syncPageWidth()
     const observer = new ResizeObserver(syncPageWidth)
@@ -76,8 +83,8 @@ export function useBookViewportLayout({
   }, [
     open,
     pageAspectRatio,
-    isLessonPaperOpen,
     spreadResizeScaleEnabled,
+    includeBookFrame,
     selectedUnit,
     selectedBookId,
     selectedUnitId,

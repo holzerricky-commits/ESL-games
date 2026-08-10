@@ -15,16 +15,80 @@ import {
   setCachedStudentProgress,
   setCachedStudents,
 } from './local-data/student-records-client'
+import {
+  getChallengeDataDiskCache,
+  isChallengeDataDiskActive,
+  QUIZZES_KEY as CHALLENGE_QUIZZES_KEY,
+  RESULTS_KEY as CHALLENGE_RESULTS_KEY,
+  setQuizzesOnDiskCache,
+  setResultsOnDiskCache,
+} from './local-data/challenge-data-disk-client'
+import { removeLessonBoardLinksForStudent } from './local-data/lesson-board-links-disk-client'
+import { removeSavedWordsForStudent } from './local-data/saved-words-disk-client'
 import { resolveStudentAvatarUrl } from './students/student-avatar-url'
 import { normalizeStudentKey } from './students/identity'
+import { clearMapBookOverlayOpenSession } from './students/map-book-overlay-session'
 import { clearMapViewportSession } from './students/map-viewport-session'
 import { normalizeQuizQuestions } from './quiz-difficulty'
 
-const QUIZZES_KEY = 'esl_quizzes'
-const RESULTS_KEY = 'esl_student_results'
+const QUIZZES_KEY = CHALLENGE_QUIZZES_KEY
+const RESULTS_KEY = CHALLENGE_RESULTS_KEY
 const ANIMATION_SETTINGS_KEY = 'esl_animation_settings'
 const STUDENT_PROGRESS_KEY = 'esl_student_progress'
 const STUDENTS_KEY = 'esl_students'
+
+function normalizeQuizList(quizzes: Quiz[]): Quiz[] {
+  return quizzes.map((quiz) => {
+    const normalized = normalizeQuizQuestions(quiz)
+    const poolLen = Math.max(
+      normalized.questionsByTier?.easy?.length ?? 0,
+      normalized.questionsByTier?.mid?.length ?? 0,
+      normalized.questionsByTier?.hard?.length ?? 0,
+      quiz.questions?.length ?? 0,
+    )
+    return {
+      ...normalized,
+      challengeQuestionCount: normalizeChallengeQuestionCount(
+        (quiz as Partial<Quiz>).challengeQuestionCount,
+        poolLen || 1,
+      ),
+    }
+  })
+}
+
+function writeQuizzes(quizzes: Quiz[]): void {
+  if (isChallengeDataDiskActive()) {
+    setQuizzesOnDiskCache(quizzes)
+    return
+  }
+  try {
+    localStorage.setItem(QUIZZES_KEY, JSON.stringify(quizzes))
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'QuotaExceededError') {
+      throw new Error(
+        'Browser storage is full. Reload the page while running npm run dev locally to move data to disk.',
+      )
+    }
+    throw err
+  }
+}
+
+function writeResults(results: StudentResult[]): void {
+  if (isChallengeDataDiskActive()) {
+    setResultsOnDiskCache(results)
+    return
+  }
+  try {
+    localStorage.setItem(RESULTS_KEY, JSON.stringify(results))
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'QuotaExceededError') {
+      throw new Error(
+        'Browser storage is full. Reload the page while running npm run dev locally to move data to disk.',
+      )
+    }
+    throw err
+  }
+}
 const DEFAULT_CHALLENGE_QUESTION_COUNT = 6
 
 /** Removed feature: `esl_book_page_notes_v1` — strip one student when deleting accounts. */
@@ -80,24 +144,13 @@ function normalizeAnimationSettings(settings: AnimationSettings): AnimationSetti
 export function getQuizzes(): Quiz[] {
   if (typeof window === 'undefined') return []
   try {
+    if (isChallengeDataDiskActive()) {
+      const disk = getChallengeDataDiskCache()
+      return normalizeQuizList((disk?.quizzes ?? []) as Quiz[])
+    }
     const raw = localStorage.getItem(QUIZZES_KEY)
     const quizzes = raw ? (JSON.parse(raw) as Quiz[]) : []
-    return quizzes.map((quiz) => {
-      const normalized = normalizeQuizQuestions(quiz)
-      const poolLen = Math.max(
-        normalized.questionsByTier?.easy?.length ?? 0,
-        normalized.questionsByTier?.mid?.length ?? 0,
-        normalized.questionsByTier?.hard?.length ?? 0,
-        quiz.questions?.length ?? 0,
-      )
-      return {
-        ...normalized,
-        challengeQuestionCount: normalizeChallengeQuestionCount(
-          (quiz as Partial<Quiz>).challengeQuestionCount,
-          poolLen || 1,
-        ),
-      }
-    })
+    return normalizeQuizList(quizzes)
   } catch {
     return []
   }
@@ -111,17 +164,21 @@ export function saveQuiz(quiz: Quiz): void {
   } else {
     quizzes.push(quiz)
   }
-  localStorage.setItem(QUIZZES_KEY, JSON.stringify(quizzes))
+  writeQuizzes(quizzes)
 }
 
 export function deleteQuiz(id: string): void {
   const quizzes = getQuizzes().filter((q) => q.id !== id)
-  localStorage.setItem(QUIZZES_KEY, JSON.stringify(quizzes))
+  writeQuizzes(quizzes)
 }
 
 export function getStudentResults(): StudentResult[] {
   if (typeof window === 'undefined') return []
   try {
+    if (isChallengeDataDiskActive()) {
+      const disk = getChallengeDataDiskCache()
+      return Array.isArray(disk?.results) ? (disk.results as StudentResult[]) : []
+    }
     const raw = localStorage.getItem(RESULTS_KEY)
     return raw ? JSON.parse(raw) : []
   } catch {
@@ -150,7 +207,7 @@ export function getKnownStudentSummaries(): KnownStudentSummary[] {
 export function saveStudentResult(result: StudentResult): void {
   const results = getStudentResults()
   results.push(result)
-  localStorage.setItem(RESULTS_KEY, JSON.stringify(results))
+  writeResults(results)
 }
 
 function getStudentsFromLocalStorage(): StudentRecord[] {
@@ -316,13 +373,16 @@ export function removeStudentFromBrowserStorage(studentId: string): { ok: true; 
   const results = getStudentResults()
   const nextResults = results.filter((r) => normalizeStudentKey(r.studentName) !== key)
   if (nextResults.length !== results.length) {
-    localStorage.setItem(RESULTS_KEY, JSON.stringify(nextResults))
+    writeResults(nextResults)
   }
 
   removeAnnotationsForStudent(studentId)
   removeStudentAnnotationToolPrefs(studentId)
+  removeSavedWordsForStudent(studentId)
+  removeLessonBoardLinksForStudent(studentId)
   removeLegacyBookPageNotesForStudent(studentId)
   clearMapViewportSession(studentId)
+  clearMapBookOverlayOpenSession(studentId)
 
   return { ok: true, name: record.name }
 }

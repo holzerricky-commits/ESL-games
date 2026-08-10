@@ -1,7 +1,5 @@
 import type { TextAnnotationCommand } from '@/lib/books/annotation-command-types'
 import { measureTextLabelBounds, type NormRect } from '@/lib/books/text-label-measure'
-import { TEXT_LABEL_PLACEHOLDER } from '@/lib/books/text-tool-ux'
-
 /** Which chrome surface is asking for bounds — same measure rules, different empty-text policy. */
 export type TextLabelChromeMode = 'hover' | 'edit' | 'select'
 
@@ -9,6 +7,9 @@ export type TextLabelChromeBoundsOpts = {
   mode?: TextLabelChromeMode
   /** Live draft while the text tool is editing (spread/page DOM layer). */
   liveText?: string | null
+  /** Match focused-field editing layout (explicit newlines, unwrapped width). */
+  growOnly?: boolean
+  latchedMaxWidth?: boolean
 }
 
 /**
@@ -27,12 +28,17 @@ export function textLabelChromeBounds(
   if (mode === 'edit') {
     const textCmd =
       liveText != null ? ({ ...cmd, text: liveText } as TextAnnotationCommand) : cmd
-    const measureText = (liveText ?? textCmd.text).trim() || TEXT_LABEL_PLACEHOLDER
+    const raw = liveText ?? textCmd.text
+    // Caret-sized when empty — no placeholder inflates the edit box.
+    const measureText = raw
     const rect = measureTextLabelBounds(textCmd, widthPx, heightPx, {
       mode: 'tight',
       textOverride: measureText,
+      growOnly: opts?.growOnly ?? true,
+      latchedMaxWidth: opts?.latchedMaxWidth,
     })
-    return rect.w > 0 && rect.h > 0 ? rect : null
+    if (rect.w <= 0 || rect.h <= 0) return null
+    return rect
   }
 
   if (!cmd.text.trim()) return null

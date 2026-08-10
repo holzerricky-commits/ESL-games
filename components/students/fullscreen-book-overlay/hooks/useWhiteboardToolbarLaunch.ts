@@ -1,103 +1,125 @@
-import type { CSSProperties, RefObject } from 'react'
-import { useCallback, useLayoutEffect, useRef, useState } from 'react'
-import type { WhiteboardToolbarFlight } from '../sections/WhiteboardToolbarLaunchOverlay'
+import type { CSSProperties, TransitionEvent } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 export type WhiteboardToolbarLaunchApi = {
   playEnter: (openBoard: () => void) => void
   playExit: (closeBoard: () => void) => void
 }
 
-interface UseWhiteboardToolbarLaunchArgs {
-  surfaceStyle: Pick<CSSProperties, 'backgroundColor' | 'backgroundImage' | 'backgroundSize'>
+const APPEAR_MS = 200
+const APPEAR_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'
+
+type AppearPhase = 'idle' | 'enter-start' | 'shown' | 'exiting'
+
+function prefersReducedMotion(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 }
 
-function measureFlight(
-  buttonRef: RefObject<HTMLButtonElement | null>,
-  panelAnchorRef: RefObject<HTMLDivElement | null>,
-): { button: DOMRect; panel: DOMRect } | null {
-  const button = buttonRef.current?.getBoundingClientRect()
-  const panel = panelAnchorRef.current?.getBoundingClientRect()
-  if (!button || !panel || panel.width < 8 || panel.height < 8) return null
-  return { button, panel }
-}
-
-export function useWhiteboardToolbarLaunch({ surfaceStyle }: UseWhiteboardToolbarLaunchArgs) {
-  const toolbarButtonRef = useRef<HTMLButtonElement | null>(null)
+/**
+ * In-place fade + slight scale for lesson board open/close.
+ * No flight from the toolbox — the board appears where it lives on the book.
+ */
+export function useWhiteboardToolbarLaunch() {
   const panelAnchorRef = useRef<HTMLDivElement | null>(null)
-  const [flight, setFlight] = useState<WhiteboardToolbarFlight | null>(null)
-  const [panelObscured, setPanelObscured] = useState(false)
-  const [enterMeasureGen, setEnterMeasureGen] = useState(0)
+  const [phase, setPhase] = useState<AppearPhase>('idle')
   const pendingExitRef = useRef<(() => void) | null>(null)
+  const enterRafRef = useRef<number | null>(null)
 
-  const clearFlight = useCallback(() => {
-    setFlight(null)
-    setPanelObscured(false)
-    pendingExitRef.current = null
+  const clearEnterRaf = useCallback(() => {
+    if (enterRafRef.current != null) {
+      cancelAnimationFrame(enterRafRef.current)
+      enterRafRef.current = null
+    }
   }, [])
 
-  const playEnter = useCallback((openBoard: () => void) => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  const playEnter = useCallback(
+    (openBoard: () => void) => {
+      clearEnterRaf()
+      pendingExitRef.current = null
+
+      if (prefersReducedMotion()) {
+        setPhase('shown')
+        openBoard()
+        return
+      }
+
+      setPhase('enter-start')
       openBoard()
-      return
-    }
-    setPanelObscured(true)
-    openBoard()
-    setEnterMeasureGen((n) => n + 1)
-  }, [])
-
-  useLayoutEffect(() => {
-    if (enterMeasureGen === 0) return
-
-    const rects = measureFlight(toolbarButtonRef, panelAnchorRef)
-    if (!rects) {
-      setPanelObscured(false)
-      return
-    }
-    setFlight({ mode: 'enter', ...rects })
-  }, [enterMeasureGen])
+      enterRafRef.current = requestAnimationFrame(() => {
+        enterRafRef.current = requestAnimationFrame(() => {
+          enterRafRef.current = null
+          setPhase('shown')
+        })
+      })
+    },
+    [clearEnterRaf],
+  )
 
   const playExit = useCallback(
     (closeBoard: () => void) => {
-      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      clearEnterRaf()
+
+      if (prefersReducedMotion()) {
+        pendingExitRef.current = null
+        setPhase('idle')
         closeBoard()
         return
       }
-      const rects = measureFlight(toolbarButtonRef, panelAnchorRef)
-      if (!rects) {
-        closeBoard()
-        return
-      }
+
       pendingExitRef.current = closeBoard
-      setPanelObscured(true)
-      setFlight({ mode: 'exit', ...rects })
+      setPhase('exiting')
     },
-    [],
+    [clearEnterRaf],
   )
 
-  const onFlightComplete = useCallback(() => {
-    const mode = flight?.mode
-    const finish = () => {
-      if (mode === 'exit' && pendingExitRef.current) {
-        pendingExitRef.current()
-        pendingExitRef.current = null
-      }
-      clearFlight()
-    }
-    // Let the real panel layout ink once before we hide the flight clone (enter only).
-    if (mode === 'enter') {
-      requestAnimationFrame(() => requestAnimationFrame(finish))
-      return
-    }
+  const finishExit = useCallback(() => {
+    const finish = pendingExitRef.current
+    if (!finish) return
+    pendingExitRef.current = null
+    setPhase('idle')
     finish()
-  }, [clearFlight, flight?.mode])
+  }, [])
+
+  useEffect(() => {
+    if (phase !== 'exiting') return
+    const id = window.setTimeout(finishExit, APPEAR_MS + 50)
+    return () => window.clearTimeout(id)
+  }, [finishExit, phase])
+
+  const onPanelTransitionEnd = useCallback(
+    (event: TransitionEvent<HTMLElement>) => {
+      if (event.target !== event.currentTarget) return
+      if (event.propertyName !== 'opacity' && event.propertyName !== 'transform') return
+      if (phase !== 'exiting') return
+      finishExit()
+    },
+    [finishExit, phase],
+  )
+
+  const isAnimatingIn = phase === 'enter-start'
+  const isAnimatingOut = phase === 'exiting'
+  const isHiddenVisual = phase === 'enter-start' || phase === 'exiting'
+
+  const panelAppearStyle: CSSProperties | undefined =
+    phase === 'idle'
+      ? undefined
+      : {
+          opacity: isHiddenVisual ? 0 : 1,
+          transform: isHiddenVisual ? 'scale(0.96)' : 'scale(1)',
+          transformOrigin: 'center center',
+          transition:
+            phase === 'enter-start'
+              ? 'none'
+              : `opacity ${APPEAR_MS}ms ${APPEAR_EASE}, transform ${APPEAR_MS}ms ${APPEAR_EASE}`,
+          willChange: isAnimatingIn || isAnimatingOut ? 'opacity, transform' : undefined,
+        }
 
   return {
-    toolbarButtonRef,
     panelAnchorRef,
-    flight,
-    panelObscured,
+    panelAppearStyle,
+    panelAppearBlocking: isHiddenVisual,
     playEnter,
     playExit,
-    onFlightComplete,
+    onPanelTransitionEnd,
   }
 }

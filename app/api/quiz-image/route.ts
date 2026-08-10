@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { buildGifSearchQuery, buildStaticSearchQuery } from '@/lib/quiz-image-queries'
 import {
+  fetchPixabayHits,
+  normalizeComparableImageUrl,
+  scoreAndMergePixabayHits,
+  variantHash,
+} from '@/lib/quiz-image-pixabay'
+import {
   applyStyleToGifSearchString,
   applyStyleToStaticBaseQuery,
   buildStaticFallbackQueries,
@@ -9,20 +15,11 @@ import {
   styleMinScoreForRetry,
   type ImageStyleKey,
 } from '@/lib/quiz-image-style'
-import { scoreGifMetadata, scoreTextRelevance } from '@/lib/quiz-image-relevance'
+import { scoreGifMetadata } from '@/lib/quiz-image-relevance'
 
 const IMAGE_CACHE_TTL_MS = 30 * 60_000
 const IMAGE_CACHE_MAX_ENTRIES = 300
 const imageUrlCache = new Map<string, { expires: number; url: string }>()
-
-/** Stable hash for lock/page offsets from variant string. */
-function variantHash(s: string): number {
-  let h = 0
-  for (let i = 0; i < s.length; i += 1) {
-    h = (Math.imul(31, h) + s.charCodeAt(i)) | 0
-  }
-  return Math.abs(h)
-}
 
 function buildImageCacheKey(
   query: string,
@@ -37,19 +34,6 @@ function buildImageCacheKey(
   const v = variant.trim().slice(0, 64)
   const pPart = prevComparable ? `|p${variantHash(prevComparable)}` : ''
   return `${mediaType}|${query.toLowerCase().trim()}|${v}${sqPart}|${styleKey}${pPart}`
-}
-
-/** Compare final image URLs (strip query) so we can skip the previous hit when style changes. */
-function normalizeComparableImageUrl(raw: string): string {
-  const t = raw.trim()
-  if (!t) return ''
-  if (t.startsWith('data:')) return t.slice(0, 240)
-  try {
-    const u = new URL(t)
-    return `${u.hostname.toLowerCase()}${(u.pathname || '/').replace(/\/$/, '') || '/'}`
-  } catch {
-    return t.toLowerCase().slice(0, 320)
-  }
 }
 
 type ScoredUrl = { url: string; score: number }
@@ -191,7 +175,6 @@ function minimumGifScoreFor(word: string): number {
 const GIF_SCORE_HARD_REJECT = -18
 
 const GIPHY_FETCH_TIMEOUT_MS = 15_000
-const STATIC_FETCH_TIMEOUT_MS = 15_000
 
 type GiphyImageSet = {
   fixed_height?: { url?: string }
@@ -414,24 +397,14 @@ export async function GET(req: NextRequest) {
 
       for (let qv = 0; qv < maxPxVariants; qv += 1) {
         const searchQuery = applyStyleToStaticBaseQuery(baseStatic, styleKey, v, qv)
-        const pixabayUrl =
-          `https://pixabay.com/api/?key=${encodeURIComponent(pixabayApiKey)}` +
-          `&q=${encodeURIComponent(searchQuery)}` +
-          `&image_type=${encodeURIComponent(pxImageType)}&safesearch=true&orientation=horizontal&per_page=18`
-        const pxRes = await fetch(pixabayUrl, {
-          signal: AbortSignal.timeout(STATIC_FETCH_TIMEOUT_MS),
+        const hits = await fetchPixabayHits(pixabayApiKey, searchQuery, {
+          imageType: pxImageType,
+          perPage: 18,
         })
-        if (!pxRes.ok) continue
-        const pxData = (await pxRes.json()) as {
-          hits?: Array<{ tags?: string; largeImageURL?: string; webformatURL?: string }>
-        }
         let bestPx: { url: string; score: number } | null = null
-        for (const hit of pxData?.hits ?? []) {
-          const pxImageUrl = hit.largeImageURL || hit.webformatURL
-          if (!pxImageUrl) continue
-          const s = scoreTextRelevance(q, hit.tags ?? '', styleKey)
-          mergeScoredCandidate(pxCandidates, pxImageUrl, s)
-          if (!bestPx || s > bestPx.score) bestPx = { url: pxImageUrl, score: s }
+        for (const scored of scoreAndMergePixabayHits(q, hits, styleKey)) {
+          mergeScoredCandidate(pxCandidates, scored.fullUrl, scored.score)
+          if (!bestPx || scored.score > bestPx.score) bestPx = { url: scored.fullUrl, score: scored.score }
         }
         if (scoreFloor == null) break
         if (bestPx && bestPx.score >= scoreFloor) break
@@ -439,22 +412,12 @@ export async function GET(req: NextRequest) {
       if (pxCandidates.size === 0) {
         const fallbacks = buildStaticFallbackQueries(q, baseStatic)
         for (const fq of fallbacks) {
-          const pixabayUrl =
-            `https://pixabay.com/api/?key=${encodeURIComponent(pixabayApiKey)}` +
-            `&q=${encodeURIComponent(fq)}` +
-            `&image_type=all&safesearch=true&orientation=horizontal&per_page=18`
-          const pxRes = await fetch(pixabayUrl, {
-            signal: AbortSignal.timeout(STATIC_FETCH_TIMEOUT_MS),
+          const hits = await fetchPixabayHits(pixabayApiKey, fq, {
+            imageType: 'all',
+            perPage: 18,
           })
-          if (!pxRes.ok) continue
-          const pxData = (await pxRes.json()) as {
-            hits?: Array<{ tags?: string; largeImageURL?: string; webformatURL?: string }>
-          }
-          for (const hit of pxData?.hits ?? []) {
-            const pxImageUrl = hit.largeImageURL || hit.webformatURL
-            if (!pxImageUrl) continue
-            const s = scoreTextRelevance(q, hit.tags ?? '', styleKey)
-            mergeScoredCandidate(pxCandidates, pxImageUrl, s)
+          for (const scored of scoreAndMergePixabayHits(q, hits, styleKey)) {
+            mergeScoredCandidate(pxCandidates, scored.fullUrl, scored.score)
           }
           if (pxCandidates.size > 0) break
         }

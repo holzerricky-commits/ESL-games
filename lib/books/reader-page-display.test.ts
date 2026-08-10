@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   isReaderPageSharpReady,
   readerPageHasDrawablePixelsFromLayers,
+  resolveReaderPageLayerVisibility,
+  resolveReaderPageShowSharpCache,
   shouldShowReaderPagePlaceholder,
 } from '@/lib/books/reader-page-display'
 
@@ -30,6 +32,90 @@ describe('shouldShowReaderPagePlaceholder', () => {
     expect(shouldShowReaderPagePlaceholder({ sharpReady: false, placeholder })).toBe(true)
     expect(shouldShowReaderPagePlaceholder({ sharpReady: true, placeholder })).toBe(false)
     expect(shouldShowReaderPagePlaceholder({ sharpReady: false, placeholder: null })).toBe(false)
+  })
+})
+
+describe('resolveReaderPageShowSharpCache', () => {
+  const bitmap = {} as ImageBitmap
+
+  it('hides cache once live PDF is ready in primary mode', () => {
+    expect(
+      resolveReaderPageShowSharpCache({
+        livePdfPrimaryEnabled: true,
+        cacheBitmap: bitmap,
+        pdfDisplayReady: true,
+        preferSharpCacheOverPdf: true,
+      }),
+    ).toBe(false)
+  })
+
+  it('shows cache while live PDF loads in primary mode', () => {
+    expect(
+      resolveReaderPageShowSharpCache({
+        livePdfPrimaryEnabled: true,
+        cacheBitmap: bitmap,
+        pdfDisplayReady: false,
+        preferSharpCacheOverPdf: false,
+      }),
+    ).toBe(true)
+  })
+
+  it('keeps zoomed cache over live PDF in legacy cache-first mode', () => {
+    expect(
+      resolveReaderPageShowSharpCache({
+        livePdfPrimaryEnabled: false,
+        cacheBitmap: bitmap,
+        pdfDisplayReady: true,
+        preferSharpCacheOverPdf: true,
+      }),
+    ).toBe(true)
+  })
+})
+
+describe('resolveReaderPageLayerVisibility', () => {
+  it('keeps sharp cache visible when text select is active', () => {
+    expect(
+      resolveReaderPageLayerVisibility({
+        bookTextSelectActive: true,
+        pageHasSelectableText: true,
+        showSharpCache: true,
+      }),
+    ).toEqual({
+      pdfTextLayerActive: true,
+      pdfTextOverCache: true,
+      pdfHiddenBehindCache: false,
+      showSharpCacheLayer: true,
+    })
+  })
+
+  it('hides PDF wrapper behind cache when text select is off', () => {
+    expect(
+      resolveReaderPageLayerVisibility({
+        bookTextSelectActive: false,
+        pageHasSelectableText: true,
+        showSharpCache: true,
+      }),
+    ).toEqual({
+      pdfTextLayerActive: false,
+      pdfTextOverCache: false,
+      pdfHiddenBehindCache: true,
+      showSharpCacheLayer: true,
+    })
+  })
+
+  it('shows live PDF when cache handoff completed', () => {
+    expect(
+      resolveReaderPageLayerVisibility({
+        bookTextSelectActive: true,
+        pageHasSelectableText: true,
+        showSharpCache: false,
+      }),
+    ).toEqual({
+      pdfTextLayerActive: true,
+      pdfTextOverCache: false,
+      pdfHiddenBehindCache: false,
+      showSharpCacheLayer: false,
+    })
   })
 })
 

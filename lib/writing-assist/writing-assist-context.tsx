@@ -13,10 +13,10 @@ import {
 import { getSpellEngine, type SpellEngine } from '@/lib/writing-assist/spell-engine'
 import {
   buildSessionBigrams,
+  GHOST_MIN_PARTIAL_LENGTH,
   getPartialWordAtCaret,
   getPreviousWord,
   getSecondPreviousWord,
-  isSentenceStart,
   suggestNextWords,
   type GhostSuggestion,
 } from '@/lib/writing-assist/ghost-complete'
@@ -156,7 +156,7 @@ export function WritingAssistProvider({
       const prev2 = getSecondPreviousWord(text, caret)
       setGhostPartial(partial)
 
-      if (!prev && !partial && !isSentenceStart(text, caret, partial)) {
+      if (partial.length < GHOST_MIN_PARTIAL_LENGTH) {
         setGhostCandidates([])
         setGhostIndex(0)
         return

@@ -16,27 +16,34 @@ export function writableStickerIcon(variant: WritableStickerVariant): ReactNode 
       </svg>
     )
   }
-  if (variant === 'speech') {
+  if (variant === 'caption') {
     return (
       <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden className={iconCls}>
-        <rect x="2" y="2.5" width="14" height="8" rx="3" fill="#ffffff" stroke={stroke} strokeWidth="1.2" />
-        <path d="M7 10.5 V13.5 L10 10.5 Z" fill="#ffffff" stroke={stroke} strokeWidth="1.2" strokeLinejoin="round" />
+        <rect x="2" y="5" width="14" height="7" rx="1.5" fill="#1e293b" stroke="none" />
+        <path d="M5 8.5 H13" stroke="#f8fafc" strokeWidth="1.2" strokeLinecap="round" />
       </svg>
     )
   }
-  if (variant === 'thought') {
+  if (variant === 'speech') {
     return (
       <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden className={iconCls}>
-        <ellipse cx="9" cy="7" rx="6.5" ry="4.2" fill="#ffffff" stroke={stroke} strokeWidth="1.2" strokeDasharray="2.5 1.5" />
-        <circle cx="6.5" cy="13.5" r="1.4" fill="#ffffff" stroke={stroke} strokeWidth="1" />
-        <circle cx="9.5" cy="15" r="0.9" fill="#ffffff" stroke={stroke} strokeWidth="1" />
+        <rect x="3" y="3" width="12" height="8" fill="#ffffff" stroke={stroke} strokeWidth="0.9" />
+        <path
+          d="M5 11 L5 15 L9 11 Z"
+          fill="#ffffff"
+          stroke={stroke}
+          strokeWidth="0.9"
+          strokeLinejoin="round"
+        />
       </svg>
     )
   }
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden className={iconCls}>
-      <rect x="2" y="5" width="14" height="7" rx="1.5" fill="#1e293b" stroke="none" />
-      <path d="M5 8.5 H13" stroke="#f8fafc" strokeWidth="1.2" strokeLinecap="round" />
+      <ellipse cx="10" cy="7" rx="6.5" ry="4.5" fill="#ffffff" stroke={stroke} strokeWidth="0.9" />
+      <circle cx="5.5" cy="10" r="1.1" fill="#ffffff" stroke={stroke} strokeWidth="0.65" />
+      <circle cx="3.5" cy="12.5" r="0.8" fill="#ffffff" stroke={stroke} strokeWidth="0.55" />
+      <circle cx="2" cy="14.5" r="0.55" fill="#ffffff" stroke={stroke} strokeWidth="0.45" />
     </svg>
   )
 }

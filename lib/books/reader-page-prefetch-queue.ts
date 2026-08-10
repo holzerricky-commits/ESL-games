@@ -5,8 +5,8 @@
  * `loadCachedPdfDocument` + PDF.js worker path as thumbnails (`pdf-thumbnail-cache.ts`).
  * Concurrency and idle scheduling keep the map / main thread responsive.
  *
- * Phase 1: `CachedPageCanvas` paints cache hits as the primary display; `react-pdf` loads
- * off-screen for handoff and annotation alignment (`getReaderPrefetchedImageBitmap`).
+ * Phase 1: `CachedPageCanvas` paints cache hits while react-pdf loads off-screen.
+ * Phase 3: once composited, live react-pdf is primary; cache is a loading placeholder only.
  *
  * Public aliases: `lib/books/page-render-cache.ts`.
  *
@@ -16,7 +16,13 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { ensureReactPdfWorker } from '@/lib/books/ensure-react-pdf-worker'
 import { loadCachedPdfDocument } from '@/lib/books/pdf-thumbnail-cache'
-import { READER_PREFETCH_BITMAP_CACHE_MAX_ENTRIES } from '@/lib/books/reader-prefetch-window'
+import { resolveReaderPageRenderDensity } from '@/lib/books/reader-page-render-width'
+import {
+  isReaderPrefetchIdleWorkPaused,
+  resolveReaderPrefetchBitmapCacheMaxEntries,
+  resolveReaderPrefetchMaxConcurrent,
+  subscribeReaderPrefetchInkCoordinator,
+} from '@/lib/books/reader-prefetch-ink-coordinator'
 
 /** CSS width quantisation for cache keys — coarser than 1px so resize does not thrash (C4). */
 export const READER_PREFETCH_WIDTH_BUCKET_PX = 32
@@ -71,8 +77,44 @@ const pendingRuns: Array<() => void> = []
 let immediateQueueRunning = 0
 const pendingImmediateRuns: Array<() => void> = []
 
+let pendingIdlePrefetchBurst: (() => void) | null = null
+
+function trimPrefetchBitmapCachesToBudget(): void {
+  let changed = false
+  const maxFull = resolveReaderPrefetchBitmapCacheMaxEntries()
+  while (bitmapCache.size > maxFull) {
+    const first = bitmapCache.keys().next().value as string | undefined
+    if (!first) break
+    bitmapCache.get(first)?.close()
+    bitmapCache.delete(first)
+    changed = true
+  }
+  while (lowResBitmapCache.size > maxFull) {
+    const first = lowResBitmapCache.keys().next().value as string | undefined
+    if (!first) break
+    lowResBitmapCache.get(first)?.close()
+    lowResBitmapCache.delete(first)
+    changed = true
+  }
+  if (changed) notifyReaderPrefetchCache()
+}
+
+function onReaderPrefetchInkCoordinatorChange(): void {
+  trimPrefetchBitmapCachesToBudget()
+  if (!isReaderPrefetchIdleWorkPaused()) {
+    pumpReaderPrefetchQueue()
+    runPendingIdlePrefetchBurst()
+  }
+}
+
+if (typeof window !== 'undefined') {
+  subscribeReaderPrefetchInkCoordinator(onReaderPrefetchInkCoordinatorChange)
+}
+
 function pumpReaderPrefetchQueue() {
-  while (queueRunning < MAX_CONCURRENT_READER_PREFETCH && pendingRuns.length > 0) {
+  const maxConcurrent = resolveReaderPrefetchMaxConcurrent()
+  while (queueRunning < maxConcurrent && pendingRuns.length > 0) {
+    if (isReaderPrefetchIdleWorkPaused()) return
     const run = pendingRuns.shift()!
     run()
   }
@@ -100,7 +142,9 @@ function enqueueReaderPrefetchWork<T>(fn: () => Promise<T>): Promise<T> {
           pumpReaderPrefetchQueue()
         })
     })
-    pumpReaderPrefetchQueue()
+    if (!isReaderPrefetchIdleWorkPaused()) {
+      pumpReaderPrefetchQueue()
+    }
   })
 }
 
@@ -180,7 +224,7 @@ function putBitmap(key: string, bmp: ImageBitmap) {
     existing.close()
     bitmapCache.delete(key)
   }
-  while (bitmapCache.size >= READER_PREFETCH_BITMAP_CACHE_MAX_ENTRIES && !bitmapCache.has(key)) {
+  while (bitmapCache.size >= resolveReaderPrefetchBitmapCacheMaxEntries() && !bitmapCache.has(key)) {
     const first = bitmapCache.keys().next().value as string | undefined
     if (!first) break
     bitmapCache.get(first)?.close()
@@ -205,7 +249,7 @@ function putLowResBitmap(key: string, bmp: ImageBitmap) {
     lowResBitmapCache.delete(key)
   }
   while (
-    lowResBitmapCache.size >= READER_PREFETCH_BITMAP_CACHE_MAX_ENTRIES &&
+    lowResBitmapCache.size >= resolveReaderPrefetchBitmapCacheMaxEntries() &&
     !lowResBitmapCache.has(key)
   ) {
     const first = lowResBitmapCache.keys().next().value as string | undefined
@@ -233,6 +277,26 @@ export function clearReaderPrefetchCacheForUnit(unitId: string): void {
     }
   }
   notifyReaderPrefetchCache()
+}
+
+/** Drop full-res cache entries for specific pages at a width bucket (e.g. browser zoom / DPR change). */
+export function invalidateReaderPrefetchPagesAtWidth(
+  unitId: string,
+  pages: readonly number[],
+  widthPx: number,
+): void {
+  if (typeof window === 'undefined') return
+  const bucket = readerPrefetchWidthBucket(widthPx)
+  let changed = false
+  for (const pageNumber of pages) {
+    const key = storageKey(unitId, pageNumber, bucket)
+    const existing = bitmapCache.get(key)
+    if (!existing) continue
+    existing.close()
+    bitmapCache.delete(key)
+    changed = true
+  }
+  if (changed) notifyReaderPrefetchCache()
 }
 
 /** Peek/touch for Phase C3 — returns bitmap and refreshes LRU order. */
@@ -267,7 +331,7 @@ async function renderPageToImageBitmap(
   const page = await pdf.getPage(pageNumber)
   const baseViewport = page.getViewport({ scale: 1 })
   const scale = targetCssWidthPx / baseViewport.width
-  const renderDensity = Math.min(2, typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1)
+  const renderDensity = resolveReaderPageRenderDensity(1)
   const viewport = page.getViewport({ scale: scale * renderDensity })
   const w = Math.floor(viewport.width)
   const h = Math.floor(viewport.height)
@@ -400,9 +464,16 @@ export interface QueueReaderPrefetchWindowIdleArgs {
   shouldProceed?: () => boolean
 }
 
+function runPendingIdlePrefetchBurst(): void {
+  const burst = pendingIdlePrefetchBurst
+  pendingIdlePrefetchBurst = null
+  burst?.()
+}
+
 /**
  * Schedules prefetch work on idle time, then queues each page through the PDF work pool.
  * Safe to call frequently — per-page work no-ops on cache hit.
+ * R7: defers while ink pointer / revision is hot.
  */
 export function queueReaderPrefetchWindowIdle(args: QueueReaderPrefetchWindowIdleArgs): void {
   const { fileUrl, unitId, pages, widthPx, shouldProceed } = args
@@ -411,12 +482,21 @@ export function queueReaderPrefetchWindowIdle(args: QueueReaderPrefetchWindowIdl
 
   const runBurst = () => {
     if (shouldProceed && !shouldProceed()) return
+    if (isReaderPrefetchIdleWorkPaused()) {
+      pendingIdlePrefetchBurst = runBurst
+      return
+    }
     for (const pageNumber of pages) {
       if (shouldProceed && !shouldProceed()) break
       void prefetchReaderPageBitmapIfMissing({ fileUrl, unitId, pageNumber, widthPx }).catch(() => {
         /* single-page failures should not block the rest */
       })
     }
+  }
+
+  if (isReaderPrefetchIdleWorkPaused()) {
+    pendingIdlePrefetchBurst = runBurst
+    return
   }
 
   const ric = window.requestIdleCallback

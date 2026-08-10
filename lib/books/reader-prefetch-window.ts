@@ -26,8 +26,9 @@ export const READER_PREFETCH_VISIBLE_SLOTS_AFTER = 10
 /**
  * Upper bound on distinct prefetch bitmap entries (e.g. `(unitId, pdfPage, widthBucket)`) for LRU
  * eviction in Phase C2/C4 — width buckets are 32px quanta (`readerPrefetchWidthBucket` in prefetch queue).
+ * R7 uses a tighter cap while ink is hot via `resolveReaderPrefetchBitmapCacheMaxEntries`.
  */
-export const READER_PREFETCH_BITMAP_CACHE_MAX_ENTRIES = 48
+export { READER_PREFETCH_BITMAP_CACHE_MAX_ENTRIES_IDLE as READER_PREFETCH_BITMAP_CACHE_MAX_ENTRIES } from '@/lib/books/reader-prefetch-budget-config'
 
 export interface ReaderPrefetchWindowArgs {
   /** Current spread anchor (typically left page in two-up mode). */

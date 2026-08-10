@@ -1,11 +1,19 @@
-/** Placeholder shown while editing a new empty plain text label. */
-export const TEXT_LABEL_PLACEHOLDER = 'Type here…'
-
 /** Placeholder while editing an empty writable sticker. */
 export const WRITABLE_STICKY_PLACEHOLDER = 'Add a note…'
 
 /** Hint under the annotation rail when the text tool is active. */
-export const TEXT_TOOL_RAIL_HINT = 'Click to place text · click existing text to edit'
+export const TEXT_TOOL_RAIL_HINT =
+  'Click to place · drag selected text to move · double-click to edit'
+
+/** Ctrl+Enter / Cmd+Enter commits the active book label or sticky field. */
+export function isBookAnnotationTextCommitShortcut(e: {
+  key: string
+  ctrlKey: boolean
+  metaKey: boolean
+  altKey: boolean
+}): boolean {
+  return e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.altKey
+}
 
 /** Hint under the annotation rail when the writable sticker tool is active. */
 export const WRITABLE_TOOL_RAIL_HINT = 'Click to place a note · click existing notes to edit'
@@ -18,7 +26,8 @@ export const BOOK_ANNOTATION_FOCUS_ACQUIRE_MS = 400
  * Committed plain text must never keep a textarea (and blinking caret) mounted.
  */
 /**
- * Committed labels stay click-through in select/move; text/sticky tools capture one-click edit.
+ * Committed plain text stays click-through so the overlay can open edit on single-click.
+ * Stickies and active edit sessions (textarea mounted) capture pointer events.
  */
 export function shouldBookAnnotationLabelCapturePointer(args: {
   isSticky: boolean
@@ -26,11 +35,7 @@ export function shouldBookAnnotationLabelCapturePointer(args: {
   textToolActive: boolean
   selectMode: boolean
 }): boolean {
-  return (
-    args.isSticky ||
-    args.showTextarea ||
-    (args.textToolActive && !args.selectMode)
-  )
+  return args.isSticky || args.showTextarea
 }
 
 export function shouldShowBookAnnotationTextarea(args: {

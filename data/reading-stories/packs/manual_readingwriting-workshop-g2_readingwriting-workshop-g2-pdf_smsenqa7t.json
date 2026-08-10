@@ -1,0 +1,96 @@
+{
+  "storyId": "manual::readingwriting-workshop-g2::readingwriting-workshop-g2-pdf::smsenqa7t",
+  "bookId": "readingwriting-workshop-g2",
+  "unitId": "readingwriting-workshop-g2-pdf",
+  "status": "draft",
+  "stops": [
+    {
+      "id": "stop-21a7a384",
+      "label": "The boy's job",
+      "displayPage": 121,
+      "midPageNote": null,
+      "hotspot": null,
+      "questions": [
+        {
+          "id": "q-83d15b12",
+          "kind": "true_false",
+          "prompt": "The shepherd boy loved his job watching the sheep.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "Long ago a shepherd boy sat on a hilltop watching the village sheep. He was not fond of his job. He didn't like it one bit.",
+          "evidenceHighlight": "He was not fond of his job."
+        }
+      ]
+    },
+    {
+      "id": "stop-94f54dd4",
+      "label": "First trick",
+      "displayPage": 123,
+      "midPageNote": "After the villagers go back down the hill the first time.",
+      "hotspot": null,
+      "questions": [
+        {
+          "id": "q-dea7774c",
+          "kind": "mcq",
+          "prompt": "Why did the villagers run up the hill the first time?",
+          "choices": [
+            "A. To bring the boy lunch.",
+            "B. To help the boy with a wolf.",
+            "C. To play a game with the boy.",
+            "D. To tell the boy a story."
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "Then one day he had a better idea! He took a deep breath and cried out, “Wolf! Wolf! The wolf is chasing the sheep!\" The villagers ran up the hill to help the boy.",
+          "evidenceHighlight": "The villagers ran up the hill to help the boy."
+        }
+      ]
+    },
+    {
+      "id": "stop-eedd5fc8",
+      "label": "Real wolf",
+      "displayPage": 124,
+      "midPageNote": null,
+      "hotspot": null,
+      "questions": [
+        {
+          "id": "q-187878cb",
+          "kind": "true_false",
+          "prompt": "When the boy saw a REAL wolf, the villagers quickly came to help him.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "That afternoon the boy saw a REAL wolf. He did not want the wolf to grab any of the sheep! ... He quickly jumped to his feet and cried, “WOLF! WOLF!\" The villagers thought he was tricking them again, so they did not come.",
+          "evidenceHighlight": "The villagers thought he was tricking them again, so they did not come."
+        }
+      ]
+    },
+    {
+      "id": "stop-1d15e2ce",
+      "label": "The lesson",
+      "displayPage": 125,
+      "midPageNote": null,
+      "hotspot": null,
+      "questions": [
+        {
+          "id": "q-c99146b1",
+          "kind": "mcq",
+          "prompt": "What important lesson did the boy learn?",
+          "choices": [
+            "A. It is fun to trick people.",
+            "B. Nobody believes a person who tells lies.",
+            "C. Wolves are very fast runners.",
+            "D. Shepherds should always stay home."
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "A kind man talked to the boy as they walked slowly back to the village. ... 'You have just learned one of life's important lessons. This is something you need to know. Nobody believes a person who tells lies. It is always better to tell the truth!'",
+          "evidenceHighlight": "Nobody believes a person who tells lies."
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-08-04T12:56:39.744Z",
+  "approvedAt": null
+}

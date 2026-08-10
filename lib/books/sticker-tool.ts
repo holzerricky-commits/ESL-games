@@ -10,13 +10,9 @@ export const STICKER_QUICK_VARIANTS = [
   'question',
   'star',
   'heart',
-  'thumbsUp',
-  'repeat',
-  'yourTurn',
-  'newWord',
 ] as const satisfies readonly StampVariant[]
 
-export const WRITABLE_STICKER_VARIANTS = ['note', 'speech', 'thought', 'caption'] as const
+export const WRITABLE_STICKER_VARIANTS = ['note', 'caption', 'speech', 'thought'] as const
 
 export const STICKER_QUICK_LABEL: Record<StampVariant, string> = {
   check: 'Check',
@@ -24,17 +20,13 @@ export const STICKER_QUICK_LABEL: Record<StampVariant, string> = {
   question: 'Question',
   star: 'Star',
   heart: 'Heart',
-  thumbsUp: 'Thumbs up',
-  repeat: 'Repeat',
-  yourTurn: 'Your turn',
-  newWord: 'New word',
 }
 
 export const WRITABLE_STICKER_LABEL: Record<WritableStickerVariant, string> = {
   note: 'Note',
-  speech: 'Speech',
-  thought: 'Thought',
   caption: 'Caption',
+  speech: 'Speech',
+  thought: 'Thinking',
 }
 
 export function isStickerQuickVariant(v: unknown): v is StampVariant {
@@ -43,6 +35,19 @@ export function isStickerQuickVariant(v: unknown): v is StampVariant {
 
 export function isWritableStickerVariant(v: unknown): v is WritableStickerVariant {
   return typeof v === 'string' && (WRITABLE_STICKER_VARIANTS as readonly string[]).includes(v)
+}
+
+export function normalizeWritableStickerVariant(v: unknown): WritableStickerVariant {
+  if (v === 'caption') return 'caption'
+  if (v === 'speech') return 'speech'
+  if (v === 'thought') return 'thought'
+  if (v === 'note') return 'note'
+  return 'note'
+}
+
+/** Caption and comic bubbles center text horizontally and vertically. */
+export function isCenteredWritableStickerVariant(variant: WritableStickerVariant): boolean {
+  return variant === 'caption' || variant === 'speech' || variant === 'thought'
 }
 
 /** Map legacy toolbar modes to the unified sticker tool. */
@@ -71,6 +76,19 @@ export function isQuickStickerInteraction(
   return m === 'sticker' && stickerKind === 'quick'
 }
 
+/** Tap-to-place canvas tools (quick stickers, callouts, eyedropper) on ink session layers. */
+export function isSessionTapCanvasToolInteraction(
+  mode: BookAnnotationInteractionMode,
+  stickerKind: StickerKind,
+): boolean {
+  return (
+    mode === 'stamp' ||
+    mode === 'callout' ||
+    mode === 'eyedropper' ||
+    isQuickStickerInteraction(mode, stickerKind)
+  )
+}
+
 export function isWritableStickerInteraction(
   mode: BookAnnotationInteractionMode,
   stickerKind: StickerKind,
@@ -82,7 +100,7 @@ export function isWritableStickerInteraction(
 }
 
 export function stickyWritableVariant(
-  cmd: { writableVariant?: WritableStickerVariant },
+  cmd: { writableVariant?: WritableStickerVariant | 'speech' | 'thought' },
 ): WritableStickerVariant {
-  return cmd.writableVariant ?? 'note'
+  return normalizeWritableStickerVariant(cmd.writableVariant)
 }

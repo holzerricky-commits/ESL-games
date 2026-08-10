@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatLessonTitleWithNumber } from '@/lib/books/lesson-title'
+import { formatLessonTitleWithNumber, formatTocChunkTitle } from '@/lib/books/lesson-title'
 
 describe('formatLessonTitleWithNumber', () => {
   it('prefixes a bare TOC title with Lesson N:', () => {
@@ -15,5 +15,16 @@ describe('formatLessonTitleWithNumber', () => {
   it('uses Lesson n when the source title is empty', () => {
     expect(formatLessonTitleWithNumber(4, '')).toBe('Lesson 4')
     expect(formatLessonTitleWithNumber(4, '   ')).toBe('Lesson 4')
+  })
+})
+
+describe('formatTocChunkTitle', () => {
+  it('formats Wonders weeks', () => {
+    expect(formatTocChunkTitle(2, 'Pedal Power', 'week')).toBe('Week 2: Pedal Power')
+    expect(formatTocChunkTitle(2, 'Week 2: Pedal Power', 'week')).toBe('Week 2: Pedal Power')
+  })
+
+  it('rewrites mistaken Lesson labels when week style is requested', () => {
+    expect(formatTocChunkTitle(2, 'Lesson 2: Pedal Power', 'week')).toBe('Week 2: Pedal Power')
   })
 })

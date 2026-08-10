@@ -16,9 +16,9 @@ Choose how you will open the app while on a call:
 
 ## 2. Data safety
 
-- **Local dev (`npm run dev`):** students, class sessions, and map progress are saved under **`data/students/`** on your PC (`students.json`, `student-progress.json`). The app migrates them out of the browser on first load when possible.
-- **Other data** (quizzes, results, book annotations, etc.) still uses browser **`localStorage`** keys starting with `esl_`.
-- Clearing site data or using another browser **drops** browser-only data unless you have a backup.
+- **Local dev (`npm run dev`):** students, class sessions, map progress, **book annotations**, **weekly schedule**, **timed challenges**, **saved words**, **book–board links**, and **reader last-page positions** are saved under **`data/students/`** on your PC (`students.json`, `student-progress.json`, `book-annotations.json`, `weekly-schedule.json`, `challenge-data.json`, `saved-words.json`, `lesson-board-links.json`, `reader-progress.json`). The app migrates them out of the browser on first load when possible.
+- **Other data** (tool prefs, UI chrome, etc.) still uses browser **`localStorage`** keys starting with `esl_`.
+- Clearing site data or using another browser **drops** browser-only data unless you have a backup. Disk-backed teaching data survives a browser clear when you reopen the app locally.
 
 **Built-in backup (Settings):**
 

@@ -38,5 +38,15 @@ describe('draftsToUnits', () => {
     ])
     expect(units[0]!.lessons?.[0]!.title).toBe('Lesson A')
     expect(units[0]!.lessons?.[0]!.parts?.[0]!.title).toBe('Part 1')
+    expect(units[0]!.filePath).toBe('book.pdf')
+  })
+
+  it('keeps each draft filePath instead of stamping one PDF on all units', () => {
+    const units = draftsToUnits('fallback.pdf', [
+      { id: 'u1', title: 'Unit 1', needsReview: false, filePath: 'unit-1.pdf' },
+      { id: 'u2', title: 'Unit 2', needsReview: false, filePath: 'unit-2.pdf' },
+      { id: 'u3', title: 'Unit 3', needsReview: false },
+    ])
+    expect(units.map((u) => u.filePath)).toEqual(['unit-1.pdf', 'unit-2.pdf', 'fallback.pdf'])
   })
 })

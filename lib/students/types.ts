@@ -1,6 +1,16 @@
 import type { DifficultyTier, StudentClassSession, StudentClassStatus } from '@/lib/types'
 
-export type StudentProfileTab = 'challenges' | 'curriculum' | 'classes' | 'map' | 'avatar' | 'info'
+export type StudentProfileTab =
+  | 'challenges'
+  | 'curriculum'
+  | 'classes'
+  | 'map'
+  | 'avatar'
+  | 'words'
+  | 'info'
+
+/** Sections on the teacher student home (`/students/[id]`). */
+export type StudentHomeSection = 'classes' | 'curriculum' | 'words' | 'info'
 
 export interface StudentCurriculumUnitAssignmentView {
   bookId: string
@@ -41,6 +51,8 @@ export interface StudentListItemView {
   lastActiveLabel: string
   /** Human-readable nearest upcoming class label (or fallback if none). */
   nextClassLabel: string
+  /** ISO time of next upcoming class for sorting; null when none. */
+  nextClassAt: string | null
   /** Resolved book title (or id) for list cards. */
   curriculumBookLabel: string
   curriculumUnitLabel: string
@@ -49,6 +61,19 @@ export interface StudentListItemView {
   curriculumThumbFilePath: string | null
   curriculumThumbUnitId: string | null
   curriculumThumbPage: number | null
+  createdAt: string
+  /** True until book, weekly schedule slot, and upcoming class are all set. */
+  needsSetup: boolean
+  /** Short hint for what is still missing (empty when setup is complete). */
+  setupHint: string
+  /** Plan link for students who still need setup (first missing step). */
+  finishSetupHref: string
+  /** Plan link when setup is complete. */
+  openPlanHref: string
+  /** Hidden from the main roster; history kept. */
+  isOnBreak: boolean
+  /** When put on break (ISO), if applicable. */
+  onBreakAt?: string
 }
 
 export interface StudentCoinTransactionView {
@@ -85,10 +110,22 @@ export interface StudentProfileView extends StudentListItemView {
   defaultDifficultyTier: DifficultyTier
   assignedBookIds: string[]
   assignedUnitRefs: StudentCurriculumUnitAssignmentView[]
-  /** Planned first lesson piece when no completed-class chain exists yet. */
+  /** @deprecated Prefer `curriculumBookStarts`. */
   curriculumAnchorSectionId?: string
+  /** Per-book teacher-set starting place (mapped page + lesson piece). */
+  curriculumBookStarts?: Record<
+    string,
+    {
+      sectionId: string
+      unitId: string
+      mappedPage: number
+      updatedAt: string
+    }
+  >
   curriculumHistory: StudentCurriculumHistoryEntryView[]
   scheduledClasses: StudentClassSessionView[]
+  /** True when the lesson screen should greet them as a first-time student (not "welcome back"). */
+  showFirstClassWelcome: boolean
 }
 
 export interface StudentClassSessionInputView {

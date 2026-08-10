@@ -63,14 +63,15 @@ export type BookPageAnnotationHandle = {
   getSelectedIds?: () => string[]
   setSelectedIds?: (ids: string[]) => void
   selectAll?: () => void
+  selectAllIncludingLocked?: () => void
   deleteSelected?: () => boolean
   copySelected?: () => boolean
   pasteFromClipboard?: () => boolean
   groupSelected?: () => boolean
   ungroupSelected?: () => boolean
-  /** Group selection, or ungroup if every selected pen/marker is already grouped. */
+  /** Group selection, or ungroup if every selected pen is already grouped. */
   toggleGroupSelected?: () => boolean
-  /** Clear `figureGroupId` on selected pen/marker only (partial remove from group). */
+  /** Clear `figureGroupId` on selected pens only (partial remove from group). */
   removeFromGroupSelected?: () => boolean
   deselectAll?: () => void
   duplicateSelected?: () => boolean
@@ -80,12 +81,42 @@ export type BookPageAnnotationHandle = {
   translateByIds?: (ids: string[], dx: number, dy: number) => boolean
   /** Keyboard nudge / programmatic move of the current selection. */
   moveSelectedBy?: (dx: number, dy: number) => boolean
+  /** Align selected objects horizontally (left / center / right edges or centers). */
+  alignSelected?: (axis: import('@/lib/books/annotation-align').HorizontalAlignAxis) => boolean
+  /** Raise selected commands one step in paint order. */
+  moveSelectedForward?: () => boolean
+  /** Lower selected commands one step in paint order. */
+  moveSelectedBackward?: () => boolean
   /** Live keyboard nudge preview (cumulative offset from gesture start). */
   setNudgePreview?: (dx: number, dy: number) => void
   commitNudgePreview?: () => boolean
   clearNudgePreview?: () => void
   /** Stop auto-group from merging new pen ink into existing figures (leaving pen tool). */
   lockPenFigureAutoJoin?: () => void
+  /** Paste a clipboard image file onto the whiteboard (lesson board). */
+  pasteImageFromClipboardFile?: (file: File) => Promise<import('@/lib/books/clipboard-image').PasteImageOutcome>
+  /** Resolve clipboard data (HTML URL, files, raster) and paste onto the lesson board. */
+  pasteImageFromClipboardData?: (
+    clipboard: DataTransfer,
+  ) => Promise<import('@/lib/books/clipboard-image').PasteImageOutcome>
+  /** Commit an already resolved local/clipboard image onto the lesson board. */
+  pasteImageFromResolution?: (
+    resolution: import('@/lib/books/clipboard-image').PastedBoardImageResolution,
+  ) => Promise<import('@/lib/books/clipboard-image').PasteImageOutcome>
+  /** Import a remote image URL (Pixabay/Giphy via server proxy) onto the lesson board. */
+  insertImageFromSearchUrl?: (url: string, alt?: string) => Promise<boolean>
+  /** Picture + English + Chinese labels grouped as a flashcard on the lesson board. */
+  insertFlashcardFromSearchUrl?: (
+    url: string,
+    english: string,
+    chinese?: string,
+  ) => Promise<boolean>
+  /** Read OS clipboard and paste an image when present. */
+  pasteImageFromSystemClipboard?: () => Promise<import('@/lib/books/clipboard-image').PasteImageOutcome>
+  /** Read OS clipboard and paste plain text as a new label (lesson board). */
+  pasteTextFromSystemClipboard?: () => Promise<boolean>
+  /** Paste plain text from a clipboard event string (lesson board). */
+  pasteTextFromClipboardString?: (raw: string) => boolean
 }
 
 export type AnnotationCapabilities = {
@@ -145,7 +176,7 @@ export interface BookPageAnnotationLayerProps {
   penInkPatternOriginYPx?: number
   /** Dash style for pen/marker ink on this layer. */
   strokeLineDashStyle?: AnnotationLineDashStyle
-  /** When true, highlighter strokes snap horizontal or vertical (Shift does the same for pen/marker). */
+  /** When true, highlighter strokes snap to horizontal underlines (Shift does H/V for pen). */
   markerStraightStroke?: boolean
   /** When true, themed ornaments draw on the upper edge of highlighter strokes. */
   markerDecoratedEdge?: boolean
@@ -169,6 +200,8 @@ export interface BookPageAnnotationLayerProps {
   stickyFontSizeNorm: number
   /** New text boxes: plain (no box) or filled background (no border). */
   textVisualStyle?: TextAnnotationVisualStyle
+  /** Horizontal anchor for new text labels. */
+  textAlign?: import('@/lib/books/annotation-command-types').TextAnnotationAlign
   /** Background hex when `textVisualStyle` is `filled`. */
   textFillColor?: string
   /** New sticky notes background (#RRGGBB). */
@@ -185,6 +218,10 @@ export interface BookPageAnnotationLayerProps {
   delegatePointerToWhiteboardPen?: boolean
   /** When true, pen/marker/shape canvas ink is shown on the spread session layer only. */
   spreadInkDelegated?: boolean
+  /** Spread session overlay is active; page layer should not repaint flushed session duplicates. */
+  spreadSessionOwnsPagePaint?: boolean
+  /** Live spread session command ids (for paint dedupe while the lesson board is open). */
+  spreadSessionPaintCommandIds?: readonly string[]
   /** When true, pen/marker canvas ink is shown on the whiteboard session layer only. */
   whiteboardPenInkDelegated?: boolean
   /** Alias for whiteboardPenInkDelegated (Phase 3+). */
@@ -195,4 +232,17 @@ export interface BookPageAnnotationLayerProps {
   onSelectionMoveCommitted?: (ids: string[], dx: number, dy: number) => void
   /** When spread ink is delegated, stamp/callout commits go to the spread session (page-norm cmd). */
   onSpreadCanvasCommandCommit?: (cmd: AnnotationCommand, pageNumber: number) => void
+  /** Route empty select clicks to native PDF text (move tool). */
+  pdfTextRoutingEnabled?: boolean
+  /** Whiteboard only: scroll + viewport + optional click anchor for pasted content. */
+  getImagePastePlacement?: () => {
+    scrollTopPx: number
+    viewportHeightPx: number
+    anchorNorm: { x: number; y: number } | null
+    /** Match wide-board paste pixel size on narrower notebook pages. */
+    sizingWidthPx?: number
+    sizingViewportHeightPx?: number
+  } | null
+  onImagePasted?: () => void
+  onTextPasted?: () => void
 }

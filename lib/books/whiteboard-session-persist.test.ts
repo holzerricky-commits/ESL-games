@@ -4,6 +4,7 @@ import { createEmptyWhiteboardSession, whiteboardSessionDocId } from '@/lib/book
 import {
   checkpointWhiteboardSessionDocument,
   flushWhiteboardSessionDocumentToLegacyStorage,
+  mergeLegacyInkIntoLessonBoardSession,
   mergeWhiteboardLegacyWithSession,
   resolveWhiteboardSessionCommandsOnMount,
 } from '@/lib/books/whiteboard-session-persist'
@@ -39,6 +40,44 @@ describe('whiteboard-session-persist', () => {
     )
     expect(clash).toHaveLength(1)
     expect(clash[0]?.points[0]).toEqual([0, 0])
+  })
+
+  it('resolveWhiteboardSessionCommandsOnMount keeps session text when legacy is empty', () => {
+    const session = [
+      {
+        kind: 'text' as const,
+        id: 't1',
+        x: 0.2,
+        y: 0.3,
+        text: 'keep me',
+        color: '#111',
+        fontSizeNorm: 0.02,
+      },
+      { kind: 'stroke' as const, id: 's1', tool: 'pen' as const, points: [[0, 0], [1, 1]] },
+    ]
+    const merged = resolveWhiteboardSessionCommandsOnMount(session, [])
+    expect(merged).toHaveLength(2)
+    expect(merged.find((c) => c.kind === 'text')).toMatchObject({ id: 't1', text: 'keep me' })
+  })
+
+  it('mergeLegacyInkIntoLessonBoardSession keeps session when legacy projection is empty', () => {
+    const doc = createEmptyWhiteboardSession(key)
+    doc.commands = [
+      {
+        kind: 'text',
+        id: 't1',
+        x: 0.1,
+        y: 0.2,
+        text: 'board note',
+        color: '#000',
+        fontSizeNorm: 0.02,
+      },
+    ]
+    doc.pages = [{ ...doc.pages[0]!, commands: [...doc.commands] }]
+    const merged = mergeLegacyInkIntoLessonBoardSession(doc, [])
+    expect(merged.commands).toHaveLength(1)
+    expect(merged.commands[0]).toMatchObject({ id: 't1', text: 'board note' })
+    expect(merged.pages[0]?.commands).toHaveLength(1)
   })
 
   it('mergeWhiteboardLegacyWithSession appends session pen', () => {

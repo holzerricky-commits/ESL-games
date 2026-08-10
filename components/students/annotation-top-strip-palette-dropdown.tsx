@@ -4,6 +4,8 @@ import { useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import {
   ANNOTATION_MARKER_SWATCHES,
+  ANNOTATION_SHAPE_FILL_SWATCHES,
+  ANNOTATION_SOLID_PEN_SWATCHES,
   ANNOTATION_STICKY_FILL_SWATCHES,
   ANNOTATION_TEXT_FILL_SWATCHES,
   ANNOTATION_TEXT_STROKE_SWATCHES,
@@ -21,6 +23,10 @@ import type { TopStripPaletteTarget } from '@/components/students/annotation-top
 import type { PenSwatch } from '@/lib/books/annotation-palettes'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
+import {
+  CONTEXT_PALETTE_CHEVRON_CLASS,
+  CONTEXT_PALETTE_CHEVRON_OPEN_CLASS,
+} from '@/components/students/selection-context-bar/selection-context-bar-styles'
 
 export interface TopStripPaletteDropdownProps {
   target: TopStripPaletteTarget
@@ -52,7 +58,38 @@ export interface TopStripPaletteDropdownProps {
   onOpenChange?: (open: boolean) => void
 }
 
-export function TopStripPaletteDropdown({
+type PaletteSurface = 'dark'
+
+export function PaletteChevronButton({
+  open,
+  className,
+  onClick,
+}: {
+  open: boolean
+  className?: string
+  onClick?: () => void
+}) {
+  const chevronClass = cn(
+    CONTEXT_PALETTE_CHEVRON_CLASS,
+    open && CONTEXT_PALETTE_CHEVRON_OPEN_CLASS,
+    className,
+  )
+
+  return (
+    <button
+      type="button"
+      className={chevronClass}
+      aria-label="More colors"
+      title="More colors"
+      aria-expanded={open}
+      onClick={onClick}
+    >
+      <ChevronDown className="h-3.5 w-3.5" strokeWidth={2.25} aria-hidden />
+    </button>
+  )
+}
+
+export function TopStripPalettePanel({
   target,
   idPrefix,
   penSwatchId,
@@ -78,23 +115,22 @@ export function TopStripPaletteDropdown({
   shapeFillColor,
   pickShapeFillColor,
   shapeFillMode,
-  open: openControlled,
-  onOpenChange,
-}: TopStripPaletteDropdownProps) {
-  const [openUncontrolled, setOpenUncontrolled] = useState(false)
-  const open = openControlled ?? openUncontrolled
+  onClose,
+}: Omit<TopStripPaletteDropdownProps, 'open' | 'onOpenChange'> & {
+  onClose?: () => void
+}) {
   const [customSpectrumOpen, setCustomSpectrumOpen] = useState(false)
+  const stackClass = TOP_STRIP_POPOVER_STACK
+  const swatchSurface: PaletteSurface = 'dark'
 
-  function handleOpenChange(next: boolean) {
-    if (openControlled === undefined) setOpenUncontrolled(next)
-    if (!next) setCustomSpectrumOpen(false)
-    onOpenChange?.(next)
+  function closePanel() {
+    setCustomSpectrumOpen(false)
+    onClose?.()
   }
 
   function pickPenPresetSwatch(id: string) {
     pickPenSwatch(id)
-    setCustomSpectrumOpen(false)
-    handleOpenChange(false)
+    closePanel()
   }
 
   function openCustomSpectrum() {
@@ -103,133 +139,179 @@ export function TopStripPaletteDropdown({
     setCustomSpectrumOpen(true)
   }
 
-  const chevronClass = cn(
-    'flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-white/55 hover:bg-white/10 hover:text-white/90',
-    open && 'bg-white/10 text-white/90',
+  return (
+    <>
+      {target === 'pen' ? (
+        <div className={stackClass}>
+          <PenSwatchRow
+            swatchId={penSwatchId}
+            colorSource={penColorSource}
+            customHex={penCustomHex}
+            onPick={pickPenPresetSwatch}
+            idPrefix={idPrefix}
+            labelHidden
+            swatchSize="compact"
+            swatches={penSwatchesForProfile}
+            customPickerOpen={customSpectrumOpen}
+            onOpenCustomPicker={openCustomSpectrum}
+            surface={swatchSurface}
+          />
+          {customSpectrumOpen ? (
+            <SpectrumColorPicker
+              customHex={penCustomHex}
+              onPickCustom={pickPenCustomColor}
+              variant="strip"
+              surface={swatchSurface}
+            />
+          ) : null}
+        </div>
+      ) : null}
+      {target === 'marker' ? (
+        <HexPalettePanel
+          idPrefix={idPrefix}
+          colors={ANNOTATION_MARKER_SWATCHES}
+          current={markerColor}
+          colorSource={markerColorSource}
+          customHex={markerCustomHex}
+          customSpectrumOpen={customSpectrumOpen}
+          onOpenCustomSpectrum={openCustomSpectrum}
+          onPick={(hex) => {
+            pickMarkerSwatchColor(hex)
+            closePanel()
+          }}
+          onPickCustom={pickMarkerCustomColor}
+          customLabel="Custom highlighter color"
+          surface={swatchSurface}
+          stackClass={stackClass}
+        />
+      ) : null}
+      {target === 'shapes' || target === 'shape-fill' ? (
+        <div className={stackClass}>
+          <PenSwatchRow
+            swatchId={shapeStrokeSwatchId}
+            onPick={(id) => {
+              pickShapeStrokeSwatch(id)
+              closePanel()
+            }}
+            idPrefix={`${idPrefix}-stroke`}
+            label="Stroke color"
+            swatchSize="compact"
+            surface={swatchSurface}
+            swatches={ANNOTATION_SOLID_PEN_SWATCHES}
+          />
+          {shapeFillModeHasFill(shapeFillMode) ? (
+            <ColorSwatchRow
+              colors={ANNOTATION_SHAPE_FILL_SWATCHES}
+              current={shapeFillColor}
+              onPick={(hex) => {
+                pickShapeFillColor?.(hex)
+                closePanel()
+              }}
+              idPrefix={`${idPrefix}-fill`}
+              label="Fill color"
+              swatchSize="compact"
+              surface={swatchSurface}
+            />
+          ) : null}
+        </div>
+      ) : null}
+      {target === 'text' ? (
+        <div className={stackClass}>
+          <ColorSwatchRow
+            colors={ANNOTATION_TEXT_STROKE_SWATCHES}
+            current={textColor}
+            onPick={(hex) => {
+              pickTextColor(hex)
+              closePanel()
+            }}
+            idPrefix={`${idPrefix}-text`}
+            label="Text color"
+            swatchSize="compact"
+            surface={swatchSurface}
+          />
+          {textVisualStyle === 'filled' ? (
+            <ColorSwatchRow
+              colors={ANNOTATION_TEXT_FILL_SWATCHES}
+              current={textFillColor}
+              onPick={(hex) => {
+                pickTextFillColor(hex)
+                closePanel()
+              }}
+              idPrefix={`${idPrefix}-text-fill`}
+              label="Background color"
+              swatchSize="compact"
+              surface={swatchSurface}
+            />
+          ) : null}
+        </div>
+      ) : null}
+      {target === 'sticky' ? (
+        <div className={stackClass}>
+          <ColorSwatchRow
+            colors={ANNOTATION_STICKY_FILL_SWATCHES}
+            current={stickyFillColor}
+            onPick={(hex) => {
+              pickStickyFillColor(hex)
+              closePanel()
+            }}
+            idPrefix={idPrefix}
+            labelHidden
+            swatchSize="compact"
+            surface={swatchSurface}
+          />
+        </div>
+      ) : null}
+    </>
   )
+}
+
+export function TopStripPalettePopoverContent({
+  open: _open,
+  onOpenChange: _onOpenChange,
+  onClose,
+  ...panelProps
+}: TopStripPaletteDropdownProps & {
+  onClose?: () => void
+}) {
+  return (
+    <PopoverContent
+      side="bottom"
+      align="center"
+      sideOffset={10}
+      collisionPadding={12}
+      avoidCollisions
+      className={cn(TOP_STRIP_POPOVER_CLASS, 'align-start')}
+    >
+      <TopStripPalettePanel onClose={onClose} {...panelProps} />
+    </PopoverContent>
+  )
+}
+
+/** Chevron trigger + palette popover. */
+export function TopStripPaletteDropdown({
+  open: openControlled,
+  onOpenChange,
+  ...panelProps
+}: TopStripPaletteDropdownProps) {
+  const [openUncontrolled, setOpenUncontrolled] = useState(false)
+  const open = openControlled ?? openUncontrolled
+
+  function handleOpenChange(next: boolean) {
+    if (openControlled === undefined) setOpenUncontrolled(next)
+    onOpenChange?.(next)
+  }
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
-        <button
-          type="button"
-          className={chevronClass}
-          aria-label="More options"
-          title="More options"
-          aria-expanded={open}
-        >
-          <ChevronDown className="h-3.5 w-3.5" strokeWidth={2.25} aria-hidden />
-        </button>
+        <PaletteChevronButton open={open} />
       </PopoverTrigger>
-      <PopoverContent side="bottom" align="start" className={TOP_STRIP_POPOVER_CLASS}>
-        {target === 'pen' ? (
-          <div className={TOP_STRIP_POPOVER_STACK}>
-            <PenSwatchRow
-              swatchId={penSwatchId}
-              colorSource={penColorSource}
-              customHex={penCustomHex}
-              onPick={pickPenPresetSwatch}
-              idPrefix={idPrefix}
-              labelHidden
-              swatchSize="compact"
-              swatches={penSwatchesForProfile}
-              customPickerOpen={customSpectrumOpen}
-              onOpenCustomPicker={openCustomSpectrum}
-            />
-            {customSpectrumOpen ? (
-              <SpectrumColorPicker customHex={penCustomHex} onPickCustom={pickPenCustomColor} variant="strip" />
-            ) : null}
-          </div>
-        ) : null}
-        {target === 'marker' ? (
-          <HexPalettePanel
-            idPrefix={idPrefix}
-            colors={ANNOTATION_MARKER_SWATCHES}
-            current={markerColor}
-            colorSource={markerColorSource}
-            customHex={markerCustomHex}
-            customSpectrumOpen={customSpectrumOpen}
-            onOpenCustomSpectrum={openCustomSpectrum}
-            onPick={(hex) => {
-              pickMarkerSwatchColor(hex)
-              setCustomSpectrumOpen(false)
-              handleOpenChange(false)
-            }}
-            onPickCustom={pickMarkerCustomColor}
-            customLabel="Custom highlighter color"
-          />
-        ) : null}
-        {target === 'shapes' || target === 'shape-fill' ? (
-          <div className={TOP_STRIP_POPOVER_STACK}>
-            <PenSwatchRow
-              swatchId={shapeStrokeSwatchId}
-              onPick={(id) => {
-                pickShapeStrokeSwatch(id)
-                handleOpenChange(false)
-              }}
-              idPrefix={`${idPrefix}-stroke`}
-              label="Stroke color"
-              swatchSize="compact"
-            />
-            {shapeFillModeHasFill(shapeFillMode) ? (
-              <ColorSwatchRow
-                colors={ANNOTATION_MARKER_SWATCHES}
-                current={shapeFillColor}
-                onPick={(hex) => {
-                  pickShapeFillColor?.(hex)
-                  handleOpenChange(false)
-                }}
-                idPrefix={`${idPrefix}-fill`}
-                label="Fill color"
-                swatchSize="compact"
-              />
-            ) : null}
-          </div>
-        ) : null}
-        {target === 'text' ? (
-          <div className={TOP_STRIP_POPOVER_STACK}>
-            <ColorSwatchRow
-              colors={ANNOTATION_TEXT_STROKE_SWATCHES}
-              current={textColor}
-              onPick={(hex) => {
-                pickTextColor(hex)
-                handleOpenChange(false)
-              }}
-              idPrefix={`${idPrefix}-text`}
-              label="Text color"
-              swatchSize="compact"
-            />
-            {textVisualStyle === 'filled' ? (
-              <ColorSwatchRow
-                colors={ANNOTATION_TEXT_FILL_SWATCHES}
-                current={textFillColor}
-                onPick={(hex) => {
-                  pickTextFillColor(hex)
-                  handleOpenChange(false)
-                }}
-                idPrefix={`${idPrefix}-text-fill`}
-                label="Background color"
-                swatchSize="compact"
-              />
-            ) : null}
-          </div>
-        ) : null}
-        {target === 'sticky' ? (
-          <div className={TOP_STRIP_POPOVER_STACK}>
-            <ColorSwatchRow
-              colors={ANNOTATION_STICKY_FILL_SWATCHES}
-              current={stickyFillColor}
-              onPick={(hex) => {
-                pickStickyFillColor(hex)
-                handleOpenChange(false)
-              }}
-              idPrefix={idPrefix}
-              labelHidden
-              swatchSize="compact"
-            />
-          </div>
-        ) : null}
-      </PopoverContent>
+      <TopStripPalettePopoverContent
+        {...panelProps}
+        open={open}
+        onOpenChange={handleOpenChange}
+        onClose={() => handleOpenChange(false)}
+      />
     </Popover>
   )
 }
@@ -245,6 +327,8 @@ function HexPalettePanel({
   onPick,
   onPickCustom,
   customLabel,
+  surface,
+  stackClass,
 }: {
   idPrefix: string
   colors: readonly string[]
@@ -256,9 +340,11 @@ function HexPalettePanel({
   onPick: (hex: string) => void
   onPickCustom: (hex: string) => void
   customLabel: string
+  surface: PaletteSurface
+  stackClass: string
 }) {
   return (
-    <div className={TOP_STRIP_POPOVER_STACK}>
+    <div className={stackClass}>
       <div className="flex flex-wrap items-center gap-1.5">
         <ColorSwatchRow
           colors={colors}
@@ -268,6 +354,7 @@ function HexPalettePanel({
           idPrefix={idPrefix}
           labelHidden
           swatchSize="compact"
+          surface={surface}
         />
         <button
           type="button"
@@ -290,7 +377,12 @@ function HexPalettePanel({
         />
       </div>
       {customSpectrumOpen ? (
-        <SpectrumColorPicker customHex={customHex} onPickCustom={onPickCustom} variant="strip" />
+        <SpectrumColorPicker
+          customHex={customHex}
+          onPickCustom={onPickCustom}
+          variant="strip"
+          surface={surface}
+        />
       ) : null}
     </div>
   )

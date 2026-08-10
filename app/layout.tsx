@@ -1,10 +1,15 @@
 import type { Metadata } from 'next'
-import { Inter, Space_Mono } from 'next/font/google'
+import { Inter, Nunito, Space_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 import { Toaster } from 'sonner'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
+const nunito = Nunito({
+  subsets: ['latin'],
+  weight: ['600', '700', '800'],
+  variable: '--font-nunito',
+})
 const spaceMono = Space_Mono({ subsets: ['latin'], weight: ['400', '700'], variable: '--font-space-mono' })
 
 export const metadata: Metadata = {
@@ -36,13 +41,13 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en">
       <body
-        className={`${inter.variable} ${spaceMono.variable} font-sans antialiased`}
+        className={`${inter.variable} ${nunito.variable} ${spaceMono.variable} font-sans antialiased`}
         suppressHydrationWarning
       >
         {children}
-        <Toaster richColors theme="dark" position="top-center" />
+        <Toaster theme="dark" position="top-center" />
         <Analytics />
       </body>
     </html>

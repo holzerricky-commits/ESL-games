@@ -7,9 +7,16 @@ import { X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { ensureStudentRecordsHydrated } from '@/lib/local-data/student-records-client'
-import { getTodaysClassSessionsForTeacher, startStudentClassSession, type TodaysClassSessionRow } from '@/lib/students/selectors'
+import { CLASS_STARTING_SOON_MINUTES } from '@/lib/students/class-schedule-lifecycle'
+import { clearMapBookOverlayOpenSession } from '@/lib/students/map-book-overlay-session'
+import {
+  buildPrepareLessonMapHref,
+  getTodaysClassSessionsForTeacher,
+  startStudentClassSession,
+  type TodaysClassSessionRow,
+} from '@/lib/students/selectors'
 
-const WINDOW_MS = 20 * 60 * 1000
+const WINDOW_MS = CLASS_STARTING_SOON_MINUTES * 60 * 1000
 const STORAGE_PREFIX = 'class-upcoming-reminder-dismissed'
 
 function dismissStorageKey(sessionId: string): string {
@@ -31,10 +38,9 @@ function setDismissed(sessionId: string) {
   }
 }
 
+/** Planned/prepared in the Starting window only — not live, missed, or done. */
 function reminderCandidates(rows: TodaysClassSessionRow[], nowMs: number): TodaysClassSessionRow[] {
   return rows.filter((row) => {
-    if (row.session.status === 'completed' || row.session.status === 'cancelled') return false
-    if (row.session.status === 'in_progress') return false
     if (row.session.status !== 'planned' && row.session.status !== 'prepared') return false
     const startMs = new Date(row.session.scheduledFor).getTime()
     if (!Number.isFinite(startMs)) return false
@@ -87,7 +93,8 @@ export function ClassUpcomingReminder() {
             return
           }
         }
-        router.push(`/students/${studentId}/map?classSession=${encodeURIComponent(session.id)}`)
+        clearMapBookOverlayOpenSession(studentId)
+        router.push(buildPrepareLessonMapHref(studentId, session.id))
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Could not open class.')
       }
@@ -99,23 +106,25 @@ export function ClassUpcomingReminder() {
 
   return (
     <div
-      className="pointer-events-auto fixed bottom-4 right-4 z-[100] w-[min(100vw-2rem,22rem)] rounded-xl border border-amber-500/40 bg-amber-50/95 p-3 text-sm shadow-lg backdrop-blur-sm dark:border-amber-500/35 dark:bg-amber-950/90 dark:text-amber-50"
+      className="pointer-events-auto fixed bottom-4 right-4 z-[100] w-[min(100vw-2rem,18rem)] rounded-lg border border-amber-500/35 bg-amber-50/95 p-2.5 text-sm shadow-md backdrop-blur-sm dark:border-amber-500/30 dark:bg-amber-950/90 dark:text-amber-50"
       role="status"
     >
-      <div className="mb-2 flex items-start justify-between gap-2">
-        <p className="font-semibold text-amber-950 dark:text-amber-50">Class starting soon</p>
+      <div className="mb-1.5 flex items-start justify-between gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-amber-950 dark:text-amber-50">
+          Starting soon
+        </p>
         <button
           type="button"
-          className="rounded p-1 text-amber-900/70 hover:bg-amber-900/10 dark:text-amber-100/80 dark:hover:bg-amber-100/10"
+          className="rounded p-0.5 text-amber-900/70 hover:bg-amber-900/10 dark:text-amber-100/80 dark:hover:bg-amber-100/10"
           aria-label="Dismiss reminder"
           onClick={() => {
             for (const r of visible) dismissOne(r.session.id)
           }}
         >
-          <X className="h-4 w-4" />
+          <X className="h-3.5 w-3.5" />
         </button>
       </div>
-      <ul className="max-h-[40vh] space-y-2 overflow-y-auto">
+      <ul className="max-h-[32vh] space-y-1.5 overflow-y-auto">
         {visible.map((row) => {
           const t = new Date(row.session.scheduledFor)
           const timeStr = Number.isFinite(t.getTime())
@@ -124,19 +133,30 @@ export function ClassUpcomingReminder() {
           return (
             <li
               key={row.session.id}
-              className="rounded-lg border border-amber-600/20 bg-white/60 p-2 dark:border-amber-400/20 dark:bg-amber-950/50"
+              className="rounded-md border border-amber-600/15 bg-white/50 px-2 py-1.5 dark:border-amber-400/15 dark:bg-amber-950/40"
             >
-              <p className="text-xs font-medium text-amber-950 dark:text-amber-100">{timeStr}</p>
-              <p className="truncate text-sm font-semibold text-foreground">{row.studentName}</p>
-              <p className="truncate text-xs text-muted-foreground">{row.session.title}</p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Button type="button" size="sm" className="h-8 bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => void openClass(row)}>
-                  Open
+              <p className="text-[11px] font-medium text-amber-950 dark:text-amber-100">
+                {timeStr} · {row.studentName}
+              </p>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-7 bg-emerald-600 px-2.5 text-xs text-white hover:bg-emerald-700"
+                  onClick={() => void openClass(row)}
+                >
+                  Enter
                 </Button>
-                <Button asChild variant="outline" size="sm" className="h-8">
-                  <Link href={`/students/${row.studentId}/plan?tab=classes`}>Plan</Link>
+                <Button asChild variant="outline" size="sm" className="h-7 px-2.5 text-xs">
+                  <Link href={`/students/${row.studentId}?tab=classes`}>Prep</Link>
                 </Button>
-                <Button type="button" variant="ghost" size="sm" className="h-8 px-2" onClick={() => dismissOne(row.session.id)}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => dismissOne(row.session.id)}
+                >
                   Hide
                 </Button>
               </div>

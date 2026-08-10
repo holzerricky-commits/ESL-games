@@ -3,6 +3,7 @@ import {
   setAnnotationsForStorageKey,
 } from '@/lib/books/annotation-storage'
 import type { AnnotationCommand } from '@/lib/books/annotation-command-types'
+import { isInkSessionPageFlushEnabled } from '@/lib/books/ink-session-flush-gate'
 import {
   hydrateWhiteboardSessionFromLegacyStorage,
   legacyStorageCommandsWithoutDelegatedInk,
@@ -34,7 +35,8 @@ export function checkpointWhiteboardSessionDocument(
 }
 
 /**
- * Tier C: merge session pen ink into legacy whiteboard storage (text/sticky/marker stay on page layer).
+ * Tier C: project session commands (canvas + text/sticky/image) into legacy whiteboard storage.
+ * Canonical truth stays in `bookWhiteboardInkSessionV1`; this merge is for readers/export.
  */
 export function flushWhiteboardSessionDocumentToLegacyStorage({
   doc,
@@ -43,6 +45,7 @@ export function flushWhiteboardSessionDocumentToLegacyStorage({
   unitId,
   storagePageKey,
 }: FlushWhiteboardSessionToLegacyParams): void {
+  if (!isInkSessionPageFlushEnabled()) return
   const key = storagePageKey.trim()
   if (!key) return
   const existing = getAnnotationsForStorageKey(studentId, bookId, unitId, key)

@@ -7,6 +7,10 @@ export function isPenOrMarkerStroke(cmd: AnnotationCommand): cmd is StrokeAnnota
   return cmd.kind === 'stroke' && (cmd.tool === 'pen' || cmd.tool === 'marker')
 }
 
+function isPenStroke(cmd: AnnotationCommand): cmd is StrokeAnnotationCommand {
+  return cmd.kind === 'stroke' && cmd.tool === 'pen'
+}
+
 /** Re-export for callers that need the same pad as select hit-testing. */
 export { strokePadNorm as strokeConnectPadNorm }
 
@@ -21,13 +25,17 @@ function figureGroupIdsMatch(
   return 'different'
 }
 
-/** True when two pen/marker strokes belong in the same connected component for selection. */
+/**
+ * True when two pen strokes belong in the same connected component for selection.
+ * Highlighter (marker) strokes never group — always false if either side is a marker.
+ */
 export function strokesAreConnected(
   a: StrokeAnnotationCommand,
   b: StrokeAnnotationCommand,
   widthPx: number,
   heightPx: number,
 ): boolean {
+  if (a.tool === 'marker' || b.tool === 'marker') return false
   const groupMatch = figureGroupIdsMatch(a, b)
   if (groupMatch === 'different') return false
   if (groupMatch === 'same') return true
@@ -41,7 +49,7 @@ export function strokesAreConnected(
 
 type StrokeEntry = { index: number; cmd: StrokeAnnotationCommand }
 
-function collectPenMarkerStrokes(
+function collectPenStrokes(
   commands: AnnotationCommand[],
   skipIndices?: Set<number>,
 ): StrokeEntry[] {
@@ -49,7 +57,7 @@ function collectPenMarkerStrokes(
   for (let i = 0; i < commands.length; i++) {
     if (skipIndices?.has(i)) continue
     const cmd = commands[i]!
-    if (isPenOrMarkerStroke(cmd) && cmd.points.length >= 1) {
+    if (isPenStroke(cmd) && cmd.points.length >= 1) {
       out.push({ index: i, cmd })
     }
   }
@@ -57,7 +65,8 @@ function collectPenMarkerStrokes(
 }
 
 /**
- * All pen/marker stroke ids in the same connected component as `seedId` (BFS, ungrouped geometry only).
+ * All pen stroke ids in the same connected component as `seedId` (BFS, ungrouped geometry only).
+ * Highlighter seeds resolve to themselves only.
  */
 export function connectedPenMarkerStrokeIds(
   commands: AnnotationCommand[],
@@ -66,13 +75,17 @@ export function connectedPenMarkerStrokeIds(
   heightPx: number,
   skipIndices?: Set<number>,
 ): string[] {
-  const strokes = collectPenMarkerStrokes(commands, skipIndices)
+  const seedCmd = commands.find((c) => c.id === seedId)
+  if (!seedCmd || !isPenOrMarkerStroke(seedCmd)) return [seedId]
+  if (seedCmd.tool === 'marker') return [seedId]
+
+  const strokes = collectPenStrokes(commands, skipIndices)
   const seedIdx = strokes.findIndex((s) => s.cmd.id === seedId)
   if (seedIdx < 0) return [seedId]
 
-  const seedCmd = strokes[seedIdx]!.cmd
-  if (seedCmd.figureGroupId) {
-    return idsInFigureGroup(commands, seedCmd.figureGroupId, skipIndices)
+  const seeded = strokes[seedIdx]!.cmd
+  if (seeded.figureGroupId) {
+    return idsInFigureGroup(commands, seeded.figureGroupId, skipIndices)
   }
 
   const visited = new Set<number>([seedIdx])
@@ -99,7 +112,8 @@ export function connectedPenMarkerStrokeIds(
 }
 
 /**
- * Connected components among a subset of selected pen/marker ids (geometry only, same selection set).
+ * Connected components among selected pen strokes (geometry only).
+ * Selected highlighter strokes each stay a singleton component.
  */
 export function connectedComponentsAmongSelectedPenMarker(
   commands: readonly AnnotationCommand[],
@@ -108,16 +122,24 @@ export function connectedComponentsAmongSelectedPenMarker(
   heightPx: number,
 ): string[][] {
   const sel = new Set(selectedIds)
-  const strokes: { id: string; cmd: StrokeAnnotationCommand }[] = []
+  const components: string[][] = []
+
   for (const cmd of commands) {
     if (!sel.has(cmd.id) || !isPenOrMarkerStroke(cmd) || cmd.points.length < 1) continue
-    strokes.push({ id: cmd.id, cmd })
+    if (cmd.tool === 'marker') {
+      components.push([cmd.id])
+    }
+  }
+
+  const pens: { id: string; cmd: StrokeAnnotationCommand }[] = []
+  for (const cmd of commands) {
+    if (!sel.has(cmd.id) || !isPenStroke(cmd) || cmd.points.length < 1) continue
+    pens.push({ id: cmd.id, cmd })
   }
 
   const visited = new Set<string>()
-  const components: string[][] = []
 
-  for (const { id: seedId, cmd: seedCmd } of strokes) {
+  for (const { id: seedId } of pens) {
     if (visited.has(seedId)) continue
     const component: string[] = []
     const queue = [seedId]
@@ -126,10 +148,10 @@ export function connectedComponentsAmongSelectedPenMarker(
     while (queue.length > 0) {
       const curId = queue.shift()!
       component.push(curId)
-      const curEntry = strokes.find((s) => s.id === curId)
+      const curEntry = pens.find((s) => s.id === curId)
       if (!curEntry) continue
       const { cmd: curCmd } = curEntry
-      for (const { id: otherId, cmd: otherCmd } of strokes) {
+      for (const { id: otherId, cmd: otherCmd } of pens) {
         if (visited.has(otherId)) continue
         if (strokesAreConnected(curCmd, otherCmd, widthPx, heightPx)) {
           visited.add(otherId)
@@ -144,7 +166,8 @@ export function connectedComponentsAmongSelectedPenMarker(
 }
 
 /**
- * Resolve selection ids for a select click on pen/marker ink (group id or ungrouped BFS).
+ * Resolve selection ids for a select click on pen ink (group id or ungrouped BFS).
+ * Highlighter clicks always resolve to the single stroke.
  */
 export function resolvePenMarkerSelectionIds(
   commands: AnnotationCommand[],
@@ -155,5 +178,6 @@ export function resolvePenMarkerSelectionIds(
 ): string[] {
   const seed = commands.find((c) => c.id === seedId)
   if (!seed || !isPenOrMarkerStroke(seed)) return [seedId]
+  if (seed.tool === 'marker') return [seedId]
   return connectedPenMarkerStrokeIds(commands, seedId, widthPx, heightPx, skipIndices)
 }

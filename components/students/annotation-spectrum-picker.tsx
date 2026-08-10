@@ -4,8 +4,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { clamp01, hexToHsl, hslToHex, type Hsl } from '@/lib/books/hsl-color'
 import { cn } from '@/lib/utils'
 
-const sectionLabelClass =
+const sectionLabelClassDark =
   'text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-[#c4b5a8]/85'
+
+const sectionLabelClassLight =
+  'text-[10px] font-semibold uppercase tracking-wide text-slate-400'
+
+export type SpectrumPickerSurface = 'dark' | 'light'
 
 const spectrumFieldBackground =
   'linear-gradient(to bottom, #fff 0%, rgba(255,255,255,0) 50%, #000 100%), linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)'
@@ -22,13 +27,16 @@ export function SpectrumColorPicker({
   onPickCustom,
   label = 'Custom color',
   variant = 'default',
+  surface = 'dark',
 }: {
   customHex: string
   onPickCustom: (hex: string) => void
   label?: string
   variant?: 'default' | 'strip'
+  surface?: SpectrumPickerSurface
 }) {
   const strip = variant === 'strip'
+  const light = surface === 'light'
   const spectrumRef = useRef<HTMLDivElement>(null)
   const [hsl, setHsl] = useState<Hsl>(() => hexToHsl(customHex) ?? { h: 220, s: 1, l: 0.45 })
 
@@ -60,11 +68,15 @@ export function SpectrumColorPicker({
   return (
     <div className={strip ? 'space-y-1.5' : 'space-y-2'}>
       {strip ? (
-        <p className="font-mono text-[0.65rem] text-white/50">{displayHex}</p>
+        <p className={cn('font-mono text-[0.65rem]', light ? 'text-slate-400' : 'text-white/50')}>
+          {displayHex}
+        </p>
       ) : (
         <>
-          <p className={sectionLabelClass}>{label}</p>
-          <p className="font-mono text-[0.7rem] text-[#c4b5a8]">{displayHex}</p>
+          <p className={light ? sectionLabelClassLight : sectionLabelClassDark}>{label}</p>
+          <p className={cn('font-mono text-[0.7rem]', light ? 'text-slate-500' : 'text-[#c4b5a8]')}>
+            {displayHex}
+          </p>
         </>
       )}
 
@@ -78,7 +90,9 @@ export function SpectrumColorPicker({
         tabIndex={0}
         className={cn(
           'relative w-full cursor-crosshair touch-none overflow-hidden rounded-md border',
-          strip ? 'h-[5.5rem] border-white/10' : 'h-[7.5rem] border-white/14',
+          strip
+            ? cn('h-[5.5rem]', light ? 'border-slate-200' : 'border-white/10')
+            : cn('h-[7.5rem]', light ? 'border-slate-200' : 'border-white/14'),
         )}
         style={{ background: spectrumFieldBackground }}
         onPointerDown={(e) => {

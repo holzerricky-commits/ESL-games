@@ -19,7 +19,7 @@ export interface CachedPageCanvasProps {
   bitmap: ImageBitmap
   cssWidth: number
   cssHeight: number
-  /** Optional clip from the left (spread right slot seam). */
+  /** @deprecated Seam overlap uses spread layout only — inset clip squashes art. */
   clipLeftPx?: number
   onPainted?: () => void
   /** Fired when the cached bitmap is no longer drawable (evicted / detached). */
@@ -47,7 +47,7 @@ export function CachedPageCanvas({
   bitmap,
   cssWidth,
   cssHeight,
-  clipLeftPx = 0,
+  clipLeftPx: _clipLeftPx = 0,
   onPainted,
   onPaintFailed,
 }: CachedPageCanvasProps) {
@@ -69,17 +69,14 @@ export function CachedPageCanvas({
     return scheduleAfterNextPaint(() => onPaintedRef.current?.())
   }, [bitmap, zoomRepaintRevision])
 
-  const clipLeft = clipLeftPx > 0 ? Math.round(clipLeftPx) : 0
-  const clipStyle = clipLeft > 0 ? ({ clipPath: `inset(0 0 0 ${clipLeft}px)` } as const) : undefined
-
   return (
     <canvas
       ref={ref}
       width={bitmap.width}
       height={bitmap.height}
       aria-hidden
-      className="pointer-events-none block max-w-full select-none bg-[#FDFCFB]"
-      style={{ width: cssWidth, height: cssHeight, ...clipStyle }}
+      className="pointer-events-none block max-w-full select-none bg-transparent"
+      style={{ width: cssWidth, height: cssHeight }}
     />
   )
 }

@@ -45,11 +45,13 @@ export function lockStraightStrokeAxis(
   anchor: [number, number],
   current: [number, number],
   minDistSq = STRAIGHT_STROKE_LOCK_MIN_DIST_SQ,
+  options?: { forceHorizontal?: boolean },
 ): StraightStrokeAxis | null {
   if (locked) return locked
   const dx = current[0] - anchor[0]
   const dy = current[1] - anchor[1]
   if (dx * dx + dy * dy < minDistSq) return null
+  if (options?.forceHorizontal) return 'horizontal'
   return resolveStraightStrokeAxis(dx, dy)
 }
 
@@ -94,7 +96,9 @@ export function extendStrokeDraftFromMove(
 
   if (useStraight) {
     const current = samples[samples.length - 1]!
-    const axis = lockStraightStrokeAxis(opts.straightStrokeAxis, anchor, current)
+    const axis = lockStraightStrokeAxis(opts.straightStrokeAxis, anchor, current, undefined, {
+      forceHorizontal: draft.tool === 'marker',
+    })
     if (!axis) return opts.straightStrokeAxis
     draft.points = straightStrokePoints(anchor, current, axis)
     return axis
@@ -132,7 +136,9 @@ export function finalizeStrokeDraftEndPoint(
       const anchor = draft.points[0]!
       const axis =
         opts.straightStrokeAxis ??
-        resolveStraightStrokeAxis(end[0] - anchor[0], end[1] - anchor[1])
+        (draft.tool === 'marker'
+          ? 'horizontal'
+          : resolveStraightStrokeAxis(end[0] - anchor[0], end[1] - anchor[1]))
       draft.points = straightStrokePoints(anchor, end, axis)
       return axis
     }

@@ -53,6 +53,30 @@ function triangleLoop(x: number, y: number, w: number, h: number): [number, numb
   return pts
 }
 
+/** Closed cloud: oval base with several radial bumps (path much longer than oval). */
+function cloudLoop(cx: number, cy: number, rx: number, ry: number, bumps = 6): [number, number][] {
+  const pts: [number, number][] = []
+  const steps = 72
+  for (let i = 0; i <= steps; i++) {
+    const t = (i / steps) * Math.PI * 2
+    const bump = 1 + 0.28 * Math.sin(bumps * t) + 0.12 * Math.sin(bumps * 2 * t + 0.4)
+    pts.push([cx + Math.cos(t) * rx * bump, cy + Math.sin(t) * ry * bump])
+  }
+  return pts
+}
+
+/** Extreme closed zigzag that ends near the start. */
+function zigzagClosedLoop(cx: number, cy: number, rx: number, ry: number): [number, number][] {
+  const pts: [number, number][] = []
+  const segments = 24
+  for (let i = 0; i <= segments; i++) {
+    const t = (i / segments) * Math.PI * 2
+    const inward = i % 2 === 0 ? 1 : 0.35
+    pts.push([cx + Math.cos(t) * rx * inward, cy + Math.sin(t) * ry * inward])
+  }
+  return pts
+}
+
 describe('stroke-shape-recognition', () => {
   it('recognizes a rough horizontal line', () => {
     const pts: [number, number][] = []
@@ -80,8 +104,21 @@ describe('stroke-shape-recognition', () => {
     expect(Math.abs(shape.current[1] - shape.anchor[1])).toBeCloseTo(0.25, 2)
     updateHoldShapeDraftAtPointer(shape, [0.221, 0.281])
     expect(Math.abs(shape.current[0] - shape.anchor[0])).toBeCloseTo(0.35, 2)
-    updateHoldShapeDraftAtPointer(shape, [0.5, 0.55])
-    expect(Math.abs(shape.current[0] - shape.anchor[0])).toBeGreaterThan(0.1)
+  })
+
+  it('pins the opposite corner when resize arms so a small move does not collapse', () => {
+    // Rect: (0.15, 0.2) .. (0.5, 0.45). Pause near bottom-right.
+    const shape = recognizeHoldShapeFromStroke(rectLoop(0.15, 0.2, 0.35, 0.25))!
+    snapHoldShapeDraftOnActivate(shape, [0.48, 0.43])
+    updateHoldShapeDraftAtPointer(shape, [0.49, 0.44])
+    // Far corner stays fixed (top-left); cursor is the free corner.
+    expect(shape.anchor).toEqual([0.15, 0.2])
+    expect(shape.current).toEqual([0.49, 0.44])
+    expect(Math.abs(shape.current[0] - shape.anchor[0])).toBeCloseTo(0.34, 2)
+    expect(Math.abs(shape.current[1] - shape.anchor[1])).toBeCloseTo(0.24, 2)
+    updateHoldShapeDraftAtPointer(shape, [0.55, 0.5])
+    expect(shape.anchor).toEqual([0.15, 0.2])
+    expect(shape.current).toEqual([0.55, 0.5])
   })
 
   it('recognizes a closed ellipse', () => {
@@ -93,7 +130,7 @@ describe('stroke-shape-recognition', () => {
     const pts = triangleLoop(0.2, 0.2, 0.3, 0.28)
     const scores = scoreHoldShapeCandidatesForTest(pts)
     expect(scores.closed).toBe(true)
-    expect(scores.triangle).toBeGreaterThan(0.52)
+    expect(scores.triangle).toBeGreaterThan(0.58)
     const shape = recognizeHoldShapeFromStroke(pts)
     expect(shape?.kind).toBe('triangle')
   })
@@ -110,6 +147,21 @@ describe('stroke-shape-recognition', () => {
       [0.4, 0.15],
       [0.55, 0.48],
     ]
+    expect(recognizeHoldShapeFromStroke(pts)).toBeNull()
+  })
+
+  it('does not snap a closed cloud outline to an ellipse', () => {
+    const pts = cloudLoop(0.5, 0.5, 0.18, 0.14)
+    const scores = scoreHoldShapeCandidatesForTest(pts)
+    expect(scores.closed).toBe(true)
+    expect(scores.ellipse).toBeLessThan(0.58)
+    expect(recognizeHoldShapeFromStroke(pts)).toBeNull()
+  })
+
+  it('does not snap an extreme closed zigzag to a shape', () => {
+    const pts = zigzagClosedLoop(0.5, 0.5, 0.2, 0.16)
+    const scores = scoreHoldShapeCandidatesForTest(pts)
+    expect(scores.closed).toBe(true)
     expect(recognizeHoldShapeFromStroke(pts)).toBeNull()
   })
 

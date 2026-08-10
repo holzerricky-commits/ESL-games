@@ -61,6 +61,26 @@ export function resolveShortcutTapIndex(
   return { index, nextState: { lastAt: now, lastIndex: index } }
 }
 
+/**
+ * Quick-stamp S shortcut: cold start (from another tool) always picks index 0 (tick);
+ * warm cycle (already on quick stamp) uses resolveShortcutTapIndex burst semantics.
+ */
+export function resolveQuickStampShortcut(
+  variantCount: number,
+  wasQuickSticker: boolean,
+  tapState: ShortcutTapState,
+  now: number,
+  currentVariantIndex: number,
+): { index: number; nextState: ShortcutTapState } {
+  if (variantCount <= 0) {
+    return { index: 0, nextState: { lastAt: now, lastIndex: 0 } }
+  }
+  if (!wasQuickSticker) {
+    return { index: 0, nextState: { lastAt: now, lastIndex: 0 } }
+  }
+  return resolveShortcutTapIndex(tapState, now, variantCount, currentVariantIndex)
+}
+
 /** Alt+1 … Alt+9 for direct quick sticker selection. */
 export const BOOK_OVERLAY_STAMP_VARIANT_BY_DIGIT: Record<string, StampVariant> = {
   '1': 'check',
@@ -68,10 +88,6 @@ export const BOOK_OVERLAY_STAMP_VARIANT_BY_DIGIT: Record<string, StampVariant> =
   '3': 'question',
   '4': 'star',
   '5': 'heart',
-  '6': 'thumbsUp',
-  '7': 'repeat',
-  '8': 'yourTurn',
-  '9': 'newWord',
 }
 
 /** Single-key labels shown in tooltips. */
@@ -87,9 +103,9 @@ export const BOOK_OVERLAY_SHORTCUT_LABELS = {
   shapeArrow: 'A',
   shapeLineAndTriangle: 'M again to cycle',
   stamp: 'S',
-  stampVariants: 'S again, Alt+1–9',
+  stampVariants: 'S again, Alt+1–5',
   sticker: 'S',
-  stickerVariants: 'S again, Alt+1–9',
+  stickerVariants: 'S again, Alt+1–5',
   text: 'T',
   sticky: 'N',
   stickyWritable: 'N',
@@ -101,7 +117,8 @@ export const BOOK_OVERLAY_SHORTCUT_LABELS = {
   selectSubtract: 'Alt+click',
   selectToggle: 'Ctrl+click',
   selectAll: 'Ctrl+A',
-  deselectAll: 'Ctrl+Shift+A',
+  selectAllIncludingLocked: 'Ctrl+Shift+A',
+  deselectAll: 'Esc',
   duplicate: 'Ctrl+D',
   selectNext: 'Tab',
   selectPrev: 'Shift+Tab',
@@ -115,7 +132,7 @@ export const BOOK_OVERLAY_SHORTCUT_LABELS = {
   groupToggle: 'Ctrl+G',
   removeFromGroup: 'Ctrl+Shift+G',
   whiteboard: 'W',
-  whiteboardFullscreen: 'F',
+  browserFullscreen: 'F',
   whiteboardMoveLeft: 'Alt+←',
   whiteboardMoveRight: 'Alt+→',
   translate: 'C',
@@ -124,6 +141,8 @@ export const BOOK_OVERLAY_SHORTCUT_LABELS = {
   pagePrev: '←',
   pageNext: '→',
   closePanelOrBook: 'Esc',
+  focusZoom: 'Z',
+  studentReward: 'G',
 } as const
 
 /** Normalized nudge per arrow press (~3px on an 800px-wide page). */

@@ -17,6 +17,12 @@ export interface ResolveInitialBookReaderSelectionArgs {
   assignedBookIds: string[]
   assignedUnitRefs: Array<{ bookId: string; unitId: string }>
   curriculumHistory: BookReaderCurriculumHistoryEntry[]
+  /** Map URL `book` — when valid, opens this book instead of assignment defaults. */
+  preferBookId?: string | null
+  /** Map URL `unit` — when valid with `preferBookId`, opens this unit. */
+  preferUnitId?: string | null
+  /** Resume page when `preferBookId` + unit resolve (e.g. from student bookmark/history). */
+  preferResumePage?: number | null
 }
 
 export interface InitialBookReaderSelection {
@@ -34,8 +40,33 @@ export function resolveInitialBookReaderSelection({
   assignedBookIds,
   assignedUnitRefs,
   curriculumHistory,
+  preferBookId,
+  preferUnitId,
+  preferResumePage,
 }: ResolveInitialBookReaderSelectionArgs): InitialBookReaderSelection {
   const booksById = new Map(library.books.map((book) => [book.id, book]))
+  const explicitBookId = preferBookId?.trim()
+  if (explicitBookId) {
+    const book = booksById.get(explicitBookId)
+    if (book) {
+      const explicitUnitId = preferUnitId?.trim()
+      const unit = explicitUnitId
+        ? (book.units.find((u) => u.id === explicitUnitId) ?? null)
+        : (book.units[0] ?? null)
+      if (unit) {
+        const bounds = getUnitReaderBounds(unit, null, book)
+        const resume =
+          preferResumePage != null && Number.isFinite(preferResumePage)
+            ? Math.max(1, Math.floor(preferResumePage))
+            : getSavedUnitPage(book.id, unit.id)
+        return {
+          selectedBookId: book.id,
+          selectedUnitId: unit.id,
+          pageNumber: clampPdfPage(resume, bounds),
+        }
+      }
+    }
+  }
   const sortedHistory = [...curriculumHistory].sort(
     (a, b) => new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime(),
   )
@@ -103,4 +134,80 @@ export function resolveInitialBookReaderSelection({
   }
 
   return { selectedBookId, selectedUnitId, pageNumber: 1 }
+}
+
+export interface LauncherBookCoverEntry {
+  bookId: string
+  unitId: string
+  filePath: string
+  cacheUnitId: string
+  bookTitle: string
+  /** When set, shown instead of PDF page 1. */
+  imagePath?: string
+}
+
+/**
+ * One cover entry per assigned book (assignment order), for the class welcome shelf.
+ * Unit = first assigned unit ref for that book, else the book’s first unit.
+ */
+export function resolveLauncherBookCovers({
+  library,
+  assignedBookIds,
+  assignedUnitRefs,
+}: Pick<
+  ResolveInitialBookReaderSelectionArgs,
+  'library' | 'assignedBookIds' | 'assignedUnitRefs'
+>): LauncherBookCoverEntry[] {
+  const booksById = new Map(library.books.map((book) => [book.id, book]))
+  const covers: LauncherBookCoverEntry[] = []
+
+  for (const bookId of assignedBookIds) {
+    const book = booksById.get(bookId)
+    if (!book) continue
+
+    let unit = null as (typeof book.units)[number] | null
+    for (const ref of assignedUnitRefs) {
+      if (ref.bookId !== book.id) continue
+      const matched = book.units.find((u) => u.id === ref.unitId)
+      if (matched) {
+        unit = matched
+        break
+      }
+    }
+    if (!unit) unit = book.units[0] ?? null
+    if (!unit) continue
+
+    const coverUnit = book.units[0] ?? unit
+    const imagePath = book.coverImagePath?.trim()
+    if (!imagePath && !coverUnit.filePath) continue
+
+    covers.push({
+      bookId: book.id,
+      unitId: unit.id,
+      filePath: coverUnit.filePath ?? '',
+      cacheUnitId: `${book.id}-launcher-cover`,
+      bookTitle: book.title,
+      ...(imagePath ? { imagePath } : {}),
+    })
+  }
+
+  return covers
+}
+
+/** First-page cover of the book the fullscreen reader would open for this student. */
+export function resolveLauncherBookCover(
+  args: ResolveInitialBookReaderSelectionArgs,
+): { filePath: string; cacheUnitId: string; bookTitle: string; imagePath?: string } | null {
+  const sel = resolveInitialBookReaderSelection(args)
+  if (!sel.selectedBookId) return null
+  const book = args.library.books.find((b) => b.id === sel.selectedBookId)
+  const coverUnit = book?.units[0]
+  const imagePath = book?.coverImagePath?.trim()
+  if (!book || (!imagePath && !coverUnit?.filePath)) return null
+  return {
+    filePath: coverUnit?.filePath ?? '',
+    cacheUnitId: `${book.id}-launcher-cover`,
+    bookTitle: book.title,
+    ...(imagePath ? { imagePath } : {}),
+  }
 }

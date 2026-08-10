@@ -11,8 +11,17 @@ import { penSwatchPreviewStyle } from '@/lib/books/pen-ink'
 import { useBrushPatternPreload } from '@/lib/books/use-brush-pattern-preload'
 import { cn } from '@/lib/utils'
 
-const sectionLabelClass =
+const sectionLabelClassDark =
   'text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-[#c4b5a8]/85'
+
+const sectionLabelClassLight =
+  'text-[10px] font-semibold uppercase tracking-wide text-slate-400'
+
+export type SwatchPickerSurface = 'dark' | 'light'
+
+function sectionLabelClassFor(surface: SwatchPickerSurface): string {
+  return surface === 'light' ? sectionLabelClassLight : sectionLabelClassDark
+}
 
 function swatchButtonClass(active: boolean, size: 'default' | 'compact' = 'default') {
   return cn(
@@ -34,15 +43,17 @@ const customPickerSwatchStyle: CSSProperties = {
 function SwatchSection({
   label,
   labelHidden = false,
+  surface = 'dark',
   children,
 }: {
   label: string
   labelHidden?: boolean
+  surface?: SwatchPickerSurface
   children: ReactNode
 }) {
   return (
     <div className={labelHidden ? undefined : 'space-y-2'}>
-      {labelHidden ? null : <p className={sectionLabelClass}>{label}</p>}
+      {labelHidden ? null : <p className={sectionLabelClassFor(surface)}>{label}</p>}
       {children}
     </div>
   )
@@ -111,6 +122,7 @@ export function ColorSwatchRow({
   colorSource = 'swatch',
   labelHidden = false,
   swatchSize = 'default',
+  surface = 'dark',
 }: {
   colors: readonly string[]
   current: string
@@ -121,10 +133,11 @@ export function ColorSwatchRow({
   colorSource?: AnnotationColorSource
   labelHidden?: boolean
   swatchSize?: 'default' | 'compact'
+  surface?: SwatchPickerSurface
 }) {
   const compact = swatchSize === 'compact'
   return (
-    <SwatchSection label={label} labelHidden={labelHidden}>
+    <SwatchSection label={label} labelHidden={labelHidden} surface={surface}>
       <SwatchList compact={compact}>
         {colors.map((hex, i) => {
           const active = colorSource === 'swatch' && current.toLowerCase() === hex.toLowerCase()
@@ -240,6 +253,7 @@ export function PenSwatchRow({
   labelHidden = false,
   swatchSize = 'default',
   swatches = ANNOTATION_PEN_SWATCHES,
+  surface = 'dark',
 }: {
   swatchId: string
   onPick: (id: string) => void
@@ -254,6 +268,7 @@ export function PenSwatchRow({
   swatchSize?: 'default' | 'compact'
   /** Subset of pen swatches (e.g. solids vs effect inks for the active pen profile). */
   swatches?: readonly import('@/lib/books/annotation-palettes').PenSwatch[]
+  surface?: SwatchPickerSurface
 }) {
   const compact = swatchSize === 'compact'
   const { manifestTilesLoading } = useBrushPatternPreload(preloadEnabled)
@@ -268,9 +283,15 @@ export function PenSwatchRow({
       !isBrushPatternTileReady(activePatternId))
 
   return (
-    <SwatchSection label={label} labelHidden={labelHidden}>
+    <SwatchSection label={label} labelHidden={labelHidden} surface={surface}>
       {!compact && manifestTilesLoading ? (
-        <p className="flex items-center gap-1.5 text-[0.65rem] text-[#c4b5a8]/90" aria-live="polite">
+        <p
+          className={cn(
+            'flex items-center gap-1.5 text-[0.65rem]',
+            surface === 'light' ? 'text-slate-400' : 'text-[#c4b5a8]/90',
+          )}
+          aria-live="polite"
+        >
           <Loader2 className="h-3 w-3 shrink-0 animate-spin" aria-hidden />
           Loading brush textures…
         </p>

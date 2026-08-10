@@ -18,6 +18,9 @@ import {
   lessonBoardLogicalWidthPx,
   lessonBoardMinContentHeightPx,
   lessonBoardResolveContentHeightPx,
+  defaultLessonBoardContentHeightPx,
+  lessonBoardMaxContentHeightPx,
+  lessonBoardHeightToKeepOneViewportBelowView,
   lessonBoardThumbDimensions,
   lessonBoardUsesSpreadPresentation,
   syncLessonBoardActivePageToCommands,
@@ -76,7 +79,20 @@ describe('lesson-board-types', () => {
 
   it('lessonBoardResolveContentHeightPx clamps wide to aspect height', () => {
     expect(lessonBoardResolveContentHeightPx('wide', 640, 2400)).toBe(Math.round(640 / (16 / 9)))
-    expect(lessonBoardResolveContentHeightPx('standard', 320, 2400)).toBe(2400)
+    expect(lessonBoardResolveContentHeightPx('standard', 320, 2000)).toBe(2000)
+    expect(lessonBoardResolveContentHeightPx('standard', 320, 100, 500)).toBe(1000)
+  })
+
+  it('defaultLessonBoardContentHeightPx is view plus one blank screen', () => {
+    expect(defaultLessonBoardContentHeightPx(640)).toBe(1280)
+    expect(lessonBoardMaxContentHeightPx(640)).toBe(640 * 8)
+  })
+
+  it('lessonBoardHeightToKeepOneViewportBelowView grows ahead of scroll', () => {
+    expect(lessonBoardHeightToKeepOneViewportBelowView(0, 500, 1000, 8000)).toBe(1000)
+    expect(lessonBoardHeightToKeepOneViewportBelowView(200, 500, 1000, 8000)).toBe(1200)
+    expect(lessonBoardHeightToKeepOneViewportBelowView(600, 500, 1000, 8000)).toBe(1600)
+    expect(lessonBoardHeightToKeepOneViewportBelowView(600, 500, 1000, 1500)).toBe(1500)
   })
 
   it('lessonBoardAllowsRunwayGrowth is false for wide only', () => {
@@ -139,7 +155,7 @@ describe('lesson-board-types', () => {
     const doc = {
       pages: [page],
       activePageId: page.id,
-      commands: [],
+      commands: [] as Array<typeof stroke>,
     }
     const synced = syncLessonBoardActivePageToCommands(doc)
     expect(synced.commands).toHaveLength(1)
@@ -194,9 +210,26 @@ describe('lesson-board-types', () => {
     const localPrepared = prepareLessonBoardSessionForPersist(localDoc)
     storage.writeRoot({ [localDoc.docId]: localPrepared as never })
 
-    const primaryKey = { ...key, storagePageKey: classKey }
-    const loaded = loadWhiteboardSessionBestMatch(primaryKey, [classKey, localKey], storage)
-    expect(loaded.key.storagePageKey).toBe(classKey)
+    const primaryKey = { ...key, storagePageKey: localKey }
+    const loaded = loadWhiteboardSessionBestMatch(primaryKey, [localKey, classKey], storage)
+    expect(loaded.key.storagePageKey).toBe(localKey)
+    expect(loaded.docId).toBe(whiteboardSessionDocId(primaryKey))
+    expect(loaded.commands).toHaveLength(1)
+    expect(loaded.pages[0]?.commands).toHaveLength(1)
+  })
+
+  it('loadWhiteboardSessionBestMatch migrates richest legacy class board onto lasting key', () => {
+    const storage = createMemoryWhiteboardSessionStorage()
+    const localKey = annotationStorageLocalWhiteboardKey(key.bookId, key.unitId)
+    const legacyKey = annotationStorageSessionKey('old-class-1')
+    const legacyDoc = createEmptyWhiteboardSession({ ...key, storagePageKey: legacyKey })
+    legacyDoc.commands = [stroke]
+    const prepared = prepareLessonBoardSessionForPersist(legacyDoc)
+    storage.writeRoot({ [legacyDoc.docId]: prepared as never })
+
+    const primaryKey = { ...key, storagePageKey: localKey }
+    const loaded = loadWhiteboardSessionBestMatch(primaryKey, [localKey], storage)
+    expect(loaded.key.storagePageKey).toBe(localKey)
     expect(loaded.docId).toBe(whiteboardSessionDocId(primaryKey))
     expect(loaded.commands).toHaveLength(1)
     expect(loaded.pages[0]?.commands).toHaveLength(1)

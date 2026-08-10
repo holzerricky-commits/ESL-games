@@ -16,6 +16,10 @@ import {
   shapeRoundedCornersEnabled,
 } from '@/lib/books/shape-rounded-corners'
 import { traceStrokePoints } from '@/lib/books/stroke-path-trace'
+import { getAnnotationBounds } from '@/lib/books/annotation-select'
+import { getPasteRevealOpacity, getPasteRevealScale } from '@/lib/books/board-paste-reveal'
+import { getStampPlacementTransformForId } from '@/lib/books/stamp-placement-effect'
+import { STAMP_DRAW_RADIUS_FACTOR } from '@/lib/books/stamp-symbol-bounds'
 import {
   ANNOTATION_MARKER_SWATCHES,
   migrateMarkerColor,
@@ -239,7 +243,7 @@ function normLineToPx(
   }
 }
 
-function drawStampSymbol(
+export function drawStampSymbol(
   ctx: CanvasRenderingContext2D,
   variant: string,
   cx: number,
@@ -281,34 +285,6 @@ function drawStampSymbol(
     ctx.bezierCurveTo(cx + s * 0.55, cy - s * 0.55, cx + s * 1.1, cy + s * 0.15, cx, cy + s * 0.95)
     ctx.closePath()
     ctx.fill()
-  } else if (variant === 'thumbsUp') {
-    ctx.beginPath()
-    ctx.roundRect(cx - r * 0.22, cy - r * 0.08, r * 0.28, r * 0.52, r * 0.06)
-    ctx.fill()
-    ctx.beginPath()
-    ctx.roundRect(cx - r * 0.42, cy + r * 0.08, r * 0.22, r * 0.34, r * 0.08)
-    ctx.fill()
-  } else if (variant === 'repeat') {
-    ctx.beginPath()
-    ctx.arc(cx, cy, r * 0.34, Math.PI * 0.25, Math.PI * 1.35)
-    ctx.stroke()
-    ctx.beginPath()
-    ctx.moveTo(cx + r * 0.22, cy - r * 0.34)
-    ctx.lineTo(cx + r * 0.38, cy - r * 0.34)
-    ctx.lineTo(cx + r * 0.3, cy - r * 0.5)
-    ctx.stroke()
-  } else if (variant === 'yourTurn') {
-    ctx.beginPath()
-    ctx.moveTo(cx - r * 0.35, cy + r * 0.35)
-    ctx.lineTo(cx + r * 0.15, cy - r * 0.05)
-    ctx.lineTo(cx - r * 0.02, cy - r * 0.05)
-    ctx.lineTo(cx + r * 0.28, cy - r * 0.42)
-    ctx.stroke()
-  } else if (variant === 'newWord') {
-    ctx.font = `bold ${r * 0.62}px system-ui, sans-serif`
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.fillText('W', cx, cy + r * 0.04)
   } else if (variant === 'star') {
     const spikes = 5
     const outer = r * 0.48
@@ -353,13 +329,21 @@ export function replayInkSlice(
   widthPx: number,
   heightPx: number,
   penInkPatternOrigin?: PenInkPatternOrigin,
+  now: number = Date.now(),
 ): void {
   clearAnnotationCanvas(inkCtx)
   applyAnnotationCanvasDpr(inkCtx)
   for (const i of indices) {
     const cmd = commands[i]
     if (!cmd || isMarkerStrokeCommand(cmd)) continue
-    drawAnnotationCommand(inkCtx, cmd, widthPx, heightPx, { pagePatternOrigin: penInkPatternOrigin })
+    drawAnnotationCommandWithPasteReveal(
+      inkCtx,
+      cmd,
+      widthPx,
+      heightPx,
+      { pagePatternOrigin: penInkPatternOrigin },
+      now,
+    )
   }
 }
 
@@ -589,7 +573,7 @@ export function drawAnnotationCommand(
       const cx = cmd.center[0] * widthPx
       const cy = cmd.center[1] * heightPx
       const base = Math.min(widthPx, heightPx)
-      const r = (cmd.scale ?? 1) * base * 0.06
+      const r = (cmd.scale ?? 1) * base * STAMP_DRAW_RADIUS_FACTOR
       drawStampSymbol(ctx, cmd.variant, cx, cy, r, cmd.color)
       break
     }
@@ -620,6 +604,56 @@ export function drawAnnotationCommand(
     default:
       break
   }
+}
+
+export function drawAnnotationCommandWithPasteReveal(
+  ctx: CanvasRenderingContext2D,
+  cmd: AnnotationCommand,
+  widthPx: number,
+  heightPx: number,
+  options?: DrawStrokePathOptions,
+  now: number = Date.now(),
+): void {
+  const scale = getPasteRevealScale(cmd.id, now)
+  if (scale != null) {
+    const bounds = getAnnotationBounds(cmd, widthPx, heightPx)
+    if (!bounds || bounds.w <= 0 || bounds.h <= 0) {
+      drawAnnotationCommand(ctx, cmd, widthPx, heightPx, options)
+      return
+    }
+
+    const cx = (bounds.x + bounds.w / 2) * widthPx
+    const cy = (bounds.y + bounds.h / 2) * heightPx
+    const opacity = getPasteRevealOpacity(cmd.id, now) ?? 1
+
+    ctx.save()
+    ctx.translate(cx, cy)
+    ctx.scale(scale, scale)
+    ctx.translate(-cx, -cy)
+    ctx.globalAlpha *= opacity
+    drawAnnotationCommand(ctx, cmd, widthPx, heightPx, options)
+    ctx.restore()
+    return
+  }
+
+  if (cmd.kind === 'stamp') {
+    const placement = getStampPlacementTransformForId(cmd.id, now)
+    if (placement) {
+      const cx = cmd.center[0] * widthPx
+      const cy = cmd.center[1] * heightPx
+      ctx.save()
+      ctx.translate(cx + placement.offsetXNorm * widthPx, cy + placement.offsetYNorm * heightPx)
+      ctx.rotate(placement.rotationRad)
+      ctx.scale(placement.scale, placement.scale)
+      ctx.globalAlpha *= placement.opacity
+      ctx.translate(-cx, -cy)
+      drawAnnotationCommand(ctx, cmd, widthPx, heightPx, options)
+      ctx.restore()
+      return
+    }
+  }
+
+  drawAnnotationCommand(ctx, cmd, widthPx, heightPx, options)
 }
 
 export function drawLaserTrail(

@@ -12,6 +12,7 @@ export {
   readerPrefetchLowResWidthBucket,
   invalidateReaderPrefetchStaleWidthBucketsForUnit,
   clearReaderPrefetchCacheForUnit,
+  invalidateReaderPrefetchPagesAtWidth,
   subscribeReaderPrefetchCache as subscribePageRenderCache,
   getReaderPrefetchedImageBitmap as getPageRenderCacheBitmap,
   getReaderPrefetchedLowResBitmap,

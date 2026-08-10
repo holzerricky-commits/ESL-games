@@ -419,7 +419,7 @@ export function PlayMode({
             <Button
               onClick={handleStartQuiz}
               disabled={!studentName.trim() || !enterTitleVisible}
-              className="w-full bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-bright)] text-white font-bold py-7 text-xl gap-3 shadow-[0_0_32px_rgba(59,130,246,0.4)] disabled:opacity-40 transition-all duration-200 hover:scale-[1.02]"
+              className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold py-7 text-xl gap-3 disabled:opacity-40 transition-all duration-200"
             >
               Start Quiz
               <ChevronRight size={22} />
@@ -512,7 +512,7 @@ export function PlayMode({
             <Button
               type="button"
               onClick={() => handleMarkSelf(true)}
-              className="gap-3 rounded-2xl bg-[var(--brand-green)] px-10 py-7 text-xl font-black text-[var(--surface-1)] shadow-[0_0_32px_rgba(34,197,94,0.4)] transition-all duration-200 hover:scale-105 hover:bg-[var(--brand-green-bright)] disabled:opacity-50 disabled:hover:scale-100"
+              className="gap-3 rounded-2xl bg-[var(--brand-green)] px-10 py-7 text-xl font-black text-white shadow-sm transition-all duration-200 hover:bg-[var(--brand-green-bright)] disabled:opacity-50 disabled:hover:scale-100"
             >
               <CheckCircle2 size={28} />
               Correct
@@ -520,7 +520,7 @@ export function PlayMode({
             <Button
               type="button"
               onClick={() => handleMarkSelf(false)}
-              className="gap-3 rounded-2xl bg-[var(--brand-red)] px-10 py-7 text-xl font-black text-white shadow-[0_0_32px_rgba(239,68,68,0.4)] transition-all duration-200 hover:scale-105 hover:bg-[var(--brand-red)]/80 disabled:opacity-50 disabled:hover:scale-100"
+              className="gap-3 rounded-2xl bg-[var(--brand-red)] px-10 py-7 text-xl font-black text-white shadow-sm transition-all duration-200 hover:bg-[var(--brand-red)]/90 disabled:opacity-50 disabled:hover:scale-100"
             >
               <XCircle size={28} />
               Incorrect
@@ -743,7 +743,7 @@ export function PlayMode({
 
       <div className="relative z-10 mx-auto flex min-h-[100svh] w-full max-w-5xl items-center justify-center py-6 md:py-8">
         <div className="flex w-full flex-col items-center gap-5 md:gap-6 -translate-y-[2vh] animate-slide-up">
-          <div className="w-full max-w-3xl rounded-2xl border border-[var(--border)] bg-[var(--surface-2)]/85 backdrop-blur-sm px-5 py-6 md:px-7 md:py-7 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+          <div className="w-full max-w-3xl rounded-2xl bg-card px-5 py-6 md:px-7 md:py-7 shadow-sm">
             <div className="flex flex-col items-center gap-4 md:gap-5">
               {/* Trophy when passed; encouraging mark when not */}
               {passed ? (
@@ -801,7 +801,7 @@ export function PlayMode({
               </div>
 
               {/* Score breakdown */}
-              <div className="w-full rounded-2xl border border-[var(--border)] bg-[var(--surface-1)] p-4 flex items-center justify-around">
+              <div className="w-full rounded-2xl bg-muted/40 p-4 flex items-center justify-around">
                 <div className="text-center">
                   <p className="text-3xl font-black text-[var(--brand-green)]">{score}</p>
                   <p className="text-sm text-muted-foreground mt-1">Correct</p>

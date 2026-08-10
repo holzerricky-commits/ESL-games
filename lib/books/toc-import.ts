@@ -21,6 +21,8 @@ export interface TocUnitDraft {
   id: string
   title: string
   needsReview: boolean
+  /** PDF file for this unit; preserved on save so multi-PDF books keep correct paths. */
+  filePath?: string
   startPageHint?: number
   endPageHint?: number
   anchorConfidence?: 'high' | 'medium' | 'low'
@@ -206,7 +208,7 @@ function trimLesson(l: BookLessonRecord): BookLessonRecord | null {
 }
 
 export function draftsToUnits(
-  filePath: string,
+  fallbackFilePath: string,
   drafts: TocUnitDraft[],
   lessonsPerUnit?: BookLessonRecord[][] | null,
 ): BookUnitRecord[] {
@@ -215,6 +217,7 @@ export function draftsToUnits(
     const lessons = rawLessons
       ?.map((lesson) => trimLesson(lesson))
       .filter((x): x is BookLessonRecord => x != null)
+    const filePath = (d.filePath?.trim() || fallbackFilePath).trim()
     return {
       id: d.id,
       title: d.title,

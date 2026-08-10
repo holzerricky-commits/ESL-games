@@ -10,17 +10,35 @@ function formatClock(nonNegativeSeconds: number): string {
 
 export type ClassTimerVariant = 'normal' | 'warning' | 'over' | 'muted'
 
+/**
+ * Calendar end for the live countdown: scheduled start + length (+ optional extends).
+ * `classStartedAt` is history only — late/early start does not move this end.
+ */
+export function computeClassEffectiveEndMs(
+  scheduledFor: string | null | undefined,
+  durationMin: number,
+  extendedMinutesTotal: number = 0,
+): number | null {
+  const startMs = scheduledFor ? new Date(scheduledFor).getTime() : NaN
+  if (!Number.isFinite(startMs)) return null
+  const safeDuration = Math.max(0, Number.isFinite(durationMin) ? durationMin : 0)
+  const safeExtend =
+    Number.isFinite(extendedMinutesTotal) && extendedMinutesTotal > 0
+      ? Math.floor(extendedMinutesTotal)
+      : 0
+  return startMs + (safeDuration + safeExtend) * 60_000
+}
+
 export function computeClassTimerState(
-  classStartedAt: string | null | undefined,
+  scheduledFor: string | null | undefined,
   durationMin: number,
   nowMs: number,
+  extendedMinutesTotal: number = 0,
 ): { label: string; suffix: string; variant: ClassTimerVariant } {
-  const startMs = classStartedAt ? new Date(classStartedAt).getTime() : NaN
-  if (!Number.isFinite(startMs)) {
-    return { label: '—', suffix: 'no start time', variant: 'muted' }
+  const endMs = computeClassEffectiveEndMs(scheduledFor, durationMin, extendedMinutesTotal)
+  if (endMs == null) {
+    return { label: '—', suffix: 'no schedule', variant: 'muted' }
   }
-  const safeMin = Math.max(0, durationMin)
-  const endMs = startMs + safeMin * 60_000
   const remainingSec = Math.floor((endMs - nowMs) / 1000)
 
   if (remainingSec < 0) {

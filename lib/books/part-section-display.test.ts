@@ -11,6 +11,14 @@ describe('part-section-display', () => {
     expect(getPartPrimaryLabel('comprehension', 'Comprehension: Summarize')).toBe('Summarize')
   })
 
+  it('surfaces genre / vocab strategy / writing detail from title', () => {
+    expect(getPartPrimaryLabel('genre', 'Genre: Expository Text')).toBe('Expository Text')
+    expect(getPartPrimaryLabel('vocabulary_strategy', 'Vocabulary Strategy: Paragraph Clues')).toBe(
+      'Paragraph Clues',
+    )
+    expect(getPartPrimaryLabel('writing_narrate', 'Writing: Word Choice')).toBe('Word Choice')
+  })
+
   it('builds path label', () => {
     expect(buildSectionPathLabel('Book', 'U1', 'L1', 'Vocabulary')).toBe('Book / U1 / L1 / Vocabulary')
   })

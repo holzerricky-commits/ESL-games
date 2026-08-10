@@ -5,14 +5,13 @@ import {
   textLabelBlockHeightNorm,
 } from '@/lib/books/text-label-layout'
 import { measureTextLabelBounds, textCommandHeuristicBBox } from '@/lib/books/text-label-measure'
+import { stampEraserHitRadiusNorm } from '@/lib/books/stamp-symbol-bounds'
 
 export { TEXT_ANNOTATION_LINE_HEIGHT_RATIO }
 
 /** Base proximity in normalized page space; multiplied by each eraser-line command's `widthScale`. */
 export const ERASER_LINE_BASE_THRESHOLD = 0.026
 
-/** Stamp hit radius as fraction of min(page width, height) — matches draw scale. */
-const STAMP_RADIUS_NORM = 0.06
 const CALLOUT_RADIUS_NORM = 0.04
 
 function dist2(ax: number, ay: number, bx: number, by: number): number {
@@ -190,6 +189,30 @@ export function textTopYFromCenterAnchor(
   return Math.max(0, Math.min(1, centerY - h / 2))
 }
 
+/**
+ * When a center-anchored label becomes multi-line, switch to top anchoring so growth goes down.
+ * Returns null when no conversion is needed.
+ */
+export function resolveTextTopAnchorOnMultiline(
+  cmd: Pick<Extract<AnnotationCommand, { kind: 'text' }>, 'yAnchor' | 'y' | 'fontSizeNorm'>,
+  opts: {
+    heightPx: number
+    previousText: string
+    nextText: string
+    /** Soft-wrap / measured multi-line without a hard `\n`. */
+    forceMultiline?: boolean
+  },
+): { yAnchor: 'top'; y: number } | null {
+  if (cmd.yAnchor !== 'center') return null
+  const nextMultiline = opts.nextText.includes('\n') || opts.forceMultiline === true
+  if (!nextMultiline) return null
+  const lineCountBefore = Math.max(1, opts.previousText.split('\n').length)
+  return {
+    yAnchor: 'top',
+    y: textTopYFromCenterAnchor(cmd.y, cmd.fontSizeNorm, lineCountBefore, opts.heightPx),
+  }
+}
+
 export function textCommandBBox(
   cmd: Extract<AnnotationCommand, { kind: 'text' }>,
   widthPx: number,
@@ -264,7 +287,7 @@ export function commandHitByEraserLine(
       return normPointHitByEraserLine(
         eraserPts,
         cmd.center,
-        (cmd.scale ?? 1) * STAMP_RADIUS_NORM,
+        stampEraserHitRadiusNorm(cmd.scale ?? 1),
         thresholdNorm,
       )
     case 'callout':
@@ -279,6 +302,10 @@ export function commandHitByEraserLine(
       return normRectHitByEraserLine(eraserPts, box.x, box.y, box.w, box.h, thresholdNorm)
     }
     case 'sticky':
+      return normRectHitByEraserLine(eraserPts, cmd.x, cmd.y, cmd.w, cmd.h, thresholdNorm)
+    case 'flashcard':
+      return normRectHitByEraserLine(eraserPts, cmd.x, cmd.y, cmd.w, cmd.h, thresholdNorm)
+    case 'image':
       return normRectHitByEraserLine(eraserPts, cmd.x, cmd.y, cmd.w, cmd.h, thresholdNorm)
     default:
       return false
@@ -352,4 +379,64 @@ export function computeEraserLineDeadStrokeIndices(
   trailingDraftEraser?: Pick<StrokeAnnotationCommand, 'tool' | 'points' | 'widthScale'> | null,
 ): Set<number> {
   return computeEraserLineDeadIndices(commands, trailingDraftEraser)
+}
+
+export type EraserLineRemoval = {
+  index: number
+  command: AnnotationCommand
+}
+
+/**
+ * Indices of commands a single eraser-line gesture would remove from the visible scene
+ * (no stored eraser-line command appended).
+ */
+export function computeEraserLineRemovalIndices(
+  commands: readonly AnnotationCommand[],
+  points: readonly [number, number][],
+  widthScale?: number,
+): Set<number> {
+  if (points.length < 2) return new Set()
+  return computeEraserLineDeadIndices([...commands], {
+    tool: 'eraser-line',
+    points: [...points],
+    widthScale,
+  })
+}
+
+/** Apply one eraser-line commit destructively — removed commands are not kept in the scene. */
+export function applyEraserLineCommit(
+  commands: readonly AnnotationCommand[],
+  points: readonly [number, number][],
+  widthScale?: number,
+): { nextCommands: AnnotationCommand[]; removed: EraserLineRemoval[] } {
+  if (points.length < 2) return { nextCommands: [...commands], removed: [] }
+  const dead = computeEraserLineRemovalIndices(commands, points, widthScale)
+  if (dead.size === 0) return { nextCommands: [...commands], removed: [] }
+  const removed: EraserLineRemoval[] = []
+  const nextCommands: AnnotationCommand[] = []
+  for (let i = 0; i < commands.length; i++) {
+    const cmd = commands[i]!
+    if (dead.has(i)) removed.push({ index: i, command: cmd })
+    else nextCommands.push(cmd)
+  }
+  return { nextCommands, removed }
+}
+
+export function sceneHasStoredEraserLineCommands(commands: readonly AnnotationCommand[]): boolean {
+  return commands.some((c) => c.kind === 'stroke' && c.tool === 'eraser-line')
+}
+
+/** Collapse legacy hide-in-place eraser-line storage into a visible-only scene (load migration). */
+export function compactLegacyEraserLineScene(commands: readonly AnnotationCommand[]): AnnotationCommand[] {
+  const dead = computeEraserLineDeadIndices([...commands])
+  return commands.filter((c, i) => {
+    if (dead.has(i)) return false
+    if (c.kind === 'stroke' && c.tool === 'eraser-line') return false
+    return true
+  })
+}
+
+export function sceneNeedsEraserLineCompaction(commands: readonly AnnotationCommand[]): boolean {
+  if (sceneHasStoredEraserLineCommands(commands)) return true
+  return computeEraserLineDeadIndices([...commands]).size > 0
 }

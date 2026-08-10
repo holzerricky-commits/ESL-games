@@ -1,4 +1,4 @@
-import { useEffect, type MutableRefObject } from 'react'
+import { useEffect } from 'react'
 import type { BookLibraryPayload } from '@/lib/books/types'
 
 interface UseFullscreenOverlayPanelsArgs {
@@ -11,9 +11,6 @@ interface UseFullscreenOverlayPanelsArgs {
   setIsVisible: (v: boolean) => void
   setIsPageListOpen: (v: boolean) => void
   setIsWhiteboardOpen: (v: boolean) => void
-  isLessonPaperOpen: boolean
-  setLessonPaperViewMode: (v: 'left' | 'right' | 'split') => void
-  lessonPaperPanRef: MutableRefObject<number>
   isWhiteboardOpen: boolean
   isPageListOpen: boolean
   pageNumber: number
@@ -31,9 +28,6 @@ export function useFullscreenOverlayPanels({
   setIsVisible,
   setIsPageListOpen,
   setIsWhiteboardOpen,
-  isLessonPaperOpen,
-  setLessonPaperViewMode,
-  lessonPaperPanRef,
   isWhiteboardOpen,
   isPageListOpen,
   pageNumber,
@@ -69,12 +63,4 @@ export function useFullscreenOverlayPanels({
       setIsWhiteboardOpen(false)
     }
   }, [open, setIsPageListOpen, setIsWhiteboardOpen])
-
-  useEffect(() => {
-    if (!isLessonPaperOpen) {
-      setLessonPaperViewMode('left')
-      lessonPaperPanRef.current = 0
-    }
-  }, [isLessonPaperOpen, setLessonPaperViewMode])
-
 }

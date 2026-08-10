@@ -4,12 +4,26 @@ import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { CalendarDays, ChevronDown, Clock3, Play, Sparkles, Zap } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, Eye, Pencil } from 'lucide-react'
+import { ClassPrepExtrasPanel, formatTargetWordsLine } from '@/components/students/class-prep-extras-panel'
 import { ClassPrepVocabEditor } from '@/components/students/class-prep-vocab-editor'
+import { ReadingCheckPrepareGlanceLink } from '@/components/books/reading-check-prepare-glance-link'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { StudentCardLessonPreview } from '@/components/students/student-card-lesson-preview'
+import {
+  classEntryActionLabel,
+  formatClassCountdown,
+  resolveClassEntryAction,
+} from '@/lib/students/class-schedule-lifecycle'
 import {
   formatEffectivePageSpan,
   mapPdfPageToDisplayLabel,
@@ -19,16 +33,23 @@ import {
 import { getVisiblePdfPages } from '@/lib/books/page-range'
 import { getPdfTotalPages } from '@/lib/books/pdf-thumbnail-cache'
 import type { BookLibraryPayload } from '@/lib/books/types'
+import { fetchBooksLibraryCached } from '@/lib/books/fetch-books-library-cached'
 import { ensureStudentRecordsHydrated } from '@/lib/local-data/student-records-client'
+import { getSavedWordsForStudent } from '@/lib/local-data/saved-words-disk-client'
 import {
+  buildStudentMapReaderHref,
+  buildPrepareLessonMapHref,
   buildStudentClassPrepContext,
   getStudentSectionOptions,
   getStudentProfileView,
+  getStudentTeachingOpenPdfPageForBookUnit,
   recordStudentClassOutcome,
   resolveNextSectionForClass,
   transitionStudentClassStatus,
   updateStudentClassSelectedSection,
-  updateStudentClassPrepSummary,
+  updateStudentClassPrep,
+  updateStudentCurriculumBookStart,
+  getStudentCurriculumBookStart,
   startStudentClassSession,
   STUDENT_LOCAL_DATA_CHANGED_EVENT,
   getNextClassResumeHeadline,
@@ -36,14 +57,24 @@ import {
   dismissPostClassRecapPrompt,
   updateStudentClassEndNote,
   updateStudentClassSessionNote,
+  toStudentBookSectionRef,
 } from '@/lib/students/selectors'
 import type { StudentClassSessionView, StudentProfileView } from '@/lib/students/types'
 import type { StudentClassStatus } from '@/lib/types'
 import type { BookContextRecord, LessonContextRecord, UnitContextRecord } from '@/lib/context/types'
+import {
+  prepBlocksFromAiSuggestion,
+  type ClassPrepOutlineViewMode,
+  type ClassPrepTimeBlock,
+} from '@/lib/students/class-prep-outline'
+import { hasPrepExtras, prepExtrasFromAiSuggestion } from '@/lib/students/class-prep-extras'
+import { formatPrepContextLine } from '@/lib/students/class-prep-signals'
 
 interface StudentClassesTabProps {
   student: StudentProfileView
   onUpdated: () => void
+  bookLibrary?: BookLibraryPayload | null
+  libraryLoading?: boolean
 }
 
 type WordsForm = {
@@ -52,12 +83,6 @@ type WordsForm = {
   reviewedWords: string
   learnedWords: string
   teacherNotes: string
-}
-
-type LessonPlanViewMode = 'quick' | 'detailed'
-
-function formatMinuteRange(startMin: number, endMin: number): string {
-  return `${startMin}-${endMin} min`
 }
 
 function formatSectionPageRange(start?: number, end?: number): string {
@@ -84,12 +109,6 @@ function prettyDateTime(iso: string): string {
   })
 }
 
-function formatClassKind(durationMin: number): string {
-  if (durationMin <= 30) return 'Short class'
-  if (durationMin >= 50) return 'Long class'
-  return 'Standard class'
-}
-
 type SectionOption = NonNullable<ReturnType<typeof getStudentSectionOptions>[number]>
 
 function isVocabularyPartSection(selected: SectionOption | null | undefined): boolean {
@@ -103,10 +122,16 @@ function statusPillClass(status: StudentClassSessionView['status']): string {
   if (status === 'prepared') return 'border-blue-500/30 bg-blue-500/10 text-blue-700'
   if (status === 'in_progress') return 'border-amber-500/40 bg-amber-500/15 text-amber-900 dark:text-amber-100'
   if (status === 'cancelled') return 'border-red-500/30 bg-red-500/10 text-red-700'
+  if (status === 'missed') return 'border-rose-500/35 bg-rose-500/10 text-rose-800'
   return 'border-[var(--border)] bg-[var(--surface-2)] text-muted-foreground'
 }
 
-export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps) {
+export function StudentClassesTab({
+  student,
+  onUpdated,
+  bookLibrary: bookLibraryFromParent,
+  libraryLoading: libraryLoadingFromParent,
+}: StudentClassesTabProps) {
   const router = useRouter()
   const numberingMode: PageNumberingMode = 'mapped'
   const liveStudent = useMemo(() => getStudentProfileView(student.id) ?? student, [student])
@@ -117,24 +142,41 @@ export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps
       ),
     [liveStudent.scheduledClasses],
   )
-  const nowMs = Date.now()
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  const [previewSessionId, setPreviewSessionId] = useState<string | null>(null)
+
   const nextUpcomingClass =
     sessions.find((s) => {
-      if (s.status === 'completed' || s.status === 'cancelled' || s.status === 'in_progress') return false
+      if (
+        s.status === 'completed' ||
+        s.status === 'cancelled' ||
+        s.status === 'missed' ||
+        s.status === 'in_progress'
+      ) {
+        return false
+      }
       const ms = new Date(s.scheduledFor).getTime()
       return Number.isFinite(ms) && ms >= nowMs
     }) ?? null
 
-  /** Live class takes over the big card so you can still hit “Continue to map”. */
+  /** Live class preferred for default prep/preview focus. */
   const spotlightSession = useMemo(
     () => sessions.find((s) => s.status === 'in_progress') ?? nextUpcomingClass,
     [sessions, nextUpcomingClass],
   )
 
+  const upcomingSessions = useMemo(
+    () =>
+      sessions.filter(
+        (s) => s.status !== 'completed' && s.status !== 'missed',
+      ),
+    [sessions],
+  )
+
   const pastSessions = useMemo(
     () =>
       [...sessions]
-        .filter((s) => s.status === 'completed')
+        .filter((s) => s.status === 'completed' || s.status === 'missed')
         .sort((a, b) => {
           const ta = new Date(a.classEndedAt ?? a.updatedAt ?? a.scheduledFor).getTime()
           const tb = new Date(b.classEndedAt ?? b.updatedAt ?? b.scheduledFor).getTime()
@@ -143,7 +185,11 @@ export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps
     [sessions],
   )
 
-  const activeSessions = useMemo(() => sessions.filter((s) => s.status !== 'completed'), [sessions])
+  const previewSession = useMemo(
+    () => (previewSessionId ? sessions.find((s) => s.id === previewSessionId) ?? null : null),
+    [previewSessionId, sessions],
+  )
+  const focusSession = previewSession ?? spotlightSession
 
   const [statusBusyId, setStatusBusyId] = useState<string | null>(null)
   const [startBusySessionId, setStartBusySessionId] = useState<string | null>(null)
@@ -153,7 +199,15 @@ export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps
   }, [onUpdated])
 
   useEffect(() => {
-    const onFocus = () => refreshClassData()
+    const id = window.setInterval(() => setNowMs(Date.now()), 30_000)
+    return () => window.clearInterval(id)
+  }, [])
+
+  useEffect(() => {
+    const onFocus = () => {
+      setNowMs(Date.now())
+      refreshClassData()
+    }
     const onStudentDataChanged = (event: Event) => {
       const detail = (event as CustomEvent<{ studentId?: string }>).detail
       if (!detail?.studentId || detail.studentId === liveStudent.id) refreshClassData()
@@ -170,26 +224,209 @@ export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps
   }, [refreshClassData, liveStudent.id])
   const [aiBusyId, setAiBusyId] = useState<string | null>(null)
   const [openOutcomeFor, setOpenOutcomeFor] = useState<string | null>(null)
-  const [openPrepFor, setOpenPrepFor] = useState<string | null>(null)
-  const prepSession = useMemo(
-    () => (openPrepFor ? sessions.find((s) => s.id === openPrepFor) ?? null : null),
-    [openPrepFor, sessions],
-  )
   const [outcomes, setOutcomes] = useState<Record<string, WordsForm>>({})
-  const [prepSummary, setPrepSummary] = useState<Record<string, string>>({})
+  const [prepNotesBySession, setPrepNotesBySession] = useState<Record<string, string>>({})
+  const [prepBlocksBySession, setPrepBlocksBySession] = useState<Record<string, ClassPrepTimeBlock[]>>({})
   const [selectedSectionBySession, setSelectedSectionBySession] = useState<Record<string, string>>({})
+  const [editingTeachingSessionId, setEditingTeachingSessionId] = useState<string | null>(null)
+  const [teachingEditDraftId, setTeachingEditDraftId] = useState('')
   const [previewStartBySession, setPreviewStartBySession] = useState<Record<string, number>>({})
   const [previewNumPagesBySession, setPreviewNumPagesBySession] = useState<Record<string, number>>({})
-  const [lessonPlanViewModeBySession, setLessonPlanViewModeBySession] = useState<Record<string, LessonPlanViewMode>>({})
-  const [library, setLibrary] = useState<BookLibraryPayload | null>(null)
+  const [outlineViewModeBySession, setOutlineViewModeBySession] = useState<Record<string, ClassPrepOutlineViewMode>>({})
+  const usesParentLibrary = bookLibraryFromParent !== undefined
+  const [localLibrary, setLocalLibrary] = useState<BookLibraryPayload | null>(bookLibraryFromParent ?? null)
+  const library = usesParentLibrary ? (bookLibraryFromParent ?? null) : localLibrary
+
+  const previewSpread = useMemo(() => {
+    if (!previewSession) return null
+    const options = getStudentSectionOptions(liveStudent.id, library)
+    const selectedId = selectedSectionBySession[previewSession.id]
+    const selected = options.find((option) => option.id === selectedId)
+    const selectedBook = library?.books.find((book) => book.id === selected?.bookId)
+    const selectedUnit = selectedBook?.units.find((unit) => unit.id === selected?.unitId)
+    const previewFilePath = selectedUnit?.filePath ?? null
+    const numPages = previewNumPagesBySession[previewSession.id] ?? null
+    const previewPages =
+      selectedBook && selectedUnit ? getVisiblePdfPages(selectedUnit, numPages, selectedBook) : []
+    const mappedStartHint = resolveAlignedAnchorPage(
+      selected?.startPageHint,
+      selectedBook,
+      selectedUnit,
+      numPages,
+      numberingMode,
+    )
+    const anchorBase = Math.max(1, mappedStartHint ?? selected?.startPageHint ?? 1)
+    const rawSessionStart = previewStartBySession[previewSession.id]
+    const sessionStartInVisible = rawSessionStart != null && previewPages.includes(rawSessionStart)
+    const spreadStart = sessionStartInVisible
+      ? rawSessionStart
+      : previewPages.length > 0
+        ? (previewPages.find((p) => p >= anchorBase) ?? previewPages[0] ?? anchorBase)
+        : anchorBase
+    const leftIndex = previewPages.length ? Math.max(0, previewPages.indexOf(spreadStart)) : 0
+    const leftPage = previewPages[leftIndex] ?? spreadStart
+    const rightPage = previewPages[leftIndex + 1] ?? leftPage + 1
+    const canGoBack = previewPages.length ? leftIndex > 0 : leftPage > 1
+    const canGoForward = previewPages.length ? leftIndex + 2 < previewPages.length : true
+    const leftLabel = mapPdfPageToDisplayLabel(
+      leftPage,
+      selectedBook,
+      selectedUnit,
+      numPages,
+      numberingMode,
+    )
+    const rightLabel = mapPdfPageToDisplayLabel(
+      rightPage,
+      selectedBook,
+      selectedUnit,
+      numPages,
+      numberingMode,
+    )
+    return {
+      sessionId: previewSession.id,
+      selected,
+      selectedBook: selectedBook ?? null,
+      selectedUnit: selectedUnit ?? null,
+      unitId: selected?.unitId ?? null,
+      previewFilePath,
+      previewPages,
+      numPages,
+      leftIndex,
+      leftPage,
+      rightPage,
+      spreadStart,
+      canGoBack,
+      canGoForward,
+      leftLabel,
+      rightLabel,
+    }
+  }, [
+    previewSession,
+    liveStudent.id,
+    library,
+    selectedSectionBySession,
+    previewNumPagesBySession,
+    previewStartBySession,
+    numberingMode,
+  ])
+
+  const turnPreviewSpread = useCallback(
+    (direction: -1 | 1) => {
+      if (!previewSpread?.selected) return
+      const { sessionId, previewPages, leftIndex, leftPage, spreadStart, canGoBack, canGoForward } =
+        previewSpread
+      if (direction < 0 && !canGoBack) return
+      if (direction > 0 && !canGoForward) return
+      setPreviewStartBySession((prev) => ({
+        ...prev,
+        [sessionId]:
+          previewPages.length > 0
+            ? direction < 0
+              ? (previewPages[Math.max(0, leftIndex - 2)] ?? leftPage)
+              : (previewPages[Math.min(previewPages.length - 1, leftIndex + 2)] ?? leftPage)
+            : direction < 0
+              ? Math.max(1, (prev[sessionId] ?? spreadStart) - 2)
+              : (prev[sessionId] ?? leftPage) + 2,
+      }))
+    },
+    [previewSpread],
+  )
+
+  const jumpPreviewToPage = useCallback(
+    (raw: string) => {
+      if (!previewSpread?.selected) return
+      const match = raw.trim().match(/^(\d+)/)
+      if (!match) return
+      const typed = parseInt(match[1]!, 10)
+      if (!Number.isFinite(typed) || typed < 1) return
+
+      const { sessionId, previewPages, selectedBook, selectedUnit, numPages } = previewSpread
+      let targetPdf =
+        resolveAlignedAnchorPage(typed, selectedBook, selectedUnit, numPages, numberingMode) ?? typed
+
+      if (previewPages.length > 0) {
+        const exact = previewPages.indexOf(targetPdf)
+        if (exact >= 0) {
+          targetPdf = previewPages[exact - (exact % 2)] ?? targetPdf
+        } else {
+          const nearest =
+            previewPages.find((p) => p >= targetPdf) ?? previewPages[previewPages.length - 1]!
+          const idx = previewPages.indexOf(nearest)
+          targetPdf = previewPages[Math.max(0, idx - (idx % 2))] ?? nearest
+        }
+      } else {
+        targetPdf = Math.max(1, targetPdf - ((targetPdf - 1) % 2))
+      }
+
+      setPreviewStartBySession((prev) =>
+        prev[sessionId] === targetPdf ? prev : { ...prev, [sessionId]: targetPdf },
+      )
+    },
+    [previewSpread, numberingMode],
+  )
+
+  const [previewJumpDraft, setPreviewJumpDraft] = useState('')
+  const [previewJumpFocused, setPreviewJumpFocused] = useState(false)
+
+  useEffect(() => {
+    if (!previewSpread || previewJumpFocused) return
+    setPreviewJumpDraft(
+      previewSpread.leftLabel === '·' ? String(previewSpread.leftPage) : previewSpread.leftLabel,
+    )
+  }, [previewSpread, previewJumpFocused])
+
+  useEffect(() => {
+    if (!previewSession) return
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return
+      }
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault()
+        turnPreviewSpread(-1)
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault()
+        turnPreviewSpread(1)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [previewSession, turnPreviewSpread])
+
+  useEffect(() => {
+    const nextBlocks: Record<string, ClassPrepTimeBlock[]> = {}
+    const nextNotes: Record<string, string> = {}
+    for (const session of sessions) {
+      nextBlocks[session.id] = session.prepTimeBlocks ?? []
+      nextNotes[session.id] = session.prepNotes ?? ''
+    }
+    setPrepBlocksBySession(nextBlocks)
+    setPrepNotesBySession(nextNotes)
+  }, [sessions])
 
   const nextClassResumeHeadline = useMemo(
     () =>
-      spotlightSession
-        ? getNextClassResumeHeadline(liveStudent.id, spotlightSession.id, library)
+      focusSession
+        ? getNextClassResumeHeadline(liveStudent.id, focusSession.id, library)
         : null,
-    [liveStudent.id, spotlightSession, library],
+    [liveStudent.id, focusSession, library],
   )
+
+  const spotlightPrepContextLine = useMemo(() => {
+    if (!focusSession) return null
+    const ctx = buildStudentClassPrepContext(liveStudent.id, focusSession.id, library, null, {
+      savedWordEntries: getSavedWordsForStudent(liveStudent.id),
+    })
+    if ('error' in ctx) return null
+    return formatPrepContextLine({
+      readingPosition: ctx.readingPosition,
+      vocabSignals: ctx.vocabSignals,
+      namedRecurringIssues: ctx.namedRecurringIssues,
+      prepContextMode: ctx.prepContextMode,
+      prepContextFlags: ctx.prepContextFlags,
+    })
+  }, [liveStudent.id, focusSession, library, sessions, selectedSectionBySession])
 
   const [error, setError] = useState<string | null>(null)
   const [unitContextBySession, setUnitContextBySession] = useState<Record<string, UnitContextRecord | null>>({})
@@ -200,18 +437,17 @@ export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps
   const [sessionNoteOpenFor, setSessionNoteOpenFor] = useState<string | null>(null)
   const [sessionNoteDraft, setSessionNoteDraft] = useState('')
 
-  /** When spotlight class or its chosen section id changes, re-seed preview start (avoid sticky pages from a prior section). */
-  const spotlightPreviewSyncRef = useRef<{ sessionId: string; sectionId: string } | null>(null)
+  /** When focused class or its chosen section id changes, re-seed preview start. */
+  const previewSyncRef = useRef<{ sessionId: string; sectionId: string } | null>(null)
 
   useEffect(() => {
+    if (usesParentLibrary) return
     let active = true
     async function loadBooks() {
       try {
-        const res = await fetch('/api/books')
-        if (!res.ok) return
-        const payload = (await res.json()) as BookLibraryPayload
+        const payload = await fetchBooksLibraryCached()
         if (!active) return
-        setLibrary(payload)
+        setLocalLibrary(payload)
       } catch {
         // Keep prep usable even when library metadata is unavailable.
       }
@@ -220,15 +456,12 @@ export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps
     return () => {
       active = false
     }
-  }, [])
+  }, [usesParentLibrary])
 
   useEffect(() => {
-    if (!openPrepFor) return
-    const session = sessions.find((row) => row.id === openPrepFor)
-    if (!session) return
-    void loadSavedContext(session)
-    // include selected-section map so context refreshes after section switches
-  }, [openPrepFor, selectedSectionBySession, sessions])
+    if (!focusSession) return
+    void loadSavedContext(focusSession)
+  }, [focusSession, selectedSectionBySession, sessions])
 
   useEffect(() => {
     const next: Record<string, string> = {}
@@ -238,7 +471,7 @@ export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps
       if (selected) next[session.id] = selected
     }
     setSelectedSectionBySession((prev) => {
-      const merged = { ...next, ...prev }
+      const merged = { ...prev, ...next }
       const prevKeys = Object.keys(prev)
       const mergedKeys = Object.keys(merged)
       if (prevKeys.length === mergedKeys.length && prevKeys.every((key) => prev[key] === merged[key])) {
@@ -249,51 +482,79 @@ export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps
   }, [liveStudent.id, sessions, library])
 
   useEffect(() => {
-    if (!spotlightSession) return
+    if (!focusSession) return
     const options = getStudentSectionOptions(liveStudent.id, library)
-    const selectedId = selectedSectionBySession[spotlightSession.id] ?? ''
+    const selectedId = selectedSectionBySession[focusSession.id] ?? ''
     const selected = options.find((option) => option.id === selectedId)
     const selectedBook = library?.books.find((book) => book.id === selected?.bookId)
     const selectedUnit = selectedBook?.units.find((unit) => unit.id === selected?.unitId)
     const rawStart = selected?.startPageHint ?? 1
-    let startPage = rawStart
+    let sectionStart = rawStart
     if (selectedBook && selectedUnit) {
-      startPage =
+      sectionStart =
         resolveAlignedAnchorPage(rawStart, selectedBook, selectedUnit, null, numberingMode) ?? rawStart
     }
-    const prevSync = spotlightPreviewSyncRef.current
+    const teachingPage =
+      selected != null
+        ? getStudentTeachingOpenPdfPageForBookUnit(
+            liveStudent.id,
+            selected.bookId,
+            selected.unitId,
+            library,
+          )
+        : null
+    const startPage = teachingPage ?? sectionStart
+    const bookStartUpdatedAt =
+      selected != null
+        ? (liveStudent.curriculumBookStarts?.[selected.bookId]?.updatedAt ?? '')
+        : ''
+    const syncKey = `${selectedId}::${bookStartUpdatedAt}`
+    const prevSync = previewSyncRef.current
     if (
       !prevSync ||
-      prevSync.sessionId !== spotlightSession.id ||
-      prevSync.sectionId !== selectedId
+      prevSync.sessionId !== focusSession.id ||
+      prevSync.sectionId !== syncKey
     ) {
-      spotlightPreviewSyncRef.current = { sessionId: spotlightSession.id, sectionId: selectedId }
-      setPreviewStartBySession((prev) => ({ ...prev, [spotlightSession.id]: startPage }))
+      previewSyncRef.current = { sessionId: focusSession.id, sectionId: syncKey }
+      setPreviewStartBySession((prev) => ({ ...prev, [focusSession.id]: startPage }))
     }
-  }, [spotlightSession, liveStudent.id, library, selectedSectionBySession])
+  }, [
+    focusSession,
+    liveStudent.id,
+    liveStudent.curriculumBookStarts,
+    library,
+    selectedSectionBySession,
+  ])
 
   useEffect(() => {
-    if (!spotlightSession) return
+    if (!focusSession) return
     const options = getStudentSectionOptions(liveStudent.id, library)
-    const selectedId = selectedSectionBySession[spotlightSession.id]
+    const selectedId = selectedSectionBySession[focusSession.id]
     const selected = options.find((option) => option.id === selectedId)
     const selectedBook = library?.books.find((book) => book.id === selected?.bookId)
     const selectedUnit = selectedBook?.units.find((unit) => unit.id === selected?.unitId)
-    if (!selectedUnit) return
+    if (!selectedUnit || !selected) return
     let cancelled = false
     const fileUrl = `/api/book-file?path=${encodeURIComponent(selectedUnit.filePath)}`
     void getPdfTotalPages(fileUrl)
       .then((numPages) => {
         if (cancelled) return
         setPreviewNumPagesBySession((prev) =>
-          prev[spotlightSession.id] === numPages ? prev : { ...prev, [spotlightSession.id]: numPages },
+          prev[focusSession.id] === numPages ? prev : { ...prev, [focusSession.id]: numPages },
         )
-        const sessionId = spotlightSession.id
+        const sessionId = focusSession.id
         const previewPages = selectedBook
           ? getVisiblePdfPages(selectedUnit, numPages, selectedBook)
           : getVisiblePdfPages(selectedUnit, numPages, undefined)
-        const anchor =
-          selected && selectedBook
+        const teachingPage = getStudentTeachingOpenPdfPageForBookUnit(
+          liveStudent.id,
+          selected.bookId,
+          selected.unitId,
+          library,
+          numPages,
+        )
+        const sectionAnchor =
+          selectedBook != null
             ? Math.max(
                 1,
                 resolveAlignedAnchorPage(
@@ -305,6 +566,7 @@ export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps
                 ) ?? selected.startPageHint ?? 1,
               )
             : 1
+        const anchor = teachingPage ?? sectionAnchor
         const target =
           previewPages.length > 0
             ? (previewPages.find((p) => p >= anchor) ?? previewPages[0] ?? anchor)
@@ -319,7 +581,13 @@ export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps
     return () => {
       cancelled = true
     }
-  }, [spotlightSession, liveStudent.id, library, selectedSectionBySession])
+  }, [
+    focusSession,
+    liveStudent.id,
+    liveStudent.curriculumBookStarts,
+    library,
+    selectedSectionBySession,
+  ])
 
   function setSessionStatus(sessionId: string, status: StudentClassStatus) {
     setStatusBusyId(sessionId)
@@ -332,22 +600,54 @@ export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps
     onUpdated()
   }
 
-  function savePrepSummary(session: StudentClassSessionView) {
+  function savePrepNotes(session: StudentClassSessionView) {
     const sectionOptions = getStudentSectionOptions(liveStudent.id, library)
     const sectionId = selectedSectionBySession[session.id]
     const chosenSection = sectionOptions.find((option) => option.id === sectionId)
-    const sectionResult = updateStudentClassSelectedSection(liveStudent.id, session.id, chosenSection ?? null)
+    const sectionResult = updateStudentClassSelectedSection(
+      liveStudent.id,
+      session.id,
+      chosenSection ? toStudentBookSectionRef(chosenSection) : null,
+    )
     if (!sectionResult.ok) {
       setError(sectionResult.error)
       return
     }
-    const text = prepSummary[session.id] ?? ''
-    const result = updateStudentClassPrepSummary(liveStudent.id, session.id, text)
+    const result = updateStudentClassPrep(liveStudent.id, session.id, {
+      prepNotes: prepNotesBySession[session.id] ?? '',
+    })
     if (!result.ok) {
       setError(result.error)
       return
     }
     onUpdated()
+    toast.success('Notes saved.')
+  }
+
+  function savePrepOutline(session: StudentClassSessionView) {
+    const sectionOptions = getStudentSectionOptions(liveStudent.id, library)
+    const sectionId = selectedSectionBySession[session.id]
+    const chosenSection = sectionOptions.find((option) => option.id === sectionId)
+    const sectionResult = updateStudentClassSelectedSection(
+      liveStudent.id,
+      session.id,
+      chosenSection ? toStudentBookSectionRef(chosenSection) : null,
+    )
+    if (!sectionResult.ok) {
+      setError(sectionResult.error)
+      return
+    }
+    const result = updateStudentClassPrep(liveStudent.id, session.id, {
+      prepTimeBlocks: prepBlocksBySession[session.id] ?? [],
+      prepOutlineSummary: session.prepOutlineSummary,
+      prepNotes: prepNotesBySession[session.id] ?? session.prepNotes ?? '',
+    })
+    if (!result.ok) {
+      setError(result.error)
+      return
+    }
+    onUpdated()
+    toast.success('Outline saved.')
   }
 
   async function askAiForClassPrep(session: StudentClassSessionView) {
@@ -358,7 +658,11 @@ export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps
       const sectionId = selectedSectionBySession[session.id]
       const chosenSection = sectionOptions.find((option) => option.id === sectionId)
       if (chosenSection) {
-        const updateSection = updateStudentClassSelectedSection(liveStudent.id, session.id, chosenSection)
+        const updateSection = updateStudentClassSelectedSection(
+          liveStudent.id,
+          session.id,
+          toStudentBookSectionRef(chosenSection),
+        )
         if (!updateSection.ok) {
           setError(updateSection.error)
           return
@@ -377,11 +681,38 @@ export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps
           // Keep prep generation resilient even when book-context lookup fails.
         }
       }
+      let partSectionVocabulary: string[] | undefined
+      if (chosenSection?.partId && chosenSection.lessonId) {
+        try {
+          const partQuery = new URLSearchParams({
+            bookId: chosenSection.bookId,
+            unitId: chosenSection.unitId,
+            lessonId: chosenSection.lessonId,
+            partId: chosenSection.partId,
+          })
+          const partRes = await fetch(`/api/context/get?${partQuery.toString()}`)
+          const partPayload = (await partRes.json()) as {
+            ok?: boolean
+            context?: { interactiveVocabulary?: Array<{ word?: string }> } | null
+          }
+          if (partRes.ok && partPayload.ok && partPayload.context?.interactiveVocabulary?.length) {
+            partSectionVocabulary = partPayload.context.interactiveVocabulary
+              .map((row) => (typeof row.word === 'string' ? row.word.trim() : ''))
+              .filter(Boolean)
+          }
+        } catch {
+          // Part vocabulary is optional; keep prep generation resilient.
+        }
+      }
       const prepContext = buildStudentClassPrepContext(
         liveStudent.id,
         session.id,
         library,
         bookContextForPrep,
+        {
+          savedWordEntries: getSavedWordsForStudent(liveStudent.id),
+          partSectionVocabulary,
+        },
       )
       if ('error' in prepContext) {
         setError(prepContext.error)
@@ -420,60 +751,23 @@ export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps
         setError(payload.ok ? 'Failed to generate class prep suggestion.' : (payload.error ?? 'AI request failed.'))
         return
       }
-      let currentMin = 0
-      const rangedBlocks = payload.suggestion.timeBlocks.map((block) => {
-        const startMin = currentMin
-        const endMin = currentMin + Math.max(1, block.minutes)
-        currentMin = endMin
-        return { ...block, startMin, endMin }
+      const blocks = prepBlocksFromAiSuggestion(payload.suggestion.timeBlocks, session.durationMin)
+      const extras = prepExtrasFromAiSuggestion(payload.suggestion)
+      const revisitWords = extras.prepWordsToRevisit?.map((row) => row.word) ?? []
+      setPrepBlocksBySession((prev) => ({ ...prev, [session.id]: blocks }))
+      const saveResult = updateStudentClassPrep(liveStudent.id, session.id, {
+        prepTimeBlocks: blocks,
+        prepOutlineSummary: payload.suggestion.summary.trim() || undefined,
+        ...extras,
+        plannedVocabulary:
+          session.plannedVocabulary.length === 0 && revisitWords.length > 0 ? revisitWords : undefined,
       })
-      const quickViewLines = rangedBlocks.map(
-        (block) =>
-          `${formatMinuteRange(block.startMin, block.endMin)} - ${block.label}: ${block.activityType.replace(/-/g, ' ')}`,
-      )
-      const detailedViewLines = rangedBlocks.flatMap((block) => {
-        const lines = [
-          `${formatMinuteRange(block.startMin, block.endMin)} - ${block.label}`,
-          `Objective: ${block.objective}`,
-          `Activity: ${block.activityType.replace(/-/g, ' ')}`,
-        ]
-        if (block.teacherMoves?.length) lines.push(`Teacher moves: ${block.teacherMoves.join('; ')}`)
-        if (block.studentOutput) lines.push(`Student output: ${block.studentOutput}`)
-        if (block.checkForUnderstanding) lines.push(`Check: ${block.checkForUnderstanding}`)
-        return lines.concat('')
-      })
-      const summary = [
-        payload.suggestion.summary,
-        '',
-        'Quick view:',
-        ...quickViewLines,
-        '',
-        'Detailed view:',
-        ...detailedViewLines,
-        payload.suggestion.priorities.length ? `Priorities: ${payload.suggestion.priorities.join('; ')}` : '',
-        payload.suggestion.activities.length ? `Activities: ${payload.suggestion.activities.join('; ')}` : '',
-        payload.suggestion.checkpointMoments.length ? `Checkpoints: ${payload.suggestion.checkpointMoments.join('; ')}` : '',
-        payload.suggestion.differentiationTips.length
-          ? `Differentiation: ${payload.suggestion.differentiationTips.join('; ')}`
-          : '',
-        payload.suggestion.homeworkOrCarryOver.length ? `Carry-over: ${payload.suggestion.homeworkOrCarryOver.join('; ')}` : '',
-        payload.suggestion.wordsToRevisit.length
-          ? `Words to revisit: ${payload.suggestion.wordsToRevisit.map((item) => `${item.word} (${item.reason})`).join('; ')}`
-          : '',
-      ]
-        .filter((line, index, arr) => !(line === '' && arr[index - 1] === ''))
-        .join('\n')
-      setPrepSummary((prev) => ({
-        ...prev,
-        [session.id]: summary,
-      }))
-      const saveResult = updateStudentClassPrepSummary(liveStudent.id, session.id, summary)
       if (!saveResult.ok) {
         setError(saveResult.error)
         return
       }
-      setOpenPrepFor(session.id)
       onUpdated()
+      toast.success('Outline generated.')
     } catch {
       setError('Failed to generate class prep suggestion.')
     } finally {
@@ -537,13 +831,8 @@ export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps
     onUpdated()
   }
 
-  function openPrepare(sessionId: string) {
-    setOpenPrepFor(sessionId)
-    setOpenOutcomeFor(null)
-    const session = sessions.find((row) => row.id === sessionId)
-    if (session) {
-      void loadSavedContext(session)
-    }
+  function openPrepRoom(sessionId: string) {
+    router.push(buildPrepareLessonMapHref(liveStudent.id, sessionId, library))
   }
 
   async function goToClassMap(sessionId: string) {
@@ -567,6 +856,22 @@ export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps
         return
       }
 
+      const sectionOptions = getStudentSectionOptions(liveStudent.id, library)
+      const sectionId = selectedSectionBySession[sessionId] ?? row.selectedSection?.id ?? ''
+      const chosenSection = sectionOptions.find((option) => option.id === sectionId)
+      if (chosenSection) {
+        const sectionResult = updateStudentClassSelectedSection(
+          liveStudent.id,
+          sessionId,
+          toStudentBookSectionRef(chosenSection),
+        )
+        if (!sectionResult.ok) {
+          setError(sectionResult.error)
+          toast.error(sectionResult.error)
+          return
+        }
+      }
+
       if (row.status !== 'in_progress') {
         const started = startStudentClassSession(liveStudent.id, sessionId)
         if (!started.ok) {
@@ -576,7 +881,15 @@ export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps
         }
         refreshClassData()
       }
-      router.push(`/students/${liveStudent.id}/map?classSession=${encodeURIComponent(sessionId)}`)
+      router.push(
+        buildStudentMapReaderHref({
+          studentId: liveStudent.id,
+          classSessionId: sessionId,
+          openBook: false,
+          bookId: chosenSection?.bookId ?? row.selectedSection?.bookId,
+          unitId: chosenSection?.unitId ?? row.selectedSection?.unitId,
+        }),
+      )
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Could not start class.'
       setError(msg)
@@ -586,23 +899,185 @@ export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps
     }
   }
 
-  function renderClassPrepDialogBody(session: StudentClassSessionView) {
+  function openTeachingEditor(session: StudentClassSessionView) {
+    const selectedId = selectedSectionBySession[session.id] ?? session.selectedSection?.id ?? ''
+    setTeachingEditDraftId(selectedId)
+    setEditingTeachingSessionId(session.id)
+  }
+
+  function saveTeachingSelection() {
+    const sessionId = editingTeachingSessionId
+    if (!sessionId) return
+    const options = getStudentSectionOptions(liveStudent.id, library)
+    const chosen = teachingEditDraftId
+      ? (options.find((option) => option.id === teachingEditDraftId) ?? null)
+      : null
+    const sectionResult = updateStudentClassSelectedSection(
+      liveStudent.id,
+      sessionId,
+      chosen ? toStudentBookSectionRef(chosen) : null,
+    )
+    if (!sectionResult.ok) {
+      setError(sectionResult.error)
+      toast.error(sectionResult.error)
+      return
+    }
+    if (chosen) {
+      const existingStart = getStudentCurriculumBookStart(liveStudent.id, chosen.bookId, library)
+      let mappedPage: number | null = null
+      if (existingStart?.sectionId === chosen.id && existingStart.mappedPage >= 1) {
+        mappedPage = existingStart.mappedPage
+      } else if (typeof chosen.startPageHint === 'number' && chosen.startPageHint >= 1) {
+        mappedPage = Math.floor(chosen.startPageHint)
+      } else if (existingStart && existingStart.mappedPage >= 1) {
+        mappedPage = existingStart.mappedPage
+      }
+      const startResult = updateStudentCurriculumBookStart(
+        liveStudent.id,
+        {
+          bookId: chosen.bookId,
+          sectionId: chosen.id,
+          mappedPage,
+          syncSpotlight: false,
+        },
+        library,
+      )
+      if (!startResult.ok) {
+        setError(startResult.error)
+        toast.error(startResult.error)
+        return
+      }
+    }
+    setSelectedSectionBySession((prev) => ({
+      ...prev,
+      [sessionId]: chosen?.id ?? '',
+    }))
+    setEditingTeachingSessionId(null)
+    onUpdated()
+    toast.success(chosen ? 'Today’s lesson updated.' : 'Cleared today’s lesson.')
+  }
+
+  function renderSectionPicker(session: StudentClassSessionView) {
+    const options = getStudentSectionOptions(liveStudent.id, library)
+    const selectedId = selectedSectionBySession[session.id] ?? session.selectedSection?.id ?? ''
+    const selected = options.find((option) => option.id === selectedId)
+    const selectedBook = library?.books.find((book) => book.id === selected?.bookId)
+    const selectedUnit = selectedBook?.units.find((unit) => unit.id === selected?.unitId)
+    const teachingPdf =
+      selected != null
+        ? getStudentTeachingOpenPdfPageForBookUnit(
+            liveStudent.id,
+            selected.bookId,
+            selected.unitId,
+            library,
+          )
+        : null
+    const pageSource =
+      teachingPdf ??
+      (selectedBook && selectedUnit
+        ? resolveAlignedAnchorPage(
+            selected?.startPageHint,
+            selectedBook,
+            selectedUnit,
+            null,
+            numberingMode,
+          )
+        : null) ??
+      selected?.startPageHint ??
+      null
+    const pageLabel =
+      pageSource != null && selectedBook && selectedUnit
+        ? mapPdfPageToDisplayLabel(pageSource, selectedBook, selectedUnit, null, numberingMode)
+        : pageSource != null
+          ? String(pageSource)
+          : null
+    const pieceTitle = selected
+      ? (selected.partTitle ?? selected.lessonTitle ?? selected.title).trim()
+      : ''
+    const primaryLine = selected
+      ? [selected.bookTitle, selected.unitTitle, pieceTitle].filter(Boolean).join(' · ')
+      : 'Not set yet'
+    const lastLine =
+      selected && library
+        ? getLastStoppedCarryLine(
+            liveStudent.id,
+            session.id,
+            library,
+            selected.bookId,
+            selected.unitId,
+          )
+        : null
+
+    return (
+      <div className="space-y-2">
+        <div className="flex items-start justify-between gap-2">
+          <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            What we’re teaching
+          </label>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="shrink-0 text-muted-foreground"
+            onClick={() => openTeachingEditor(session)}
+            aria-label="Edit what we’re teaching"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+        <div className="rounded-md border border-[var(--border)] bg-background px-3 py-2.5">
+          <p className="text-sm font-medium leading-snug text-foreground">{primaryLine}</p>
+          {pageLabel ? (
+            <p className="mt-0.5 text-xs text-muted-foreground">Open at p. {pageLabel}</p>
+          ) : null}
+          {lastLine ? <p className="mt-1 text-xs text-muted-foreground">{lastLine}</p> : null}
+          {!selected ? (
+            <p className="mt-1 text-xs text-muted-foreground">Tap edit to pick today’s book section.</p>
+          ) : null}
+        </div>
+      </div>
+    )
+  }
+
+  function renderPrepNotes(session: StudentClassSessionView) {
+    return (
+      <div className="space-y-2">
+        <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Note to self</label>
+        <textarea
+          className="min-h-[56px] w-full rounded-md border border-[var(--border)] bg-background px-3 py-2 text-sm"
+          value={prepNotesBySession[session.id] ?? session.prepNotes ?? ''}
+          onChange={(e) =>
+            setPrepNotesBySession((prev) => ({
+              ...prev,
+              [session.id]: e.target.value,
+            }))
+          }
+          placeholder="Quick reminder for this class…"
+        />
+        <Button type="button" size="sm" variant="ghost" className="h-8 px-2 text-xs" onClick={() => savePrepNotes(session)}>
+          Save note
+        </Button>
+      </div>
+    )
+  }
+
+  function renderMorePrepDetails(session: StudentClassSessionView) {
     const options = getStudentSectionOptions(liveStudent.id, library)
     const selectedId = selectedSectionBySession[session.id] ?? session.selectedSection?.id ?? ''
     const selected = options.find((option) => option.id === selectedId)
     const unitContext = unitContextBySession[session.id]
     const lessonContext = lessonContextBySession[session.id]
     return (
-      <div className="space-y-4 pr-1">
+      <div className="space-y-3">
         {isVocabularyPartSection(selected) &&
         selected?.bookId &&
         selected?.unitId &&
         selected?.lessonId &&
         selected?.partId ? (
-          <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3">
-            <p className="text-xs font-semibold text-foreground">Interactive vocabulary (saved to book)</p>
+          <div className="rounded-lg border border-[var(--border)] bg-background p-3">
+            <p className="text-xs font-semibold text-foreground">Interactive vocabulary</p>
             <p className="mt-1 text-[11px] text-muted-foreground">
-              These words load in the Books reader for this part for all students.
+              Words saved here load in the book reader for this part.
             </p>
             <div className="mt-3">
               <ClassPrepVocabEditor
@@ -618,702 +1093,216 @@ export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps
             </div>
           </div>
         ) : null}
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Preparation notes</p>
-        <div className="space-y-2">
-          <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Book section</label>
-          <select
-            className="w-full rounded-md border border-[var(--border)] bg-background px-3 py-2 text-sm"
-            value={selectedId}
-            onChange={(e) =>
-              setSelectedSectionBySession((prev) => ({
-                ...prev,
-                [session.id]: e.target.value,
-              }))
-            }
-          >
-            <option value="">No section selected</option>
-            {options.map((option) => {
-              const b = library?.books.find((bk) => bk.id === option.bookId)
-              const u = b?.units.find((un) => un.id === option.unitId)
-              const span =
-                b && u && typeof option.startPageHint === 'number'
-                  ? formatEffectivePageSpan(
-                      option.startPageHint,
-                      option.endPageHint ?? null,
-                      b,
-                      u,
-                      null,
-                      numberingMode,
-                    )
-                  : ''
-              const suffix = span && span !== 'pages —' && !span.startsWith('pages —') ? ' · ' + span : ''
-              return (
-                <option key={option.id} value={option.id}>
-                  {option.pathLabel}
-                  {suffix}
-                </option>
-              )
-            })}
-          </select>
-          <p className="text-xs text-muted-foreground">
-            Next section is preselected automatically from the last completed class.
-          </p>
-        </div>
-        <div className="rounded-md border border-[var(--border)] bg-[var(--surface-2)] p-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs font-semibold text-foreground">Auto-loaded curriculum context</p>
-          </div>
-          {unitContext || lessonContext ? (
-            <div className="mt-2 grid gap-2 sm:grid-cols-2">
-              <div className="rounded border border-[var(--border)] bg-background p-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Unit context</p>
-                <p className="mt-1 text-xs text-foreground">{unitContext?.theme ?? 'Not scanned yet.'}</p>
-                {unitContext?.bigIdeas?.length ? (
-                  <p className="mt-1 text-xs text-muted-foreground">{unitContext.bigIdeas.slice(0, 2).join(' | ')}</p>
-                ) : null}
-              </div>
-              <div className="rounded border border-[var(--border)] bg-background p-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Lesson context</p>
-                <p className="mt-1 text-xs text-foreground">
-                  {lessonContext
-                    ? lessonContext.comprehensionSkill + ' · ' + lessonContext.strategy
-                    : 'Not scanned yet.'}
-                </p>
-                {lessonContext?.essentialQuestions?.length ? (
-                  <p className="mt-1 text-xs text-muted-foreground">{lessonContext.essentialQuestions[0]}</p>
-                ) : null}
-              </div>
+        {unitContext || lessonContext ? (
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="rounded border border-[var(--border)] bg-background p-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Unit context</p>
+              <p className="mt-1 text-xs text-foreground">{unitContext?.theme ?? 'Not scanned yet.'}</p>
+              {unitContext?.bigIdeas?.length ? (
+                <p className="mt-1 text-xs text-muted-foreground">{unitContext.bigIdeas.slice(0, 2).join(' | ')}</p>
+              ) : null}
             </div>
-          ) : (
-            <p className="mt-2 text-xs text-muted-foreground">
-              Context is managed from the Book page. Open this class prep after selecting a section to auto-load context.
-            </p>
-          )}
-        </div>
-        <textarea
-          className="min-h-[90px] w-full rounded-md border border-[var(--border)] bg-background px-3 py-2 text-sm"
-          value={prepSummary[session.id] ?? session.aiPrepSummary ?? ''}
-          onChange={(e) =>
-            setPrepSummary((prev) => ({
-              ...prev,
-              [session.id]: e.target.value,
-            }))
-          }
-          placeholder="Paste AI suggestions or add your own prep summary."
-        />
-        <Button type="button" size="sm" onClick={() => savePrepSummary(session)}>
-          Save prep summary
-        </Button>
+            <div className="rounded border border-[var(--border)] bg-background p-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Lesson context</p>
+              <p className="mt-1 text-xs text-foreground">
+                {lessonContext
+                  ? lessonContext.comprehensionSkill + ' · ' + lessonContext.strategy
+                  : 'Not scanned yet.'}
+              </p>
+              {lessonContext?.essentialQuestions?.length ? (
+                <p className="mt-1 text-xs text-muted-foreground">{lessonContext.essentialQuestions[0]}</p>
+              ) : null}
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Curriculum context loads from the book when a section is selected.
+          </p>
+        )}
       </div>
     )
   }
+
   return (
     <div className="space-y-4">
-      <section className="rounded-2xl bg-[var(--card)] p-4">
-        {spotlightSession ? (
-          (() => {
-            const options = getStudentSectionOptions(liveStudent.id, library)
-            const selectedId = selectedSectionBySession[spotlightSession.id]
-            const selected = options.find((option) => option.id === selectedId)
-            const selectedBook = library?.books.find((book) => book.id === selected?.bookId)
-            const selectedUnit = selectedBook?.units.find((unit) => unit.id === selected?.unitId)
-            const previewFilePath = selectedUnit?.filePath ?? null
-            const numPages = previewNumPagesBySession[spotlightSession.id] ?? null
-            const previewPages = selectedBook && selectedUnit ? getVisiblePdfPages(selectedUnit, numPages, selectedBook) : []
-            const mappedStartHint = resolveAlignedAnchorPage(
-              selected?.startPageHint,
-              selectedBook,
-              selectedUnit,
-              numPages,
-              numberingMode,
-            )
-            const anchorBase = Math.max(
-              1,
-              mappedStartHint ?? selected?.startPageHint ?? 1,
-            )
-            const rawSessionStart = previewStartBySession[spotlightSession.id]
-            const sessionStartInVisible =
-              rawSessionStart != null && previewPages.includes(rawSessionStart)
-            const spreadStart = sessionStartInVisible
-              ? rawSessionStart
-              : previewPages.length > 0
-                ? (previewPages.find((p) => p >= anchorBase) ?? previewPages[0] ?? anchorBase)
-                : anchorBase
-            const leftIndex = previewPages.length
-              ? Math.max(0, previewPages.indexOf(spreadStart))
-              : 0
-            const leftPage = previewPages[leftIndex] ?? spreadStart
-            const rightPage = previewPages[leftIndex + 1] ?? leftPage + 1
-            const canGoBack = previewPages.length ? leftIndex > 0 : leftPage > 1
-            const sectionRangeLabel =
-              selectedBook && selectedUnit
-                ? formatEffectivePageSpan(
-                    selected?.startPageHint ?? null,
-                    selected?.endPageHint ?? null,
-                    selectedBook,
-                    selectedUnit,
-                    numPages,
-                    numberingMode,
-                  )
-                : formatSectionPageRange(selected?.startPageHint, selected?.endPageHint)
-            const leftLabel = mapPdfPageToDisplayLabel(leftPage, selectedBook, selectedUnit, numPages, numberingMode)
-            const rightLabel = mapPdfPageToDisplayLabel(rightPage, selectedBook, selectedUnit, numPages, numberingMode)
-            const previewRangeLabel = `p${leftLabel}-${rightLabel}`
-            const jumpToSectionStart = () => {
-              if (!selected) return
-              const anchor = Math.max(
-                1,
-                resolveAlignedAnchorPage(selected.startPageHint, selectedBook, selectedUnit, numPages, numberingMode) ??
-                  selected.startPageHint ??
-                  1,
-              )
-              const targetPage = previewPages.find((page) => page >= anchor) ?? previewPages[0] ?? anchor
-              setPreviewStartBySession((prev) => ({
-                ...prev,
-                [spotlightSession.id]: targetPage,
-              }))
-            }
-            return (
-              <div className="mt-3 grid min-h-[380px] gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
-                <div className="flex h-full min-h-0 flex-col">
-                  <div className="flex min-h-0 flex-1 items-stretch">
-                      {previewFilePath && selected ? (
-                        <>
-                          <StudentCardLessonPreview
-                            filePath={previewFilePath}
-                            unitId={selected.unitId}
-                            page={leftPage}
-                            label={`Page ${leftLabel}`}
-                            fitHeight
-                            className="h-full w-full rounded-r-none border-0 border-r-0 object-cover"
-                          />
-                          <StudentCardLessonPreview
-                            filePath={previewFilePath}
-                            unitId={selected.unitId}
-                            page={rightPage}
-                            label={`Page ${rightLabel}`}
-                            fitHeight
-                            className="h-full w-full rounded-l-none border-0 object-cover"
-                          />
-                        </>
-                      ) : (
-                        <>
-                          <div className="flex h-full w-full flex-col items-center justify-center rounded-r-none bg-gradient-to-b from-white to-slate-50 p-3 text-center shadow-sm dark:from-slate-900 dark:from-0% dark:to-slate-800 dark:to-100%">
-                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Left page</p>
-                            <p className="text-lg font-semibold text-foreground">{leftPage}</p>
-                          </div>
-                          <div className="flex h-full w-full flex-col items-center justify-center rounded-l-none bg-gradient-to-b from-white to-slate-50 p-3 text-center shadow-sm dark:from-slate-900 dark:from-0% dark:to-slate-800 dark:to-100%">
-                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Right page</p>
-                            <p className="text-lg font-semibold text-foreground">{rightPage}</p>
-                          </div>
-                        </>
-                      )}
-                  </div>
-                  <div className="mt-2 flex items-center justify-center gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() =>
-                        setPreviewStartBySession((prev) => ({
-                          ...prev,
-                          [spotlightSession.id]:
-                            previewPages.length > 0
-                              ? (previewPages[Math.max(0, leftIndex - 2)] ?? leftPage)
-                              : Math.max(1, (prev[spotlightSession.id] ?? spreadStart) - 2),
-                        }))
-                      }
-                      disabled={!canGoBack}
-                    >
-                      ←
-                    </Button>
-                    <button
-                      type="button"
-                      className="rounded-md border border-[var(--border)] px-2 py-1 text-xs font-medium text-foreground hover:bg-[var(--surface-2)]"
-                      onClick={jumpToSectionStart}
-                      title="Current preview page range"
-                    >
-                      {previewRangeLabel}
-                    </button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() =>
-                        setPreviewStartBySession((prev) => ({
-                          ...prev,
-                          [spotlightSession.id]:
-                            previewPages.length > 0
-                              ? (previewPages[Math.min(previewPages.length - 1, leftIndex + 2)] ?? leftPage)
-                              : (prev[spotlightSession.id] ?? leftPage) + 2,
-                        }))
-                      }
-                    >
-                      →
-                    </Button>
-                  </div>
-                </div>
-                <div className="flex h-full min-h-0 flex-col rounded-xl bg-[var(--surface-2)] p-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <h3 className="text-sm font-semibold text-foreground md:text-base">
-                      {spotlightSession.status === 'in_progress' ? 'Live class' : 'Next class'}
-                    </h3>
-                    <span
-                      className={`inline-flex rounded-md border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${statusPillClass(spotlightSession.status)}`}
-                    >
-                      {spotlightSession.status.replace(/_/g, ' ')}
-                    </span>
-                  </div>
-                  {nextClassResumeHeadline ? (
-                    <p className="mt-1.5 text-xs font-medium leading-snug text-[var(--brand-blue)] md:text-sm">
-                      {nextClassResumeHeadline.headline}
-                    </p>
-                  ) : null}
-                  {selected && library ? (
-                    <div className="mt-2 space-y-1 text-xs leading-snug text-muted-foreground md:text-sm">
-                      {(() => {
-                        const lastLine = getLastStoppedCarryLine(
-                          liveStudent.id,
-                          spotlightSession.id,
-                          library,
-                          selected.bookId,
-                          selected.unitId,
-                        )
-                        const todayLabel = (selected.partTitle ?? selected.title).trim()
-                        return (
-                          <>
-                            {lastLine ? <p>{lastLine}</p> : null}
-                            {todayLabel ? (
-                              <p>
-                                <span className="font-medium text-foreground">Today: </span>
-                                {todayLabel}
-                              </p>
-                            ) : null}
-                          </>
-                        )
-                      })()}
-                    </div>
-                  ) : null}
-                  {selected ? (
-                    <div className="mt-2">
-                      <Button asChild variant="outline" size="sm" className="w-full sm:w-auto">
-                        <Link
-                          href={`/books?student=${encodeURIComponent(liveStudent.id)}&book=${encodeURIComponent(selected.bookId)}&unit=${encodeURIComponent(selected.unitId)}`}
-                        >
-                          Open book at last stop
-                        </Link>
-                      </Button>
-                    </div>
-                  ) : null}
-
-                  <div className="mt-4 space-y-1">
-                    {selected ? (
-                      <>
-                        <p className="text-xs font-normal text-muted-foreground/80">
-                          {[selected.bookTitle, selected.unitTitle, selected.lessonTitle].filter(Boolean).join(' / ')}
-                        </p>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            className="text-left text-base font-semibold text-[var(--brand-blue)] underline-offset-2 transition hover:underline md:text-lg"
-                            onClick={jumpToSectionStart}
-                            title="Jump preview to this part"
-                          >
-                            {selected.partTitle ?? selected.title}
-                          </button>
-                          <button
-                            type="button"
-                            className="rounded-md border border-[var(--border)] px-2 py-0.5 text-xs text-muted-foreground hover:bg-[var(--surface-2)]"
-                            onClick={jumpToSectionStart}
-                            title="Jump to selected part range"
-                          >
-                            {sectionRangeLabel}
-                          </button>
-                        </div>
-                      </>
-                    ) : (
-                      <p className="text-sm font-medium text-muted-foreground">No section selected yet</p>
-                    )}
-                  </div>
-
-                  <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-2 text-xs md:text-sm">
-                    <div className="min-w-0">
-                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Date</p>
-                      <p className="mt-0.5 flex items-center gap-1.5 truncate text-foreground">
-                        <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
-                        {new Date(spotlightSession.scheduledFor).toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                        })}
-                      </p>
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Time</p>
-                      <p className="mt-0.5 flex items-center gap-1.5 text-foreground">
-                        <Clock3 className="h-3.5 w-3.5 text-muted-foreground" />
-                        {new Date(spotlightSession.scheduledFor).toLocaleTimeString('en-US', {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}{' '}
-                        <span className="text-muted-foreground">
-                          ({spotlightSession.durationMin} min · {formatClassKind(spotlightSession.durationMin)})
-                        </span>
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-6 min-w-0 text-xs md:text-sm">
-                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Target words</p>
-                    <p className="mt-0.5 truncate text-foreground">
-                      {spotlightSession.plannedVocabulary.length
-                        ? `${spotlightSession.plannedVocabulary.length} total · ${spotlightSession.plannedVocabulary.slice(0, 2).join(', ')}`
-                        : 'None yet'}
-                    </p>
-                  </div>
-
-                  <div className="mt-6 min-w-0">
-                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Lesson plan</p>
-                    {spotlightSession.aiPrepSummary ? (
-                      (() => {
-                        const raw = spotlightSession.aiPrepSummary
-                        const quickStart = raw.indexOf('Quick view:\n')
-                        const detailedStart = raw.indexOf('Detailed view:\n')
-                        const hasStructured = quickStart >= 0 && detailedStart > quickStart
-                        const mode = lessonPlanViewModeBySession[spotlightSession.id] ?? 'quick'
-                        const quickText = hasStructured
-                          ? raw.slice(quickStart + 'Quick view:\n'.length, detailedStart).trim()
-                          : raw
-                        const detailedText = hasStructured
-                          ? raw.slice(detailedStart + 'Detailed view:\n'.length).trim()
-                          : raw
-                        return (
-                          <div className="mt-2 space-y-2">
-                            <div className="inline-flex rounded-md border border-[var(--border)] bg-[var(--card)] p-0.5">
-                              <button
-                                type="button"
-                                className={`rounded px-2 py-1 text-xs ${mode === 'quick' ? 'bg-[var(--surface-2)] font-semibold text-foreground' : 'text-muted-foreground'}`}
-                                onClick={() =>
-                                  setLessonPlanViewModeBySession((prev) => ({ ...prev, [spotlightSession.id]: 'quick' }))
-                                }
-                              >
-                                Quick
-                              </button>
-                              <button
-                                type="button"
-                                className={`rounded px-2 py-1 text-xs ${mode === 'detailed' ? 'bg-[var(--surface-2)] font-semibold text-foreground' : 'text-muted-foreground'}`}
-                                onClick={() =>
-                                  setLessonPlanViewModeBySession((prev) => ({ ...prev, [spotlightSession.id]: 'detailed' }))
-                                }
-                              >
-                                Detailed
-                              </button>
-                            </div>
-                            <p
-                              className={`whitespace-pre-line text-xs text-foreground md:text-sm ${
-                                mode === 'quick' ? 'line-clamp-6' : 'line-clamp-10'
-                              }`}
-                            >
-                              {mode === 'quick' ? quickText : detailedText}
-                            </p>
-                          </div>
-                        )
-                      })()
-                    ) : (
-                      <div className="mt-2 rounded-lg border border-[var(--border)] px-3 py-2">
-                        <p className="text-xs text-muted-foreground md:text-sm">
-                          No lesson plan yet. Run analysis to generate one.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="mt-auto flex w-full flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      className="min-h-[50px] min-w-[120px] flex-1 bg-emerald-600 text-white hover:bg-emerald-700"
-                      onClick={() => openPrepare(spotlightSession.id)}
-                    >
-                      Prepare
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      className="min-h-[50px] min-w-[120px] flex-1 gap-1.5"
-                      onClick={() => void goToClassMap(spotlightSession.id)}
-                      disabled={
-                        startBusySessionId === spotlightSession.id ||
-                        spotlightSession.status === 'completed' ||
-                        spotlightSession.status === 'cancelled'
-                      }
-                    >
-                      {startBusySessionId === spotlightSession.id ? (
-                        <span className="text-xs font-semibold">…</span>
-                      ) : (
-                        <>
-                          <Play className="h-4 w-4 shrink-0" />
-                          {spotlightSession.status === 'in_progress' ? 'Continue to map' : 'Start class'}
-                        </>
-                      )}
-                    </Button>
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="outline"
-                      className="min-h-[50px] min-w-[50px] shrink-0"
-                      onClick={() => void askAiForClassPrep(spotlightSession)}
-                      disabled={aiBusyId === spotlightSession.id}
-                      aria-label="Analyze selected part"
-                      title="Analyze selected part"
-                    >
-                      {aiBusyId === spotlightSession.id ? (
-                        <span className="text-xs font-semibold">...</span>
-                      ) : (
-                        <Zap className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            )
-          })()
-        ) : (
-          <p className="mt-2 text-sm text-muted-foreground">No upcoming class yet.</p>
-        )}
-      </section>
-
-      <section className="rounded-2xl bg-[var(--card)] p-4">
-        <h3 className="text-base font-semibold text-foreground">Classes</h3>
-        {error ? <p className="mt-2 text-sm text-[var(--brand-red)]">{error}</p> : null}
-        {sessions.length === 0 ? (
-          <p className="mt-2 text-sm text-muted-foreground">No classes yet.</p>
-        ) : activeSessions.length === 0 ? (
-          <p className="mt-2 text-sm text-muted-foreground">
-            Nothing active here — completed classes are listed under Past classes.
+      <section className="ui-section space-y-3">
+        <div>
+          <h3 className="text-base font-semibold text-foreground">
+            Upcoming lessons
+            {upcomingSessions.length > 0 ? (
+              <span className="ml-2 text-sm font-normal text-muted-foreground">
+                ({upcomingSessions.length})
+              </span>
+            ) : null}
+          </h3>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Prepare ahead · Enter in the last 20 minutes · Preview glances at pages
           </p>
+        </div>
+        {error ? <p className="text-sm text-[var(--brand-red)]">{error}</p> : null}
+        {upcomingSessions.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No upcoming class yet — book one on the calendar.</p>
         ) : (
-          <div className="mt-3 space-y-3">
-            {activeSessions.map((session) => {
-              const currentOutcome = outcomes[session.id] ?? {
-                introducedWords: '',
-                practicedWords: '',
-                reviewedWords: '',
-                learnedWords: '',
-                teacherNotes: '',
-              }
+          <ul className="divide-y divide-border/80 rounded-xl border border-border/80 bg-background">
+            {upcomingSessions.map((session, index) => {
+              const entry = resolveClassEntryAction(session, nowMs)
+              const countdown = formatClassCountdown(session.scheduledFor, nowMs)
+              const entryLabel = classEntryActionLabel(entry)
+              const statusLabel =
+                session.status === 'in_progress'
+                  ? 'Live'
+                  : session.status === 'prepared'
+                    ? 'Prepared'
+                    : session.status === 'cancelled'
+                      ? 'Cancelled'
+                      : 'Not started'
+              const sectionTitle = session.selectedSection?.title?.trim() || session.title
+              const glanceSectionId =
+                selectedSectionBySession[session.id] ?? session.selectedSection?.id ?? ''
+              const glanceSection =
+                (library
+                  ? getStudentSectionOptions(liveStudent.id, library).find((o) => o.id === glanceSectionId)
+                  : null) ?? session.selectedSection
               return (
-                <article key={session.id} className="rounded-xl bg-[var(--surface-2)] p-3">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                    <div className="min-w-0">
-                      <p className="truncate font-semibold text-foreground">{session.title}</p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">
-                        {prettyDateTime(session.scheduledFor)} · {session.durationMin} min
+                <li
+                  key={session.id}
+                  className="flex flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-4"
+                >
+                  <div className="flex min-w-0 flex-1 items-start gap-3">
+                    <span className="mt-0.5 w-7 shrink-0 text-right text-sm tabular-nums text-muted-foreground">
+                      {index + 1}
+                    </span>
+                    <div className="min-w-0 space-y-1">
+                      <p className="truncate text-sm font-semibold text-foreground sm:text-base">
+                        {sectionTitle}
                       </p>
-                      <span
-                        className={`mt-2 inline-flex rounded-md border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${statusPillClass(session.status)}`}
-                      >
-                        {session.status.replace(/_/g, ' ')}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:flex md:flex-wrap md:justify-end">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="w-full md:w-auto"
-                        onClick={() => setSessionStatus(session.id, 'prepared')}
-                        disabled={
-                          statusBusyId === session.id ||
-                          session.status === 'completed' ||
-                          session.status === 'cancelled' ||
-                          session.status === 'in_progress'
-                        }
-                      >
-                        Mark prepared
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="w-full md:w-auto"
-                        onClick={() => setOpenPrepFor(session.id)}
-                      >
-                        Open prep
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="w-full md:w-auto"
-                        onClick={() => void askAiForClassPrep(session)}
-                        disabled={aiBusyId === session.id}
-                      >
-                        {aiBusyId === session.id ? 'Thinking...' : 'Ask AI'}
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="w-full md:w-auto"
-                        onClick={() => setOpenOutcomeFor(openOutcomeFor === session.id ? null : session.id)}
-                        disabled={session.status === 'cancelled'}
-                      >
-                        {openOutcomeFor === session.id ? 'Hide outcome' : 'Log outcome'}
-                      </Button>
-                      {session.status !== 'cancelled' ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="w-full md:w-auto"
-                          onClick={() => setSessionStatus(session.id, 'cancelled')}
-                          disabled={statusBusyId === session.id || session.status === 'completed'}
-                        >
-                          Cancel
-                        </Button>
-                      ) : (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="w-full md:w-auto"
-                          onClick={() => setSessionStatus(session.id, 'planned')}
-                          disabled={statusBusyId === session.id}
-                        >
-                          Reopen
-                        </Button>
-                      )}
+                      <p className="text-xs text-muted-foreground">
+                        Lesson · {statusLabel} · {prettyDateTime(session.scheduledFor)} ·{' '}
+                        {session.durationMin}min
+                      </p>
+                      {glanceSection?.bookId && glanceSection?.unitId ? (
+                        <ReadingCheckPrepareGlanceLink
+                          bookId={glanceSection.bookId}
+                          unitId={glanceSection.unitId}
+                          lessonId={glanceSection.lessonId}
+                          partId={glanceSection.partId}
+                          studentId={liveStudent.id}
+                          classSessionId={session.id}
+                        />
+                      ) : null}
                     </div>
                   </div>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Planned words: {session.plannedVocabulary.length ? session.plannedVocabulary.join(', ') : 'None'}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {(() => {
-                      const title = session.selectedSection?.title ?? 'Auto-select next section in prep'
-                      const opt =
-                        library && session.selectedSection?.id
-                          ? getStudentSectionOptions(liveStudent.id, library).find((o) => o.id === session.selectedSection?.id)
-                          : undefined
-                      const book = opt ? library?.books.find((b) => b.id === opt.bookId) : undefined
-                      const unit = book && opt ? book.units.find((u) => u.id === opt.unitId) : undefined
-                      const pages =
-                        opt && book && unit && typeof opt.startPageHint === 'number'
-                          ? formatEffectivePageSpan(
-                              opt.startPageHint,
-                              opt.endPageHint ?? null,
-                              book,
-                              unit,
-                              null,
-                              numberingMode,
-                            )
-                          : null
-                      const pagesBit =
-                        pages && pages !== 'pages —' && !pages.startsWith('pages —') ? ` · ${pages}` : ''
-                      return (
-                        <>
-                          Section: {title}
-                          {pagesBit}
-                        </>
-                      )
-                    })()}
-                  </p>
-                  {session.sourceSlotId ? (
-                    <p className="mt-1 text-xs text-muted-foreground">Scheduled from weekly calendar.</p>
-                  ) : null}
-                  {session.aiPrepSummary ? (
-                    <p className="mt-1 text-xs text-muted-foreground">AI prep note: {session.aiPrepSummary}</p>
-                  ) : null}
-
-
-                  {openOutcomeFor === session.id ? (
-                    <div className="mt-3 space-y-2 rounded-lg bg-[var(--card)] p-3 md:p-4">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Class outcomes</p>
-                      <textarea
-                        className="min-h-[58px] w-full rounded-md border border-[var(--border)] bg-background px-3 py-2 text-sm"
-                        placeholder="Introduced words (comma separated)"
-                        value={currentOutcome.introducedWords}
-                        onChange={(e) =>
-                          setOutcomes((prev) => ({
-                            ...prev,
-                            [session.id]: { ...currentOutcome, introducedWords: e.target.value },
-                          }))
-                        }
-                      />
-                      <textarea
-                        className="min-h-[58px] w-full rounded-md border border-[var(--border)] bg-background px-3 py-2 text-sm"
-                        placeholder="Practiced words (comma separated)"
-                        value={currentOutcome.practicedWords}
-                        onChange={(e) =>
-                          setOutcomes((prev) => ({
-                            ...prev,
-                            [session.id]: { ...currentOutcome, practicedWords: e.target.value },
-                          }))
-                        }
-                      />
-                      <textarea
-                        className="min-h-[58px] w-full rounded-md border border-[var(--border)] bg-background px-3 py-2 text-sm"
-                        placeholder="Reviewed words (comma separated)"
-                        value={currentOutcome.reviewedWords}
-                        onChange={(e) =>
-                          setOutcomes((prev) => ({
-                            ...prev,
-                            [session.id]: { ...currentOutcome, reviewedWords: e.target.value },
-                          }))
-                        }
-                      />
-                      <textarea
-                        className="min-h-[58px] w-full rounded-md border border-[var(--border)] bg-background px-3 py-2 text-sm"
-                        placeholder="Learned words (comma separated)"
-                        value={currentOutcome.learnedWords}
-                        onChange={(e) =>
-                          setOutcomes((prev) => ({
-                            ...prev,
-                            [session.id]: { ...currentOutcome, learnedWords: e.target.value },
-                          }))
-                        }
-                      />
-                      <textarea
-                        className="min-h-[70px] w-full rounded-md border border-[var(--border)] bg-background px-3 py-2 text-sm"
-                        placeholder="Teacher notes"
-                        value={currentOutcome.teacherNotes}
-                        onChange={(e) =>
-                          setOutcomes((prev) => ({
-                            ...prev,
-                            [session.id]: { ...currentOutcome, teacherNotes: e.target.value },
-                          }))
-                        }
-                      />
-                      <div className="grid grid-cols-2 gap-2 md:flex">
-                        <Button type="button" size="sm" onClick={() => saveOutcome(session.id)}>
-                          Save outcomes
+                  <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5"
+                      onClick={() => setPreviewSessionId(session.id)}
+                    >
+                      <Eye className="h-3.5 w-3.5" aria-hidden />
+                      Preview
+                    </Button>
+                    {(session.status === 'planned' || session.status === 'prepared') &&
+                    entry !== 'prepare' ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => openPrepRoom(session.id)}
+                      >
+                        Prepare
+                      </Button>
+                    ) : null}
+                    {entry === 'prepare' ? (
+                      <div className="flex min-w-[5.5rem] flex-col items-center gap-0.5">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          className="w-full min-w-[5.5rem] bg-emerald-500/15 text-emerald-900 hover:bg-emerald-500/25"
+                          onClick={() => openPrepRoom(session.id)}
+                        >
+                          Prepare
                         </Button>
-                        <Button type="button" size="sm" variant="outline" onClick={() => setOpenOutcomeFor(null)}>
-                          Close
-                        </Button>
+                        {countdown ? (
+                          <span className="text-[11px] tabular-nums text-muted-foreground">{countdown}</span>
+                        ) : null}
                       </div>
-                    </div>
-                  ) : null}
-                </article>
+                    ) : null}
+                    {entry === 'enter' || entry === 'continue' ? (
+                      <div className="flex min-w-[5.5rem] flex-col items-center gap-0.5">
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="w-full min-w-[5.5rem] bg-emerald-600 text-white hover:bg-emerald-700"
+                          disabled={startBusySessionId === session.id}
+                          onClick={() => void goToClassMap(session.id)}
+                        >
+                          {startBusySessionId === session.id ? '…' : entryLabel}
+                        </Button>
+                        {countdown ? (
+                          <span className="text-[11px] tabular-nums text-muted-foreground">{countdown}</span>
+                        ) : entry === 'continue' ? (
+                          <span className="text-[11px] text-muted-foreground">Live</span>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {session.status === 'cancelled' ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        disabled={statusBusyId === session.id}
+                        onClick={() => setSessionStatus(session.id, 'planned')}
+                      >
+                        Reopen
+                      </Button>
+                    ) : session.status !== 'in_progress' ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        disabled={statusBusyId === session.id || session.status === 'completed'}
+                        onClick={() => setSessionStatus(session.id, 'cancelled')}
+                      >
+                        Cancel
+                      </Button>
+                    ) : null}
+                  </div>
+                </li>
               )
             })}
-          </div>
+          </ul>
         )}
       </section>
 
-      <section className="rounded-2xl bg-[var(--card)] p-4">
-        <h3 className="text-base font-semibold text-foreground">Past classes</h3>
-        <p className="mt-1 text-xs text-muted-foreground">Newest first. Open a row for notes, bookmark, and word lists.</p>
+      <Collapsible className="ui-section group">
+        <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 text-left">
+          <div>
+            <h3 className="text-base font-semibold text-foreground">
+              Ended lessons
+              {pastSessions.length > 0 ? (
+                <span className="ml-2 text-sm font-normal text-muted-foreground">({pastSessions.length})</span>
+              ) : null}
+            </h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">Newest first — notes, bookmark, word lists</p>
+          </div>
+          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 group-data-[state=open]:rotate-180" />
+        </CollapsibleTrigger>
+        <CollapsibleContent>
         {pastSessions.length === 0 ? (
           <p className="mt-2 text-sm text-muted-foreground">No completed classes yet.</p>
         ) : (
           <div className="mt-3 space-y-2">
             {pastSessions.map((session) => (
-              <Collapsible key={session.id} className="group rounded-xl border border-[var(--border)] bg-[var(--surface-2)]">
+              <Collapsible key={session.id} className="group/past rounded-lg">
                 <CollapsibleTrigger asChild>
                   <button
                     type="button"
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-[var(--card)]/60"
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-muted/50"
                   >
-                    <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 group-data-[state=open]:rotate-180" />
+                    <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 group-data-[state=open]/past:rotate-180" />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-semibold text-foreground">{session.title}</p>
                       <p className="mt-0.5 text-xs text-muted-foreground">
@@ -1328,7 +1317,7 @@ export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps
                 <CollapsibleContent>
                   <div className="space-y-2 border-t border-[var(--border)] px-3 py-3 text-xs md:text-sm">
                     {!session.classEndNote?.trim() && session.postClassRecapPromptDismissed !== true ? (
-                      <div className="rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-amber-950 dark:text-amber-50">
+                      <div className="rounded-lg bg-amber-50 px-3 py-2 text-amber-950">
                         <p className="font-medium text-foreground">Optional: add a one-line recap for next time</p>
                         {recapOpenFor === session.id ? (
                           <div className="mt-2 space-y-2">
@@ -1389,6 +1378,12 @@ export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps
                     {session.classEndNote ? (
                       <p>
                         <span className="font-medium text-foreground">Recap:</span> {session.classEndNote}
+                      </p>
+                    ) : null}
+                    {session.readingCheckWrapLine ? (
+                      <p className="text-muted-foreground">
+                        <span className="font-medium text-foreground">Reading checks:</span>{' '}
+                        {session.readingCheckWrapLine.replace(/^Checks:\s*/i, '')}
                       </p>
                     ) : null}
                     {session.sessionNote && sessionNoteOpenFor !== session.id ? (
@@ -1546,19 +1541,217 @@ export function StudentClassesTab({ student, onUpdated }: StudentClassesTabProps
             ))}
           </div>
         )}
-      </section>
-      <Dialog open={Boolean(openPrepFor)} onOpenChange={(open) => { if (!open) setOpenPrepFor(null) }}>
-        <DialogContent className="flex max-h-[min(92vh,900px)] w-[min(96vw,1180px)] max-w-[min(96vw,1180px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(96vw,1180px)]">
-          <DialogHeader className="shrink-0 border-b border-[var(--border)] px-6 py-4 pr-14 text-left">
-            <DialogTitle>{prepSession ? `Class prep · ${prepSession.title}` : 'Class prep'}</DialogTitle>
-            <DialogDescription className="text-left text-xs text-muted-foreground">
-              Notes, book section, and vocabulary for the next class. Vocabulary sections include a PDF preview of the
-              exact pages sent to the assistant.
+        </CollapsibleContent>
+      </Collapsible>
+
+      <Dialog
+        open={previewSession != null}
+        onOpenChange={(open) => {
+          if (!open) setPreviewSessionId(null)
+        }}
+      >
+        <DialogContent
+          className={
+            'gap-0 overflow-hidden border-0 bg-[#1a1714] p-0 text-white ' +
+            'sm:max-w-4xl ' +
+            '[&_[data-slot=dialog-close]]:right-3 [&_[data-slot=dialog-close]]:top-3 ' +
+            '[&_[data-slot=dialog-close]]:rounded-full [&_[data-slot=dialog-close]]:bg-black/40 ' +
+            '[&_[data-slot=dialog-close]]:p-1.5 [&_[data-slot=dialog-close]]:text-white ' +
+            '[&_[data-slot=dialog-close]]:opacity-90 [&_[data-slot=dialog-close]]:hover:bg-black/55 ' +
+            '[&_[data-slot=dialog-close]]:hover:opacity-100 [&_[data-slot=dialog-close]]:focus:ring-white/40'
+          }
+        >
+          <DialogTitle className="sr-only">Page preview</DialogTitle>
+          <DialogDescription className="sr-only">Lesson page preview</DialogDescription>
+          <div className="relative h-[min(70vh,560px)] w-full">
+            {previewSpread?.previewFilePath && previewSpread.selected && previewSpread.unitId ? (
+              <>
+                <div className="grid h-full grid-cols-2">
+                  <button
+                    type="button"
+                    className="relative h-full min-w-0 border-0 bg-transparent p-0 text-left"
+                    aria-label="Previous pages"
+                    disabled={!previewSpread.canGoBack}
+                    onClick={() => turnPreviewSpread(-1)}
+                  >
+                    <StudentCardLessonPreview
+                      filePath={previewSpread.previewFilePath}
+                      unitId={previewSpread.unitId}
+                      page={previewSpread.leftPage}
+                      label={`Page ${previewSpread.leftLabel}`}
+                      fitHeight
+                      objectFit="contain"
+                      className="pointer-events-none absolute inset-0 h-full w-full rounded-none border-0 bg-[#2a241c] shadow-none"
+                    />
+                  </button>
+                  <button
+                    type="button"
+                    className="relative h-full min-w-0 border-0 bg-transparent p-0 text-left"
+                    aria-label="Next pages"
+                    disabled={!previewSpread.canGoForward}
+                    onClick={() => turnPreviewSpread(1)}
+                  >
+                    <StudentCardLessonPreview
+                      filePath={previewSpread.previewFilePath}
+                      unitId={previewSpread.unitId}
+                      page={previewSpread.rightPage}
+                      label={`Page ${previewSpread.rightLabel}`}
+                      fitHeight
+                      objectFit="contain"
+                      className="pointer-events-none absolute inset-0 h-full w-full rounded-none border-0 bg-[#2a241c] shadow-none"
+                    />
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Previous pages"
+                  disabled={!previewSpread.canGoBack}
+                  onClick={() => turnPreviewSpread(-1)}
+                  className="absolute top-1/2 left-2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-white shadow-md transition enabled:hover:bg-black/60 disabled:pointer-events-none disabled:opacity-25"
+                >
+                  <ChevronLeft className="h-5 w-5" aria-hidden />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Next pages"
+                  disabled={!previewSpread.canGoForward}
+                  onClick={() => turnPreviewSpread(1)}
+                  className="absolute top-1/2 right-2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-white shadow-md transition enabled:hover:bg-black/60 disabled:pointer-events-none disabled:opacity-25"
+                >
+                  <ChevronRight className="h-5 w-5" aria-hidden />
+                </button>
+                <div className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-black/55 px-2.5 py-1 text-xs font-medium tabular-nums text-white/95 shadow-md">
+                  <span className="pl-1 text-white/70">p</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    aria-label="Go to page"
+                    value={previewJumpDraft}
+                    onFocus={() => setPreviewJumpFocused(true)}
+                    onChange={(e) => setPreviewJumpDraft(e.target.value)}
+                    onBlur={() => {
+                      setPreviewJumpFocused(false)
+                      jumpPreviewToPage(previewJumpDraft)
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        jumpPreviewToPage(previewJumpDraft)
+                        ;(e.target as HTMLInputElement).blur()
+                      } else if (e.key === 'Escape') {
+                        e.preventDefault()
+                        setPreviewJumpDraft(
+                          previewSpread.leftLabel === '·'
+                            ? String(previewSpread.leftPage)
+                            : previewSpread.leftLabel,
+                        )
+                        ;(e.target as HTMLInputElement).blur()
+                      }
+                    }}
+                    className="h-6 w-12 rounded-md border-0 bg-white/15 px-1.5 text-center text-xs font-medium tabular-nums text-white outline-none ring-0 placeholder:text-white/40 focus:bg-white/25"
+                  />
+                  <span className="pr-1 text-white/70">–{previewSpread.rightLabel}</span>
+                </div>
+              </>
+            ) : (
+              <div className="flex h-full w-full items-center justify-center px-6 text-center">
+                <p className="text-sm text-white/70">Set a teaching section first</p>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={editingTeachingSessionId != null}
+        onOpenChange={(open) => {
+          if (!open) setEditingTeachingSessionId(null)
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>What we’re teaching</DialogTitle>
+            <DialogDescription>
+              Pick the book section for this class. Prepare and Enter will use this.
             </DialogDescription>
           </DialogHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
-            {prepSession ? renderClassPrepDialogBody(prepSession) : null}
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-muted-foreground" htmlFor="teaching-section-pick">
+              Lesson piece
+            </label>
+            <select
+              id="teaching-section-pick"
+              className="w-full rounded-md border border-[var(--border)] bg-background px-3 py-2 text-sm"
+              value={teachingEditDraftId}
+              onChange={(e) => setTeachingEditDraftId(e.target.value)}
+            >
+              <option value="">Not set</option>
+              {(() => {
+                const options = getStudentSectionOptions(liveStudent.id, library)
+                const groups: Array<{ bookId: string; bookTitle: string; options: typeof options }> = []
+                for (const option of options) {
+                  const last = groups[groups.length - 1]
+                  if (last && last.bookId === option.bookId) {
+                    last.options.push(option)
+                  } else {
+                    groups.push({
+                      bookId: option.bookId,
+                      bookTitle: option.bookTitle || 'Book',
+                      options: [option],
+                    })
+                  }
+                }
+                return groups.map((group) => (
+                  <optgroup key={group.bookId} label={group.bookTitle}>
+                    {group.options.map((option) => {
+                      const b = library?.books.find((bk) => bk.id === option.bookId)
+                      const u = b?.units.find((un) => un.id === option.unitId)
+                      const span =
+                        b && u && typeof option.startPageHint === 'number'
+                          ? formatEffectivePageSpan(
+                              option.startPageHint,
+                              option.endPageHint ?? null,
+                              b,
+                              u,
+                              null,
+                              numberingMode,
+                            )
+                          : ''
+                      const pageSuffix =
+                        span && span !== 'pages —' && !span.startsWith('pages —') ? ` · ${span}` : ''
+                      const withinBookLabel =
+                        option.type === 'unit'
+                          ? option.unitTitle || option.title
+                          : option.type === 'lesson'
+                            ? [option.unitTitle, option.lessonTitle || option.title].filter(Boolean).join(' / ')
+                            : [option.unitTitle, option.lessonTitle, option.partTitle || option.title]
+                                .filter(Boolean)
+                                .join(' / ')
+                      const noMapSuffix =
+                        option.type === 'unit' && typeof option.startPageHint !== 'number'
+                          ? ' · pages not mapped'
+                          : ''
+                      return (
+                        <option key={option.id} value={option.id}>
+                          {withinBookLabel}
+                          {pageSuffix}
+                          {noMapSuffix}
+                        </option>
+                      )
+                    })}
+                  </optgroup>
+                ))
+              })()}
+            </select>
           </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setEditingTeachingSessionId(null)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={saveTeachingSelection}>
+              Save
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

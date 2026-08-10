@@ -327,7 +327,7 @@ function QuestionReviewCard({
   }
 
   return (
-    <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 flex flex-col gap-3 animate-slide-up">
+    <div className="rounded-xl bg-card p-4 flex flex-col gap-3 animate-slide-up">
       {/* Header row */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
@@ -361,7 +361,7 @@ function QuestionReviewCard({
             onClick={() => setShowCustomize(!showCustomize)}
             className={`p-1.5 rounded-lg text-xs font-medium flex items-center gap-1 transition-all ${
               showCustomize 
-                ? 'bg-[var(--brand-blue)] text-white' 
+                ? 'bg-primary text-primary-foreground' 
                 : 'text-muted-foreground hover:text-foreground hover:bg-[var(--surface-3)]'
             }`}
           >
@@ -401,7 +401,7 @@ function QuestionReviewCard({
                   onClick={() => handleStyleChange(s)}
                   className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
                     effectiveStyle === s
-                      ? 'bg-[var(--brand-blue)] text-white'
+                      ? 'bg-primary text-primary-foreground'
                       : 'bg-[var(--surface-2)] border border-[var(--border)] text-foreground hover:border-[var(--brand-blue)]'
                   }`}
                 >
@@ -419,7 +419,7 @@ function QuestionReviewCard({
               onClick={() => handleMediaTypeChange('static')}
               className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
                 effectiveMediaType === 'static'
-                  ? 'bg-[var(--brand-blue)] text-white'
+                  ? 'bg-primary text-primary-foreground'
                   : 'bg-[var(--surface-2)] border border-[var(--border)] text-foreground'
               }`}
             >
@@ -430,7 +430,7 @@ function QuestionReviewCard({
               onClick={() => handleMediaTypeChange('gif')}
               className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
                 effectiveMediaType === 'gif'
-                  ? 'bg-[var(--brand-blue)] text-white'
+                  ? 'bg-primary text-primary-foreground'
                   : 'bg-[var(--surface-2)] border border-[var(--border)] text-foreground'
               }`}
             >
@@ -515,7 +515,7 @@ function QuestionReviewCard({
               <button
                 type="button"
                 onClick={applyPhotoFallback}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--brand-blue)] px-3 py-1.5 text-xs font-medium text-white hover:bg-[var(--brand-blue-bright)]"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--brand-blue)] px-3 py-1.5 text-xs font-medium text-white hover:bg-primary/90"
               >
                 Use Photo style
               </button>
@@ -600,7 +600,7 @@ function QuestionReviewCard({
                       setShowUrlInput(false)
                     }
                   }}
-                  className="flex-1 px-3 py-1.5 bg-[var(--brand-blue)] text-white rounded-lg text-xs font-medium hover:bg-[var(--brand-blue-bright)] transition-colors"
+                  className="flex-1 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors"
                 >
                   Load
                 </button>
@@ -631,7 +631,7 @@ function QuestionReviewCard({
               <button
                 type="button"
                 onClick={applyPhotoFallback}
-                className="rounded-md bg-[var(--brand-blue)] px-2.5 py-1 text-[11px] font-medium text-white hover:bg-[var(--brand-blue-bright)]"
+                className="rounded-md bg-[var(--brand-blue)] px-2.5 py-1 text-[11px] font-medium text-white hover:bg-primary/90"
               >
                 Use Photo style
               </button>
@@ -1370,7 +1370,7 @@ export function CreateQuizModal({ editingQuiz, addPartFromQuiz, onClose, onSaved
                     onClick={() => setCoverImageMode('auto')}
                     className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
                       coverImageMode === 'auto'
-                        ? 'bg-[var(--brand-blue)] text-white'
+                        ? 'bg-primary text-primary-foreground'
                         : 'bg-[var(--surface-2)] border border-[var(--border)] text-foreground'
                     }`}
                   >
@@ -1381,7 +1381,7 @@ export function CreateQuizModal({ editingQuiz, addPartFromQuiz, onClose, onSaved
                     onClick={() => setCoverImageMode('manual')}
                     className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
                       coverImageMode === 'manual'
-                        ? 'bg-[var(--brand-blue)] text-white'
+                        ? 'bg-primary text-primary-foreground'
                         : 'bg-[var(--surface-2)] border border-[var(--border)] text-foreground'
                     }`}
                   >
@@ -1445,7 +1445,7 @@ export function CreateQuizModal({ editingQuiz, addPartFromQuiz, onClose, onSaved
                     size="sm"
                     variant={notesDirty ? 'default' : 'outline'}
                     onClick={applyNotesToSuggestions}
-                    className={notesDirty ? 'bg-[var(--brand-blue)] text-white hover:bg-[var(--brand-blue-bright)]' : 'border-[var(--border)] text-foreground'}
+                    className={notesDirty ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'border-[var(--border)] text-foreground'}
                   >
                     Apply notes
                   </Button>
@@ -1644,7 +1644,7 @@ export function CreateQuizModal({ editingQuiz, addPartFromQuiz, onClose, onSaved
                     type="button"
                     onClick={addManualWord}
                     size="sm"
-                    className="bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-bright)] text-white h-9 gap-1 shrink-0"
+                    className="bg-[var(--brand-blue)] hover:bg-primary/90 text-white h-9 gap-1 shrink-0"
                   >
                     <Plus size={14} />
                     Add
@@ -1709,7 +1709,7 @@ export function CreateQuizModal({ editingQuiz, addPartFromQuiz, onClose, onSaved
                     ? 'Pool size must be at least Challenge Length'
                     : undefined
                 }
-                className="w-full bg-[var(--brand-blue)] hover:bg-[var(--brand-blue-bright)] text-white font-bold py-6 text-base gap-3 shadow-[0_0_24px_rgba(59,130,246,0.3)] disabled:opacity-50"
+                className="w-full bg-[var(--brand-blue)] hover:bg-primary/90 text-white font-bold py-6 text-base gap-3 shadow-[0_0_24px_rgba(59,130,246,0.3)] disabled:opacity-50"
               >
                 {generating ? (
                   <><Loader2 size={18} className="animate-spin" /> Generating Quiz...</>
@@ -1776,7 +1776,7 @@ export function CreateQuizModal({ editingQuiz, addPartFromQuiz, onClose, onSaved
                         onClick={() => applyGlobalStyle(s)}
                         className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
                           globalStyle === s
-                            ? 'bg-[var(--brand-blue)] text-white'
+                            ? 'bg-primary text-primary-foreground'
                             : 'bg-[var(--surface-3)] border border-[var(--border)] text-foreground hover:border-[var(--brand-blue)]'
                         }`}
                       >
@@ -1794,7 +1794,7 @@ export function CreateQuizModal({ editingQuiz, addPartFromQuiz, onClose, onSaved
                     onClick={() => applyGlobalMediaType('static')}
                     className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
                       globalMediaType === 'static'
-                        ? 'bg-[var(--brand-blue)] text-white'
+                        ? 'bg-primary text-primary-foreground'
                         : 'bg-[var(--surface-3)] border border-[var(--border)] text-foreground'
                     }`}
                   >
@@ -1805,7 +1805,7 @@ export function CreateQuizModal({ editingQuiz, addPartFromQuiz, onClose, onSaved
                     onClick={() => applyGlobalMediaType('gif')}
                     className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
                       globalMediaType === 'gif'
-                        ? 'bg-[var(--brand-blue)] text-white'
+                        ? 'bg-primary text-primary-foreground'
                         : 'bg-[var(--surface-3)] border border-[var(--border)] text-foreground'
                     }`}
                   >

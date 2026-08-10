@@ -5,15 +5,29 @@ import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { useBrowserZoomRepaintRevision } from '@/components/students/fullscreen-book-overlay/hooks/useBrowserZoomRepaintRevision'
 import { CachedPageCanvas } from '@/components/students/fullscreen-book-overlay/sections/CachedPageCanvas'
-import { getPageRenderCacheBitmap } from '@/lib/books/page-render-cache'
 import {
   READER_PAGE_PLACEHOLDER_FILTER,
   isReaderPageSharpReady,
   readerPageHasDrawablePixelsFromLayers,
+  resolveReaderPageLayerVisibility,
   resolveReaderPagePlaceholderSource,
+  resolveReaderPageShowSharpCache,
   shouldShowReaderPagePlaceholder,
   type ReaderPagePlaceholderSource,
 } from '@/lib/books/reader-page-display'
+import {
+  resolveReaderPageCacheLookup,
+  resolveReaderPagePdfFitScale,
+  resolveReaderPagePdfRenderHeightPx,
+  resolveReaderPagePdfRenderWidthPx,
+} from '@/lib/books/reader-page-render-width'
+import { bookReaderLivePdfPrimaryEnabled } from '@/lib/books/feature-flags'
+import {
+  readerPageBulgeClipPath,
+  READER_PAGE_PAPER_COLOR,
+} from '@/lib/books/reader-page-bulge-clip'
+import { BookPageStackLayers } from '@/components/books/book-page-stack-layers'
+import { bookSpreadPageArtHiddenForFrameTuning, bookSpreadHardcoverGutterOnlyForFrameTuning } from '@/lib/books/feature-flags'
 import { cn } from '@/lib/utils'
 
 function scheduleAfterNextPaint(callback: () => void): () => void {
@@ -32,31 +46,33 @@ function ReaderPagePlaceholderLayer({
   placeholder,
   spreadPageWidth,
   pageCanvasHeightPx,
-  pdfClipLeftPx,
+  transparentSurface,
   onPainted,
+  clipStyle,
 }: {
   placeholder: ReaderPagePlaceholderSource
   spreadPageWidth: number
   pageCanvasHeightPx: number
-  pdfClipLeftPx: number
+  transparentSurface?: boolean
   onPainted?: () => void
+  clipStyle?: CSSProperties
 }) {
-  const pdfClipLeft = pdfClipLeftPx > 0 ? Math.round(pdfClipLeftPx) : 0
-  const layerClipStyle =
-    pdfClipLeft > 0 ? ({ clipPath: `inset(0 0 0 ${pdfClipLeft}px)` } as const) : undefined
   const blurStyle: CSSProperties = { filter: READER_PAGE_PLACEHOLDER_FILTER }
+  const layerSurfaceClass = transparentSurface ? 'bg-transparent' : 'bg-[#FDFCFB]'
 
   if (placeholder.kind === 'low-res-bitmap') {
     return (
       <div
-        className="absolute inset-0 z-0 flex items-start justify-center overflow-hidden bg-[#FDFCFB]"
-        style={{ ...layerClipStyle, ...blurStyle }}
+        className={cn(
+          'absolute inset-0 z-0 flex items-start justify-center overflow-hidden',
+          layerSurfaceClass,
+        )}
+        style={{ ...blurStyle, ...clipStyle }}
       >
         <CachedPageCanvas
           bitmap={placeholder.bitmap}
           cssWidth={spreadPageWidth}
           cssHeight={pageCanvasHeightPx}
-          clipLeftPx={pdfClipLeft}
           onPainted={onPainted}
         />
       </div>
@@ -65,15 +81,21 @@ function ReaderPagePlaceholderLayer({
 
   return (
     <div
-      className="absolute inset-0 z-0 flex items-start justify-center overflow-hidden bg-[#FDFCFB]"
-      style={layerClipStyle}
+      className={cn(
+        'absolute inset-0 z-0 flex items-start justify-center overflow-hidden',
+        layerSurfaceClass,
+      )}
+      style={clipStyle}
     >
       {/* eslint-disable-next-line @next/next/no-img-element -- data URL from thumbnail LRU */}
       <img
         src={placeholder.dataUrl}
         alt=""
         aria-hidden
-        className="pointer-events-none block max-w-full select-none bg-[#FDFCFB] object-contain object-left-top"
+        className={cn(
+          'pointer-events-none block max-w-full select-none object-contain object-left-top',
+          transparentSurface ? 'bg-transparent' : 'bg-[#FDFCFB]',
+        )}
         style={{
           width: spreadPageWidth,
           height: pageCanvasHeightPx,
@@ -90,7 +112,7 @@ export interface ReaderPageSlotProps {
   pageNumber: number
   spreadPageWidth: number
   pageCanvasHeightPx: number
-  /** Clip the PDF/cache layer from the left so the seam overlap shows the left page (spread right slot). */
+  /** @deprecated Seam overlap uses spread `marginLeft` only — do not inset-clip (causes white strip). */
   pdfClipLeftPx?: number
   pdf: PDFDocumentProxy
   PdfPage: ComponentType<any>
@@ -101,20 +123,26 @@ export interface ReaderPageSlotProps {
   onSlotPixelsReady?: (pageNumber: number) => void
   /** When false, warm hidden slots paint cache but defer parent ready until presented. */
   confirmSlotPixelsReady?: boolean
+  /** Open-book bulge clip — spine on the left (right page) or right (left page). */
+  pageBulgeSide?: 'left' | 'right'
+  /** When true, enable PDF.js text layer if this page has selectable text. */
+  bookTextSelectActive?: boolean
+  pageHasSelectableText?: boolean
+  /** Focus zoom / effective screen scale for sharper prefetch lookup. */
+  screenScale?: number
   children: ReactNode
 }
 
 /**
- * Phase 1 stable pages + R3 progressive display: sharp cache/PDF when ready;
- * soft placeholder (low-res prefetch or thumbnail) only on miss — no blur flash when cached.
- * Annotations stay in `children` above the page image stack.
+ * Progressive display: prefetch cache while loading, then live react-pdf (Phase 3 primary).
+ * Text selection keeps cache visible under transparent text spans until live PDF composited.
  */
 export function ReaderPageSlot({
   unitId,
   pageNumber,
   spreadPageWidth,
   pageCanvasHeightPx,
-  pdfClipLeftPx = 0,
+  pdfClipLeftPx: _pdfClipLeftPx = 0,
   pdf,
   PdfPage,
   onPdfPageLoadSuccess,
@@ -122,6 +150,10 @@ export function ReaderPageSlot({
   captureRef,
   onSlotPixelsReady,
   confirmSlotPixelsReady = true,
+  pageBulgeSide,
+  bookTextSelectActive = false,
+  pageHasSelectableText = false,
+  screenScale = 1,
   children,
 }: ReaderPageSlotProps) {
   const [pdfDisplayReady, setPdfDisplayReady] = useState(false)
@@ -134,11 +166,17 @@ export function ReaderPageSlot({
   useLayoutEffect(() => {
     setPdfDisplayReady(false)
     slotPixelsReportedRef.current = false
-  }, [unitId, pageNumber, spreadPageWidth])
+  }, [unitId, pageNumber, spreadPageWidth, screenScale])
 
-  const cacheBitmap = useMemo(
-    () => getPageRenderCacheBitmap(unitId, pageNumber, spreadPageWidth),
-    [unitId, pageNumber, spreadPageWidth, prefetchRevision],
+  const { bitmap: cacheBitmap, preferSharpCacheOverPdf } = useMemo(
+    () =>
+      resolveReaderPageCacheLookup({
+        unitId,
+        pageNumber,
+        spreadPageWidth,
+        screenScale,
+      }),
+    [unitId, pageNumber, spreadPageWidth, screenScale, prefetchRevision],
   )
 
   const placeholderSource = useMemo(
@@ -150,12 +188,25 @@ export function ReaderPageSlot({
 
   useLayoutEffect(() => {
     if (zoomRepaintRevision === 0) return
-    if (!cacheBitmap) return
     setPdfDisplayReady(false)
-  }, [zoomRepaintRevision, cacheBitmap])
+  }, [zoomRepaintRevision])
 
   const sharpReady = isReaderPageSharpReady({ cacheBitmap, pdfDisplayReady })
-  const showSharpCache = cacheBitmap != null && !pdfDisplayReady
+  const showSharpCache = resolveReaderPageShowSharpCache({
+    livePdfPrimaryEnabled: bookReaderLivePdfPrimaryEnabled,
+    cacheBitmap,
+    pdfDisplayReady,
+    preferSharpCacheOverPdf,
+  })
+  const pdfRenderWidthPx = resolveReaderPagePdfRenderWidthPx(spreadPageWidth, screenScale)
+  const pdfRenderHeightPx = resolveReaderPagePdfRenderHeightPx(
+    spreadPageWidth,
+    pageCanvasHeightPx,
+    pdfRenderWidthPx,
+  )
+  const pdfFitScale = resolveReaderPagePdfFitScale(spreadPageWidth, pdfRenderWidthPx)
+  const pdfUsesScaledLiveRender =
+    bookReaderLivePdfPrimaryEnabled && pdfFitScale < 1 - 1e-6
   const showPlaceholder = shouldShowReaderPagePlaceholder({
     sharpReady,
     placeholder: placeholderSource,
@@ -193,10 +244,6 @@ export function ReaderPageSlot({
     }
   }, [confirmSlotPixelsReady, hasDrawablePixels, pdfDisplayReady, showPlaceholder])
 
-  const pdfClipLeft = pdfClipLeftPx > 0 ? Math.round(pdfClipLeftPx) : 0
-  const layerClipStyle =
-    pdfClipLeft > 0 ? ({ clipPath: `inset(0 0 0 ${pdfClipLeft}px)` } as const) : undefined
-
   const handleCachePainted = () => {
     reportSlotPixelsReady()
   }
@@ -218,53 +265,166 @@ export function ReaderPageSlot({
     })
   }
 
-  /** Hide react-pdf only while the sharp prefetch canvas is showing the same page. */
-  const pageImageHidden = showSharpCache
+  const {
+    pdfTextLayerActive,
+    pdfTextOverCache,
+    pdfHiddenBehindCache,
+    showSharpCacheLayer,
+  } = resolveReaderPageLayerVisibility({
+    bookTextSelectActive,
+    pageHasSelectableText,
+    showSharpCache,
+  })
+
+  const pageArtClipStyle: CSSProperties | undefined = pageBulgeSide
+    ? { clipPath: readerPageBulgeClipPath(pageBulgeSide, pageCanvasHeightPx) }
+    : undefined
+
+  const bulgeActive = pageBulgeSide != null
+  const pageArtHidden = bookSpreadPageArtHiddenForFrameTuning
+
+  useLayoutEffect(() => {
+    if (!pageArtHidden || !confirmSlotPixelsReady) return
+    reportSlotPixelsReady()
+  }, [pageArtHidden, confirmSlotPixelsReady, unitId, pageNumber, spreadPageWidth])
 
   return (
     <div
       ref={captureRef}
-      className="relative inline-block bg-[#FDFCFB] opacity-100"
-      style={{ width: spreadPageWidth, minHeight: pageCanvasHeightPx }}
+      className={cn(
+        'relative inline-block shrink-0 grow-0 opacity-100',
+        pageArtHidden || bulgeActive
+          ? 'overflow-visible bg-transparent'
+          : 'overflow-hidden bg-[#FDFCFB]',
+      )}
+      style={{
+        boxSizing: 'border-box',
+        width: spreadPageWidth,
+        minWidth: spreadPageWidth,
+        maxWidth: spreadPageWidth,
+        minHeight: pageCanvasHeightPx,
+        flexShrink: 0,
+        flexGrow: 0,
+      }}
     >
-      {showPlaceholder && placeholderSource ? (
+      {bulgeActive && pageBulgeSide && !bookSpreadHardcoverGutterOnlyForFrameTuning ? (
+        <BookPageStackLayers
+          side={pageBulgeSide}
+          widthPx={spreadPageWidth}
+          heightPx={pageCanvasHeightPx}
+        />
+      ) : null}
+      <div
+        className={cn(
+          'relative z-[2]',
+          pageArtHidden || bulgeActive
+            ? 'overflow-visible bg-transparent'
+            : 'overflow-hidden bg-[#FDFCFB]',
+        )}
+        style={{
+          width: spreadPageWidth,
+          minHeight: pageCanvasHeightPx,
+          ...(bulgeActive
+            ? { boxShadow: '0 0.5px 2px rgba(35, 22, 12, 0.08)' }
+            : {}),
+          ...pageArtClipStyle,
+        }}
+      >
+      {!pageArtHidden && bulgeActive && pageArtClipStyle ? (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 z-[1]"
+          style={{
+            backgroundColor: READER_PAGE_PAPER_COLOR,
+            ...pageArtClipStyle,
+          }}
+        />
+      ) : null}
+      {!pageArtHidden && showPlaceholder && placeholderSource ? (
         <ReaderPagePlaceholderLayer
           placeholder={placeholderSource}
           spreadPageWidth={spreadPageWidth}
           pageCanvasHeightPx={pageCanvasHeightPx}
-          pdfClipLeftPx={pdfClipLeft}
+          transparentSurface={bulgeActive}
           onPainted={handlePlaceholderPainted}
+          clipStyle={bulgeActive ? pageArtClipStyle : undefined}
         />
       ) : null}
-      {showSharpCache ? (
+      {!pageArtHidden && showSharpCacheLayer ? (
         <div
-          className="absolute inset-0 z-0 flex items-start justify-center overflow-hidden bg-[#FDFCFB]"
-          style={layerClipStyle}
+          className={cn(
+            'absolute inset-0 z-[2] flex items-start justify-center overflow-hidden',
+            bulgeActive ? 'bg-transparent' : 'bg-[#FDFCFB]',
+          )}
+          style={bulgeActive ? pageArtClipStyle : undefined}
         >
           <CachedPageCanvas
             bitmap={cacheBitmap}
             cssWidth={spreadPageWidth}
             cssHeight={pageCanvasHeightPx}
-            clipLeftPx={pdfClipLeft}
             onPainted={handleCachePainted}
           />
         </div>
       ) : null}
-      <div
-        className={cn('relative z-[1]', pageImageHidden && 'pointer-events-none opacity-0')}
-        style={{ width: spreadPageWidth, minHeight: pageCanvasHeightPx, ...layerClipStyle }}
-      >
-        <PdfPage
-          key={`rp-${pageNumber}`}
-          pdf={pdf}
-          pageNumber={pageNumber}
-          width={spreadPageWidth}
-          renderTextLayer={false}
-          renderAnnotationLayer={false}
-          onLoadSuccess={handlePdfLoadSuccess}
-        />
+      {!pageArtHidden ? (
+        <div
+          className={cn(
+            'relative z-[3]',
+            pdfTextLayerActive && 'book-pdf-text-select',
+            pdfTextOverCache && 'book-pdf-text-select-over-cache',
+            bookReaderLivePdfPrimaryEnabled && 'book-pdf-live-primary',
+            pdfHiddenBehindCache && 'pointer-events-none invisible',
+          )}
+          style={{
+            width: spreadPageWidth,
+            minHeight: pageCanvasHeightPx,
+            ...(bulgeActive ? pageArtClipStyle : undefined),
+          }}
+        >
+          <div
+            className={cn(
+              pdfUsesScaledLiveRender && 'overflow-hidden',
+            )}
+            style={
+              pdfUsesScaledLiveRender
+                ? {
+                    width: spreadPageWidth,
+                    height: pageCanvasHeightPx,
+                  }
+                : undefined
+            }
+          >
+            <div
+              style={
+                pdfUsesScaledLiveRender
+                  ? {
+                      width: pdfRenderWidthPx,
+                      height: pdfRenderHeightPx,
+                      transform: `scale(${pdfFitScale})`,
+                      transformOrigin: 'top left',
+                    }
+                  : undefined
+              }
+            >
+              <PdfPage
+                key={
+                  bookReaderLivePdfPrimaryEnabled
+                    ? `rp-${pageNumber}-${pdfRenderWidthPx}`
+                    : `rp-${pageNumber}`
+                }
+                pdf={pdf}
+                pageNumber={pageNumber}
+                width={pdfRenderWidthPx}
+                renderTextLayer={pdfTextLayerActive}
+                renderAnnotationLayer={false}
+                onLoadSuccess={handlePdfLoadSuccess}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
       </div>
-      {children}
+      {!bookSpreadHardcoverGutterOnlyForFrameTuning ? children : null}
     </div>
   )
 }

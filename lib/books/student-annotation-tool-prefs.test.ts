@@ -87,6 +87,13 @@ describe('student-annotation-tool-prefs', () => {
     expect(resolveMarkerToolPrefsFromStorage('stu-a').markerColor).toBe('#ffff00')
   })
 
+  it('markerStraightStroke defaults to true when omitted', () => {
+    mockLocalStorage()
+    expect(resolveMarkerToolPrefsFromStorage('stu-a').markerStraightStroke).toBe(true)
+    patchStudentAnnotationToolPrefs('stu-a', { markerStraightStroke: false })
+    expect(resolveMarkerToolPrefsFromStorage('stu-a').markerStraightStroke).toBe(false)
+  })
+
   it('stores text color and sticky fill per student', () => {
     mockLocalStorage()
 
@@ -172,6 +179,8 @@ describe('student-annotation-tool-prefs', () => {
       stampVariant: 'star',
       stampQuestionColor: '#1d4ed8',
       textVisualStyle: 'filled',
+      bookTextVisualStyle: 'plain',
+      textAlign: 'center',
       textFillColor: '#fef9c3',
       shapeLineDashStyle: 'dotted',
       shapeStrokeEnabled: false,
@@ -186,8 +195,10 @@ describe('student-annotation-tool-prefs', () => {
     expect(prefs.shapeThicknessStep).toBe(2)
     expect(prefs.eraserPixelThicknessStep).toBe(1)
     expect(prefs.eraserLineThicknessStep).toBe(5)
-    expect(prefs.stampVariant).toBe('star')
+    expect(prefs.stampVariant).toBe('check')
     expect(prefs.textVisualStyle).toBe('filled')
+    expect(prefs.bookTextVisualStyle).toBe('plain')
+    expect(prefs.textAlign).toBe('center')
     expect(prefs.textFillColor).toBe('#fef08a')
     expect(prefs.shapeLineDashStyle).toBe('dotted')
     expect(prefs.shapeStrokeEnabled).toBe(false)
@@ -248,6 +259,7 @@ describe('student-annotation-tool-prefs', () => {
       stampQuestionColor: '#1d4ed8',
       textColor: '#1e1b18',
       textVisualStyle: 'plain',
+      bookTextVisualStyle: 'filled',
       textFillColor: '#fef9c3',
       shapeStrokeSwatchId: 'solid-black',
       shapeLineDashStyle: 'solid',

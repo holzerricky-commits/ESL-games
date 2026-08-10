@@ -1,10 +1,16 @@
 'use client'
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { SPREAD_TURN_SLIDE_MS } from '@/lib/books/spread-turn-slide-config'
+import { SPREAD_TURN_SLIDE_MS, type SpreadTurnDirection } from '@/lib/books/spread-turn-slide-config'
+import {
+  spreadTurnFoldTransitionActive,
+  spreadTurnFoldTransitionNone,
+  spreadTurnFoldingPageSide,
+  type SpreadTurnFoldPageSide,
+} from '@/lib/books/spread-turn-fold'
 import type { OutgoingSpreadSnapshot } from '@/components/students/fullscreen-book-overlay/hooks/useSpreadCrossfade'
 
-export type SpreadTurnDirection = 1 | -1
+export type { SpreadTurnDirection } from '@/lib/books/spread-turn-slide-config'
 
 export interface SpreadTurnSlidePayload {
   captureUrl: string | null
@@ -27,8 +33,8 @@ function flushPendingStyles() {
 }
 
 /**
- * Phase 4b — directional slide transforms for incoming/outgoing spread layers.
- * Start frame: outgoing centered, incoming off-screen. End frame: incoming centered, outgoing off-screen.
+ * Phase 4b / 2.5D fold — outgoing page curls at the spine while incoming spread sits underneath.
+ * Start: full opacity, flat page. End: scaleX + skewY curl + multiply shadow on paper.
  */
 export function useSpreadTurnSlide({ turnSlide, onTurnSlideComplete }: UseSpreadTurnSlideArgs) {
   const [phase, setPhase] = useState<SlidePhase>('idle')
@@ -81,19 +87,25 @@ export function useSpreadTurnSlide({ turnSlide, onTurnSlideComplete }: UseSpread
   }, [turnSeq, slideMs])
 
   const isAnimating = turnSlide != null && phase !== 'idle'
-  const incomingAtStart = phase === 'start'
+  const foldAtEnd = phase === 'end'
+  const transitionActive = foldAtEnd
 
-  const incomingTranslateX = !turnSlide ? 0 : incomingAtStart ? dir * 100 : 0
-  const outgoingTranslateX = !turnSlide ? 0 : phase === 'end' ? -dir * 100 : 0
+  const foldingPageSide: SpreadTurnFoldPageSide | null = turnSlide
+    ? spreadTurnFoldingPageSide(dir)
+    : null
 
-  const transitionActive = phase === 'end'
+  const foldTransition = transitionActive
+    ? spreadTurnFoldTransitionActive(slideMs)
+    : spreadTurnFoldTransitionNone()
 
   return {
     isAnimating,
     transitionActive,
+    foldAtEnd,
     slideMs,
-    incomingTranslateX,
-    outgoingTranslateX,
+    direction: dir,
+    foldingPageSide,
+    foldTransition,
     useCaptureOutgoing: turnSlide?.captureUrl != null,
     outgoingCaptureUrl: turnSlide?.captureUrl ?? null,
     fallbackOutgoing: turnSlide != null && turnSlide.captureUrl == null,

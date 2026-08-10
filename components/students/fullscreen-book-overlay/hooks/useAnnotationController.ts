@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from 'react'
 import { annotationTargetPageIfChanged } from '@/lib/books/annotation-target-page'
 import {
   type AnnotationColorSource,
@@ -17,12 +26,14 @@ import {
   DEFAULT_TEXT_FILL_COLOR,
   DEFAULT_PEN_SWATCH_ID,
   DEFAULT_SHAPE_STROKE_SWATCH_ID,
+  DEFAULT_SHAPE_FILL_COLOR,
   DEFAULT_STAMP_QUESTION_COLOR,
   DEFAULT_STICKY_FILL_COLOR,
   DEFAULT_TEXT_COLOR,
   getPenSwatch,
 } from '@/lib/books/annotation-palettes'
 import { DEFAULT_EYEDROPPER_VARIANT, type EyedropperVariant } from '@/lib/books/eyedropper-variant'
+import { ANNOTATION_RAIL_PIN_STORAGE_KEY } from '@/components/students/fullscreen-book-overlay/hooks/useAnnotationRailHoverChrome'
 import {
   DEFAULT_MARKER_CUSTOM_HEX,
   DEFAULT_PEN_CUSTOM_HEX,
@@ -32,6 +43,7 @@ import {
   buildStudentAnnotationToolPrefsPatch,
   patchStudentAnnotationToolPrefs,
   resolveAnnotationToolPrefsFromStorage,
+  resolveStampToolPrefsFromStorage,
 } from '@/lib/books/student-annotation-tool-prefs'
 import type { PenInkStyle } from '@/lib/books/pen-ink'
 import {
@@ -50,10 +62,15 @@ import type {
   AnnotationLineDashStyle,
   ShapeFillMode,
   StampVariant,
+  TextAnnotationAlign,
   TextAnnotationVisualStyle,
   WritableStickerVariant,
 } from '@/lib/books/annotation-command-types'
-import type { StickerKind } from '@/lib/books/sticker-tool'
+import {
+  isQuickStickerInteraction,
+  STICKER_QUICK_VARIANTS,
+  type StickerKind,
+} from '@/lib/books/sticker-tool'
 import type { AnnotationCapabilities, BookPageAnnotationHandle } from '@/components/students/book-page-annotation-layer'
 import { ANNOTATION_TEXT_FONT_NORM_STEPS } from '@/components/students/fullscreen-book-overlay/constants'
 import {
@@ -79,7 +96,6 @@ interface UseAnnotationControllerArgs {
   showSpreadRight: boolean
   spreadRightPage: number | null
   overlayOpen: boolean
-  isLessonPaperOpen: boolean
   spreadSessionStoreRef?: MutableRefObject<SpreadSessionStore | null>
   whiteboardSessionStoreRef?: MutableRefObject<WhiteboardSessionStore | null>
 }
@@ -91,18 +107,18 @@ export function useAnnotationController({
   showSpreadRight,
   spreadRightPage,
   overlayOpen,
-  isLessonPaperOpen,
   spreadSessionStoreRef,
   whiteboardSessionStoreRef,
 }: UseAnnotationControllerArgs) {
   const [wbCaps, setWbCaps] = useState<AnnotationCapabilities>({ canUndo: false, canRedo: false })
   const [annotationMode, setAnnotationMode] = useState<BookAnnotationInteractionMode>('pen')
   const prevAnnotationModeRef = useRef<BookAnnotationInteractionMode | null>(null)
+  const prevQuickStickerRef = useRef(false)
 
   const ctrlTemporarySelect = useCtrlTemporarySelect({
     enabled: overlayOpen,
-    isLessonPaperOpen,
   })
+
   const effectiveAnnotationMode: BookAnnotationInteractionMode = useMemo(
     () =>
       ctrlTemporarySelect && annotationMode !== 'select' ? 'select' : annotationMode,
@@ -111,7 +127,12 @@ export function useAnnotationController({
   const [stickerKind, setStickerKind] = useState<StickerKind>('quick')
   const [writableStickerVariant, setWritableStickerVariant] = useState<WritableStickerVariant>('note')
   const [stampVariant, setStampVariant] = useState<StampVariant>('check')
+  const [stampIndicatorPulseEpoch, setStampIndicatorPulseEpoch] = useState(0)
+  const pulseStampIndicator = useCallback(() => {
+    setStampIndicatorPulseEpoch((n) => n + 1)
+  }, [])
   const [stampQuestionColor, setStampQuestionColor] = useState<string>(DEFAULT_STAMP_QUESTION_COLOR)
+  const [stampEffectsEnabled, setStampEffectsEnabled] = useState(true)
   const [penSwatchId, setPenSwatchId] = useState<string>(DEFAULT_PEN_SWATCH_ID)
   const [penStrokeProfile, setPenStrokeProfileState] = useState<PenStrokeProfile>(DEFAULT_PEN_STROKE_PROFILE)
   const [penColorSource, setPenColorSource] = useState<AnnotationColorSource>('swatch')
@@ -148,12 +169,14 @@ export function useAnnotationController({
   const [stampThicknessStep, setStampThicknessStep] = useState<AnnotationStrokeThicknessStep>(3)
   const [eraserPixelThicknessStep, setEraserPixelThicknessStep] = useState<AnnotationStrokeThicknessStep>(3)
   const [eraserLineThicknessStep, setEraserLineThicknessStep] = useState<AnnotationStrokeThicknessStep>(3)
-  const [textVisualStyle, setTextVisualStyle] = useState<TextAnnotationVisualStyle>('plain')
+  const [textVisualStyle, setTextVisualStyleState] = useState<TextAnnotationVisualStyle>('plain')
+  const [bookTextVisualStyle, setBookTextVisualStyle] = useState<TextAnnotationVisualStyle>('filled')
+  const [textAlign, setTextAlign] = useState<TextAnnotationAlign>('left')
   const [textFontId, setTextFontId] = useState<AnnotationTextFontId>(DEFAULT_ANNOTATION_TEXT_FONT_ID)
   const [textFillColor, setTextFillColor] = useState<string>(DEFAULT_TEXT_FILL_COLOR)
   const [penLineDashStyle, setPenLineDashStyle] = useState<AnnotationLineDashStyle>('solid')
   const [markerLineDashStyle, setMarkerLineDashStyle] = useState<AnnotationLineDashStyle>('solid')
-  const [markerStraightStroke, setMarkerStraightStroke] = useState(false)
+  const [markerStraightStroke, setMarkerStraightStroke] = useState(true)
   const [markerDecoratedEdge, setMarkerDecoratedEdge] = useState(false)
   const [penAutoGroupConnected, setPenAutoGroupConnected] = useState(true)
   const [marqueeSelectRule, setMarqueeSelectRule] = useState<
@@ -162,7 +185,7 @@ export function useAnnotationController({
   const [shapeLineDashStyle, setShapeLineDashStyle] = useState<AnnotationLineDashStyle>('solid')
   const [shapeStrokeEnabled, setShapeStrokeEnabled] = useState(true)
   const [shapeFillMode, setShapeFillMode] = useState<ShapeFillMode>('none')
-  const [shapeFillColor, setShapeFillColor] = useState<string>(ANNOTATION_MARKER_SWATCHES[0])
+  const [shapeFillColor, setShapeFillColor] = useState<string>(DEFAULT_SHAPE_FILL_COLOR)
   const [shapeRoundedCorners, setShapeRoundedCorners] = useState(true)
   const [eyedropperVariant, setEyedropperVariant] = useState<EyedropperVariant>(DEFAULT_EYEDROPPER_VARIANT)
   const [annotationTargetPage, setAnnotationTargetPageState] = useState(pageNumber)
@@ -170,7 +193,51 @@ export function useAnnotationController({
     setAnnotationTargetPageState((prev) => annotationTargetPageIfChanged(prev, next))
   }, [])
   const [annCapsByPage, setAnnCapsByPage] = useState<Record<number, AnnotationCapabilities>>({})
-  const [isAnnotationRailVisible, setIsAnnotationRailVisible] = useState(true)
+  const [isAnnotationRailVisible, setIsAnnotationRailVisible] = useState(false)
+  const [isAnnotationRailPinned, setIsAnnotationRailPinnedState] = useState(false)
+  const [annotationRailPinHydrated, setAnnotationRailPinHydrated] = useState(false)
+  const [annotationRailKeyboardDismissAt, setAnnotationRailKeyboardDismissAt] = useState(0)
+  const [annotationRailKeyboardOpenAt, setAnnotationRailKeyboardOpenAt] = useState(0)
+
+  useEffect(() => {
+    try {
+      setIsAnnotationRailPinnedState(
+        typeof window !== 'undefined' &&
+          window.localStorage.getItem(ANNOTATION_RAIL_PIN_STORAGE_KEY) === '1',
+      )
+    } catch {
+      setIsAnnotationRailPinnedState(false)
+    }
+    setAnnotationRailPinHydrated(true)
+  }, [])
+
+  const setIsAnnotationRailPinned = useCallback((next: boolean) => {
+    setIsAnnotationRailPinnedState(next)
+    try {
+      window.localStorage.setItem(ANNOTATION_RAIL_PIN_STORAGE_KEY, next ? '1' : '0')
+    } catch {
+      /* ignore quota / private mode */
+    }
+    if (next) {
+      setIsAnnotationRailVisible(true)
+    }
+  }, [])
+
+  const toggleAnnotationRailKeyboard = useCallback(() => {
+    if (isAnnotationRailPinned) {
+      setIsAnnotationRailPinned(false)
+      setAnnotationRailKeyboardDismissAt((n) => n + 1)
+      return
+    }
+    setIsAnnotationRailVisible((v) => {
+      if (v) {
+        setAnnotationRailKeyboardDismissAt((n) => n + 1)
+        return false
+      }
+      setAnnotationRailKeyboardOpenAt((n) => n + 1)
+      return true
+    })
+  }, [isAnnotationRailPinned, setIsAnnotationRailPinned])
   const leftAnnRef = useRef<BookPageAnnotationHandle>(null)
   const rightAnnRef = useRef<BookPageAnnotationHandle>(null)
   const wbAnnRef = useRef<BookPageAnnotationHandle>(null)
@@ -206,9 +273,18 @@ export function useAnnotationController({
   }, [annotationMode, lockPenFigureAutoJoinEverywhere, prefsReady])
 
   useEffect(() => {
+    const isQuickSticker = isQuickStickerInteraction(annotationMode, stickerKind)
+    if (isQuickSticker && !prevQuickStickerRef.current) {
+      setStampVariant(STICKER_QUICK_VARIANTS[0])
+    }
+    prevQuickStickerRef.current = isQuickSticker
+  }, [annotationMode, stickerKind])
+
+  useEffect(() => {
     const gen = ++loadGenRef.current
     setPrefsReady(false)
     prevAnnotationModeRef.current = null
+    prevQuickStickerRef.current = false
     if (!studentId) {
       setPrefsReady(true)
       return
@@ -238,11 +314,14 @@ export function useAnnotationController({
     setEraserLineThicknessStep(prefs.eraserLineThicknessStep)
     setStickerKind(prefs.stickerKind)
     setWritableStickerVariant(prefs.writableStickerVariant)
-    setStampVariant(prefs.stampVariant)
+    setStampVariant(resolveStampToolPrefsFromStorage(studentId).stampVariant)
     setStampQuestionColor(prefs.stampQuestionColor)
+    setStampEffectsEnabled(prefs.stampEffectsEnabled)
     setTextColor(prefs.textColor)
     setTextFontId(prefs.textFontId)
-    setTextVisualStyle(prefs.textVisualStyle)
+    setTextVisualStyleState(prefs.textVisualStyle)
+    setBookTextVisualStyle(prefs.bookTextVisualStyle)
+    setTextAlign(prefs.textAlign)
     setTextFillColor(prefs.textFillColor)
     setShapeStrokeSwatchId(prefs.shapeStrokeSwatchId)
     setShapeLineDashStyle(prefs.shapeLineDashStyle)
@@ -286,11 +365,13 @@ export function useAnnotationController({
         eraserLineThicknessStep,
         stickerKind,
         writableStickerVariant,
-        stampVariant,
         stampQuestionColor,
+        stampEffectsEnabled,
         textColor,
         textFontId,
         textVisualStyle,
+        bookTextVisualStyle,
+        textAlign,
         textFillColor,
         shapeStrokeSwatchId,
         shapeLineDashStyle,
@@ -328,11 +409,13 @@ export function useAnnotationController({
     eraserLineThicknessStep,
     stickerKind,
     writableStickerVariant,
-    stampVariant,
     stampQuestionColor,
+    stampEffectsEnabled,
     textColor,
     textFontId,
     textVisualStyle,
+    bookTextVisualStyle,
+    textAlign,
     textFillColor,
     shapeStrokeSwatchId,
     shapeLineDashStyle,
@@ -362,6 +445,18 @@ export function useAnnotationController({
     setPenColorSource('custom')
   }, [])
 
+  const activeTextVisualStyle = isWhiteboardOpen ? textVisualStyle : bookTextVisualStyle
+  const setTextVisualStyle = useCallback(
+    (next: TextAnnotationVisualStyle) => {
+      if (isWhiteboardOpen) {
+        setTextVisualStyleState(next)
+        return
+      }
+      setBookTextVisualStyle(next)
+    },
+    [isWhiteboardOpen],
+  )
+
   const pickMarkerSwatchColor = useCallback((hex: string) => {
     setMarkerColor(hex)
     setMarkerColorSource('swatch')
@@ -377,8 +472,9 @@ export function useAnnotationController({
   }, [])
 
   const pickShapeStrokeSwatch = useCallback((id: string) => {
-    setShapeStrokeSwatchId(id)
-    pushStripRecent('shape', id)
+    const solidId = coercePenSwatchIdForProfile(id, 'pen')
+    setShapeStrokeSwatchId(solidId)
+    pushStripRecent('shape', solidId)
   }, [])
 
   const pickTextColor = useCallback((hex: string) => {
@@ -501,17 +597,33 @@ export function useAnnotationController({
     : spreadSessionToolbarActive || spreadDrawingInteractionActive
       ? spreadOverlayCaps
       : activeAnnCaps
-  const onWhiteboardCaps = useCallback((caps: AnnotationCapabilities) => {
-    setWbCaps(caps)
-  }, [])
+  const setCapsIfChanged = useCallback(
+    (
+      setter: Dispatch<SetStateAction<AnnotationCapabilities>>,
+      caps: AnnotationCapabilities,
+    ) => {
+      setter((prev) => {
+        if (prev.canUndo === caps.canUndo && prev.canRedo === caps.canRedo) return prev
+        return caps
+      })
+    },
+    [],
+  )
 
-  const onSpreadOverlayCaps = useCallback((caps: AnnotationCapabilities) => {
-    setSpreadOverlayCaps(caps)
-  }, [])
+  const onWhiteboardCaps = useCallback(
+    (caps: AnnotationCapabilities) => setCapsIfChanged(setWbCaps, caps),
+    [setCapsIfChanged],
+  )
 
-  const onWhiteboardOverlayCaps = useCallback((caps: AnnotationCapabilities) => {
-    setWbOverlayCaps(caps)
-  }, [])
+  const onSpreadOverlayCaps = useCallback(
+    (caps: AnnotationCapabilities) => setCapsIfChanged(setSpreadOverlayCaps, caps),
+    [setCapsIfChanged],
+  )
+
+  const onWhiteboardOverlayCaps = useCallback(
+    (caps: AnnotationCapabilities) => setCapsIfChanged(setWbOverlayCaps, caps),
+    [setCapsIfChanged],
+  )
 
   const spreadSessionSelectProxyRef = useRef<InkSessionSelectProxyHandle | null>(null)
   spreadSessionSelectProxyRef.current = createSpreadSessionSelectProxy(
@@ -585,6 +697,10 @@ export function useAnnotationController({
     selectAll: () => {
       leftAnnRef.current?.selectAll?.()
       rightAnnRef.current?.selectAll?.()
+    },
+    selectAllIncludingLocked: () => {
+      leftAnnRef.current?.selectAllIncludingLocked?.()
+      rightAnnRef.current?.selectAllIncludingLocked?.()
     },
     deselectAll: () => {
       leftAnnRef.current?.deselectAll?.()
@@ -677,13 +793,19 @@ export function useAnnotationController({
     spreadSessionInkActive,
   ])
 
-  const selectAllPageLayerAnnotations = useCallback(() => {
+  const selectAllPageLayerAnnotations = useCallback((includeLocked: boolean) => {
     if (spreadRightPage != null) {
-      leftAnnRef.current?.selectAll?.()
-      rightAnnRef.current?.selectAll?.()
+      if (includeLocked) {
+        leftAnnRef.current?.selectAllIncludingLocked?.()
+        rightAnnRef.current?.selectAllIncludingLocked?.()
+      } else {
+        leftAnnRef.current?.selectAll?.()
+        rightAnnRef.current?.selectAll?.()
+      }
       return
     }
-    leftAnnRef.current?.selectAll?.()
+    if (includeLocked) leftAnnRef.current?.selectAllIncludingLocked?.()
+    else leftAnnRef.current?.selectAll?.()
   }, [spreadRightPage])
 
   const deselectAllPageLayerAnnotations = useCallback(() => {
@@ -708,7 +830,27 @@ export function useAnnotationController({
       spreadSessionStoreRef?.current?.selectAll()
       return
     }
-    selectAllPageLayerAnnotations()
+    selectAllPageLayerAnnotations(false)
+  }, [
+    isWhiteboardOpen,
+    selectAllPageLayerAnnotations,
+    spreadSessionStoreRef,
+    whiteboardSessionStoreRef,
+  ])
+
+  const selectAllIncludingLockedOnActivePage = useCallback(() => {
+    if (isWhiteboardOpen) {
+      if (whiteboardSessionSelectReady()) {
+        whiteboardSessionStoreRef?.current?.selectAllIncludingLocked()
+      }
+      wbAnnRef.current?.selectAllIncludingLocked?.()
+      return
+    }
+    if (spreadSessionSelectReady()) {
+      spreadSessionStoreRef?.current?.selectAllIncludingLocked()
+      return
+    }
+    selectAllPageLayerAnnotations(true)
   }, [
     isWhiteboardOpen,
     selectAllPageLayerAnnotations,
@@ -762,7 +904,10 @@ export function useAnnotationController({
     stickerKind, setStickerKind,
     writableStickerVariant, setWritableStickerVariant,
     stampVariant, setStampVariant,
+    stampIndicatorPulseEpoch,
+    pulseStampIndicator,
     stampQuestionColor, setStampQuestionColor,
+    stampEffectsEnabled, setStampEffectsEnabled,
     penSwatchId,
     pickPenSwatch,
     penStrokeProfile,
@@ -795,7 +940,9 @@ export function useAnnotationController({
     stampThicknessStep, setStampThicknessStep,
     eraserPixelThicknessStep, setEraserPixelThicknessStep,
     eraserLineThicknessStep, setEraserLineThicknessStep,
-    textVisualStyle, setTextVisualStyle,
+    textVisualStyle: activeTextVisualStyle, setTextVisualStyle,
+    bookTextVisualStyle,
+    textAlign, setTextAlign,
     textFontId, setTextFontId,
     textFillColor,
     setTextFillColor,
@@ -814,6 +961,10 @@ export function useAnnotationController({
     strokeLineDashStyleForInk,
     annotationTargetPage, setAnnotationTargetPage,
     isAnnotationRailVisible, setIsAnnotationRailVisible,
+    isAnnotationRailPinned, setIsAnnotationRailPinned, annotationRailPinHydrated,
+    annotationRailKeyboardDismissAt,
+    annotationRailKeyboardOpenAt,
+    toggleAnnotationRailKeyboard,
     leftAnnRef, rightAnnRef, wbAnnRef, spreadStrokeOverlayRef,     wbStrokeOverlayRef,
     whiteboardStrokeCaptureEnabled,
     whiteboardDrawingInteractionActive,
@@ -834,6 +985,7 @@ export function useAnnotationController({
     getActiveAnnotationRef,
     getPageAnnotationRef,
     selectAllOnActivePage,
+    selectAllIncludingLockedOnActivePage,
     deselectAllOnActivePage,
     hasAnyAnnotationSelection,
   }

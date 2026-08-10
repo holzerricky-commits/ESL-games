@@ -1,4 +1,5 @@
 import { setAnnotationsForPage } from '@/lib/books/annotation-storage'
+import { isInkSessionPageFlushEnabled } from '@/lib/books/ink-session-flush-gate'
 import { projectSpreadSessionToOwnerPages } from '@/lib/books/spread-session-commit'
 import { saveSpreadSessionCheckpoint, type SpreadSessionStorageAdapter } from '@/lib/books/spread-session-storage'
 import type { SpreadSessionDocument, SpreadSessionKey } from '@/lib/books/spread-session-types'
@@ -38,6 +39,7 @@ export function flushSpreadSessionDocumentToPageStorage({
   bookId,
   unitId,
 }: FlushSpreadSessionToPagesParams): void {
+  if (!isInkSessionPageFlushEnabled()) return
   const pages = { leftPage: key.leftPage, rightPage: key.rightPage }
   const lastPageOnly = isLastPageSpreadKey(pages)
 
