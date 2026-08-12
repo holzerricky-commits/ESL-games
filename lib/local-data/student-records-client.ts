@@ -3,10 +3,13 @@
 import { toast } from 'sonner'
 import { resolveStudentAvatarUrl } from '@/lib/students/student-avatar-url'
 import type { StudentProgressRecord, StudentRecord } from '@/lib/types'
+import { createLatestWinsPersistQueue } from '@/lib/local-data/latest-wins-persist-queue'
 
 const STUDENTS_LS_KEY = 'esl_students'
 const PROGRESS_LS_KEY = 'esl_student_progress'
 const PERSIST_DEBOUNCE_MS = 300
+/** Browsers cap keepalive request bodies (~64KiB total in flight); stay under with margin. */
+const KEEPALIVE_BODY_MAX_BYTES = 60_000
 
 let diskActive = false
 let studentsCache: StudentRecord[] | null = null
@@ -70,11 +73,22 @@ export function getCachedStudentProgress(): Record<string, StudentProgressRecord
   return progressCache
 }
 
-async function persistStudentsToDisk(students: StudentRecord[]): Promise<void> {
+function utf8ByteLength(text: string): number {
+  if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(text).length
+  return text.length
+}
+
+async function persistStudentsToDisk(
+  students: StudentRecord[],
+  opts?: { keepalive?: boolean },
+): Promise<void> {
+  const body = JSON.stringify({ students })
+  const keepalive = Boolean(opts?.keepalive) && utf8ByteLength(body) <= KEEPALIVE_BODY_MAX_BYTES
   const res = await fetch('/api/local-data/students', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ students }),
+    body,
+    keepalive,
   })
   if (!res.ok) {
     const payload = (await res.json().catch(() => ({}))) as { error?: string }
@@ -82,17 +96,43 @@ async function persistStudentsToDisk(students: StudentRecord[]): Promise<void> {
   }
 }
 
-async function persistProgressToDisk(progress: Record<string, StudentProgressRecord>): Promise<void> {
+async function persistProgressToDisk(
+  progress: Record<string, StudentProgressRecord>,
+  opts?: { keepalive?: boolean },
+): Promise<void> {
+  const body = JSON.stringify({ progress })
+  const keepalive = Boolean(opts?.keepalive) && utf8ByteLength(body) <= KEEPALIVE_BODY_MAX_BYTES
   const res = await fetch('/api/local-data/student-progress', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ progress }),
+    body,
+    keepalive,
   })
   if (!res.ok) {
     const payload = (await res.json().catch(() => ({}))) as { error?: string }
     throw new Error(payload.error ?? `Save failed (${res.status})`)
   }
 }
+
+const studentsPersistQueue = createLatestWinsPersistQueue<StudentRecord[]>(async (students, meta) => {
+  try {
+    await persistStudentsToDisk(students, { keepalive: meta.keepalive })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Could not save students to disk.'
+    toast.error(msg)
+  }
+})
+
+const progressPersistQueue = createLatestWinsPersistQueue<Record<string, StudentProgressRecord>>(
+  async (progress, meta) => {
+    try {
+      await persistProgressToDisk(progress, { keepalive: meta.keepalive })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Could not save student progress to disk.'
+      toast.error(msg)
+    }
+  },
+)
 
 function scheduleStudentsPersist(students: StudentRecord[]) {
   pendingStudentsFlush = students
@@ -102,10 +142,7 @@ function scheduleStudentsPersist(students: StudentRecord[]) {
     const payload = pendingStudentsFlush
     pendingStudentsFlush = null
     if (!payload) return
-    void persistStudentsToDisk(payload).catch((err) => {
-      const msg = err instanceof Error ? err.message : 'Could not save students to disk.'
-      toast.error(msg)
-    })
+    studentsPersistQueue.submit(payload)
   }, PERSIST_DEBOUNCE_MS)
 }
 
@@ -117,10 +154,7 @@ function scheduleProgressPersist(progress: Record<string, StudentProgressRecord>
     const payload = pendingProgressFlush
     pendingProgressFlush = null
     if (!payload) return
-    void persistProgressToDisk(payload).catch((err) => {
-      const msg = err instanceof Error ? err.message : 'Could not save student progress to disk.'
-      toast.error(msg)
-    })
+    progressPersistQueue.submit(payload)
   }, PERSIST_DEBOUNCE_MS)
 }
 
@@ -138,11 +172,12 @@ export function flushStudentRecordsToDisk(): void {
   const progress = pendingProgressFlush ?? progressCache
   pendingStudentsFlush = null
   pendingProgressFlush = null
+  // keepalive so the browser can finish the PUT during tab close / refresh.
   if (students) {
-    void persistStudentsToDisk(students).catch(() => {})
+    studentsPersistQueue.submit(students, { keepalive: true })
   }
   if (progress) {
-    void persistProgressToDisk(progress).catch(() => {})
+    progressPersistQueue.submit(progress, { keepalive: true })
   }
 }
 
