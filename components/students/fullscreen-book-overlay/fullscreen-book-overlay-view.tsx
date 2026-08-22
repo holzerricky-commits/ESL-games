@@ -42,9 +42,6 @@ import {
   useInkSessionStickySelectionActive,
   useInkSessionTextSelectionActive,
 } from './hooks/useInkSessionTextSelectionActive'
-import { requestSpreadSessionFlush } from '@/lib/books/spread-session-events'
-import { requestWhiteboardSessionFlush } from '@/lib/books/whiteboard-session-events'
-import { flushPendingUnitPageSave } from '@/lib/books/progress'
 import { shouldShowSpreadLoadingHold } from '@/lib/books/spread-drawable-ready'
 
 export function FullscreenBookOverlayView({
@@ -55,10 +52,7 @@ export function FullscreenBookOverlayView({
   onClose: () => void
 }) {
   const closeOverlay = () => {
-    flushPendingUnitPageSave()
-    requestSpreadSessionFlush()
-    requestWhiteboardSessionFlush()
-    onClose()
+    vm.closeBookOverlay()
   }
 
   const overlayRootRef = vm.overlayRootRef

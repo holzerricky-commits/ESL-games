@@ -82,7 +82,9 @@ import { getStudentClassSessionById } from '@/lib/students/selectors'
 import { heuristicBookOverlaySpreadPageWidthPx } from '@/lib/books/spread-viewport-layout'
 import type { SelectionMoveClampContext } from '@/lib/books/annotation-scale'
 import type { SpreadSessionStore } from '@/lib/books/spread-session-store'
+import { requestSpreadSessionFlush } from '@/lib/books/spread-session-events'
 import { requestWhiteboardSessionFlush } from '@/lib/books/whiteboard-session-events'
+import { flushPendingUnitPageSave } from '@/lib/books/progress'
 import type { WhiteboardSessionStore } from '@/lib/books/whiteboard-session-store'
 import type { FullscreenBookOverlayProps } from '../types'
 
@@ -276,18 +278,24 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
 
   useEffect(() => {
     if (open) return
-    if (!isLessonPaperOpen) return
     flushLessonPaperSaveNow()
-    setIsLessonPaperOpen(false)
+    if (isLessonPaperOpen) setIsLessonPaperOpen(false)
   }, [open, isLessonPaperOpen, flushLessonPaperSaveNow])
+
+  /** Book hidden (map warm state) or overlay torn down — do not rely on the 1s debounce alone. */
+  useEffect(() => {
+    if (userPresented) return
+    flushLessonPaperSaveNow()
+  }, [userPresented, flushLessonPaperSaveNow])
 
   useEffect(
     () => () => {
+      flushLessonPaperSaveNow()
       if (lessonPaperSaveTimerRef.current) clearTimeout(lessonPaperSaveTimerRef.current)
       if (lessonPaperEditSyncTimerRef.current) clearTimeout(lessonPaperEditSyncTimerRef.current)
       for (const timerId of lessonPaperScrollTimerRef.current) clearTimeout(timerId)
     },
-    [],
+    [flushLessonPaperSaveNow],
   )
 
   const scheduleLessonPaperEditSync = useCallback(() => {
@@ -1459,9 +1467,17 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     pageAreaRef,
   })
 
+  const closeBookOverlay = useCallback(() => {
+    flushLessonPaperSaveNow()
+    flushPendingUnitPageSave()
+    requestSpreadSessionFlush()
+    requestWhiteboardSessionFlush()
+    onClose()
+  }, [flushLessonPaperSaveNow, onClose])
+
   useBookOverlayKeyboardShortcuts({
     open,
-    onClose,
+    onClose: closeBookOverlay,
     isLessonPaperOpen,
     annotationMode,
     setAnnotationMode,
@@ -1867,6 +1883,8 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     dockWhiteboardToSlot,
     forceDockWhiteboard,
     commitWhiteboardFloatRect,
+    flushLessonPaperSaveNow,
+    closeBookOverlay,
   }
 }
 
