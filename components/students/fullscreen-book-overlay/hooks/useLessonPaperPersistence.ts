@@ -285,8 +285,8 @@ export function useLessonPaperPersistence(args: UseLessonPaperPersistenceArgs) {
   }, [args.lessonPaperDraftStorageKey, args.lessonPaperEditVersion, args.lessonPaperEditorRef, args.lessonPaperHtmlRef])
 
   const flushLessonPaperSaveNow = useCallback(() => {
-    if (!args.activeClassSessionId || !resolveSaveSectionId()) return true
     if (!args.lessonPaperHasPendingChangesRef.current) return true
+    if (!args.activeClassSessionId || !resolveSaveSectionId()) return false
     if (args.lessonPaperSaveTimerRef.current) {
       clearTimeout(args.lessonPaperSaveTimerRef.current)
       args.lessonPaperSaveTimerRef.current = null
