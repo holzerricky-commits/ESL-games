@@ -29,7 +29,12 @@ import {
   storySubtitleForVisualKind,
 } from '@/lib/books/book-part-visual-kind'
 import { normalizeLessonsStructureTags, resolvePartStructureTag } from '@/lib/books/part-structure-tag'
-import { draftsToUnits, type TocUnitDraft } from '@/lib/books/toc-import'
+import {
+  draftsToUnits,
+  mergeDraftsForSourceFile,
+  unitsToStructureDrafts,
+  type TocUnitDraft,
+} from '@/lib/books/toc-import'
 import { formatLessonTitleWithNumber } from '@/lib/books/lesson-title'
 import { bookHasTocMapping, stripBookTocMapping } from '@/lib/books/strip-book-toc-mapping'
 import {
@@ -376,27 +381,15 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
     }
   }, [])
 
-  useEffect(() => {
-    if (!open) return
-    const first = library.books[0]
-    const initialBook = (preferredBookId && library.books.find((b) => b.id === preferredBookId)) ?? first
-    if (!initialBook) return
-    const hasExistingMapping = bookHasTocMapping(initialBook)
-    setBookId(initialBook.id)
-    const paths = uniqueSortedFilePaths(initialBook)
-    setSourceFilePath((preferredFilePath && paths.includes(preferredFilePath) ? preferredFilePath : null) ?? paths[0] ?? '')
+  const hydrateBook = useCallback((book: BookRecord, preferredFile: string | null) => {
+    const hasExistingMapping = bookHasTocMapping(book)
+    setBookId(book.id)
+    const paths = uniqueSortedFilePaths(book)
+    setSourceFilePath((preferredFile && paths.includes(preferredFile) ? preferredFile : null) ?? paths[0] ?? '')
     if (hasExistingMapping) {
-      const restoredDrafts: TocUnitDraft[] = initialBook.units.map((unit) => ({
-        id: unit.id,
-        title: unit.title,
-        needsReview: false,
-        ...(typeof unit.startPageHint === 'number' ? { startPageHint: unit.startPageHint } : {}),
-        ...(unit.anchorConfidence ? { anchorConfidence: unit.anchorConfidence } : {}),
-        ...(unit.anchorSource ? { anchorSource: unit.anchorSource } : {}),
-      }))
-      const restoredLessons = initialBook.units.map((unit) => normalizeLessonsStructureTags(structuredClone(unit.lessons ?? [])))
-      setDrafts(restoredDrafts)
-      setLessonsByUnitIndex(restoredLessons)
+      const restored = unitsToStructureDrafts(book.units)
+      setDrafts(restored.drafts)
+      setLessonsByUnitIndex(restored.lessonsByUnit.map((lessons) => normalizeLessonsStructureTags(lessons)))
     } else {
       setDrafts([])
       setLessonsByUnitIndex([])
@@ -411,7 +404,15 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
     setAiMessage(null)
     setStagedExtractionEnabled(false)
     setAiExtractionCompleted(hasExistingMapping)
-  }, [open, library.books, preferredBookId, preferredFilePath])
+  }, [])
+
+  useEffect(() => {
+    if (!open) return
+    const first = library.books[0]
+    const initialBook = (preferredBookId && library.books.find((b) => b.id === preferredBookId)) ?? first
+    if (!initialBook) return
+    hydrateBook(initialBook, preferredFilePath)
+  }, [open, library.books, preferredBookId, preferredFilePath, hydrateBook])
 
   useEffect(() => {
     if (!open) return
@@ -729,9 +730,17 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
       })
       setLastNumPages(numPages)
       const merged = await extractBatchesWithAi(images, numPages)
-      setDrafts(merged.drafts)
-      setLessonsByUnitIndex(merged.lessonsByUnit.map((lessons) => normalizeLessonsStructureTags(lessons)))
-      setStructureUnitIdx(0)
+      const next = mergeDraftsForSourceFile(
+        drafts,
+        lessonsByUnitIndex,
+        sourceFilePath,
+        merged.drafts,
+        merged.lessonsByUnit.map((lessons) => normalizeLessonsStructureTags(lessons)),
+      )
+      setDrafts(next.drafts)
+      setLessonsByUnitIndex(next.lessonsByUnit)
+      const firstReplaced = next.drafts.findIndex((draft) => draft.filePath === sourceFilePath)
+      setStructureUnitIdx(firstReplaced >= 0 ? firstReplaced : 0)
       setSelectedUnitIndicesForMerge(new Set())
       setOpenLessonId(null)
       setEditingFieldId(null)
@@ -745,7 +754,7 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
     } finally {
       setAiExtracting(false)
     }
-  }, [extractBatchesWithAi, sourceFilePath, tocRange])
+  }, [drafts, extractBatchesWithAi, lessonsByUnitIndex, sourceFilePath, tocRange])
 
   const runExtractForUnit = useCallback(async (unitIndex: number) => {
     const unit = drafts[unitIndex]
@@ -783,7 +792,13 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
       const replacementDraft = merged.drafts[bestIndex]
       const replacementLessons = merged.lessonsByUnit[bestIndex] ?? []
       if (!replacementDraft) throw new Error('Unit extraction returned no units.')
-      setDrafts((prev) => prev.map((draft, i) => (i === unitIndex ? { ...draft, ...replacementDraft, id: draft.id } : draft)))
+      setDrafts((prev) =>
+        prev.map((draft, i) =>
+          i === unitIndex
+            ? { ...draft, ...replacementDraft, id: draft.id, filePath: draft.filePath || sourceFilePath }
+            : draft,
+        ),
+      )
       setLessonsByUnitIndex((prev) =>
         prev.map((lessons, i) => (i === unitIndex ? normalizeLessonsStructureTags(replacementLessons) : lessons)),
       )
@@ -808,6 +823,7 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
       id: newBookChildId('unit'),
       title: `Unit ${unitIndex + 1}`,
       needsReview: false,
+      ...(sourceFilePath ? { filePath: sourceFilePath } : {}),
       startPageHint: effectiveHintForNewAnchors,
     }
     setDrafts((prev) => [...prev, nextDraft])
@@ -1149,11 +1165,7 @@ export function BookStructureWizard({ library, preferredBookId, preferredFilePat
                         <button
                           key={b.id}
                           type="button"
-                          onClick={() => {
-                            setBookId(b.id)
-                            const paths = uniqueSortedFilePaths(b)
-                            setSourceFilePath(paths[0] ?? '')
-                          }}
+                          onClick={() => hydrateBook(b, null)}
                           className={cn(
                             'max-w-full truncate rounded-full border px-2.5 py-0.5 text-left text-xs font-medium transition-colors',
                             b.id === bookId
