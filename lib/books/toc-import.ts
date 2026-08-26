@@ -21,10 +21,21 @@ export interface TocUnitDraft {
   id: string
   title: string
   needsReview: boolean
+  /** Owning unit PDF. Preserved across save so other files in the book are not reassigned. */
+  filePath?: string
   startPageHint?: number
   endPageHint?: number
   anchorConfidence?: 'high' | 'medium' | 'low'
   anchorSource?: 'toc' | 'heading' | 'fallback'
+}
+
+function normalizeDraftFilePath(filePath: string): string {
+  return filePath.replaceAll('\\', '/').trim()
+}
+
+function draftBelongsToSourceFile(draft: TocUnitDraft, sourceFilePath: string): boolean {
+  if (!draft.filePath?.trim()) return false
+  return normalizeDraftFilePath(draft.filePath) === normalizeDraftFilePath(sourceFilePath)
 }
 
 const LINE_Y_TOLERANCE = 4
@@ -215,10 +226,11 @@ export function draftsToUnits(
     const lessons = rawLessons
       ?.map((lesson) => trimLesson(lesson))
       .filter((x): x is BookLessonRecord => x != null)
+    const unitFilePath = d.filePath?.trim() ? normalizeDraftFilePath(d.filePath) : filePath
     return {
       id: d.id,
       title: d.title,
-      filePath,
+      filePath: unitFilePath,
       ...(typeof d.startPageHint === 'number' ? { startPageHint: d.startPageHint } : {}),
       ...(typeof d.endPageHint === 'number' ? { endPageHint: d.endPageHint } : {}),
       ...(d.anchorConfidence ? { anchorConfidence: d.anchorConfidence } : {}),
@@ -226,4 +238,63 @@ export function draftsToUnits(
       ...(lessons?.length ? { lessons } : {}),
     }
   })
+}
+
+/** Restore wizard drafts from saved units, including which PDF each unit belongs to. */
+export function unitsToStructureDrafts(units: BookUnitRecord[]): {
+  drafts: TocUnitDraft[]
+  lessonsByUnit: BookLessonRecord[][]
+} {
+  return {
+    drafts: units.map((unit) => ({
+      id: unit.id,
+      title: unit.title,
+      needsReview: false,
+      ...(unit.filePath?.trim() ? { filePath: normalizeDraftFilePath(unit.filePath) } : {}),
+      ...(typeof unit.startPageHint === 'number' ? { startPageHint: unit.startPageHint } : {}),
+      ...(typeof unit.endPageHint === 'number' ? { endPageHint: unit.endPageHint } : {}),
+      ...(unit.anchorConfidence ? { anchorConfidence: unit.anchorConfidence } : {}),
+      ...(unit.anchorSource ? { anchorSource: unit.anchorSource } : {}),
+    })),
+    lessonsByUnit: units.map((unit) => structuredClone(unit.lessons ?? [])),
+  }
+}
+
+/**
+ * Replace only the current PDF's unit drafts. Units from other files in the same book stay put.
+ */
+export function mergeDraftsForSourceFile(
+  existingDrafts: TocUnitDraft[],
+  existingLessons: BookLessonRecord[][],
+  sourceFilePath: string,
+  nextDrafts: TocUnitDraft[],
+  nextLessons: BookLessonRecord[][],
+): { drafts: TocUnitDraft[]; lessonsByUnit: BookLessonRecord[][] } {
+  const stampedDrafts = nextDrafts.map((draft) => ({
+    ...draft,
+    filePath: draft.filePath?.trim() ? normalizeDraftFilePath(draft.filePath) : normalizeDraftFilePath(sourceFilePath),
+  }))
+  const keptDrafts: TocUnitDraft[] = []
+  const keptLessons: BookLessonRecord[][] = []
+  let insertAt = -1
+  for (let i = 0; i < existingDrafts.length; i++) {
+    const draft = existingDrafts[i]
+    if (!draft) continue
+    if (draftBelongsToSourceFile(draft, sourceFilePath)) {
+      if (insertAt < 0) insertAt = keptDrafts.length
+      continue
+    }
+    keptDrafts.push(draft)
+    keptLessons.push(existingLessons[i] ?? [])
+  }
+  if (insertAt < 0) {
+    return {
+      drafts: [...keptDrafts, ...stampedDrafts],
+      lessonsByUnit: [...keptLessons, ...nextLessons],
+    }
+  }
+  return {
+    drafts: [...keptDrafts.slice(0, insertAt), ...stampedDrafts, ...keptDrafts.slice(insertAt)],
+    lessonsByUnit: [...keptLessons.slice(0, insertAt), ...nextLessons, ...keptLessons.slice(insertAt)],
+  }
 }
