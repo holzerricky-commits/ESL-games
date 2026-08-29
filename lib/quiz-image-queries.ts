@@ -2,7 +2,8 @@
  * Stock-style search queries: plain background, clear subject, Google/stock-photo intent.
  * Avoid macro / texture / extreme close-up defaults (they skew to wrong subjects).
  *
- * Priority at runtime: curated override (this file) > optional LLM `imageSearchQuery` > default pattern.
+ * Priority at runtime: explicit `imageSearchQuery` (teacher hint / example sense) >
+ * curated override (this file) > default pattern.
  */
 
 /** Beverages — clear container, no “macro texture” wording. */
@@ -107,7 +108,7 @@ const ABSTRACT_FIRST_SENSE: Record<string, string> = {
 }
 
 export type ImageQueryOptions = {
-  /** LLM or teacher phrase; used only when no curated override exists for the lemma. */
+  /** LLM, teacher, or translation-example phrase. Wins over curated when set. */
   imageSearchQuery?: string | null
 }
 
@@ -122,7 +123,7 @@ function mergedOverride(word: string): string | undefined {
   )
 }
 
-/** If set, `/api/quiz-image` can skip LLM — curated wins in `buildStaticSearchQuery`. */
+/** Curated stock phrase for a lemma; used when no explicit `imageSearchQuery` is passed. */
 export function getCuratedImageSearchOverride(rawWord: string): string | undefined {
   return mergedOverride(rawWord.toLowerCase().trim())
 }
@@ -132,13 +133,76 @@ function sanitizeLlmPhrase(s: string): string {
   return t
 }
 
+const EXAMPLE_HINT_STOP = new Set([
+  'the',
+  'a',
+  'an',
+  'to',
+  'of',
+  'and',
+  'in',
+  'on',
+  'at',
+  'for',
+  'is',
+  'was',
+  'are',
+  'were',
+  'be',
+  'been',
+  'he',
+  'she',
+  'they',
+  'them',
+  'his',
+  'her',
+  'their',
+  'it',
+  'its',
+  'we',
+  'you',
+  'i',
+  'with',
+  'from',
+  'by',
+  'as',
+  'or',
+  'but',
+  'this',
+  'that',
+  'these',
+  'those',
+  'into',
+  'over',
+  'about',
+])
+
+/**
+ * Short Pixabay hint from a translation example so Image matches this sense
+ * (river bank vs money bank).
+ */
+export function buildTranslateImageSearchHint(
+  rawWord: string,
+  exampleEn?: string | null,
+): string | undefined {
+  const word = rawWord.toLowerCase().trim()
+  if (!word) return undefined
+  const extra = (exampleEn ?? '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length > 2 && !EXAMPLE_HINT_STOP.has(t) && t !== word)
+  const uniq = [...new Set(extra)].slice(0, 4)
+  if (uniq.length === 0) return undefined
+  return sanitizeLlmPhrase(`${word} ${uniq.join(' ')} isolated stock photo`)
+}
+
 /** Pixabay-oriented — literal stock-style still. */
 export function buildStaticSearchQuery(rawWord: string, options?: ImageQueryOptions): string {
   const word = rawWord.toLowerCase().trim()
-  const hit = mergedOverride(word)
-  if (hit) return hit
   const llm = sanitizeLlmPhrase(options?.imageSearchQuery ?? '')
   if (llm.length >= 3) return llm
+  const hit = mergedOverride(word)
+  if (hit) return hit
   if (word.includes('water')) return BEVERAGE.water
   return `${word} isolated on white background stock photo`
 }

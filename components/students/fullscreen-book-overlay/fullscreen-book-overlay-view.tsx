@@ -2,26 +2,43 @@
 
 import 'react-pdf/dist/Page/TextLayer.css'
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { InteractiveVocabReaderShelf } from '@/components/books/interactive-vocab-reader-shelf'
 import { ReadingCheckLiveShelf } from '@/components/books/reading-check-live-shelf'
-import { ReadingStoryReaderBadge } from '@/components/books/reading-story-reader-badge'
+import type { ReadingCheckLivePin } from '@/components/students/fullscreen-book-overlay/sections/ReadingCheckHotspotPlacementLayer'
+import type { ReadingCheckQuestionPinTone } from '@/components/books/reading-check-question-pin'
+import { latestReadingCheckLiveMarkForStop } from '@/lib/books/reading-check-live-marks'
+import { mapPdfPageToDisplayLabel } from '@/lib/books/page-numbering'
+import {
+  listReadingCheckLivePinsOnSpread,
+  readingCheckStopLinkLabel,
+} from '@/lib/books/reading-check-pack'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { focusHoleRectToCaptureRegion } from '@/lib/books/focus-zoom-transform'
 import { BookFocusTheaterLayer } from '@/components/students/fullscreen-book-overlay/sections/BookFocusDimOverlay'
 import { OverlayDialogs } from './sections/OverlayDialogs'
 import { PageListRail } from './sections/PageListRail'
+import { BookAudioPlaylistRail } from './sections/BookAudioPlaylistRail'
+import { BookExerciseTaskRail } from './sections/BookExerciseTaskRail'
+import { BookExercisePlaySheet } from './sections/BookExercisePlaySheet'
+import { BookExerciseMcqPlaySheet } from './sections/BookExerciseMcqPlaySheet'
 import { AnnotationRail } from './sections/AnnotationRail'
 import { BookBottomChrome } from './sections/BookViewport'
+import { BookAudioNowPlayingPill } from './sections/BookAudioNowPlayingPill'
 import { BookWorkspaceLeftBar } from './sections/BookWorkspaceLeftBar'
 import { ClassLessonSettingsPanel } from '@/components/students/class-lesson-settings-panel'
 import { ClassToolboxHost } from '@/components/students/class-toolbox/ClassToolboxHost'
 import type { ClassToolboxToolId } from '@/lib/class-toolbox/types'
 import { BookCanvasStage } from './sections/BookCanvasStage'
+import { PageGridStage } from './sections/PageGridStage'
 import { useWhiteboardToolbarLaunch } from './hooks/useWhiteboardToolbarLaunch'
-import { TranslateDock } from './sections/TranslateDock'
-import { PlaceTranslationOverlay } from './sections/PlaceTranslationOverlay'
+import { useBookAudioPlayer } from './hooks/useBookAudioPlayer'
+import { useAudioTrackPlacement } from './hooks/useAudioTrackPlacement'
+import { useBookExerciseTasks } from './hooks/useBookExerciseTasks'
+import { TranslateToolPanel } from './sections/TranslateToolPanel'
+import { PictureSearchToolPanel } from './sections/PictureSearchToolPanel'
+import { PlaceTranslationOverlay, type PlaceFromTranslateSurface } from './sections/PlaceTranslationOverlay'
 import { WritableTextTranslatePopover } from './sections/WritableTextTranslatePopover'
 import type { PinWritableTextGlossInput } from './sections/WritableTextTranslatePopover'
 import { useWritableTextTranslateSelection } from './hooks/useWritableTextTranslateSelection'
@@ -36,12 +53,23 @@ import {
 } from '@/lib/translate/place-translation-chip'
 import { newAnnotationId } from '@/components/students/book-page-annotation-layer/helpers'
 import type { TextAnnotationCommand } from '@/lib/books/annotation-command-types'
+import { fetchPlacedImageAsFile } from '@/lib/board-image-import-client'
+import {
+  buildImageCommandFromEncoded,
+  TRANSLATE_PLACE_IMAGE_WIDTH_FRACTION,
+} from '@/lib/books/board-image-commit'
+import {
+  boardPasteAnchorFromElementRect,
+} from '@/lib/books/board-paste-placement'
+import { downscaleImageFile } from '@/lib/books/clipboard-image'
 import { toast } from 'sonner'
 import { warmSpeechVoices } from '@/lib/audio/speak-text'
 import { getUnitReaderBounds } from '@/lib/books/page-range'
 import {
   BOOK_BOTTOM_CHROME_HEIGHT,
   BOOK_OVERLAY_GLASS_CHROME,
+  bookWorkspaceDeskLeftCss,
+  bookWorkspaceDeskLeftPx,
 } from './constants'
 import type { FullscreenBookOverlayViewModel } from './hooks/useFullscreenBookOverlayController'
 import { BOOK_OVERLAY_SHORTCUT_LABELS as SC } from '@/lib/books/book-overlay-keyboard-shortcuts'
@@ -55,19 +83,42 @@ import {
   useInkSessionPenStrokeSelectionActive,
   useInkSessionShapeSelectionActive,
   useInkSessionStickySelectionActive,
-  useInkSessionTextSelectionActive,
 } from './hooks/useInkSessionTextSelectionActive'
 import { requestSpreadSessionFlush } from '@/lib/books/spread-session-events'
 import { requestWhiteboardSessionFlush } from '@/lib/books/whiteboard-session-events'
 import { flushPendingUnitPageSave } from '@/lib/books/progress'
 import { shouldShowSpreadLoadingHold } from '@/lib/books/spread-drawable-ready'
+import { isBookExerciseLiveEligible, isBookExerciseMultipleChoice, type BookExerciseKind } from '@/lib/books/book-exercises'
+
+function parsePrintedPageLabel(label: string | null | undefined): number | null {
+  if (!label) return null
+  const trimmed = label.trim()
+  if (!/^\d+$/.test(trimmed)) return null
+  const n = Number(trimmed)
+  return Number.isFinite(n) && n >= 1 ? n : null
+}
+
+function liveCheckPinTone(result: string | null | undefined): ReadingCheckQuestionPinTone {
+  if (result === 'correct' || result === 'incorrect' || result === 'skip') return result
+  return 'default'
+}
 
 export function FullscreenBookOverlayView({
   vm,
   onClose,
+  topChrome,
+  deskRail,
+  deskRailOpen = false,
+  onDeskRailOpenChange,
+  preferOpenExercises = false,
 }: {
   vm: FullscreenBookOverlayViewModel
   onClose: () => void
+  topChrome?: ReactNode
+  deskRail?: ReactNode
+  deskRailOpen?: boolean
+  onDeskRailOpenChange?: (open: boolean) => void
+  preferOpenExercises?: boolean
 }) {
   const overlayRootRef = vm.overlayRootRef
   const [bookTextSpreadCapability, setBookTextSpreadCapability] = useState({
@@ -84,11 +135,10 @@ export function FullscreenBookOverlayView({
   const dismissToolSettingsOnSpreadUse = useCallback(() => {
     dismissToolSettingsRef.current?.()
   }, [])
-  const [floatingBottomChrome, setFloatingBottomChrome] = useState(false)
+  const [floatingBottomChrome, setFloatingBottomChrome] = useState(true)
 
   const {
     ANIMATION_MS,
-    readerViewportAspectRatio,
     PdfPage,
     LESSON_BOARD_SURFACE,
     activePageRowRef,
@@ -124,10 +174,15 @@ export function FullscreenBookOverlayView({
     annotationRailKeyboardDismissAt,
     annotationRailKeyboardOpenAt,
     isPageListOpen,
+    syncWorkspaceDeskLeftPx,
     pageListRailTab,
     exportCaptureLayoutActive,
     showBookFrame,
     setShowBookFrame,
+    readerLayoutMode,
+    enterPageGridOverview,
+    exitPageGridOverview,
+    openSpreadAtPageFromGrid,
     isVisible,
     isWhiteboardOpen,
     isWhiteboardSessionOpen,
@@ -172,6 +227,7 @@ export function FullscreenBookOverlayView({
     onWhiteboardCaps,
     pageAreaRef,
     pageCanvasHeightPx,
+    pageAspectRatio,
     pageJumpDraft,
     pageListNumbers,
     pageListScrollRoot,
@@ -273,6 +329,7 @@ export function FullscreenBookOverlayView({
     setTextVisualStyle,
     setTextAlign,
     setTextFontId,
+    setTextFontWeight,
     setWatermarkEnabled,
     whiteboardStorageKey,
     lessonBoardBookId,
@@ -295,6 +352,7 @@ export function FullscreenBookOverlayView({
     showSpreadRightPage,
     spreadDisplayScale,
     spreadReaderDisplayScale,
+    spreadFitMotionActive,
     effectiveSpreadScreenScale,
     focusZoomDrawActive,
     focusZoomActive,
@@ -379,6 +437,7 @@ export function FullscreenBookOverlayView({
     suppressChrome,
     textFontSizeNorm,
     textFontId,
+    textFontWeight,
     textFillColor,
     bookTextVisualStyle,
     textVisualStyle,
@@ -392,34 +451,307 @@ export function FullscreenBookOverlayView({
     rightAnnRef,
     wbAnnRef,
     wbCaptureRootRef,
-    translateDockOpen,
-    setTranslateDockOpen,
+    classToolId,
+    setClassToolId,
     browserFullscreenSupported,
     isBrowserFullscreen,
     toggleBrowserFullscreen,
   } = vm
 
-  const spreadTextSelectionActive = useInkSessionTextSelectionActive(
-    spreadSessionStoreRef,
-    hasResolvedUnit && !isWhiteboardOpen,
-  )
-  const whiteboardTextSelectionActive = useInkSessionTextSelectionActive(
-    whiteboardSessionStoreRef,
-    hasResolvedUnit && isWhiteboardOpen,
-  )
-  const textSelectionActive = spreadTextSelectionActive || whiteboardTextSelectionActive
   const writableTranslateSelection = useWritableTextTranslateSelection(
     open && hasResolvedUnit,
   )
 
   /** Chinese word picked in the translate dock, waiting for a tap on the spread. */
   const [placeTranslationText, setPlaceTranslationText] = useState<string | null>(null)
+  const [placeTranslationImage, setPlaceTranslationImage] = useState<{
+    src: string
+    alt: string
+  } | null>(null)
+
+  const [bookAudioOpen, setBookAudioOpen] = useState(false)
+  const [bookExercisesOpen, setBookExercisesOpen] = useState(false)
+  const [playExerciseTaskId, setPlayExerciseTaskId] = useState<string | null>(null)
+  const bookAudio = useBookAudioPlayer(selectedBookId)
+  const audioPinBookUnits = useMemo(
+    () => (selectedBook?.units ?? []).map((unit) => ({ id: unit.id, filePath: unit.filePath })),
+    [selectedBook],
+  )
+  const audioPins = useAudioTrackPlacement({
+    bookId: selectedBookId,
+    unitId: selectedUnit?.id ?? null,
+    unitFilePath: selectedUnit?.filePath ?? null,
+    bookUnits: audioPinBookUnits,
+  })
+  const bookExercises = useBookExerciseTasks({
+    bookId: selectedBookId,
+    unitId: selectedUnit?.id ?? null,
+    fileUrl: selectedUnit?.filePath ? makeUnitFileUrl(selectedUnit.filePath) : null,
+  })
+
+  useEffect(() => {
+    if (!open || !preferOpenExercises) return
+    setClassToolId(null)
+    setBookExercisesOpen(true)
+  }, [open, preferOpenExercises, selectedBookId, setClassToolId])
+
+  useEffect(() => {
+    setBookAudioOpen(false)
+    setBookExercisesOpen(false)
+    setPlayExerciseTaskId(null)
+    setClassToolId(null)
+  }, [selectedBookId, setClassToolId])
+
+  useEffect(() => {
+    if (!deskRailOpen) return
+    setIsPageListOpen(false)
+    setBookAudioOpen(false)
+    setBookExercisesOpen(false)
+    setPlayExerciseTaskId(null)
+    setClassToolId(null)
+    audioPins.cancelAudioPinPlacement()
+    bookExercises.cancelBoxDraw()
+  }, [
+    deskRailOpen,
+    setIsPageListOpen,
+    setClassToolId,
+    audioPins.cancelAudioPinPlacement,
+    bookExercises.cancelBoxDraw,
+  ])
+
+  useEffect(() => {
+    if (isPageListOpen) {
+      setBookAudioOpen(false)
+      setBookExercisesOpen(false)
+      setPlayExerciseTaskId(null)
+      setClassToolId(null)
+      onDeskRailOpenChange?.(false)
+    }
+  }, [isPageListOpen, onDeskRailOpenChange, setClassToolId])
+
+  useEffect(() => {
+    if (!open) {
+      setBookAudioOpen(false)
+      setBookExercisesOpen(false)
+      setPlayExerciseTaskId(null)
+      onDeskRailOpenChange?.(false)
+      bookAudio.stop()
+      audioPins.cancelAudioPinPlacement()
+      bookExercises.cancelBoxDraw()
+    }
+  }, [
+    open,
+    bookAudio.stop,
+    audioPins.cancelAudioPinPlacement,
+    bookExercises.cancelBoxDraw,
+    onDeskRailOpenChange,
+  ])
+
+  useEffect(() => {
+    if (!audioPins.audioPinPlacementActive && !bookExercises.boxDrawActive) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      audioPins.cancelAudioPinPlacement()
+      bookExercises.cancelBoxDraw()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [
+    audioPins.audioPinPlacementActive,
+    audioPins.cancelAudioPinPlacement,
+    bookExercises.boxDrawActive,
+    bookExercises.cancelBoxDraw,
+  ])
+
+  const toggleBookAudioRail = useCallback(() => {
+    setBookAudioOpen((wasOpen) => {
+      const next = !wasOpen
+      if (next) {
+        setIsPageListOpen(false)
+        setBookExercisesOpen(false)
+        setPlayExerciseTaskId(null)
+        setClassToolId(null)
+        bookExercises.cancelBoxDraw()
+        onDeskRailOpenChange?.(false)
+      }
+      if (!next) audioPins.cancelAudioPinPlacement()
+      return next
+    })
+  }, [
+    setIsPageListOpen,
+    setClassToolId,
+    audioPins.cancelAudioPinPlacement,
+    bookExercises.cancelBoxDraw,
+    onDeskRailOpenChange,
+  ])
+
+  const toggleBookExercisesRail = useCallback(() => {
+    setBookExercisesOpen((wasOpen) => {
+      const next = !wasOpen
+      if (next) {
+        setIsPageListOpen(false)
+        setBookAudioOpen(false)
+        setPlayExerciseTaskId(null)
+        setClassToolId(null)
+        audioPins.cancelAudioPinPlacement()
+        onDeskRailOpenChange?.(false)
+      }
+      if (!next) bookExercises.cancelBoxDraw()
+      return next
+    })
+  }, [
+    setIsPageListOpen,
+    setClassToolId,
+    audioPins.cancelAudioPinPlacement,
+    bookExercises.cancelBoxDraw,
+    onDeskRailOpenChange,
+  ])
+
+  const handleTogglePageList = useCallback(() => {
+    setBookAudioOpen(false)
+    setBookExercisesOpen(false)
+    setClassToolId(null)
+    onDeskRailOpenChange?.(false)
+    audioPins.cancelAudioPinPlacement()
+    bookExercises.cancelBoxDraw()
+    togglePageListRail()
+  }, [
+    togglePageListRail,
+    setClassToolId,
+    audioPins.cancelAudioPinPlacement,
+    bookExercises.cancelBoxDraw,
+    onDeskRailOpenChange,
+  ])
+
+  const toggleClassToolTranslate = useCallback(() => {
+    setClassToolId((prev) => {
+      const next = prev === 'translate' ? null : 'translate'
+      if (next) {
+        setIsPageListOpen(false)
+        setBookAudioOpen(false)
+        setBookExercisesOpen(false)
+        setPlayExerciseTaskId(null)
+        audioPins.cancelAudioPinPlacement()
+        bookExercises.cancelBoxDraw()
+        onDeskRailOpenChange?.(false)
+      }
+      return next
+    })
+  }, [
+    setClassToolId,
+    setIsPageListOpen,
+    audioPins.cancelAudioPinPlacement,
+    bookExercises.cancelBoxDraw,
+    onDeskRailOpenChange,
+  ])
+
+  const toggleClassToolPictures = useCallback(() => {
+    setClassToolId((prev) => {
+      const next = prev === 'pictures' ? null : 'pictures'
+      if (next) {
+        setIsPageListOpen(false)
+        setBookAudioOpen(false)
+        setBookExercisesOpen(false)
+        setPlayExerciseTaskId(null)
+        audioPins.cancelAudioPinPlacement()
+        bookExercises.cancelBoxDraw()
+        onDeskRailOpenChange?.(false)
+      }
+      return next
+    })
+  }, [
+    setClassToolId,
+    setIsPageListOpen,
+    audioPins.cancelAudioPinPlacement,
+    bookExercises.cancelBoxDraw,
+    onDeskRailOpenChange,
+  ])
+
+  const handleStartAudioPinPlacement = useCallback(
+    (trackId: string) => {
+      cancelBoardLinkPlacement?.()
+      bookExercises.cancelBoxDraw()
+      setIsPageListOpen(false)
+      setBookExercisesOpen(false)
+      setPlayExerciseTaskId(null)
+      setClassToolId(null)
+      onDeskRailOpenChange?.(false)
+      setBookAudioOpen(true)
+      audioPins.startAudioPinPlacement(trackId)
+    },
+    [
+      audioPins.startAudioPinPlacement,
+      cancelBoardLinkPlacement,
+      setIsPageListOpen,
+      setClassToolId,
+      bookExercises.cancelBoxDraw,
+      onDeskRailOpenChange,
+    ],
+  )
+
+  const handleStartExerciseBoxDraw = useCallback((kind?: BookExerciseKind) => {
+    cancelBoardLinkPlacement?.()
+    audioPins.cancelAudioPinPlacement()
+    setIsPageListOpen(false)
+    setBookAudioOpen(false)
+    setClassToolId(null)
+    onDeskRailOpenChange?.(false)
+    setBookExercisesOpen(true)
+    setPlayExerciseTaskId(null)
+    bookExercises.startBoxDraw(kind)
+  }, [
+    audioPins.cancelAudioPinPlacement,
+    bookExercises.startBoxDraw,
+    cancelBoardLinkPlacement,
+    setIsPageListOpen,
+    setClassToolId,
+    onDeskRailOpenChange,
+  ])
 
   const placeTranslationOnSpread = useCallback(
-    (clientX: number, clientY: number) => {
+    (clientX: number, clientY: number, surface: PlaceFromTranslateSurface) => {
       const text = placeTranslationText
       setPlaceTranslationText(null)
       if (!text) return
+
+      if (surface === 'whiteboard') {
+        const content = document.querySelector('[data-whiteboard-content]')
+        const store = whiteboardSessionStoreRef.current
+        if (!(content instanceof HTMLElement) || !store) {
+          toast.error('Could not place the word — open the board and try again.')
+          return
+        }
+        const rect = content.getBoundingClientRect()
+        if (rect.width <= 0 || rect.height <= 0) {
+          toast.error('Could not place the word — open the board and try again.')
+          return
+        }
+        const fontSizeNorm = translationChipFontSizeNorm(rect.height)
+        const placement = translationChipPlacementNorm({
+          clientX,
+          clientY,
+          spreadLeftPx: rect.left,
+          spreadTopPx: rect.top,
+          spreadWidthPx: rect.width,
+          spreadHeightPx: rect.height,
+        })
+        const cmd: TextAnnotationCommand = {
+          kind: 'text',
+          id: newAnnotationId(),
+          x: placement.x,
+          y: placement.y,
+          yAnchor: placement.yAnchor,
+          text,
+          fontSizeNorm,
+          fontId: TRANSLATION_CHIP_FONT_ID,
+          color: TRANSLATION_CHIP_TEXT,
+          visualStyle: 'filled',
+          fillColor: TRANSLATION_CHIP_FILL,
+        }
+        store.appendCommand(cmd)
+        return
+      }
 
       const store = spreadSessionStoreRef.current
       const leftEl = leftPageCaptureRef.current
@@ -468,6 +800,97 @@ export function FullscreenBookOverlayView({
       spreadSessionStoreRef,
       leftPageCaptureRef,
       rightPageCaptureRef,
+      whiteboardSessionStoreRef,
+    ],
+  )
+
+  const placeTranslateImage = useCallback(
+    (clientX: number, clientY: number, surface: PlaceFromTranslateSurface) => {
+      const payload = placeTranslationImage
+      setPlaceTranslationImage(null)
+      if (!payload) return
+
+      void (async () => {
+        const file = await fetchPlacedImageAsFile(payload.src)
+        const encoded = file ? await downscaleImageFile(file) : null
+        if (!encoded) {
+          toast.error('Could not place the picture — try another image.')
+          return
+        }
+
+        if (surface === 'whiteboard') {
+          const content = document.querySelector('[data-whiteboard-content]')
+          const store = whiteboardSessionStoreRef.current
+          if (!(content instanceof HTMLElement) || !store) {
+            toast.error('Could not place the picture — open the board and try again.')
+            return
+          }
+          const rect = content.getBoundingClientRect()
+          if (rect.width <= 0 || rect.height <= 0) {
+            toast.error('Could not place the picture — open the board and try again.')
+            return
+          }
+          const scrollParent = content.parentElement
+          const cmd = buildImageCommandFromEncoded(
+            encoded,
+            {
+              widthPx: rect.width,
+              heightPx: rect.height,
+              viewportHeightPx: scrollParent?.clientHeight ?? rect.height,
+              scrollTopPx: scrollParent?.scrollTop ?? 0,
+              anchorNorm: boardPasteAnchorFromElementRect(clientX, clientY, rect),
+              maxWidthFraction: TRANSLATE_PLACE_IMAGE_WIDTH_FRACTION,
+            },
+            payload.alt,
+          )
+          store.appendCommand(cmd)
+          store.setSelectedIds([cmd.id])
+          setAnnotationMode('select')
+          return
+        }
+
+        const store = spreadSessionStoreRef.current
+        const leftEl = leftPageCaptureRef.current
+        if (!store || !leftEl) {
+          toast.error('Could not place the picture — open a book page and try again.')
+          return
+        }
+        const leftRect = leftEl.getBoundingClientRect()
+        const rightRect = rightPageCaptureRef.current?.getBoundingClientRect() ?? null
+        const spreadLeftPx = leftRect.left
+        const spreadRightPx =
+          rightRect && rightRect.width > 0 ? rightRect.right : leftRect.right
+        const spreadWidthPx = spreadRightPx - spreadLeftPx
+        const spreadHeightPx = leftRect.height
+        if (spreadWidthPx <= 0 || spreadHeightPx <= 0) {
+          toast.error('Could not place the picture — open a book page and try again.')
+          return
+        }
+        const spreadRect = new DOMRect(spreadLeftPx, leftRect.top, spreadWidthPx, spreadHeightPx)
+        const cmd = buildImageCommandFromEncoded(
+          encoded,
+          {
+            widthPx: spreadWidthPx,
+            heightPx: spreadHeightPx,
+            viewportHeightPx: spreadHeightPx,
+            scrollTopPx: 0,
+            anchorNorm: boardPasteAnchorFromElementRect(clientX, clientY, spreadRect),
+            maxWidthFraction: TRANSLATE_PLACE_IMAGE_WIDTH_FRACTION,
+          },
+          payload.alt,
+        )
+        store.appendCommand(cmd)
+        store.setSelectedIds([cmd.id])
+        setAnnotationMode('select')
+      })()
+    },
+    [
+      placeTranslationImage,
+      spreadSessionStoreRef,
+      leftPageCaptureRef,
+      rightPageCaptureRef,
+      whiteboardSessionStoreRef,
+      setAnnotationMode,
     ],
   )
   const pinWritableTextGloss = useCallback(
@@ -551,6 +974,8 @@ export function FullscreenBookOverlayView({
   const [coachUrl, setCoachUrl] = useState<string | null>(null)
   const [interactiveVocabOpen, setInteractiveVocabOpen] = useState(false)
   const [readingChecksOpen, setReadingChecksOpen] = useState(false)
+  const [liveCheckStopId, setLiveCheckStopId] = useState<string | null>(null)
+  const [liveCheckMarkEpoch, setLiveCheckMarkEpoch] = useState(0)
   const [lessonSettingsOpen, setLessonSettingsOpen] = useState(false)
   const [toolboxMenuOpen, setToolboxMenuOpen] = useState(false)
   const [activeToolboxTool, setActiveToolboxTool] = useState<ClassToolboxToolId | null>(null)
@@ -598,8 +1023,52 @@ export function FullscreenBookOverlayView({
   }, [interactiveVocabPack])
 
   useEffect(() => {
-    if (!liveReadingCheckPack) setReadingChecksOpen(false)
+    if (!liveReadingCheckPack) {
+      setReadingChecksOpen(false)
+      setLiveCheckStopId(null)
+    }
   }, [liveReadingCheckPack])
+
+  const liveCheckPins = useMemo((): ReadingCheckLivePin[] => {
+    if (!liveReadingCheckPack) return []
+    void liveCheckMarkEpoch
+    const leftDisplayPage =
+      selectedBook && selectedUnit
+        ? parsePrintedPageLabel(
+            mapPdfPageToDisplayLabel(pageNumber, selectedBook, selectedUnit, numPages),
+          )
+        : null
+    const rightDisplayPage =
+      selectedBook && selectedUnit && spreadRightPage != null
+        ? parsePrintedPageLabel(
+            mapPdfPageToDisplayLabel(spreadRightPage, selectedBook, selectedUnit, numPages),
+          )
+        : null
+    return listReadingCheckLivePinsOnSpread(liveReadingCheckPack.stops, {
+      leftPdfPage: pageNumber,
+      rightPdfPage: spreadRightPage,
+      leftDisplayPage,
+      rightDisplayPage,
+    }).map((pin) => {
+      const marked = latestReadingCheckLiveMarkForStop(liveReadingCheckPack.storyId, pin.stop.id)
+      return {
+        id: pin.stop.id,
+        pdfPage: pin.pdfPage,
+        x: pin.x,
+        y: pin.y,
+        label: readingCheckStopLinkLabel(pin.stop, pin.index),
+        tone: liveCheckPinTone(marked?.result),
+      }
+    })
+  }, [
+    liveCheckMarkEpoch,
+    liveReadingCheckPack,
+    numPages,
+    pageNumber,
+    selectedBook,
+    selectedUnit,
+    spreadRightPage,
+  ])
 
   useEffect(() => {
     registerWhiteboardToolbarLaunch({
@@ -689,23 +1158,57 @@ export function FullscreenBookOverlayView({
     ],
   )
 
-  /** Keep stage visible after first successful open — do not hide on routine turns (R1 fix). */
-  const bookStageEnterVisible =
-    isVisible && (!userPresented || spreadDrawableReady || spreadHasBeenDrawable)
-  const prevBookStageEnterVisibleRef = useRef(false)
-  const bookStageEnterInstant =
-    bookStageEnterVisible && !prevBookStageEnterVisibleRef.current
   useEffect(() => {
-    prevBookStageEnterVisibleRef.current = bookStageEnterVisible
-  }, [bookStageEnterVisible])
+    if (classToolId == null) return
+    setIsPageListOpen(false)
+    setBookAudioOpen(false)
+    setBookExercisesOpen(false)
+    setPlayExerciseTaskId(null)
+    audioPins.cancelAudioPinPlacement()
+    bookExercises.cancelBoxDraw()
+    onDeskRailOpenChange?.(false)
+  }, [
+    classToolId,
+    setIsPageListOpen,
+    audioPins.cancelAudioPinPlacement,
+    bookExercises.cancelBoxDraw,
+    onDeskRailOpenChange,
+  ])
 
   const hideFocusPresentationChrome = suppressChrome || focusZoomActive
+  const showTopChrome = Boolean(topChrome) && !hideFocusPresentationChrome
+  const hintTopClass = showTopChrome ? 'top-3' : isPrepMode ? 'top-14' : 'top-3'
+  const classToolDrawerOpen =
+    classToolId != null && !hideFocusPresentationChrome
+  const bookDeskLeft = bookWorkspaceDeskLeftCss({
+    pageListOpen: isPageListOpen,
+    audioPlaylistOpen: bookAudioOpen,
+    exerciseRailOpen: bookExercisesOpen,
+    classToolDrawerOpen,
+    deskRailOpen,
+  })
+  const bookDeskLeftPx = bookWorkspaceDeskLeftPx({
+    pageListOpen: isPageListOpen,
+    audioPlaylistOpen: bookAudioOpen,
+    exerciseRailOpen: bookExercisesOpen,
+    classToolDrawerOpen,
+    deskRailOpen,
+  })
+
+  useLayoutEffect(() => {
+    if (!open) return
+    syncWorkspaceDeskLeftPx(bookDeskLeftPx)
+  }, [open, bookDeskLeftPx, syncWorkspaceDeskLeftPx])
 
   useEffect(() => {
     if (!hideFocusPresentationChrome) return
     setToolboxMenuOpen(false)
     setActiveToolboxTool(null)
   }, [hideFocusPresentationChrome])
+
+  const playExerciseTask = bookExercises.tasks.find((task) => task.id === playExerciseTaskId)
+  const playExerciseLive =
+    playExerciseTask && isBookExerciseLiveEligible(playExerciseTask) ? playExerciseTask : null
 
   return (
     <WritingAssistProvider
@@ -765,11 +1268,120 @@ export function FullscreenBookOverlayView({
         onRenameLessonBoardPage={renameLessonBoardPage}
         lessonBoardActivePageRowRef={lessonBoardActivePageRowRef}
       />
+      <BookAudioPlaylistRail
+        open={bookAudioOpen}
+        onClose={() => {
+          audioPins.cancelAudioPinPlacement()
+          setBookAudioOpen(false)
+        }}
+        tracks={bookAudio.tracks}
+        loading={bookAudio.loading}
+        currentTrackId={bookAudio.currentTrackId}
+        isPlaying={bookAudio.isPlaying}
+        currentTime={bookAudio.currentTime}
+        duration={bookAudio.duration}
+        onPlayTrack={bookAudio.playTrack}
+        onTogglePlayPause={bookAudio.togglePlayPause}
+        onPlayNext={bookAudio.playNext}
+        onPlayPrevious={bookAudio.playPrevious}
+        onSeek={bookAudio.seek}
+        placementTrackId={audioPins.placementTrackId}
+        placedCountByTrackId={audioPins.placedCountByTrackId}
+        onStartPinPlacement={handleStartAudioPinPlacement}
+        onCancelPinPlacement={audioPins.cancelAudioPinPlacement}
+        onRemovePlacedTrack={(trackId) => {
+          void audioPins.removeAudioPinsByTrackId(trackId)
+        }}
+      />
+      <BookExerciseTaskRail
+        open={bookExercisesOpen}
+        onClose={() => {
+          bookExercises.cancelBoxDraw()
+          setBookExercisesOpen(false)
+        }}
+        tasks={bookExercises.tasks}
+        loading={bookExercises.loading}
+        saving={bookExercises.saving}
+        drafting={bookExercises.drafting}
+        selectedTaskId={bookExercises.selectedTaskId}
+        boxDrawActive={bookExercises.boxDrawActive}
+        drawKind={bookExercises.boxDrawKind}
+        onDrawKindChange={bookExercises.setBoxDrawKind}
+        onStartBoxDraw={handleStartExerciseBoxDraw}
+        onCancelBoxDraw={bookExercises.cancelBoxDraw}
+        onSelectTask={(task) => {
+          bookExercises.setSelectedTaskId(task.id)
+          goToPage(task.pdfPage)
+        }}
+        onClearSelection={() => bookExercises.setSelectedTaskId(null)}
+        onDraftFromBox={(taskId) => bookExercises.draftExerciseFromBox(taskId)}
+        onRemoveTask={(task) => {
+          void bookExercises.removeExerciseTask(task.id)
+        }}
+        onSaveDraft={(taskId, next) =>
+          bookExercises.saveExerciseTask(taskId, { ...next, status: 'draft' })
+        }
+        onApprove={(taskId, next) =>
+          bookExercises.saveExerciseTask(taskId, { ...next, status: 'approved' })
+        }
+        onUnapprove={(taskId) => bookExercises.saveExerciseTask(taskId, { status: 'draft' })}
+      />
+      {deskRail}
+      <TranslateToolPanel
+        studentId={studentId}
+        open={classToolDrawerOpen && classToolId === 'translate'}
+        onClose={() => setClassToolId(null)}
+        onPlaceText={
+          hasResolvedUnit
+            ? (text) => {
+                setPlaceTranslationImage(null)
+                setPlaceTranslationText(text)
+              }
+            : undefined
+        }
+        onPlaceImage={
+          hasResolvedUnit
+            ? (src, alt) => {
+                setPlaceTranslationText(null)
+                setPlaceTranslationImage({ src, alt })
+              }
+            : undefined
+        }
+      />
+      <PictureSearchToolPanel
+        open={classToolDrawerOpen && classToolId === 'pictures'}
+        onClose={() => setClassToolId(null)}
+        studentId={studentId}
+        wbAnnRef={wbAnnRef}
+        boardVisible={isWhiteboardOpen}
+        onPlacePicture={
+          hasResolvedUnit
+            ? (src, alt) => {
+                setPlaceTranslationText(null)
+                setPlaceTranslationImage({ src, alt })
+                setClassToolId(null)
+              }
+            : undefined
+        }
+      />
+      {playExerciseLive ? (
+        isBookExerciseMultipleChoice(playExerciseLive) ? (
+          <BookExerciseMcqPlaySheet task={playExerciseLive} onClose={() => setPlayExerciseTaskId(null)} />
+        ) : (
+          <BookExercisePlaySheet task={playExerciseLive} onClose={() => setPlayExerciseTaskId(null)} />
+        )
+      ) : null}
+      <audio
+        ref={bookAudio.audioRef}
+        preload="metadata"
+        className="pointer-events-none absolute h-0 w-0 opacity-0"
+        aria-hidden
+      />
       <AnnotationRail
         hasResolvedUnit={hasResolvedUnit}
         numPages={numPages}
         selectedBookId={selectedBookId}
-        suppressChrome={suppressChrome}
+        suppressChrome={suppressChrome || readerLayoutMode === 'pageGrid'}
         pageCanvasHeightPx={pageCanvasHeightPx}
         isAnnotationRailVisible={isAnnotationRailVisible}
         setIsAnnotationRailVisible={setIsAnnotationRailVisible}
@@ -844,10 +1456,11 @@ export function FullscreenBookOverlayView({
         setMarqueeSelectRule={setMarqueeSelectRule}
         textFontId={textFontId}
         setTextFontId={setTextFontId}
+        textFontWeight={textFontWeight}
+        setTextFontWeight={setTextFontWeight}
         pickTextColor={pickTextColor}
         pickTextFillColor={pickTextFillColor}
         pickStickyFillColor={pickStickyFillColor}
-        textSelectionActive={textSelectionActive}
         stickySelectionActive={stickySelectionActive}
         shapeSelectionActive={shapeSelectionActive}
         penStrokeSelectionActive={penStrokeSelectionActive}
@@ -892,9 +1505,11 @@ export function FullscreenBookOverlayView({
       />
 
       <div
-        className="absolute inset-0 z-[10] grid min-h-0 min-w-0 place-items-center pb-[var(--book-bottom-chrome-clearance)]"
+        className="absolute inset-y-0 right-0 z-[10] min-h-0 min-w-0 pt-[var(--book-top-chrome-clearance)] pb-[var(--book-bottom-chrome-clearance)]"
         style={
           {
+            left: bookDeskLeft,
+            '--book-top-chrome-clearance': showTopChrome ? BOOK_BOTTOM_CHROME_HEIGHT : '0px',
             '--book-bottom-chrome-clearance': floatingBottomChrome
               ? '0px'
               : BOOK_BOTTOM_CHROME_HEIGHT,
@@ -903,18 +1518,11 @@ export function FullscreenBookOverlayView({
       >
         <div
           ref={bookStageRef}
-          className={cn(
-            'relative z-10 ease-[cubic-bezier(0.4,0,0.2,1)] will-change-transform motion-reduce:transition-none',
-            bookStageEnterInstant ? 'transition-none' : 'transition-all duration-[650ms]',
-            bookStageEnterVisible ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0',
-          )}
+          className="relative z-10 grid h-full w-full min-h-0 min-w-0 place-items-center"
         >
           <div
-            className="relative flex max-h-[calc(100vh-var(--book-bottom-chrome-clearance))] max-w-[100vw] shrink-0 flex-col will-change-[width,transform]"
+            className="relative h-full w-full min-h-0 min-w-0 shrink-0"
             style={{
-              width: `min(100vw, calc((100vh - var(--book-bottom-chrome-clearance)) * ${readerViewportAspectRatio}))`,
-              aspectRatio: readerViewportAspectRatio,
-              transition: `width ${ANIMATION_MS}ms cubic-bezier(0.4,0,0.2,1), transform ${ANIMATION_MS}ms cubic-bezier(0.4,0,0.2,1)`,
               backfaceVisibility: 'hidden',
               transform: 'translateZ(0)',
             }}
@@ -922,7 +1530,8 @@ export function FullscreenBookOverlayView({
         {boardLinkPlacementActive ? (
           <div
             className={cn(
-              'pointer-events-none absolute left-1/2 top-3 z-[45] -translate-x-1/2 rounded-full px-4 py-2 text-sm text-white/90',
+              'pointer-events-none absolute left-1/2 z-[45] -translate-x-1/2 rounded-full px-4 py-2 text-sm text-white/90',
+              hintTopClass,
               BOOK_OVERLAY_GLASS_CHROME,
             )}
             role="status"
@@ -932,10 +1541,25 @@ export function FullscreenBookOverlayView({
             <span className="ml-2 text-white/55">({SC.deselectAll} to cancel)</span>
           </div>
         ) : null}
+        {audioPins.audioPinPlacementActive ? (
+          <div
+            className={cn(
+              'pointer-events-none absolute left-1/2 z-[45] -translate-x-1/2 rounded-full px-4 py-2 text-sm text-white/90',
+              hintTopClass,
+              BOOK_OVERLAY_GLASS_CHROME,
+            )}
+            role="status"
+            aria-live="polite"
+          >
+            Tap the page to place this track
+            <span className="ml-2 text-white/55">({SC.deselectAll} to cancel)</span>
+          </div>
+        ) : null}
         {readingCheckHotspotPlacementActive ? (
           <div
             className={cn(
-              'pointer-events-none absolute left-1/2 top-3 z-[45] -translate-x-1/2 rounded-full px-4 py-2 text-sm text-white/90',
+              'pointer-events-none absolute left-1/2 z-[45] -translate-x-1/2 rounded-full px-4 py-2 text-sm text-white/90',
+              hintTopClass,
               BOOK_OVERLAY_GLASS_CHROME,
             )}
             role="status"
@@ -945,8 +1569,45 @@ export function FullscreenBookOverlayView({
             <span className="ml-2 text-white/55">({SC.deselectAll} to cancel)</span>
           </div>
         ) : null}
+        {bookExercises.boxDrawActive ? (
+          <div
+            className={cn(
+              'pointer-events-none absolute left-1/2 z-[45] -translate-x-1/2 rounded-full px-4 py-2 text-sm text-white/90',
+              hintTopClass,
+              BOOK_OVERLAY_GLASS_CHROME,
+            )}
+            role="status"
+            aria-live="polite"
+          >
+            Drag around one exercise
+            <span className="ml-2 text-white/55">({SC.deselectAll} to cancel)</span>
+          </div>
+        ) : null}
 
         <div className="absolute inset-0 overscroll-none">
+          {readerLayoutMode === 'pageGrid' && hasResolvedUnit && selectedUnit ? (
+            <PageGridStage
+              pageNumbers={visiblePages}
+              activeLeftPage={pageNumber}
+              activeRightPage={showSpreadRightPage ? spreadRightPage : null}
+              fileUrl={unitThumbFileUrl}
+              unitId={selectedUnit.id}
+              pdfReady={pdfReady}
+              pageAspectRatio={pageAspectRatio}
+              selectedBook={selectedBook}
+              selectedUnit={selectedUnit}
+              numPages={numPages}
+              numberingMode={numberingMode}
+              onSelectPage={openSpreadAtPageFromGrid}
+            />
+          ) : null}
+          <div
+            className={cn(
+              'absolute inset-0',
+              readerLayoutMode === 'pageGrid' && 'invisible pointer-events-none',
+            )}
+            aria-hidden={readerLayoutMode === 'pageGrid'}
+          >
           <WritableTextGlossReviewProvider openReview={writableTranslateSelection.openFromGloss}>
           <BookCanvasStage
             pageAreaRef={pageAreaRef}
@@ -960,6 +1621,7 @@ export function FullscreenBookOverlayView({
             pdfReady={pdfReady}
             spreadDisplayScale={spreadDisplayScale}
             spreadReaderDisplayScale={spreadReaderDisplayScale}
+            spreadFitMotionActive={spreadFitMotionActive}
             effectiveSpreadScreenScale={effectiveSpreadScreenScale}
             focusZoomDrawActive={focusZoomDrawActive}
             focusLayout={focusLayout}
@@ -1040,6 +1702,7 @@ export function FullscreenBookOverlayView({
             shapeRoundedCorners={shapeRoundedCorners}
             textFontSizeNorm={textFontSizeNorm}
             textFontId={textFontId}
+            textFontWeight={textFontWeight}
             bookTextVisualStyle={bookTextVisualStyle}
             textVisualStyle={textVisualStyle}
             textAlign={textAlign}
@@ -1074,16 +1737,66 @@ export function FullscreenBookOverlayView({
             lessonBoardPageLinks={lessonBoardPageLinks}
             onPlaceBoardLink={placeBoardLinkAt}
             onOpenBoardFromLink={openBoardFromLink}
-            startBoardLinkPlacement={startBoardLinkPlacement}
+            startBoardLinkPlacement={() => {
+              audioPins.cancelAudioPinPlacement()
+              bookExercises.cancelBoxDraw()
+              startBoardLinkPlacement()
+            }}
             removeActiveBoardPageLink={removeActiveBoardPageLink}
             activeBoardPageLink={activeBoardPageLink}
             boardLinkInHeader={isPrepMode}
+            audioPinPlacementActive={audioPins.audioPinPlacementActive}
+            audioPins={audioPins.audioPins}
+            audioTracks={bookAudio.tracks}
+            audioPlayingTrackId={bookAudio.currentTrackId}
+            audioIsPlaying={bookAudio.isPlaying}
+            onPlaceAudioPin={(pdfPage, center) => {
+              void audioPins.placeAudioPinAt(pdfPage, center)
+            }}
+            onPlayAudioPin={(pin) => bookAudio.playTrack(pin.trackId)}
+            onRemoveAudioPin={(pin) => {
+              void audioPins.removeAudioPin(pin.id)
+            }}
+            onMoveAudioPin={(pin, pdfPage, center) => {
+              void audioPins.moveAudioPin(pin.id, pdfPage, center)
+            }}
             readingCheckHotspotPlacementActive={readingCheckHotspotPlacementActive}
             onPlaceReadingCheckHotspot={placeReadingCheckHotspotAt}
             readingCheckHotspotPreviewPdfPage={readingCheckHotspotPreviewPdfPage}
             readingCheckHotspotPreviewCenter={readingCheckHotspotPreviewCenter}
             readingCheckHotspotPreviewLabel={readingCheckHotspotPreviewLabel}
             onReadingCheckHotspotPreviewClick={onReadingCheckHotspotPreviewClick}
+            readingCheckLivePins={userPresented ? liveCheckPins : []}
+            onReadingCheckLivePinClick={setLiveCheckStopId}
+            exerciseBoxDrawActive={bookExercises.boxDrawActive}
+            exerciseTasks={bookExercises.tasks}
+            selectedExerciseTaskId={bookExercises.selectedTaskId}
+            onPlaceExerciseBox={(pdfPage, rect) => {
+              void bookExercises.placeExerciseBox(pdfPage, rect)
+            }}
+            onCancelExerciseBoxDraw={bookExercises.cancelBoxDraw}
+            onSelectExerciseTask={(task) => {
+              audioPins.cancelAudioPinPlacement()
+              bookExercises.cancelBoxDraw()
+              setBookAudioOpen(false)
+              setIsPageListOpen(false)
+              setClassToolId(null)
+              onDeskRailOpenChange?.(false)
+              if (isBookExerciseLiveEligible(task) && !bookExercisesOpen) {
+                bookExercises.setSelectedTaskId(task.id)
+                setPlayExerciseTaskId(task.id)
+                return
+              }
+              setPlayExerciseTaskId(null)
+              setBookExercisesOpen(true)
+              bookExercises.setSelectedTaskId(task.id)
+            }}
+            onRemoveExerciseTask={(task) => {
+              void bookExercises.removeExerciseTask(task.id)
+            }}
+            onMoveExerciseTask={(task, center) => {
+              void bookExercises.moveExercisePin(task.id, center)
+            }}
             wbAnnRef={wbAnnRef}
             onWhiteboardCaps={onWhiteboardCaps}
             regionSelectOpen={regionSelectOpen}
@@ -1122,22 +1835,22 @@ export function FullscreenBookOverlayView({
             onTurnSlideComplete={handleTurnSlideComplete}
           />
           </WritableTextGlossReviewProvider>
+          </div>
         </div>
 
-        <TranslateDock
-          studentId={studentId}
-          open={translateDockOpen}
-          onOpenChange={setTranslateDockOpen}
-          suppressChrome={hideFocusPresentationChrome}
-          pageListOpen={isPageListOpen}
-          onPlaceText={hasResolvedUnit ? setPlaceTranslationText : undefined}
-        />
         <PlaceTranslationOverlay
           text={placeTranslationText}
+          imageUrl={placeTranslationImage?.src ?? null}
           leftPageCaptureRef={leftPageCaptureRef}
           rightPageCaptureRef={rightPageCaptureRef}
-          onCancel={() => setPlaceTranslationText(null)}
-          onPlace={placeTranslationOnSpread}
+          onCancel={() => {
+            setPlaceTranslationText(null)
+            setPlaceTranslationImage(null)
+          }}
+          onPlace={(clientX, clientY, surface) => {
+            if (placeTranslationImage) placeTranslateImage(clientX, clientY, surface)
+            else placeTranslationOnSpread(clientX, clientY, surface)
+          }}
         />
         <WritableTextTranslatePopover
           studentId={studentId}
@@ -1157,7 +1870,17 @@ export function FullscreenBookOverlayView({
         </div>
       </div>
 
+      {showTopChrome ? (
+        <div
+          className="pointer-events-none fixed z-[56] top-0 left-[var(--book-workspace-left-inset)] right-0"
+          style={{ '--book-workspace-left-inset': bookDeskLeft } as CSSProperties}
+        >
+          <div className="pointer-events-auto">{topChrome}</div>
+        </div>
+      ) : null}
+
       <BookBottomChrome
+        deskLeft={bookDeskLeft}
         hasResolvedUnit={hasResolvedUnit}
         numPages={numPages}
         suppressChrome={hideFocusPresentationChrome}
@@ -1196,6 +1919,9 @@ export function FullscreenBookOverlayView({
         }}
         showBookFrame={showBookFrame}
         onToggleBookFrame={() => setShowBookFrame(!showBookFrame)}
+        readerLayoutMode={readerLayoutMode}
+        onEnterPageGridOverview={enterPageGridOverview}
+        onExitPageGridOverview={exitPageGridOverview}
         pdfReady={pdfReady}
         captureBusy={captureBusy}
         captureFormat={captureFormat}
@@ -1227,18 +1953,36 @@ export function FullscreenBookOverlayView({
         onFloatingChromeChange={setFloatingBottomChrome}
       />
 
+      {bookAudio.currentTrack && userPresented ? (
+        <BookAudioNowPlayingPill
+          title={bookAudio.currentTrack.title}
+          isPlaying={bookAudio.isPlaying}
+          currentTime={bookAudio.currentTime}
+          duration={bookAudio.duration}
+          deskLeft={bookDeskLeft}
+          floatingChrome={floatingBottomChrome}
+          hidden={hideFocusPresentationChrome}
+          onTogglePlayPause={bookAudio.togglePlayPause}
+          onRestart={bookAudio.restart}
+          onSeek={bookAudio.seek}
+          onStop={bookAudio.stop}
+        />
+      ) : null}
+
       <BookWorkspaceLeftBar
         hasResolvedUnit={hasResolvedUnit}
         numPages={numPages}
         suppressChrome={hideFocusPresentationChrome}
         isPageListOpen={isPageListOpen}
-        onTogglePageList={togglePageListRail}
+        onTogglePageList={handleTogglePageList}
         isWhiteboardOpen={isWhiteboardOpen}
         isWhiteboardSessionOpen={isWhiteboardSessionOpen}
         isWhiteboardMinimized={isWhiteboardMinimized}
         onWhiteboardClick={handleWhiteboardRailClick}
-        translateDockOpen={translateDockOpen}
-        onTranslateDockToggle={() => setTranslateDockOpen(!translateDockOpen)}
+        translateDockOpen={classToolId === 'translate'}
+        onTranslateDockToggle={toggleClassToolTranslate}
+        picturesDockOpen={classToolId === 'pictures'}
+        onPicturesDockToggle={toggleClassToolPictures}
         onOpenCoachDialog={() => setCoachDialogOpen(true)}
         onClose={closeOverlay}
         lessonSettingsOpen={lessonSettingsOpen}
@@ -1255,6 +1999,12 @@ export function FullscreenBookOverlayView({
         hasReadingChecks={!!liveReadingCheckPack}
         readingChecksOpen={readingChecksOpen}
         onReadingChecksToggle={() => setReadingChecksOpen((open) => !open)}
+        hasBookAudio={bookAudio.hasTracks}
+        bookAudioOpen={bookAudioOpen}
+        bookAudioPlaying={bookAudio.isPlaying}
+        onBookAudioToggle={toggleBookAudioRail}
+        bookExercisesOpen={bookExercisesOpen}
+        onBookExercisesToggle={toggleBookExercisesRail}
       />
 
       {userPresented ? (
@@ -1271,10 +2021,6 @@ export function FullscreenBookOverlayView({
         onClose={() => setLessonSettingsOpen(false)}
       />
 
-      {readingStoryHit && !isWhiteboardOpen ? (
-        <ReadingStoryReaderBadge story={readingStoryHit.story} range={readingStoryHit.range} />
-      ) : null}
-
       {interactiveVocabPack ? (
         <InteractiveVocabReaderShelf
           pack={interactiveVocabPack}
@@ -1284,7 +2030,7 @@ export function FullscreenBookOverlayView({
         />
       ) : null}
 
-      {liveReadingCheckPack && readingStoryHit ? (
+      {liveReadingCheckPack && readingStoryHit && userPresented ? (
         <ReadingCheckLiveShelf
           pack={liveReadingCheckPack}
           storyTitle={readingStoryHit.story.title}
@@ -1298,8 +2044,9 @@ export function FullscreenBookOverlayView({
           totalPdfPages={numPages}
           leftPdfPage={pageNumber}
           rightPdfPage={spreadRightPage}
-          leftPageCaptureRef={leftPageCaptureRef}
-          rightPageCaptureRef={rightPageCaptureRef}
+          activeStopId={liveCheckStopId}
+          onActiveStopIdChange={setLiveCheckStopId}
+          onLiveMarked={() => setLiveCheckMarkEpoch((epoch) => epoch + 1)}
         />
       ) : null}
 

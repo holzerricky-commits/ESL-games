@@ -13,6 +13,7 @@ import {
   LESSON_BOARD_SURFACE,
   WHITEBOARD_SLOT_INSET_PX,
 } from '../constants'
+import type { ClassToolId } from '../sections/ClassToolDrawerShell'
 import { useArrowKeyPageTurn } from './useArrowKeyPageTurn'
 import { useBookOverlayKeyboardShortcuts } from './useBookOverlayKeyboardShortcuts'
 import { useBrowserFullscreen } from './useBrowserFullscreen'
@@ -87,7 +88,20 @@ import { getMapAnchorSpreadContext, setMapAnchorSpreadContext } from '@/lib/book
 import { spreadResizeScaleEnabled, spreadSlideEnabled, whiteboardInkSessionEnabled } from '@/lib/books/feature-flags'
 import { resolveSpreadAnchorPages } from '@/lib/books/reader-spread-navigation'
 import type { SpreadTurnSlidePayload } from './useSpreadTurnSlide'
-import { heuristicBookOverlaySpreadPageWidthPx } from '@/lib/books/spread-viewport-layout'
+import {
+  SPREAD_RESIZE_COMMIT_IDLE_MS,
+  SPREAD_WORKSPACE_FIT_MOTION_MS,
+  pageAreaSizeAfterDeskLeftShift,
+  shouldCommitSpreadRenderWidth,
+  spreadResizeScaleIsActive,
+} from '@/lib/books/spread-resize-config'
+import {
+  computeSpreadClusterMetrics,
+  computeSpreadPageWidth,
+  computeSpreadReaderDisplayScale,
+  computeSpreadReaderResizeScale,
+  heuristicBookOverlaySpreadPageWidthPx,
+} from '@/lib/books/spread-viewport-layout'
 import type { SelectionMoveClampContext } from '@/lib/books/annotation-scale'
 import type { SpreadSessionStore } from '@/lib/books/spread-session-store'
 import { requestWhiteboardSessionFlush } from '@/lib/books/whiteboard-session-events'
@@ -100,6 +114,9 @@ import type { FullscreenBookOverlayProps } from '../types'
 
 /** A4-style portrait default until PDF viewport is primed (see B3). */
 const DEFAULT_PAGE_ASPECT_RATIO = 1 / 1.414
+
+const EMPTY_ASSIGNED_UNIT_REFS: Array<{ bookId: string; unitId: string }> = []
+const EMPTY_CURRICULUM_HISTORY: NonNullable<FullscreenBookOverlayProps['curriculumHistory']> = []
 
 function initialSpreadPageWidthPx(): number {
   if (typeof window === 'undefined') return 360
@@ -115,8 +132,8 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     studentId,
     activeClassSessionId = null,
     assignedBookIds,
-    assignedUnitRefs = [],
-    curriculumHistory = [],
+    assignedUnitRefs = EMPTY_ASSIGNED_UNIT_REFS,
+    curriculumHistory = EMPTY_CURRICULUM_HISTORY,
     studentName,
     numberingMode = 'mapped',
     open,
@@ -130,14 +147,18 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     isPrepMode = false,
     preferBookId = null,
     preferUnitId = null,
+    preferOpenPdfPage = null,
   } = props
 
   const preferResumePage = useMemo(() => {
+    if (preferOpenPdfPage != null && Number.isFinite(preferOpenPdfPage)) {
+      return Math.max(1, Math.floor(preferOpenPdfPage))
+    }
     const bookId = preferBookId?.trim()
     const unitId = preferUnitId?.trim()
     if (!bookId || !unitId) return null
     return getStudentTeachingOpenPdfPageForBookUnit(studentId, bookId, unitId, null)
-  }, [preferBookId, preferUnitId, studentId])
+  }, [preferBookId, preferOpenPdfPage, preferUnitId, studentId])
 
   const userPresented = presentedProp ?? true
 
@@ -169,6 +190,8 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
   const [exportCaptureLayoutActive, setExportCaptureLayoutActive] = useState(false)
   /** Teacher preference: hardcover chrome around the spread (default on). Export still force-hides the frame. */
   const [showBookFrame, setShowBookFrameState] = useState(true)
+  /** Spread = teach/annotate; pageGrid = Overview retell grid (Phase 1). */
+  const [readerLayoutMode, setReaderLayoutMode] = useState<'spread' | 'pageGrid'>('spread')
   const [pdfReady, setPdfReady] = useState(false)
 
   useEffect(() => {
@@ -202,14 +225,26 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
   const [pageListRailTab, setPageListRailTab] = useState<'book' | 'board'>('book')
   const [isWhiteboardOpen, setIsWhiteboardOpen] = useState(false)
   const [isWhiteboardMinimized, setIsWhiteboardMinimized] = useState(false)
-  const [translateDockOpen, setTranslateDockOpen] = useState(false)
+  const [classToolId, setClassToolId] = useState<ClassToolId | null>(null)
 
   useEffect(() => {
-    if (!open) setTranslateDockOpen(false)
+    if (!open) setClassToolId(null)
+  }, [open])
+
+  useEffect(() => {
+    if (!open) setReaderLayoutMode('spread')
   }, [open])
 
   const [pageAreaSize, setPageAreaSize] = useState({ w: 0, h: 0 })
+  const [spreadFitMotionActive, setSpreadFitMotionActive] = useState(false)
   const pageAreaRef = useRef<HTMLDivElement | null>(null)
+  const spreadTargetHoldUntilRef = useRef(0)
+  const prevWorkspaceDeskLeftPxRef = useRef<number | null>(null)
+  const deskFitHoldTimerRef = useRef<number | null>(null)
+  const pageAreaSizeRef = useRef(pageAreaSize)
+  pageAreaSizeRef.current = pageAreaSize
+  const targetSpreadPageWidthRef = useRef(targetSpreadPageWidth)
+  targetSpreadPageWidthRef.current = targetSpreadPageWidth
   const spreadTurnGridRef = useRef<HTMLDivElement | null>(null)
   const activePageRowRef = useRef<HTMLButtonElement | null>(null)
   const lessonBoardActivePageRowRef = useRef<HTMLDivElement | null>(null)
@@ -323,9 +358,13 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     const prev = prevSelectedUnitForPaintRef.current
     if (prev != null && prev !== selectedUnitId && selectedUnitId != null) {
       setSpreadReportEpoch((n) => n + 1)
+      setSpreadSlotsPixelsReady(false)
+      setSpreadDrawableTimedOut(false)
+      bookReadyToPresentNotifiedRef.current = false
+      onBookPaintInvalidated?.()
     }
     prevSelectedUnitForPaintRef.current = selectedUnitId
-  }, [open, selectedUnitId])
+  }, [open, selectedUnitId, onBookPaintInvalidated])
 
   useFullscreenOverlayPanels({
     open,
@@ -354,10 +393,63 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     selectedUnit,
     pageAreaRef,
     spreadRenderBaseKeyRef,
+    spreadTargetHoldUntilRef,
+    targetSpreadPageWidthRef,
     setPageAreaSize,
     setTargetSpreadPageWidth,
     setSpreadPageWidth,
   })
+
+  const pageAspectRatioRef = useRef(pageAspectRatio)
+  pageAspectRatioRef.current = pageAspectRatio
+  const showBookFrameRef = useRef(showBookFrame)
+  showBookFrameRef.current = showBookFrame
+
+  const syncWorkspaceDeskLeftPx = useCallback((nextPx: number) => {
+    const prev = prevWorkspaceDeskLeftPxRef.current
+    prevWorkspaceDeskLeftPxRef.current = nextPx
+    if (prev == null || prev === nextPx) return
+    const area = pageAreaSizeRef.current
+    if (!(area.w > 0) || !(area.h > 0)) return
+    const nextArea = pageAreaSizeAfterDeskLeftShift(area, prev, nextPx)
+    setPageAreaSize(nextArea)
+    setTargetSpreadPageWidth(
+      computeSpreadPageWidth(
+        nextArea.w,
+        nextArea.h,
+        pageAspectRatioRef.current,
+        1,
+        showBookFrameRef.current,
+      ),
+    )
+    spreadTargetHoldUntilRef.current = performance.now() + SPREAD_WORKSPACE_FIT_MOTION_MS
+    setSpreadFitMotionActive(true)
+    if (deskFitHoldTimerRef.current != null) window.clearTimeout(deskFitHoldTimerRef.current)
+    deskFitHoldTimerRef.current = window.setTimeout(() => {
+      deskFitHoldTimerRef.current = null
+      spreadTargetHoldUntilRef.current = 0
+      setSpreadFitMotionActive(false)
+    }, SPREAD_WORKSPACE_FIT_MOTION_MS)
+  }, [])
+
+  useEffect(() => {
+    if (open) return
+    prevWorkspaceDeskLeftPxRef.current = null
+    spreadTargetHoldUntilRef.current = 0
+    setSpreadFitMotionActive(false)
+    if (deskFitHoldTimerRef.current != null) {
+      window.clearTimeout(deskFitHoldTimerRef.current)
+      deskFitHoldTimerRef.current = null
+    }
+  }, [open])
+
+  useEffect(() => {
+    return () => {
+      if (deskFitHoldTimerRef.current != null) {
+        window.clearTimeout(deskFitHoldTimerRef.current)
+      }
+    }
+  }, [])
 
   function onPdfPageLoadSuccess(page: { originalWidth?: number; originalHeight?: number; width: number; height: number }) {
     const rawWidth = page.originalWidth ?? page.width
@@ -523,6 +615,8 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     setTextAlign,
     textFontId,
     setTextFontId,
+    textFontWeight,
+    setTextFontWeight,
     textFillColor,
     setTextFillColor,
     pickTextFillColor,
@@ -650,9 +744,64 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     return Math.max(1, Math.floor(spreadPageWidth))
   }, [spreadPageWidth])
 
-  /** Frame-aware width is applied directly â€” no CSS resize scale in the reader. */
-  const spreadDisplayScale = 1
-  const spreadReaderDisplayScale = 1
+  const spreadDisplayScale = useMemo(
+    () =>
+      computeSpreadReaderResizeScale(
+        layoutSpreadPageWidth,
+        targetSpreadPageWidth,
+        pageAspectRatio,
+        spreadGutterPullRatio,
+        showBookFrame,
+      ),
+    [
+      layoutSpreadPageWidth,
+      targetSpreadPageWidth,
+      pageAspectRatio,
+      spreadGutterPullRatio,
+      showBookFrame,
+    ],
+  )
+
+  const layoutSpreadCluster = useMemo(
+    () =>
+      computeSpreadClusterMetrics(
+        layoutSpreadPageWidth,
+        pageAspectRatio,
+        spreadGutterPullRatio,
+      ),
+    [layoutSpreadPageWidth, pageAspectRatio, spreadGutterPullRatio],
+  )
+
+  const spreadReaderDisplayScale = useMemo(
+    () =>
+      computeSpreadReaderDisplayScale(
+        spreadDisplayScale,
+        pageAreaSize.w,
+        pageAreaSize.h,
+        layoutSpreadCluster.spreadOverlayWidthPx,
+        layoutSpreadCluster.pageCanvasHeightPx,
+        showBookFrame,
+      ),
+    [
+      spreadDisplayScale,
+      pageAreaSize.w,
+      pageAreaSize.h,
+      layoutSpreadCluster.spreadOverlayWidthPx,
+      layoutSpreadCluster.pageCanvasHeightPx,
+      showBookFrame,
+    ],
+  )
+
+  const spreadResizeScaleHold = spreadResizeScaleIsActive(spreadReaderDisplayScale)
+
+  useEffect(() => {
+    if (!open) return
+    if (!shouldCommitSpreadRenderWidth(layoutSpreadPageWidth, targetSpreadPageWidth)) return
+    const timeoutId = window.setTimeout(() => {
+      setSpreadPageWidth(targetSpreadPageWidth)
+    }, SPREAD_RESIZE_COMMIT_IDLE_MS)
+    return () => window.clearTimeout(timeoutId)
+  }, [open, layoutSpreadPageWidth, targetSpreadPageWidth])
 
   /** Layout measured and render width is usable (bucket-stable; no spreadPageWidth >= target gate). */
   const spreadLayoutStable = useMemo(() => {
@@ -681,7 +830,8 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     setSpreadSlotsPixelsReady(true)
   }, [])
 
-  const confirmSpreadSlotPixels = !onBookReadyToPresent || userPresented
+  /** Hidden welcome warm must report pixels so we only leave the cover when the spread is painted. */
+  const confirmSpreadSlotPixels = true
 
   const spreadCachePrimed = useMemo(() => {
     if (!selectedUnitId || !(layoutSpreadPageWidth > 0)) return false
@@ -710,6 +860,7 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
         spreadCachePrimed,
         bypassGate: spreadDrawableBypass,
         spreadDrawableTimedOut,
+        spreadResizeScaleHold,
       }),
     [
       spreadLayoutStable,
@@ -718,6 +869,7 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
       spreadCachePrimed,
       spreadDrawableBypass,
       spreadDrawableTimedOut,
+      spreadResizeScaleHold,
     ],
   )
 
@@ -743,22 +895,17 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     if (!open || !onBookReadyToPresent) return
     if (bookReadyToPresentNotifiedRef.current) return
     if (!selectedUnitId || !hasResolvedUnit) return
-    if (userPresented) {
-      if (!spreadDrawableReady) return
-    } else if (!spreadLayoutStable || !spreadCachePrimed) {
-      return
-    }
+    if (!spreadLayoutStable) return
+    if (!spreadSlotsPixelsReady) return
     bookReadyToPresentNotifiedRef.current = true
     onBookReadyToPresent()
   }, [
     open,
     onBookReadyToPresent,
-    userPresented,
     selectedUnitId,
     hasResolvedUnit,
-    spreadDrawableReady,
     spreadLayoutStable,
-    spreadCachePrimed,
+    spreadSlotsPixelsReady,
   ])
 
   useEffect(() => {
@@ -797,33 +944,15 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
       setSpreadDrawableTimedOut(false)
       return
     }
-    const spreadPrimed =
-      selectedUnitId != null &&
-      layoutSpreadPageWidth > 0 &&
-      areReaderSpreadPagesPrefetched({
-        unitId: selectedUnitId,
-        anchorPage: pageNumber,
-        visiblePages,
-        spreadPageWidthPx: layoutSpreadPageWidth,
-      })
-    if (!spreadPrimed) {
-      setSpreadSlotsPixelsReady(false)
-      setSpreadDrawableTimedOut(false)
-    }
-  }, [
-    open,
-    pageNumber,
-    spreadReportEpoch,
-    selectedUnitId,
-    layoutSpreadPageWidth,
-    visiblePages,
-  ])
+    setSpreadSlotsPixelsReady(false)
+    setSpreadDrawableTimedOut(false)
+  }, [open, pageNumber, spreadReportEpoch, selectedUnitId])
 
   useEffect(() => {
     if (!open || !selectedUnitId || spreadResizeScaleEnabled) return
     const nextBucket = readerPrefetchWidthBucket(layoutSpreadPageWidth)
     const prevBucket = lastReaderPrefetchWidthBucketRef.current
-    if (prevBucket !== null && prevBucket !== nextBucket) {
+    if (prevBucket !== null && nextBucket < prevBucket) {
       invalidateReaderPrefetchStaleWidthBucketsForUnit(selectedUnitId, layoutSpreadPageWidth)
     }
     lastReaderPrefetchWidthBucketRef.current = nextBucket
@@ -1104,7 +1233,7 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
   })
 
   const effectiveSpreadScreenScale =
-    bookFocusZoom.focusLayout?.scale ?? spreadReaderDisplayScale
+    bookFocusZoom.focusLayout?.scale ?? 1
 
   useEffect(() => {
     onFocusPresentationChange?.(bookFocusZoom.focusActive)
@@ -1431,8 +1560,28 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
 
   useArrowKeyPageTurn({
     open,
+    enabled: readerLayoutMode === 'spread',
     goToAdjacentPage,
   })
+
+  const enterPageGridOverview = useCallback(() => {
+    bookFocusZoom.clearFocusZoom()
+    bookPinchZoom.clearPinchZoom()
+    setAnnotationMode('select')
+    setReaderLayoutMode('pageGrid')
+  }, [bookFocusZoom, bookPinchZoom, setAnnotationMode])
+
+  const exitPageGridOverview = useCallback(() => {
+    setReaderLayoutMode('spread')
+  }, [])
+
+  const openSpreadAtPageFromGrid = useCallback(
+    (page: number) => {
+      goToPage(page)
+      setReaderLayoutMode('spread')
+    },
+    [goToPage],
+  )
 
   const { onDocumentLoadSuccess } = useBookPdfPageSync({
     selectedBookId,
@@ -1575,8 +1724,8 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     readingCheckHotspotPlacementActive,
     cancelReadingCheckHotspotPlacement,
     captionDialogOpen: captionDialog != null,
-    translateDockOpen,
-    setTranslateDockOpen,
+    translateDockOpen: classToolId === 'translate',
+    setTranslateDockOpen: (v: boolean) => setClassToolId(v ? 'translate' : null),
     penThicknessStep,
     setPenThicknessStep,
     markerThicknessStep,
@@ -1674,10 +1823,15 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     isMounted,
     open,
     isPageListOpen,
+    syncWorkspaceDeskLeftPx,
     pageListRailTab,
     exportCaptureLayoutActive,
     showBookFrame,
     setShowBookFrame,
+    readerLayoutMode,
+    enterPageGridOverview,
+    exitPageGridOverview,
+    openSpreadAtPageFromGrid,
     isVisible,
     isWhiteboardOpen: isWhiteboardOpen && !isWhiteboardMinimized,
     isWhiteboardSessionOpen: isWhiteboardOpen,
@@ -1721,6 +1875,7 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     pinchZoomActive: bookPinchZoom.pinchZoomActive,
     clearPinchZoom: bookPinchZoom.clearPinchZoom,
     stepPinchZoom: bookPinchZoom.stepPinchZoom,
+    pageAspectRatio,
     pageJumpDraft,
     pageListNumbers: visiblePages,
     pageListScrollRoot,
@@ -1821,6 +1976,7 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     setTextVisualStyle,
     setTextAlign,
     setTextFontId,
+    setTextFontWeight,
     setWatermarkEnabled,
     openWhiteboardWithDefaultPlacement,
     shapeColor,
@@ -1828,6 +1984,7 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     showSpreadRightPage,
     spreadDisplayScale,
     spreadReaderDisplayScale,
+    spreadFitMotionActive,
     spreadGutterPullRatio,
     spreadPageWidth,
     spreadStrokeCaptureEnabled: spreadStrokeCaptureEnabled && !bookFocusZoom.focusDrawActive,
@@ -1904,13 +2061,16 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     suppressChrome,
     textFontSizeNorm,
     textFontId,
+    textFontWeight,
     textFillColor,
     bookTextVisualStyle,
     textVisualStyle,
     textAlign,
     toolbarCaps,
-    translateDockOpen,
-    setTranslateDockOpen,
+    translateDockOpen: classToolId === 'translate',
+    setTranslateDockOpen: (v: boolean) => setClassToolId(v ? 'translate' : null),
+    classToolId,
+    setClassToolId,
     unitPageBounds,
     unitThumbFileUrl,
     visiblePages,

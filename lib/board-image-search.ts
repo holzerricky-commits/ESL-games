@@ -5,6 +5,7 @@ import {
   scoreAndMergePixabayHits,
   variantHash,
 } from '@/lib/quiz-image-pixabay'
+import { STATIC_IMAGE_MIN_ACCEPT_SCORE } from '@/lib/quiz-image-relevance'
 import {
   applyStyleToStaticBaseQuery,
   buildStaticFallbackQueries,
@@ -161,7 +162,9 @@ export async function searchBoardStaticImages(
     return { results: [], fallback: 'no_results' }
   }
 
-  const sorted = [...merged.values()].sort((a, b) => b.score - a.score)
+  const sorted = [...merged.values()]
+    .filter((hit) => hit.score >= STATIC_IMAGE_MIN_ACCEPT_SCORE)
+    .sort((a, b) => b.score - a.score)
   const results = toBoardResults(sorted, limit)
   if (results.length === 0) {
     return { results: [], fallback: 'no_results' }

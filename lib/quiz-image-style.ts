@@ -62,27 +62,28 @@ const FLAT2D: StyleProfile = {
 }
 
 const PHOTO: StyleProfile = {
+  // Avoid “photography” / “camera” wording — Pixabay then returns gear, not the vocab subject.
   staticTemplates: [
-    '{word} real photo single subject clean background',
-    '{word} realistic photography plain background stock photo',
-    '{word} natural light photo centered subject',
-    '{word} isolated subject high quality photo',
+    '{word} single subject clean background stock',
+    '{word} isolated plain background stock',
+    '{word} natural light centered subject',
+    '{word} clear subject white background',
   ],
   gifTemplates: [
     '{word} real life gif clean background',
     '{word} realistic footage loop classroom safe',
     '{word} real object animation gif plain scene',
   ],
-  requiredTokens: ['real photo', 'realistic', 'natural light', 'single subject'],
-  forbiddenTokens: ['cartoon', 'vector', 'icon', '3d render', 'sketch'],
+  requiredTokens: ['single subject', 'clean background', 'isolated', 'white background'],
+  forbiddenTokens: ['cartoon', 'vector', 'icon', '3d render', 'sketch', 'camera', 'dslr'],
   pixabayImageType: 'photo',
-  minScoreRetry: null,
+  minScoreRetry: 10,
   boostFragments: [
-    'real(istic)?\\s*(photo|image|photography)',
+    'isolated|white\\s*background|plain\\s*background',
     'natural\\s*light',
     'single\\s*(object|subject)',
     'clean\\s*background',
-    'studio\\s*shot',
+    'studio\\s*shot|product',
   ],
   penaltyFragments: [
     'cartoon|anime|comic',
@@ -90,6 +91,7 @@ const PHOTO: StyleProfile = {
     'icon|pictogram|glyph',
     '3d\\s*render|cgi|isometric',
     'sketch|line\\s*art|charcoal',
+    'camera|dslr|tripod|lens\\s*kit|photographer',
   ],
 }
 

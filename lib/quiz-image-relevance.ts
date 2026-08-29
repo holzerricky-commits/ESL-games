@@ -109,6 +109,24 @@ const STATIONERY_CONFUSER_TERMS = [
   'garden flower',
 ]
 
+/** Only these words should keep camera / photography-gear hits. */
+const PHOTO_GEAR_VOCAB = new Set([
+  'camera',
+  'photo',
+  'photograph',
+  'photography',
+  'lens',
+  'tripod',
+  'photographer',
+])
+
+/**
+ * Minimum Pixabay tag score we’ll accept for a single quiz/Translate image.
+ * Below this we show the “no relevant image” SVG instead of a random flower/camera.
+ * A literal word match is typically +9; isolated/stock tags add more.
+ */
+export const STATIC_IMAGE_MIN_ACCEPT_SCORE = 8
+
 /**
  * Score Pixabay (and similar stock) metadata for literal stock-style ESL match.
  * Favors white/plain background and clear subject; avoids macro/tip confusion.
@@ -166,6 +184,21 @@ export function scoreTextRelevance(
   if (w === 'art') {
     if (/(camera|dslr|lens\b|photograph|photography|tripod)/.test(h)) score -= 14
     if (/(paint|painting|painter|palette|canvas|easel|brush\b|watercolor|acrylic)/.test(h)) score += 8
+  }
+
+  const wordIsPhotoGear =
+    PHOTO_GEAR_VOCAB.has(w) || tokens.some((t) => PHOTO_GEAR_VOCAB.has(t))
+  if (!wordIsPhotoGear) {
+    if (/(camera|dslr|lens\b|tripod|photographer|photography equipment|camera lens)/.test(h)) {
+      score -= 16
+    }
+  }
+
+  if (!NATURE_FULLFRAME_VOCAB.has(w)) {
+    if (/(flower|flowers|bloom|blooms|petal|bouquet|rose|tulip|daisy|sunflower)/.test(h)) {
+      // Only punish when tags look like the subject is the flower, not a tiny mention.
+      if (!h.includes(w)) score -= 12
+    }
   }
 
   if (!NATURE_FULLFRAME_VOCAB.has(w) && /(\bmacro\b|extreme close|microscopic|texture study)/.test(h)) {

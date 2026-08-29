@@ -14,7 +14,12 @@ export type BoardImageLayout = {
   anchorNorm: { x: number; y: number } | null
   sizingWidthPx?: number
   sizingViewportHeightPx?: number
+  /** Fraction of board width for the placed picture (default ~0.4). Use ~0.12 for sticker-sized Translate drops. */
+  maxWidthFraction?: number
 }
+
+/** Translate dock → book/board: small like a stamp sticker, not a full paste. */
+export const TRANSLATE_PLACE_IMAGE_WIDTH_FRACTION = 0.12
 
 export type EncodedBoardImage = {
   dataUrl: string
@@ -50,6 +55,7 @@ export function buildImageCommandFromEncoded(
       anchorNorm: layout.anchorNorm,
       sizingWidthPx: layout.sizingWidthPx,
       sizingViewportHeightPx: layout.sizingViewportHeightPx,
+      maxWidthFraction: layout.maxWidthFraction,
     },
   )
   return {

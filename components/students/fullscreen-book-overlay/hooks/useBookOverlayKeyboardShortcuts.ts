@@ -1,5 +1,10 @@
 import { useEffect, useRef } from 'react'
-import type { AnnotationStrokeThicknessStep, BookAnnotationInteractionMode } from '@/lib/books/annotation-storage'
+import {
+  ANNOTATION_INK_THICKNESS_STEP_MAX,
+  type AnnotationStrokeThicknessStep,
+  type BookAnnotationInteractionMode,
+} from '@/lib/books/annotation-storage'
+import { TEXT_THICKNESS_STEP_MAX } from '@/lib/books/text-font-size-steps'
 import type { StampVariant, WritableStickerVariant } from '@/lib/books/annotation-command-types'
 import { isQuickStickerInteraction, type StickerKind } from '@/lib/books/sticker-tool'
 import {
@@ -35,10 +40,11 @@ import { pasteImageOutcomeToastKind } from '@/lib/books/clipboard-image'
 import { toast } from 'sonner'
 import { useStudentRewardBurstOptional } from '@/components/students/student-reward-burst-context'
 
-const MAX_THICKNESS_STEP = 6 satisfies AnnotationStrokeThicknessStep
-
-function clampThicknessStep(step: number): AnnotationStrokeThicknessStep {
-  return Math.max(0, Math.min(MAX_THICKNESS_STEP, step)) as AnnotationStrokeThicknessStep
+function clampThicknessStep(
+  step: number,
+  max: AnnotationStrokeThicknessStep = ANNOTATION_INK_THICKNESS_STEP_MAX,
+): AnnotationStrokeThicknessStep {
+  return Math.max(0, Math.min(max, step)) as AnnotationStrokeThicknessStep
 }
 
 interface UseBookOverlayKeyboardShortcutsArgs {
@@ -418,7 +424,7 @@ export function useBookOverlayKeyboardShortcuts({
         return
       }
       if (annotationMode === 'text') {
-        setTextThicknessStep(clampThicknessStep(textThicknessStep + delta))
+        setTextThicknessStep(clampThicknessStep(textThicknessStep + delta, TEXT_THICKNESS_STEP_MAX))
         return
       }
       if (annotationMode === 'marker') {
@@ -426,7 +432,11 @@ export function useBookOverlayKeyboardShortcuts({
         return
       }
       if (annotationMode === 'sticky') {
-        setStickyThicknessStep(clampThicknessStep(stickyThicknessStep + delta))
+        setStickyThicknessStep(clampThicknessStep(stickyThicknessStep + delta, TEXT_THICKNESS_STEP_MAX))
+        return
+      }
+      if (annotationMode === 'sticker' && stickerKind === 'writable') {
+        setStickyThicknessStep(clampThicknessStep(stickyThicknessStep + delta, TEXT_THICKNESS_STEP_MAX))
         return
       }
       if (isBookOverlayShapeMode(annotationMode)) {
@@ -507,6 +517,7 @@ export function useBookOverlayKeyboardShortcuts({
           return
         }
         if (pdfDialogOpen || regionSelectOpen || captionDialogOpen) return
+        if (typeof document !== 'undefined' && document.querySelector('[data-book-overlay-modal]')) return
         if (hasAnyAnnotationSelection()) {
           e.preventDefault()
           commitNudgeGesture()

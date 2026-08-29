@@ -8,7 +8,7 @@ export function getImageUrl(keyword: string, style?: string): string {
 
 /**
  * Word-relevant image URL for quiz review cards. Resolves via `/api/quiz-image`:
- * - `type=static`: Pixabay when `PIXABAY_API_KEY` is set; otherwise LoremFlickr (or placeholder SVG).
+ * - `type=static`: Pixabay when `PIXABAY_API_KEY` is set; otherwise a neutral SVG placeholder.
  * - `type=gif`: GIPHY search when `GIPHY_API_KEY` is set, otherwise an SVG placeholder.
  * `id` changes the variant (e.g. new id on "Try another image").
  */
@@ -24,7 +24,7 @@ export function getReliableImageUrl(
   imageStyle?: string,
   previousResolvedUrl?: string
 ): string {
-  const q = (keyword.trim().toLowerCase() || 'nature').slice(0, 120)
+  const q = (keyword.trim().toLowerCase() || 'object').slice(0, 120)
   const v = (id ?? String(Math.floor(Math.random() * 1e9))).slice(0, 64)
   const params = new URLSearchParams({ q, v, type })
   const sq = imageSearchQuery?.trim()

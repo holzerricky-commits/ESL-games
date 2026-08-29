@@ -87,14 +87,7 @@ import {
 } from '@/lib/books/clipboard-text'
 import { toast } from 'sonner'
 import { BoardImageSearchPanel } from '@/components/students/lesson-board/BoardImageSearchPanel'
-import { useSavedWords } from '@/components/students/fullscreen-book-overlay/hooks/useSavedWords'
-import type { BoardImageInsertRequest } from '@/lib/lesson-board/board-image-insert'
-import {
-  fetchFlashcardTranslation,
-  formatFlashcardChineseLine,
-  parseFlashcardChineseLineParts,
-} from '@/lib/lesson-board/flashcard-translate-client'
-import { FLASHCARD_PLACEHOLDER_ZH } from '@/lib/lesson-board/lesson-board-flashcard-layout'
+import { useBoardImageSearchInsert } from '@/components/students/lesson-board/use-board-image-search-insert'
 
 const SCROLLBAR_HIDDEN =
   'overflow-y-auto overscroll-y-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
@@ -133,6 +126,7 @@ type LayerProps = Pick<
   | 'shapeRoundedCorners'
   | 'textFontSizeNorm'
   | 'textFontId'
+  | 'textFontWeight'
   | 'textVisualStyle'
   | 'textAlign'
   | 'textFillColor'
@@ -307,10 +301,7 @@ export function InfiniteWhiteboardPanel({
     dy: number
   } | null>(null)
 
-  const { saveWord } = useSavedWords({
-    studentId,
-    onPersistenceError: (message) => toast.error(message),
-  })
+  const handleInsertSearchImage = useBoardImageSearchInsert({ studentId, wbAnnRef })
 
   const setWbSessionSelected = useCallback(
     (ids: string[]) => {
@@ -767,78 +758,6 @@ export function InfiniteWhiteboardPanel({
     [onEnterSelectMode, showPasteImageOutcomeToast, wbAnnRef],
   )
 
-  const handleInsertSearchImage = useCallback(
-    async (request: BoardImageInsertRequest) => {
-      const word = request.word.trim()
-      const showPinyin = request.showPinyin !== false
-      const isGif = request.mediaType === 'gif'
-      let ok = false
-      let savedToVocab = false
-      if (request.mode === 'flashcard') {
-        if (!word) {
-          toast.error('Type a word to search before adding a flashcard.')
-          return false
-        }
-        let chineseLine = request.chineseLine?.trim()
-        let vocabChinese = request.vocabChinese?.trim()
-        let vocabPinyin = request.vocabPinyin?.trim() ?? ''
-        if (!chineseLine) {
-          const translation = await fetchFlashcardTranslation(word, request.contextHint)
-          if (translation) {
-            vocabChinese = translation.chinese
-            vocabPinyin = translation.pinyin
-            chineseLine = formatFlashcardChineseLine(translation, { showPinyin })
-          } else {
-            chineseLine = FLASHCARD_PLACEHOLDER_ZH
-          }
-        }
-        ok =
-          (await wbAnnRef.current?.insertFlashcardFromSearchUrl?.(
-            request.fullUrl,
-            word,
-            chineseLine,
-          )) ?? false
-        if (ok) {
-          if (
-            request.saveToVocab &&
-            chineseLine !== FLASHCARD_PLACEHOLDER_ZH
-          ) {
-            const parsed = parseFlashcardChineseLineParts(chineseLine)
-            const chinese = vocabChinese || parsed?.chinese
-            if (chinese) {
-              saveWord({
-                source: word,
-                chinese,
-                pinyin: vocabPinyin || parsed?.pinyin || '',
-                imageUrl: request.fullUrl,
-              })
-              savedToVocab = true
-            }
-          }
-          if (chineseLine !== FLASHCARD_PLACEHOLDER_ZH) {
-            const base = isGif ? 'Flashcard added (GIF)' : 'Flashcard added'
-            toast.success(savedToVocab ? `${base} · saved to your word list` : base)
-          } else {
-            toast.warning('Flashcard added — could not translate; edit Chinese on the board.')
-          }
-        } else {
-          toast.error('Could not add flashcard — try another image.')
-        }
-      } else {
-        ok =
-          (await wbAnnRef.current?.insertImageFromSearchUrl?.(request.fullUrl, word || undefined)) ??
-          false
-        if (ok) {
-          toast.success(isGif ? 'GIF added' : 'Picture added')
-        } else {
-          toast.error('Could not add picture — try another image.')
-        }
-      }
-      return ok
-    },
-    [saveWord, wbAnnRef],
-  )
-
   const whiteboardDomConfig = useMemo((): SpreadSessionDomConfig | null => {
     if (!whiteboardInkDelegated || !whiteboardSessionDoc) return null
     return {
@@ -849,6 +768,7 @@ export function InfiniteWhiteboardPanel({
       textColor: layerProps.textColor ?? '#111827',
       textFontSizeNorm: layerProps.textFontSizeNorm,
       textFontId: layerProps.textFontId,
+      textFontWeight: layerProps.textFontWeight ?? 'regular',
       textVisualStyle: layerProps.textVisualStyle ?? 'plain',
       textAlign: layerProps.textAlign ?? 'left',
       textFillColor: layerProps.textFillColor ?? '#ffffff',
@@ -897,6 +817,7 @@ export function InfiniteWhiteboardPanel({
     layerProps.textColor,
     layerProps.textFillColor,
     layerProps.textFontId,
+    layerProps.textFontWeight,
     layerProps.textFontSizeNorm,
     layerProps.textVisualStyle,
     layerProps.textAlign,
@@ -1112,6 +1033,7 @@ export function InfiniteWhiteboardPanel({
             height: paintContentHeightPx,
             ...surfaceStyle,
           }}
+          data-whiteboard-content=""
           data-lesson-board-orientation={activePageOrientation}
         >
           {useLessonBoardSessionInk && whiteboardSessionDoc ? (

@@ -15,7 +15,7 @@ import {
   styleMinScoreForRetry,
   type ImageStyleKey,
 } from '@/lib/quiz-image-style'
-import { scoreGifMetadata } from '@/lib/quiz-image-relevance'
+import { scoreGifMetadata, STATIC_IMAGE_MIN_ACCEPT_SCORE } from '@/lib/quiz-image-relevance'
 
 const IMAGE_CACHE_TTL_MS = 30 * 60_000
 const IMAGE_CACHE_MAX_ENTRIES = 300
@@ -91,42 +91,6 @@ function cacheImageUrl(cacheKey: string, url: string): void {
     if (!oldest) break
     imageUrlCache.delete(oldest)
   }
-}
-
-/** LoremFlickr tags from the vocabulary word (max a few tags). */
-function flickrTagParts(query: string): string[] {
-  const parts = query
-    .toLowerCase()
-    .trim()
-    .split(/[\s,]+/)
-    .map((s) => s.replace(/[^a-z0-9-]/g, ''))
-    .filter((s) => s.length >= 1)
-    .slice(0, 4)
-  return parts.length > 0 ? parts : ['nature']
-}
-
-function flickrTagsForStyle(styleKey: ImageStyleKey, wordTags: string[]): string {
-  const extra =
-    styleKey === 'flat2d'
-      ? 'cartoon'
-      : styleKey === 'render3d'
-        ? 'computer'
-        : styleKey === 'photo'
-          ? null
-          : null
-  let tags = [...wordTags]
-  if (extra && !tags.includes(extra)) {
-    if (tags.length >= 4) tags = tags.slice(0, 3)
-    tags.push(extra)
-  }
-  return tags.join(',')
-}
-
-function loremFlickrRedirect(query: string, variant: string, styleKey: ImageStyleKey): NextResponse {
-  const tags = flickrTagsForStyle(styleKey, flickrTagParts(query))
-  const lock = variantHash(`${variant}\0${styleKey}`) % 10_000
-  const url = `https://loremflickr.com/g/800/500/${tags}?lock=${lock}`
-  return NextResponse.redirect(url, 302)
 }
 
 function noGifFoundSvgMarkup(word: string): string {
@@ -238,10 +202,10 @@ function buildGifSearchTiers(
   const opts = imageSearchQuery?.trim() ? { imageSearchQuery } : undefined
   const tier1Base = buildGifSearchQuery(rawWord, opts)
   const tier1 = applyStyleToGifSearchString(tier1Base, styleKey, variant, 0)
-  const tier2Base = q.length > 0 ? q : 'nature'
+  const tier2Base = q.length > 0 ? q : 'object'
   const tier2 = applyStyleToGifSearchString(tier2Base, styleKey, variant, 1)
   const tier3Base =
-    variantHash(`${rawWord}\0gif-tier3\0${styleKey}`) % 2 === 0 ? `${tier2Base} loop` : `${tier2Base} nature`
+    variantHash(`${rawWord}\0gif-tier3\0${styleKey}`) % 2 === 0 ? `${tier2Base} loop` : `${tier2Base} simple`
   const tier3 = applyStyleToGifSearchString(tier3Base, styleKey, variant, 2)
   const tiers: string[] = [tier1]
   if (tier2 !== tier1) tiers.push(tier2)
@@ -328,14 +292,17 @@ function selectBestGifUrl(
 
 /**
  * Keyword-relevant quiz media:
- * - type=static: Pixabay when `PIXABAY_API_KEY` is set; otherwise stale cache, then LoremFlickr.
+ * - type=static: Pixabay when `PIXABAY_API_KEY` is set (rejects low-score hits); otherwise SVG.
  * - type=gif: GIPHY search when `GIPHY_API_KEY` is set, otherwise SVG placeholder.
  *
  * Query: q = vocabulary term, v = variant id (new seed per "Try another image"), type=static|gif.
  */
 export async function GET(req: NextRequest) {
-  const rawQ = req.nextUrl.searchParams.get('q')?.trim() || 'nature'
+  const rawQ = req.nextUrl.searchParams.get('q')?.trim() || ''
   const q = rawQ.slice(0, 120)
+  if (!q) {
+    return svgResponse(noStaticFoundSvgMarkup('word'))
+  }
   const v = (req.nextUrl.searchParams.get('v') || '0').slice(0, 64)
   const sqRaw = req.nextUrl.searchParams.get('sq')?.trim() ?? ''
   const imageSearchQuery = sqRaw.slice(0, 240) || undefined
@@ -392,6 +359,7 @@ export async function GET(req: NextRequest) {
       const baseStatic = buildStaticSearchQuery(q, queryOpts)
       const pxImageType = getPixabayImageType(styleKey)
       const scoreFloor = styleMinScoreForRetry(styleKey)
+      const acceptFloor = STATIC_IMAGE_MIN_ACCEPT_SCORE
       const maxPxVariants = scoreFloor == null ? 1 : 2
       const pxCandidates = new Map<string, ScoredUrl>()
 
@@ -409,7 +377,7 @@ export async function GET(req: NextRequest) {
         if (scoreFloor == null) break
         if (bestPx && bestPx.score >= scoreFloor) break
       }
-      if (pxCandidates.size === 0) {
+      if (pxCandidates.size === 0 || !meetsAcceptFloor(pxCandidates, acceptFloor, prevNorm)) {
         const fallbacks = buildStaticFallbackQueries(q, baseStatic)
         for (const fq of fallbacks) {
           const hits = await fetchPixabayHits(pixabayApiKey, fq, {
@@ -419,23 +387,28 @@ export async function GET(req: NextRequest) {
           for (const scored of scoreAndMergePixabayHits(q, hits, styleKey)) {
             mergeScoredCandidate(pxCandidates, scored.fullUrl, scored.score)
           }
-          if (pxCandidates.size > 0) break
+          if (meetsAcceptFloor(pxCandidates, acceptFloor, prevNorm)) break
         }
       }
       const bestPxOverall = pickBestExcluding(pxCandidates, prevNorm)
-      if (bestPxOverall) {
+      if (bestPxOverall && bestPxOverall.score >= acceptFloor) {
         cacheImageUrl(cacheKey, bestPxOverall.url)
         return NextResponse.redirect(bestPxOverall.url, 302)
       }
     } catch {
       /* fall through */
     }
-    const staleHit = tryStaleStaticCache(q, styleKey, prevNorm)
-    if (staleHit) return staleHit
     return svgResponse(noStaticFoundSvgMarkup(q))
   }
 
-  const staleNoKey = tryStaleStaticCache(q, styleKey, prevNorm)
-  if (staleNoKey) return staleNoKey
-  return loremFlickrRedirect(q, v, styleKey)
+  return svgResponse(noStaticFoundSvgMarkup(q))
+}
+
+function meetsAcceptFloor(
+  map: Map<string, ScoredUrl>,
+  floor: number,
+  prevNorm: string | null,
+): boolean {
+  const best = pickBestExcluding(map, prevNorm)
+  return Boolean(best && best.score >= floor)
 }

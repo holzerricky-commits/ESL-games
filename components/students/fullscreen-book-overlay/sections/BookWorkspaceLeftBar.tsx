@@ -1,7 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { BookOpen, Languages, ListChecks, Presentation, Settings, Smartphone, Wrench, X } from 'lucide-react'
+import { BookOpen, ImageIcon, Languages, ListChecks, Presentation, Settings, Smartphone, SquareDashedMousePointer, Volume2, Wrench, X } from 'lucide-react'
 import { BookOverlayPageListButton } from '@/components/students/fullscreen-book-overlay/sections/BookOverlayPageListButton'
 import {
   FloatingSideToolbarButton,
@@ -25,6 +25,9 @@ interface BookWorkspaceLeftBarProps {
   onWhiteboardClick: () => void
   translateDockOpen: boolean
   onTranslateDockToggle: () => void
+  /** Picture search for the lesson board (class-tool drawer). */
+  picturesDockOpen?: boolean
+  onPicturesDockToggle?: () => void
   onOpenCoachDialog: () => void
   onClose: () => void
   /** Lesson settings drawer (praise style, etc.). */
@@ -41,6 +44,14 @@ interface BookWorkspaceLeftBarProps {
   hasReadingChecks?: boolean
   readingChecksOpen?: boolean
   onReadingChecksToggle?: () => void
+  /** Book listening playlist (when tracks are attached). */
+  hasBookAudio?: boolean
+  bookAudioOpen?: boolean
+  bookAudioPlaying?: boolean
+  onBookAudioToggle?: () => void
+  /** Workbook exercise boxes on the page. */
+  bookExercisesOpen?: boolean
+  onBookExercisesToggle?: () => void
 }
 
 function RailIconStack({ children }: { children: ReactNode }) {
@@ -60,6 +71,8 @@ export function BookWorkspaceLeftBar({
   onWhiteboardClick,
   translateDockOpen,
   onTranslateDockToggle,
+  picturesDockOpen = false,
+  onPicturesDockToggle,
   onOpenCoachDialog,
   onClose,
   lessonSettingsOpen = false,
@@ -72,6 +85,12 @@ export function BookWorkspaceLeftBar({
   hasReadingChecks = false,
   readingChecksOpen = false,
   onReadingChecksToggle,
+  hasBookAudio = false,
+  bookAudioOpen = false,
+  bookAudioPlaying = false,
+  onBookAudioToggle,
+  bookExercisesOpen = false,
+  onBookExercisesToggle,
 }: BookWorkspaceLeftBarProps) {
   if (!bookPageNavigationChromeEnabled) return null
   if (!hasResolvedUnit || numPages == null) return null
@@ -161,9 +180,45 @@ export function BookWorkspaceLeftBar({
             <Wrench className={FLOATING_SIDE_TOOLBAR_ICON} aria-hidden />
           </FloatingSideToolbarButton>
         ) : null}
+        {hasBookAudio && onBookAudioToggle ? (
+          <FloatingSideToolbarButton
+            className={cn(
+              (bookAudioOpen || bookAudioPlaying) && FLOATING_SIDE_TOOLBAR_BUTTON_ACTIVE,
+            )}
+            aria-label={bookAudioOpen ? 'Close listening playlist' : 'Open listening playlist'}
+            aria-pressed={bookAudioOpen}
+            title="Listening tracks"
+            onClick={onBookAudioToggle}
+          >
+            <Volume2 className={FLOATING_SIDE_TOOLBAR_ICON} aria-hidden />
+          </FloatingSideToolbarButton>
+        ) : null}
+        {onBookExercisesToggle ? (
+          <FloatingSideToolbarButton
+            className={cn(bookExercisesOpen && FLOATING_SIDE_TOOLBAR_BUTTON_ACTIVE)}
+            aria-label={bookExercisesOpen ? 'Close exercises' : 'Open exercises'}
+            aria-pressed={bookExercisesOpen}
+            title="Exercises"
+            onClick={onBookExercisesToggle}
+          >
+            <SquareDashedMousePointer className={FLOATING_SIDE_TOOLBAR_ICON} aria-hidden />
+          </FloatingSideToolbarButton>
+        ) : null}
+        {onPicturesDockToggle ? (
+          <FloatingSideToolbarButton
+            className={cn(picturesDockOpen && FLOATING_SIDE_TOOLBAR_BUTTON_ACTIVE)}
+            aria-label={picturesDockOpen ? 'Close pictures' : 'Open pictures'}
+            aria-pressed={picturesDockOpen}
+            title="Find pictures for the book or lesson board"
+            onClick={onPicturesDockToggle}
+            data-book-pictures-anchor
+          >
+            <ImageIcon className={FLOATING_SIDE_TOOLBAR_ICON} aria-hidden />
+          </FloatingSideToolbarButton>
+        ) : null}
         <FloatingSideToolbarButton
           className={cn(translateDockOpen && FLOATING_SIDE_TOOLBAR_BUTTON_ACTIVE)}
-          aria-label={translateDockOpen ? 'Close translate dock' : 'Open translate dock'}
+          aria-label={translateDockOpen ? 'Close translate' : 'Open translate'}
           aria-pressed={translateDockOpen}
           title={`Translate to Chinese (${SC.translate})`}
           onClick={onTranslateDockToggle}
