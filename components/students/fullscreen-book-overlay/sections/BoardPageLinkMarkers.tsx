@@ -2,6 +2,7 @@
 
 import type { PointerEvent, RefObject } from 'react'
 import { useCallback } from 'react'
+import { PanelsTopLeft } from 'lucide-react'
 import {
   clampLinkCenter,
   lessonBoardPageLinkDisplayLabel,
@@ -9,6 +10,12 @@ import {
   type LessonBoardPageLink,
 } from '@/lib/books/lesson-board-page-links'
 import type { LessonBoardPage } from '@/lib/books/lesson-board-types'
+import {
+  BookPageLinkChip,
+  BOOK_PAGE_LINK_GLYPH_CLASS,
+  BOOK_PAGE_LINK_GLYPH_FILL_OPACITY,
+  BOOK_PAGE_LINK_GLYPH_STROKE,
+} from '@/components/students/fullscreen-book-overlay/sections/BookPageLinkChip'
 import { cn } from '@/lib/utils'
 
 type PageMarkerProps = {
@@ -76,20 +83,14 @@ function PageBoardLinkMarkers({
         ? pageLinks.map((link) => {
             const label = lessonBoardPageLinkDisplayLabel(link, boardPages)
             return (
-              <button
+              <BookPageLinkChip
                 key={link.id}
-                type="button"
-                className={cn(
-                  'board-page-link-marker absolute flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-[#D1D5DB] bg-[#FDFCFB] shadow-[0_1px_2px_rgba(0,0,0,0.10)] transition-[transform,box-shadow,border-color] duration-150',
-                  markersInteractive
-                    ? 'pointer-events-auto hover:scale-105 hover:border-[#9CA3AF] hover:shadow-[0_1px_3px_rgba(0,0,0,0.14)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40'
-                    : 'pointer-events-none',
-                )}
+                tone="board"
+                interactive={markersInteractive}
+                className="board-page-link-marker absolute -translate-x-1/2 -translate-y-1/2"
                 style={{
                   left: `${link.center[0] * 100}%`,
                   top: `${link.center[1] * 100}%`,
-                  width: 18,
-                  height: 18,
                 }}
                 title={label}
                 aria-label={`Open board: ${label}`}
@@ -105,11 +106,14 @@ function PageBoardLinkMarkers({
                   onOpenLink(link)
                 }}
               >
-                <span
-                  className="block h-1.5 w-1.5 rounded-full bg-[#6B7280]"
+                <PanelsTopLeft
+                  className={BOOK_PAGE_LINK_GLYPH_CLASS}
+                  strokeWidth={BOOK_PAGE_LINK_GLYPH_STROKE}
+                  fill="currentColor"
+                  fillOpacity={BOOK_PAGE_LINK_GLYPH_FILL_OPACITY}
                   aria-hidden
                 />
-              </button>
+              </BookPageLinkChip>
             )
           })
         : null}

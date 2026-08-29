@@ -16,6 +16,7 @@ import {
   Circle,
   Triangle,
   Type,
+  Bold,
   AlignLeft,
   AlignCenter,
   AlignRight,
@@ -42,6 +43,7 @@ import {
   ANNOTATION_TEXT_FONTS_FOR_PICKER,
   getAnnotationTextFont,
   type AnnotationTextFontId,
+  type AnnotationTextFontWeight,
 } from '@/lib/books/annotation-text-fonts'
 import { cn } from '@/lib/utils'
 
@@ -469,6 +471,40 @@ export function TopStripTextAlignChip({
         )
       })}
     </div>
+  )
+}
+
+const TEXT_WEIGHT_OPTIONS: {
+  id: AnnotationTextFontWeight
+  label: string
+  Icon: typeof Type
+}[] = [
+  { id: 'regular', label: 'Regular', Icon: Type },
+  { id: 'bold', label: 'Bold', Icon: Bold },
+]
+
+export function TopStripTextWeightChip({
+  value,
+  onChange,
+  idPrefix,
+}: {
+  value: AnnotationTextFontWeight
+  onChange: (weight: AnnotationTextFontWeight) => void
+  idPrefix: string
+}) {
+  return (
+    <SelectionContextValueMenu
+      value={value}
+      onChange={onChange}
+      options={TEXT_WEIGHT_OPTIONS.map(({ id, label, Icon }) => ({
+        id,
+        label,
+        icon: <Icon className={SELECTION_CONTEXT_ICON_CLASS} strokeWidth={1.75} aria-hidden />,
+      }))}
+      idPrefix={`${idPrefix}-text-weight`}
+      ariaLabel="Text weight"
+      popoverLayout="icons"
+    />
   )
 }
 

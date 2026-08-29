@@ -107,6 +107,13 @@ import {
   isAnnotationPointerDownAccepted,
 } from '@/lib/books/pen-barrel-button'
 import {
+  createStrokePointerLock,
+  isStrokePointerLockedTo,
+  shouldAcceptStrokePointerDown,
+  shouldStealStrokePointerLock,
+  type StrokePointerLock,
+} from '@/lib/books/stroke-pointer-lock'
+import {
   buildHoldMarkerLineStrokeCommand,
   buildHoldShapeCommand,
 } from '@/lib/books/hold-shape-commit'
@@ -129,7 +136,7 @@ import {
 } from '@/lib/books/stroke-shape-recognition'
 import { roundedCornersFieldForCommit } from '@/lib/books/shape-rounded-corners'
 import { coalescedPointerEvents } from '@/lib/books/stroke-pointer-samples'
-import { ensureStrokeCommitPoints } from '@/lib/books/stroke-tap-dot'
+import { ensureStrokeCommitPoints, strokeLayoutPxFromClientRect } from '@/lib/books/stroke-tap-dot'
 import { resolveAnnotationToolCursor } from '@/lib/books/annotation-tool-cursor'
 import {
   annotationIdsInMarquee,
@@ -319,6 +326,7 @@ export function useBookPageAnnotationLayer(
       shapeRoundedCorners = true,
       textFontSizeNorm,
       textFontId,
+      textFontWeight = 'regular',
       stickyFontSizeNorm,
       textVisualStyle = 'plain',
       textAlign = 'left',
@@ -373,6 +381,9 @@ export function useBookPageAnnotationLayer(
     const tapStartRef = useRef<[number, number] | null>(null)
     const tapStartClientRef = useRef<[number, number] | null>(null)
     const gestureRef = useRef<'stroke' | 'two' | 'tap' | null>(null)
+    /** Owner of the in-progress stroke / shape / tap — blocks palm / second finger. */
+    const strokePointerLockRef = useRef<StrokePointerLock>(null)
+    const [strokePointerActive, setStrokePointerActive] = useState(false)
     const straightStrokeAxisRef = useRef<StraightStrokeAxis | null>(null)
     const holdStraightRef = useRef(createStrokeHoldStraightTracker())
     const holdShapeDraftRef = useRef<HoldShapeDraft | null>(null)
@@ -1279,6 +1290,7 @@ export function useBookPageAnnotationLayer(
           text,
           fontSizeNorm: textFontSizeNorm,
           fontId: textFontId,
+          fontWeight: textFontWeight,
           color: textColor,
           ...(textAlign !== 'left' ? { textAlign } : {}),
           ...(textVisualStyle === 'filled'
@@ -1314,6 +1326,7 @@ export function useBookPageAnnotationLayer(
         textColor,
         textFillColor,
         textFontId,
+        textFontWeight,
         textFontSizeNorm,
         textVisualStyle,
         whiteboardInkDelegated,
@@ -1990,7 +2003,8 @@ export function useBookPageAnnotationLayer(
 
     function commitDraftStroke(draft: StrokeAnnotationCommand): void {
       if (sessionOwnsCanvasInk) return
-      const commitPoints = ensureStrokeCommitPoints(draft.points)
+      const layout = strokeLayoutPxFromClientRect(overlayRef.current?.getBoundingClientRect())
+      const commitPoints = ensureStrokeCommitPoints(draft.points, layout)
       if (commitPoints.length < 2) return
       const cmd: StrokeAnnotationCommand =
         draft.tool === 'pen'
@@ -2045,11 +2059,31 @@ export function useBookPageAnnotationLayer(
       onPointerSessionStart?.()
 
       const strokeTool = effectiveStrokeToolForPointer(mode, e)
+      const wantsInkGesture = Boolean(strokeTool) || isTwoPointTool
+      if (wantsInkGesture) {
+        if (!shouldAcceptStrokePointerDown(strokePointerLockRef.current, e)) {
+          return
+        }
+        if (shouldStealStrokePointerLock(strokePointerLockRef.current, e)) {
+          strokePointerLockRef.current = null
+          gestureRef.current = null
+          setStrokePointerActive(false)
+          setAnnotationGestureActive(false)
+          straightStrokeAxisRef.current = null
+          holdShapeDraftRef.current = null
+          resetStrokeHoldStraightTracker(holdStraightRef.current)
+          draftStrokeRef.current = null
+          twoDraftRef.current = null
+          paint(null, null)
+        }
+      }
 
       if (strokeTool) {
         if (sessionOwnsCanvasInk) return
         setAnnotationGestureActive(true)
         gestureRef.current = 'stroke'
+        strokePointerLockRef.current = createStrokePointerLock(e)
+        setStrokePointerActive(true)
         straightStrokeAxisRef.current = null
         holdShapeDraftRef.current = null
         resetStrokeHoldStraightTracker(holdStraightRef.current)
@@ -2067,6 +2101,7 @@ export function useBookPageAnnotationLayer(
         if (sessionOwnsCanvasInk) return
         setAnnotationGestureActive(true)
         gestureRef.current = 'two'
+        strokePointerLockRef.current = createStrokePointerLock(e)
         redoStackRef.current = []
         twoDraftRef.current = {
           kind: mode,
@@ -2121,7 +2156,9 @@ export function useBookPageAnnotationLayer(
             setEditingId(null)
           }
         }
+        if (!shouldAcceptStrokePointerDown(strokePointerLockRef.current, e)) return
         gestureRef.current = 'tap'
+        strokePointerLockRef.current = createStrokePointerLock(e)
         if (mode === 'sticker') {
           tapModeRef.current = isQuickStickerInteraction(mode, stickerKind) ? 'stamp' : 'sticky'
         } else {
@@ -2135,6 +2172,7 @@ export function useBookPageAnnotationLayer(
 
     function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
       if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
+      if (!isStrokePointerLockedTo(strokePointerLockRef.current, e.pointerId)) return
 
       if (gestureRef.current !== 'stroke' && gestureRef.current !== 'two') return
 
@@ -2154,6 +2192,8 @@ export function useBookPageAnnotationLayer(
           } else {
             draftStrokeRef.current = null
             gestureRef.current = null
+            strokePointerLockRef.current = null
+            setStrokePointerActive(false)
             paint(null, null)
           }
           return
@@ -2298,6 +2338,12 @@ export function useBookPageAnnotationLayer(
     }
 
     function onPointerUp(e: React.PointerEvent<HTMLDivElement>) {
+      if (!isStrokePointerLockedTo(strokePointerLockRef.current, e.pointerId)) {
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+          e.currentTarget.releasePointerCapture(e.pointerId)
+        }
+        return
+      }
       if (e.currentTarget.hasPointerCapture(e.pointerId)) {
         e.currentTarget.releasePointerCapture(e.pointerId)
       }
@@ -2307,6 +2353,8 @@ export function useBookPageAnnotationLayer(
 
       const gesture = gestureRef.current
       gestureRef.current = null
+      strokePointerLockRef.current = null
+      setStrokePointerActive(false)
       if (gesture === 'stroke' || gesture === 'two') {
         setAnnotationGestureActive(false)
       }
@@ -2439,6 +2487,7 @@ export function useBookPageAnnotationLayer(
             text: '',
             fontSizeNorm: textFontSizeNorm,
             fontId: textFontId,
+            fontWeight: textFontWeight,
             color: textColor,
             ...(textAlign !== 'left' ? { textAlign } : {}),
             ...(textVisualStyle === 'filled'
@@ -2476,6 +2525,7 @@ export function useBookPageAnnotationLayer(
             text: '',
             fontSizeNorm: stickyFontSizeNorm,
             fontId: textFontId,
+            fontWeight: textFontWeight,
             fillColor: defaultWritableStickerFill(writableStickerVariant, stickyFillColor),
             writableVariant: writableStickerVariant,
           }
@@ -2491,6 +2541,12 @@ export function useBookPageAnnotationLayer(
     }
 
     function onPointerCancel(e: React.PointerEvent<HTMLDivElement>) {
+      if (!isStrokePointerLockedTo(strokePointerLockRef.current, e.pointerId)) {
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+          e.currentTarget.releasePointerCapture(e.pointerId)
+        }
+        return
+      }
       if (e.currentTarget.hasPointerCapture(e.pointerId)) {
         e.currentTarget.releasePointerCapture(e.pointerId)
       }
@@ -2498,6 +2554,8 @@ export function useBookPageAnnotationLayer(
         setAnnotationGestureActive(false)
       }
       gestureRef.current = null
+      strokePointerLockRef.current = null
+      setStrokePointerActive(false)
       straightStrokeAxisRef.current = null
       holdShapeDraftRef.current = null
       resetStrokeHoldStraightTracker(holdStraightRef.current)
@@ -2675,8 +2733,9 @@ export function useBookPageAnnotationLayer(
       ],
     )
 
-    const effectiveOverlayCursor: CSSProperties['cursor'] =
-      isSelect || hasSelection
+    const effectiveOverlayCursor: CSSProperties['cursor'] = strokePointerActive
+      ? 'none'
+      : isSelect || hasSelection
         ? selectionCursor
         : mode === 'text' && !textToolHoverViaSessionLayer
           ? textToolPlacementCursor(textToolHoverTargetId, true, false, editingId)

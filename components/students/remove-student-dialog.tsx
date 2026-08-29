@@ -18,6 +18,17 @@ import {
   deleteStudentPermanently,
   putStudentOnBreak,
 } from '@/lib/students/selectors'
+import {
+  teacherDialogContentClass,
+  teacherDialogDescriptionClass,
+  teacherDialogOverlayClass,
+  teacherDialogTitleClass,
+  teacherFocusRingClass,
+  teacherGhostBtnClass,
+  teacherPrimaryBtnClass,
+  teacherQuietBtnClass,
+} from '@/components/teacher-chrome'
+import { cn } from '@/lib/utils'
 
 type RemoveMode = 'choose' | 'confirm-delete'
 
@@ -120,24 +131,32 @@ export function RemoveStudentDialog({
 
   return (
     <AlertDialog open={open} onOpenChange={handleOpenChange}>
-      <AlertDialogContent>
+      <AlertDialogContent
+        overlayClassName={teacherDialogOverlayClass}
+        className={teacherDialogContentClass}
+      >
         {mode === 'choose' ? (
           <>
             <AlertDialogHeader>
-              <AlertDialogTitle>What should happen to {studentName}?</AlertDialogTitle>
-              <AlertDialogDescription>
+              <AlertDialogTitle className={teacherDialogTitleClass}>
+                What should happen to {studentName}?
+              </AlertDialogTitle>
+              <AlertDialogDescription className={teacherDialogDescriptionClass}>
                 Most of the time you want them off the active list without throwing away their history.
               </AlertDialogDescription>
             </AlertDialogHeader>
-            <div className="space-y-3 py-1">
+            <div className="space-y-2 py-1">
               <button
                 type="button"
                 disabled={busy}
                 onClick={handlePutOnBreak}
-                className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3 text-left transition-colors hover:border-[var(--brand-blue)]/40 hover:bg-[var(--surface-1)] disabled:opacity-60"
+                className={cn(
+                  'w-full rounded-xl bg-[var(--surface-3)] p-3.5 text-left transition-colors hover:bg-[var(--surface-4)] disabled:opacity-60',
+                  teacherFocusRingClass,
+                )}
               >
-                <p className="text-sm font-semibold text-foreground">Put on break</p>
-                <p className="mt-1 text-xs leading-snug text-muted-foreground">
+                <p className="text-[13px] font-semibold tracking-tight text-foreground">Put on break</p>
+                <p className="mt-1 text-[12px] leading-snug text-muted-foreground">
                   Hide from your student list and free their weekly times. Keep notes, progress, and past
                   classes. You can restore them later.
                 </p>
@@ -146,23 +165,30 @@ export function RemoveStudentDialog({
                 type="button"
                 disabled={busy}
                 onClick={() => setMode('confirm-delete')}
-                className="w-full rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-left transition-colors hover:border-destructive/50 disabled:opacity-60"
+                className={cn(
+                  'w-full rounded-xl bg-[color-mix(in_srgb,var(--brand-red)_8%,var(--surface-3))] p-3.5 text-left transition-colors hover:bg-[color-mix(in_srgb,var(--brand-red)_12%,var(--surface-3))] disabled:opacity-60',
+                  teacherFocusRingClass,
+                )}
               >
-                <p className="text-sm font-semibold text-destructive">Delete forever</p>
-                <p className="mt-1 text-xs leading-snug text-muted-foreground">
+                <p className="text-[13px] font-semibold tracking-tight text-[var(--brand-red)]">Delete forever</p>
+                <p className="mt-1 text-[12px] leading-snug text-muted-foreground">
                   Remove everything for this student. This cannot be undone.
                 </p>
               </button>
             </div>
             <AlertDialogFooter>
-              <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+              <AlertDialogCancel disabled={busy} className={cn(teacherGhostBtnClass, teacherFocusRingClass)}>
+                Cancel
+              </AlertDialogCancel>
             </AlertDialogFooter>
           </>
         ) : (
           <>
             <AlertDialogHeader>
-              <AlertDialogTitle>Really delete {studentName}?</AlertDialogTitle>
-              <AlertDialogDescription>
+              <AlertDialogTitle className={teacherDialogTitleClass}>
+                Really delete {studentName}?
+              </AlertDialogTitle>
+              <AlertDialogDescription className={teacherDialogDescriptionClass}>
                 This cannot be undone. Their profile, progress, and weekly times will be gone for good.
               </AlertDialogDescription>
             </AlertDialogHeader>
@@ -171,16 +197,20 @@ export function RemoveStudentDialog({
                 <Button
                   type="button"
                   variant="ghost"
+                  className={cn(teacherGhostBtnClass, teacherFocusRingClass)}
                   disabled={busy}
                   onClick={() => setMode('choose')}
                 >
                   Back
                 </Button>
               )}
-              <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+              <AlertDialogCancel disabled={busy} className={cn(teacherQuietBtnClass, teacherFocusRingClass)}>
+                Cancel
+              </AlertDialogCancel>
               <Button
                 type="button"
                 variant="destructive"
+                className={cn(teacherPrimaryBtnClass, teacherFocusRingClass)}
                 disabled={busy}
                 onClick={() => void handleConfirmDelete()}
               >

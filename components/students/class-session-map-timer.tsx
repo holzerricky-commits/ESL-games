@@ -14,7 +14,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { BOOK_OVERLAY_GLASS_CHROME, CLASS_LAUNCH_CHROME } from '@/components/students/fullscreen-book-overlay/constants'
+import {
+  ClassSessionMoreMenu,
+  PrepSessionCapsule,
+} from '@/components/students/prep-session-capsule'
 import {
   classAnnotationStateChangedSinceBaseline,
   discardClassAnnotationChanges,
@@ -40,7 +43,9 @@ import {
   extendStudentClassSession,
   getTodaysClassSessionsForTeacher,
   hardAutoEndStudentClassSession,
+  resolveClassEndBookmark,
 } from '@/lib/students/selectors'
+import { flushPendingUnitPageSave } from '@/lib/books/progress'
 import type { StudentClassSessionView } from '@/lib/students/types'
 import { MoveClassDialog } from '@/components/schedule/move-class-dialog'
 import { buildReadingCheckClassWrapSummary } from '@/lib/books/reading-check-class-wrap'
@@ -59,20 +64,6 @@ const MAX_HANDLE_OFFSET_PX = 40
 const TIME_WARP_MAX_MULTIPLIER = 80
 /** At full pull down, class clock runs this many – real time (still > 0). */
 const TIME_WARP_MIN_MULTIPLIER = 0.08
-
-function buildAutoBookmarkAtEnd(
-  session: StudentClassSessionView,
-  assignedBookIds: string[],
-): { bookId: string; pdfPage: number; unitId?: string } | null {
-  const bookId = (session.selectedSection?.bookId ?? assignedBookIds[0] ?? '').trim()
-  if (!bookId) return null
-  const s = session.selectedSection
-  const hint = s?.endPageHint ?? s?.startPageHint
-  const pdfPage =
-    typeof hint === 'number' && Number.isFinite(hint) && hint >= 1 ? Math.floor(hint) : 1
-  const unitId = s?.unitId?.trim() || undefined
-  return unitId ? { bookId, pdfPage, unitId } : { bookId, pdfPage }
-}
 
 export interface ClassSessionMapTimerProps {
   studentId: string
@@ -241,6 +232,7 @@ export function ClassSessionMapTimer({
       try {
         await flushAnnotationsForClassEnd()
         keepClassAnnotationChanges(session.id)
+        flushPendingUnitPageSave()
         let wrapLine: string | undefined
         try {
           const wrap = await buildReadingCheckClassWrapSummary({
@@ -277,32 +269,35 @@ export function ClassSessionMapTimer({
     })()
   }, [phase, autoEnding, endBusy, studentId, session.id, router])
 
-  const shell = (() => {
-    if (elevated) {
-      if (variant === 'over') {
-        return 'border-red-400/45 bg-red-500/25 text-red-50 shadow-[0_6px_18px_rgba(0,0,0,0.18)] backdrop-blur-[1.5px]'
-      }
-      if (variant === 'warning') {
-        return 'motion-safe:animate-pulse border-amber-400/40 bg-amber-500/20 text-amber-50 shadow-[0_6px_18px_rgba(0,0,0,0.18)] backdrop-blur-[1.5px]'
-      }
-      if (variant === 'muted') {
-        return cn(BOOK_OVERLAY_GLASS_CHROME, 'text-white/55')
-      }
-      return cn(BOOK_OVERLAY_GLASS_CHROME, 'text-white/85')
-    }
+  const timerTone =
+    variant === 'over' ? 'over' : variant === 'warning' ? 'warning' : variant === 'muted' ? 'muted' : 'default'
+
+  /** Soft welcome-mat chips — no stamp shadow; matches prep flat language. */
+  const welcomeFace = (() => {
     if (variant === 'over') {
-      return 'border-red-700/45 bg-red-200/85 text-red-950 shadow-sm backdrop-blur-sm'
+      return 'border border-red-800/40 bg-red-700/90 text-red-50 shadow-sm'
     }
     if (variant === 'warning') {
-      return 'motion-safe:animate-pulse border-[#b48218]/55 bg-[#f0c040]/90 text-[#5c3d0a] shadow-sm backdrop-blur-sm'
+      return 'motion-safe:animate-pulse border border-[#7a4e08]/45 bg-[#c47a0a]/90 text-[#fff8e8] shadow-sm'
     }
     if (variant === 'muted') {
-      return cn(CLASS_LAUNCH_CHROME, 'opacity-80')
+      return 'border border-[#5c3d0a]/20 bg-[#fff8e8]/80 text-[#3d2810]/70 shadow-sm'
     }
-    return CLASS_LAUNCH_CHROME
+    return 'border border-[#5c3d0a]/25 bg-[#fff8e8]/95 text-[#3d2810] shadow-sm'
   })()
 
+  const welcomeEndBtn =
+    'rounded-full border border-[#3d2810]/80 bg-[#3d2810] px-3.5 py-1.5 text-[12px] font-semibold uppercase tracking-wide text-[#fff8e8] shadow-sm transition-colors hover:bg-[#4f3514] disabled:pointer-events-none disabled:opacity-40'
+
+  const welcomeExtendBtn =
+    'rounded-full border border-[#5c3d0a]/25 bg-[#fff8e8]/95 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-[#3d2810] shadow-sm transition-colors hover:bg-white disabled:pointer-events-none disabled:opacity-40'
+
+  const bookExtendBtn =
+    'rounded-full bg-white/12 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-white/95 ring-1 ring-white/20 transition-colors hover:bg-white/18 disabled:opacity-40'
+
   const warpMult = ENABLE_TIME_WARP_FOR_TESTING ? multiplierFromHandleOffsetPx(handleOffsetPx) : 1
+
+  const actionsDisabled = cancelBusy || endBusy
 
   function handleEndOpenChange(open: boolean) {
     setEndOpen(open)
@@ -360,7 +355,8 @@ export function ClassSessionMapTimer({
 
   async function confirmEndClassWithSave() {
     setEndError(null)
-    const bookmark = buildAutoBookmarkAtEnd(session, assignedBookIds)
+    flushPendingUnitPageSave()
+    const bookmark = resolveClassEndBookmark(studentId, session, assignedBookIds)
     if (!bookmark) {
       setEndError('Assign a book or choose a section in Prep so we can save the lesson bookmark.')
       return
@@ -493,68 +489,61 @@ export function ClassSessionMapTimer({
     }
   }
 
-  const chipBtn = (elevatedChip: boolean) =>
-    cn(
-      'rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide transition-colors disabled:opacity-40',
-      elevatedChip
-        ? 'bg-white/10 text-white/90 ring-1 ring-white/15 hover:bg-white/15'
-        : 'bg-[#5c3d0a]/12 text-[#5c3d0a] ring-1 ring-[#5c3d0a]/20 hover:bg-[#5c3d0a]/18',
-    )
-
   return (
     <>
-      <div
-        className={cn(
-          'pointer-events-auto absolute left-1/2 top-4 flex -translate-x-1/2 flex-col items-center gap-1.5 border px-3 py-1.5 shadow-sm',
-          showExtendChrome ? 'rounded-2xl' : 'rounded-full',
-          elevated
-            ? 'z-[60] max-w-[min(100vw-2rem,28rem)] text-sm'
-            : 'z-40 max-w-[min(100vw-2rem,30rem)] text-sm',
-          shell,
-        )}
-      >
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          <div className="flex items-baseline gap-1.5">
-            <span
-              className={cn(
-                'font-mono text-sm font-semibold tabular-nums tracking-tight',
-                elevated && 'text-white',
-              )}
+      {elevated ? (
+        <PrepSessionCapsule
+          mode="live"
+          bookOpen
+          timerLabel={label}
+          timerSuffix={suffix}
+          timerTone={timerTone}
+          onEnd={() => handleEndOpenChange(true)}
+          onMoveInstead={() => setMoveOpen(true)}
+          onCancelClass={() => void handleCancelLiveClass()}
+          actionsDisabled={actionsDisabled}
+          cancelBusy={cancelBusy}
+        />
+      ) : (
+        <div className="pointer-events-none absolute left-1/2 top-4 z-40 flex -translate-x-1/2 flex-col items-center gap-2">
+          <div className="pointer-events-auto flex max-w-[min(100vw-1.5rem,36rem)] flex-wrap items-center justify-center gap-2">
+            <div className={cn('inline-flex items-baseline gap-1.5 rounded-full px-3.5 py-1.5 text-sm', welcomeFace)}>
+              <span className="font-mono font-bold tabular-nums tracking-tight">{label}</span>
+              <span className="text-[11px] font-semibold uppercase tracking-wide opacity-75">{suffix}</span>
+            </div>
+            <button
+              type="button"
+              className={welcomeEndBtn}
+              onClick={() => handleEndOpenChange(true)}
+              disabled={actionsDisabled}
             >
-              {label}
-            </span>
-            <span
-              className={cn(
-                'text-[11px] font-semibold uppercase tracking-wide',
-                elevated ? 'text-white/70' : 'opacity-80',
-              )}
-            >
-              {suffix}
-            </span>
+              End
+            </button>
+            <ClassSessionMoreMenu
+              disabled={actionsDisabled}
+              cancelBusy={cancelBusy}
+              onMoveInstead={() => setMoveOpen(true)}
+              onCancelClass={() => void handleCancelLiveClass()}
+            />
           </div>
-          <button type="button" className={chipBtn(elevated)} onClick={() => setMoveOpen(true)} disabled={cancelBusy || endBusy}>
-            Move instead
-          </button>
-          <button
-            type="button"
-            className={chipBtn(elevated)}
-            onClick={() => void handleCancelLiveClass()}
-            disabled={cancelBusy || endBusy}
-          >
-            {cancelBusy ? '…' : 'Cancel'}
-          </button>
-          <button type="button" className={chipBtn(elevated)} onClick={() => handleEndOpenChange(true)} disabled={cancelBusy || endBusy}>
-            End
-          </button>
         </div>
+      )}
 
-        {showExtendChrome ? (
-          <div className="flex w-full flex-col items-center gap-1.5 border-t border-black/10 pb-0.5 pt-1.5 dark:border-white/15">
+      {showExtendChrome ? (
+        <div
+          className={cn(
+            'pointer-events-none absolute left-1/2 flex -translate-x-1/2 flex-col items-center gap-1.5',
+            elevated ? 'top-14 z-[60]' : 'top-[3.75rem] z-40',
+          )}
+        >
+          <div className="pointer-events-auto flex max-w-[min(100vw-1.5rem,28rem)] flex-col items-center gap-1.5">
             {phase === 'must_end' || autoEnding ? (
               <p
                 className={cn(
-                  'text-center text-[10px] font-medium',
-                  elevated ? 'text-white/80' : 'text-[#5c3d0a]/90',
+                  'rounded-full px-3 py-1 text-center text-[11px] font-semibold shadow-sm',
+                  elevated
+                    ? 'bg-black/35 text-white/90 backdrop-blur-[1.5px]'
+                    : 'bg-[#fff8e8]/95 text-[#3d2810]',
                 )}
               >
                 {autoEnding ? 'Ending class…' : "Time's up — ending class now."}
@@ -562,8 +551,10 @@ export function ClassSessionMapTimer({
             ) : (
               <p
                 className={cn(
-                  'text-center text-[10px] font-medium',
-                  elevated ? 'text-white/80' : 'text-[#5c3d0a]/90',
+                  'rounded-full px-3 py-1 text-center text-[11px] font-semibold shadow-sm',
+                  elevated
+                    ? 'bg-black/35 text-white/90 backdrop-blur-[1.5px]'
+                    : 'bg-[#fff8e8]/95 text-[#3d2810]',
                 )}
               >
                 {nextStudentSoon
@@ -582,7 +573,7 @@ export function ClassSessionMapTimer({
                       key={mins}
                       type="button"
                       disabled={extendBusy || autoEnding || !allowed}
-                      className={chipBtn(elevated)}
+                      className={elevated ? bookExtendBtn : welcomeExtendBtn}
                       title={
                         allowed
                           ? `Add ${mins} minutes (max +15 total overtime)`
@@ -597,8 +588,8 @@ export function ClassSessionMapTimer({
               </div>
             ) : null}
           </div>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
 
       <MoveClassDialog
         open={moveOpen}

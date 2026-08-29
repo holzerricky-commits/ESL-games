@@ -83,5 +83,34 @@ export function resolveOutlinePrintedStartPdfPage(
   return clampPdfPage(mapped, totalPdfPages)
 }
 
+/** Inclusive printed span → inclusive mapped PDF span for outline sections. */
+export function resolveOutlinePrintedPdfRange(
+  printedStart: number | null | undefined,
+  printedEnd: number | null | undefined,
+  book: BookRecord,
+  unit: BookUnitRecord,
+  totalPdfPages: number | null,
+): { startPdf: number; endPdf: number } | null {
+  const startPdf = resolveOutlinePrintedStartPdfPage(printedStart, book, unit, totalPdfPages)
+  if (startPdf == null) return null
+  const endPrinted =
+    typeof printedEnd === 'number' && Number.isFinite(printedEnd) ? printedEnd : printedStart
+  const endPdf = resolveOutlinePrintedStartPdfPage(endPrinted, book, unit, totalPdfPages) ?? startPdf
+  return {
+    startPdf: Math.min(startPdf, endPdf),
+    endPdf: Math.max(startPdf, endPdf),
+  }
+}
+
+/** True when the outline lists exactly one printed page for this section. */
+export function isOutlineSinglePageRange(
+  printedStart: number | null | undefined,
+  printedEnd: number | null | undefined,
+): boolean {
+  if (typeof printedStart !== 'number' || !Number.isFinite(printedStart)) return true
+  if (typeof printedEnd !== 'number' || !Number.isFinite(printedEnd)) return true
+  return Math.round(printedStart) === Math.round(printedEnd)
+}
+
 /** @deprecated Use {@link resolveStoryTitleThumbPdfPage}. */
 export const resolveStoryInteriorThumbPdfPage = resolveStoryTitleThumbPdfPage

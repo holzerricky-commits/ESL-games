@@ -283,29 +283,42 @@ export function WeekScheduleView({ highlightStudentId = null }: WeekScheduleView
         highlightStudentName={highlightStudent?.name ?? null}
       />
 
-      {viewMode === 'week' ? (
-        <ScheduleTimeGrid
-          weekDays={weekDays}
-          config={config}
-          sessions={sessions}
-          focusedDay={focusedDay}
-          onClearFocusedDay={() => setFocusedDay(null)}
-          onEmptyClick={handleEmptyClick}
-          onEventClick={handleEventClick}
-          onPendingRecurringChange={handlePendingRecurringChange}
-          onAnnounce={announce}
-          highlightStudentId={highlightStudentId}
-        />
-      ) : (
-        <ScheduleMonthGrid
-          monthAnchor={monthAnchor}
-          sessions={sessions}
-          onDayZoom={handleMonthDayZoom}
-          onEventClick={handleEventClick}
-          highlightStudentId={highlightStudentId}
-          workingDays={config.workingDays}
-        />
-      )}
+      {sessions.length === 0 && !highlightStudentId ? (
+        <p className="text-[13px] text-muted-foreground">
+          {viewMode === 'week'
+            ? 'No classes this week. Tap an empty time to add one.'
+            : 'No classes this month. Open a week to add times.'}
+        </p>
+      ) : null}
+
+      <div
+        key={viewMode}
+        className="animate-in fade-in duration-200 motion-reduce:animate-none"
+      >
+        {viewMode === 'week' ? (
+          <ScheduleTimeGrid
+            weekDays={weekDays}
+            config={config}
+            sessions={sessions}
+            focusedDay={focusedDay}
+            onClearFocusedDay={() => setFocusedDay(null)}
+            onEmptyClick={handleEmptyClick}
+            onEventClick={handleEventClick}
+            onPendingRecurringChange={handlePendingRecurringChange}
+            onAnnounce={announce}
+            highlightStudentId={highlightStudentId}
+          />
+        ) : (
+          <ScheduleMonthGrid
+            monthAnchor={monthAnchor}
+            sessions={sessions}
+            onDayZoom={handleMonthDayZoom}
+            onEventClick={handleEventClick}
+            highlightStudentId={highlightStudentId}
+            workingDays={config.workingDays}
+          />
+        )}
+      </div>
 
       <TeachingHoursSheet
         open={hoursOpen}

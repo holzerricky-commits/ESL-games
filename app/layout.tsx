@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Inter, Nunito, Space_Mono } from 'next/font/google'
+import { Caveat, Comic_Neue, Fredoka, Inter, Kalam, Lexend, Nunito, Space_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 import { Toaster } from 'sonner'
@@ -7,8 +7,33 @@ import { Toaster } from 'sonner'
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
 const nunito = Nunito({
   subsets: ['latin'],
-  weight: ['600', '700', '800'],
+  weight: ['400', '600', '700', '800'],
   variable: '--font-nunito',
+})
+const lexend = Lexend({
+  subsets: ['latin'],
+  weight: ['400', '700'],
+  variable: '--font-lexend',
+})
+const fredoka = Fredoka({
+  subsets: ['latin'],
+  weight: ['400', '700'],
+  variable: '--font-fredoka',
+})
+const comicNeue = Comic_Neue({
+  subsets: ['latin'],
+  weight: ['400', '700'],
+  variable: '--font-comic-neue',
+})
+const kalam = Kalam({
+  subsets: ['latin'],
+  weight: ['400', '700'],
+  variable: '--font-kalam',
+})
+const caveat = Caveat({
+  subsets: ['latin'],
+  weight: ['400', '700'],
+  variable: '--font-caveat',
 })
 const spaceMono = Space_Mono({ subsets: ['latin'], weight: ['400', '700'], variable: '--font-space-mono' })
 
@@ -43,7 +68,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${inter.variable} ${nunito.variable} ${spaceMono.variable} font-sans antialiased`}
+        className={`${inter.variable} ${nunito.variable} ${lexend.variable} ${fredoka.variable} ${comicNeue.variable} ${kalam.variable} ${caveat.variable} ${spaceMono.variable} font-sans antialiased`}
         suppressHydrationWarning
       >
         {children}

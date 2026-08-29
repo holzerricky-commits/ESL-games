@@ -7,7 +7,7 @@ import type {  AnnotationCommand,
   TextAnnotationCommand,
 } from '@/lib/books/annotation-command-types'
 import type { BookAnnotationInteractionMode } from '@/lib/books/annotation-storage'
-import type { AnnotationTextFontId } from '@/lib/books/annotation-text-fonts'
+import type { AnnotationTextFontId, AnnotationTextFontWeight } from '@/lib/books/annotation-text-fonts'
 import type { TextAnnotationVisualStyle } from '@/lib/books/annotation-command-types'
 import type { InkStrokeSelectionPatch, ImageSelectionPatch, ShapeSelectionPatch } from '@/lib/books/patch-selected-commands'
 import type { HorizontalAlignAxis } from '@/lib/books/annotation-align'
@@ -33,6 +33,7 @@ import {
   type TextToolHoverKind,
 } from '@/lib/books/text-tool-hover'
 import { TAP_MOVE_EPS } from '@/components/students/book-page-annotation-layer/constants'
+import { normDeltaMeetsDragCommit } from '@/lib/books/pointer-drag-slop'
 import { clamp01, newAnnotationId } from '@/components/students/book-page-annotation-layer/helpers'
 import type { ToNormFromElement } from '@/components/students/ink-session-selection/useInkSessionSelectionInteraction'
 import type { WritableStickerVariant } from '@/lib/books/annotation-command-types'
@@ -63,6 +64,7 @@ export type SpreadSessionDomConfig = {
   textColor: string
   textFontSizeNorm: number
   textFontId: AnnotationTextFontId
+  textFontWeight: AnnotationTextFontWeight
   textVisualStyle: TextAnnotationVisualStyle
   textAlign: TextAnnotationAlign
   textFillColor: string
@@ -178,6 +180,7 @@ export function useSpreadSessionDomInteraction(config: SpreadSessionDomConfig | 
   )
   const overlayRef = useRef<HTMLDivElement | null>(null)
   const suppressNextPlacementRef = useRef(false)
+  const [textToolDragSeq, setTextToolDragSeq] = useState(0)
 
   const enabled = config?.enabled ?? false
   const mode = config?.mode ?? 'pen'
@@ -232,21 +235,11 @@ export function useSpreadSessionDomInteraction(config: SpreadSessionDomConfig | 
     setHoverTargetId(null)
   }, [])
 
-  const selectedTextGrabId = useMemo(() => {
-    if (!isTextTool || !config || editingId) return null
-    const ids = config.selectedIds
-    if (ids.length !== 1) return null
-    const id = ids[0]!
-    const cmd = config.commands.find((c) => c.id === id)
-    return cmd?.kind === 'text' ? id : null
-  }, [config, editingId, isTextTool])
-
   const textToolCursor = textToolPlacementCursor(
     hoverTargetId,
     isTextTool,
     isWritableTool,
     editingId,
-    selectedTextGrabId,
     textToolDragLive != null,
   )
 
@@ -265,7 +258,10 @@ export function useSpreadSessionDomInteraction(config: SpreadSessionDomConfig | 
         drag.lastNorm = p
         drag.totalDx += dx
         drag.totalDy += dy
-        if (dx * dx + dy * dy > TAP_MOVE_EPS * TAP_MOVE_EPS || drag.moved) {
+        if (
+          drag.moved ||
+          normDeltaMeetsDragCommit(drag.totalDx, drag.totalDy, config.widthPx, config.heightPx)
+        ) {
           drag.moved = true
         }
         setTextToolDragLive({ dx: drag.totalDx, dy: drag.totalDy })
@@ -439,33 +435,24 @@ export function useSpreadSessionDomInteraction(config: SpreadSessionDomConfig | 
       setHoverTargetId(null)
 
       if (textHitId) {
-        if (isAnnotationTextFieldFocused(textHitId)) {
+        if (isAnnotationTextFieldFocused(textHitId) || textHitId === editingId) {
           return
         }
-        /** Selected label after submit: grab/drag; empty click still places; double-click edits. */
-        if (
-          config.mode === 'text' &&
-          config.selectedIds.includes(textHitId) &&
-          !config.selectEnabled
-        ) {
-          textToolDragRef.current = {
-            ids: [...config.selectedIds],
-            lastNorm: p,
-            totalDx: 0,
-            totalDy: 0,
-            moved: false,
-          }
-          setTextToolDragLive({ dx: 0, dy: 0 })
-          pendingTypingEditRef.current = null
-          tapStartRef.current = null
-          tapModeRef.current = null
-          config.onToolUseOnSpread?.()
-          e.currentTarget.setPointerCapture(e.pointerId)
-          return
+        /** Existing label: select + drag; empty click still places; double-click edits. */
+        config.onSelectedIdsChange?.([textHitId])
+        textToolDragRef.current = {
+          ids: [textHitId],
+          lastNorm: p,
+          totalDx: 0,
+          totalDy: 0,
+          moved: false,
         }
-        pendingTypingEditRef.current = textHitId
-        tapStartRef.current = p
-        /** No capture — retargeting pointerup to the overlay blocks label click + focus. */
+        setTextToolDragLive({ dx: 0, dy: 0 })
+        pendingTypingEditRef.current = null
+        tapStartRef.current = null
+        tapModeRef.current = null
+        config.onToolUseOnSpread?.()
+        e.currentTarget.setPointerCapture(e.pointerId)
         return
       }
 
@@ -485,6 +472,11 @@ export function useSpreadSessionDomInteraction(config: SpreadSessionDomConfig | 
         return
       }
 
+      if (config.selectedIds && config.selectedIds.length > 0) {
+        config.onSelectedIdsChange?.([])
+        return
+      }
+
       tapModeRef.current = config.mode === 'text' ? 'text' : isWritableTool ? 'sticky' : null
       tapStartRef.current = p
       if (tapModeRef.current) {
@@ -492,7 +484,7 @@ export function useSpreadSessionDomInteraction(config: SpreadSessionDomConfig | 
       }
       e.currentTarget.setPointerCapture(e.pointerId)
     },
-    [beginEditForId, clearActiveEdit, config, editingId, isWritableTool, toolPointerEnabled],
+    [clearActiveEdit, config, editingId, isWritableTool, toolPointerEnabled],
   )
 
   const onToolPointerUp = useCallback(
@@ -507,8 +499,11 @@ export function useSpreadSessionDomInteraction(config: SpreadSessionDomConfig | 
       if (drag) {
         textToolDragRef.current = null
         setTextToolDragLive(null)
-        if (drag.moved && (drag.totalDx !== 0 || drag.totalDy !== 0)) {
+        if (normDeltaMeetsDragCommit(drag.totalDx, drag.totalDy, config.widthPx, config.heightPx)) {
           config.onMoveSelectedBy?.(drag.totalDx, drag.totalDy)
+          setTextToolDragSeq((n) => n + 1)
+        } else {
+          setHoverTargetId(drag.ids[0] ?? null)
         }
         return
       }
@@ -532,7 +527,7 @@ export function useSpreadSessionDomInteraction(config: SpreadSessionDomConfig | 
           }
         }
         if (!isAnnotationTextFieldFocused(pendingEdit)) {
-          /** Type / writable tool: single click opens the field (Figma-style), not select-first. */
+          /** Writable tool: single click opens the field. Text tool uses double-click. */
           config.onSelectedIdsChange?.([])
           queueMicrotask(() => beginEditForId(pendingEdit))
         }
@@ -583,6 +578,7 @@ export function useSpreadSessionDomInteraction(config: SpreadSessionDomConfig | 
           text: '',
           fontSizeNorm: config.textFontSizeNorm,
           fontId: config.textFontId,
+          fontWeight: config.textFontWeight,
           color: config.textColor,
           ...(config.textAlign !== 'left' ? { textAlign: config.textAlign } : {}),
           ...(config.textVisualStyle === 'filled'
@@ -612,6 +608,7 @@ export function useSpreadSessionDomInteraction(config: SpreadSessionDomConfig | 
           text: '',
           fontSizeNorm: config.stickyFontSizeNorm,
           fontId: config.textFontId,
+          fontWeight: config.textFontWeight,
           fillColor: defaultWritableStickerFill(writableStickerVariant, config.stickyFillColor),
           writableVariant: writableStickerVariant,
         }
@@ -719,6 +716,24 @@ export function useSpreadSessionDomInteraction(config: SpreadSessionDomConfig | 
   )
 
   useEffect(() => {
+    if (!enabled) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      if (editingId != null) {
+        clearActiveEdit()
+        e.preventDefault()
+        return
+      }
+      if (config?.selectedIds && config.selectedIds.length > 0) {
+        config.onSelectedIdsChange?.([])
+        e.preventDefault()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [clearActiveEdit, config, editingId, enabled])
+
+  useEffect(() => {
     return () => setBookOverlayAnnotationEditSessionId(null)
   }, [])
 
@@ -796,6 +811,7 @@ export function useSpreadSessionDomInteraction(config: SpreadSessionDomConfig | 
     textToolEditingFrames,
     textToolCursor,
     textToolDragLive,
+    textToolDragSeq,
     patchCommand,
     deleteTextCommand,
     deleteStickyCommand,

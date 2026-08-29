@@ -119,6 +119,14 @@ Exact “success metrics” can evolve; update this section when you lock them.
 | `docs/CLASS_TOOLBOX_PHASED_PLAN.md` | Class toolbox implementation phases (test after each). |
 | `docs/READING_CHECKS_PRODUCT.md` | Interactive reading checks (story map, text fuel, check packs) — locked product. |
 | `docs/READING_CHECKS_PHASED_PLAN.md` | Reading checks implementation phases (test after each). |
+| `docs/BOOK_EXERCISES_PRODUCT.md` | Workbook exercises (box a task → word-bank or choose-answer Check) — locked product. |
+| `docs/BOOK_EXERCISES_PHASED_PLAN.md` | Book exercises implementation phases (test after each). |
+| `docs/CLASSROOM_HOME_PRODUCT.md` | Welcome / wrap screen as classroom home — locked product. |
+| `docs/CLASSROOM_HOME_PHASED_PLAN.md` | Classroom home implementation phases (test after each). |
+| `docs/CLASS_PREP_DESK_PRODUCT.md` | Today’s class — Prepare lands on the teacher desk, not yellow Welcome. |
+| `docs/CLASS_PREP_DESK_PHASED_PLAN.md` | Today’s class implementation phases (test after each). |
+| `docs/BOOKS_LIBRARY_PRODUCT.md` | Books library + lesson desk (locked). |
+| `docs/BOOKS_WORKSHOP_PRODUCT.md` | Workshop place bar + mark section (locked). |
 | `PARKING_LOT.md` | Deferred polish and ideas (optional). |
 | `.cursor/rules/milestone-first.mdc` | Agent behavior: milestone-first, anti-drift, parking-lot handoff. |
 
@@ -126,6 +134,9 @@ Exact “success metrics” can evolve; update this section when you lock them.
 
 ## Changelog
 
+- **2026-08-20** — Books workshop chrome: place bar on the open book; outline optional; Checks wizard retired as workshop UI (`docs/BOOKS_WORKSHOP_*.md`).
+- **2026-08-19** — Classroom home track: `docs/CLASSROOM_HOME_PRODUCT.md` + `CLASSROOM_HOME_PHASED_PLAN.md`; existing welcome/wrap screen becomes Prep → Class → Review (keep warm yellow world).
+- **2026-08-17** — Book exercises track: `docs/BOOK_EXERCISES_PRODUCT.md` + `BOOK_EXERCISES_PHASED_PLAN.md`; Compact Key word-bank tasks (box → later Check).
 - **2026-08-03** — Reading checks track: `docs/READING_CHECKS_PRODUCT.md` + `READING_CHECKS_PHASED_PLAN.md`; story beats + approve-before-class (see Related files).
 - **2026-07-28** — Class toolbox track: `docs/CLASS_TOOLBOX_PRODUCT.md` + `CLASS_TOOLBOX_PHASED_PLAN.md`; in-lesson helpers from book left strip (see Related files).
 - **2026-07-26** — Student home track: `docs/STUDENT_HOME_PRODUCT.md` + `STUDENT_HOME_PHASED_PLAN.md`; roster → one teacher home (see Related files).

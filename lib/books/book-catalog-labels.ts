@@ -229,6 +229,37 @@ function gradeSortKey(grade: string): number {
 }
 
 /**
+ * Series choices for identity / naming forms.
+ * Order: named presets → custom (A–Z) → Other. Always includes presets.
+ */
+export function listBookSeriesSelectOptions(input: {
+  books?: BookRecord[]
+  extraSeries?: Array<string | null | undefined>
+}): string[] {
+  const set = new Set<string>(BOOK_SERIES_PRESETS)
+  for (const book of input.books ?? []) {
+    const series = resolveBookCatalogIdentity(book).series.trim()
+    if (series) set.add(series)
+  }
+  for (const raw of input.extraSeries ?? []) {
+    const series = raw?.trim()
+    if (series) set.add(series)
+  }
+
+  const presetOrder = BOOK_SERIES_PRESETS as readonly string[]
+  return [...set].sort((a, b) => {
+    if (a === DEFAULT_BOOK_SERIES) return 1
+    if (b === DEFAULT_BOOK_SERIES) return -1
+    const ai = presetOrder.indexOf(a)
+    const bi = presetOrder.indexOf(b)
+    if (ai >= 0 && bi >= 0) return ai - bi
+    if (ai >= 0) return -1
+    if (bi >= 0) return 1
+    return a.localeCompare(b)
+  })
+}
+
+/**
  * Series and grade options for the student book picker (narrow → choose).
  * Series order: presets first (when present), then other series A–Z.
  */

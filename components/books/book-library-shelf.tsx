@@ -4,12 +4,12 @@ import { useMemo } from 'react'
 import { Plus } from 'lucide-react'
 import { BookCoverMockup } from '@/components/books/book-cover-mockup'
 import { BookCoverMockupArt } from '@/components/books/book-cover-mockup-art'
+import { CachedBookImage } from '@/components/books/cached-book-image'
 import {
   bookCoverImageUrl,
   getBookCoverSource,
 } from '@/lib/books/book-cover-display'
 import { resolveBookCatalogIdentity } from '@/lib/books/book-catalog-labels'
-import { makeUnitFileUrl } from '@/lib/books/book-file-url'
 import { groupBooksIntoSeriesShelves } from '@/lib/books/book-library-shelves'
 import {
   BOOK_SHELF_STATUS_LABEL,
@@ -142,7 +142,6 @@ export function BookLibraryShelf({
 
 function BookShelfCard({
   book,
-  pdfReady,
   onOpen,
   hideGradeInSubtitle = false,
 }: {
@@ -169,22 +168,15 @@ function BookShelfCard({
         <span className="relative inline-block shrink-0">
           <BookCoverMockup widthPx={SHELF_COVER_WIDTH} interactive>
             {coverSource?.kind === 'image' ? (
-              // eslint-disable-next-line @next/next/no-img-element -- local book-library cover
-              <img
+              <CachedBookImage
                 src={bookCoverImageUrl(coverSource.imagePath)}
-                alt=""
                 className="book-cover-mockup__art"
-                draggable={false}
               />
             ) : coverSource?.kind === 'pdf' ? (
               <BookCoverMockupArt
-                fileUrl={makeUnitFileUrl(coverSource.filePath)}
-                unitId={`${book.id}-shelf-cover`}
+                filePath={coverSource.filePath}
                 pageNumber={coverSource.pageNumber}
-                width={SHELF_COVER_WIDTH}
-                pdfReady={pdfReady}
                 label={book.title}
-                eager
               />
             ) : (
               <div className="book-cover-mockup__fallback">

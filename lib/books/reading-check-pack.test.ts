@@ -5,6 +5,7 @@ import {
   createEmptyReadingCheckStop,
   demoteReadingCheckPackToDraft,
   getLiveEligibleReadingCheckPack,
+  listReadingCheckLivePinsOnSpread,
   readingCheckPackCanApprove,
   sanitizeReadingCheckPack,
 } from '@/lib/books/reading-check-pack'
@@ -88,6 +89,151 @@ describe('reading-check-pack', () => {
       x: 0.94,
       y: 0.1,
     })
+  })
+
+  it('lists live pins on the matching spread using stored hotspot coords', () => {
+    const pack = sanitizeReadingCheckPack({
+      storyId: 's1',
+      bookId: 'b1',
+      unitId: 'u1',
+      stops: [
+        {
+          id: 'stop-1',
+          label: 'Market',
+          displayPage: 16,
+          midPageNote: null,
+          hotspot: { pdfPage: 20, pageSide: 'left', x: 0.72, y: 0.31 },
+          questions: [
+            {
+              id: 'q1',
+              kind: 'true_false',
+              prompt: 'Q',
+              choices: [],
+              correctIndex: null,
+              correctTrue: true,
+              evidenceSnippet: null,
+              evidenceHighlight: null,
+            },
+          ],
+        },
+      ],
+    })
+    const pins = listReadingCheckLivePinsOnSpread(pack?.stops ?? [], {
+      leftPdfPage: 20,
+      rightPdfPage: 21,
+      leftDisplayPage: 16,
+      rightDisplayPage: 17,
+    })
+    expect(pins).toHaveLength(1)
+    expect(pins[0]?.pdfPage).toBe(20)
+    expect(pins[0]?.x).toBe(0.72)
+    expect(pins[0]?.y).toBe(0.31)
+    expect(listReadingCheckLivePinsOnSpread(pack?.stops ?? [], {
+      leftPdfPage: 22,
+      rightPdfPage: 23,
+      leftDisplayPage: 18,
+      rightDisplayPage: 19,
+    })).toEqual([])
+  })
+
+  it('puts Generate default pins on the printed page even when stored pdfPage is one off', () => {
+    const pack = sanitizeReadingCheckPack({
+      storyId: 's1',
+      bookId: 'b1',
+      unitId: 'u1',
+      stops: [
+        {
+          id: 'stop-1',
+          label: 'Gloria',
+          displayPage: 434,
+          midPageNote: null,
+          hotspot: { pdfPage: 435, pageSide: 'left', x: 0.5, y: 0.9 },
+          questions: [
+            {
+              id: 'q1',
+              kind: 'true_false',
+              prompt: 'Gloria takes pictures?',
+              choices: [],
+              correctIndex: null,
+              correctTrue: true,
+              evidenceSnippet: null,
+              evidenceHighlight: null,
+            },
+          ],
+        },
+      ],
+    })
+    const pins = listReadingCheckLivePinsOnSpread(pack?.stops ?? [], {
+      leftPdfPage: 436,
+      rightPdfPage: 437,
+      leftDisplayPage: 434,
+      rightDisplayPage: 435,
+    })
+    expect(pins).toHaveLength(1)
+    expect(pins[0]?.pdfPage).toBe(436)
+    expect(pins[0]?.side).toBe('left')
+    expect(listReadingCheckLivePinsOnSpread(pack?.stops ?? [], {
+      leftPdfPage: 434,
+      rightPdfPage: 435,
+      leftDisplayPage: 432,
+      rightDisplayPage: 433,
+    })).toEqual([])
+  })
+
+  it('staggers stacked default pins on the same page', () => {
+    const pack = sanitizeReadingCheckPack({
+      storyId: 's1',
+      bookId: 'b1',
+      unitId: 'u1',
+      stops: [
+        {
+          id: 'stop-1',
+          label: 'A',
+          displayPage: 436,
+          midPageNote: null,
+          hotspot: { pdfPage: 438, pageSide: 'left', x: 0.5, y: 0.9 },
+          questions: [
+            {
+              id: 'q1',
+              kind: 'true_false',
+              prompt: 'One',
+              choices: [],
+              correctIndex: null,
+              correctTrue: true,
+              evidenceSnippet: null,
+              evidenceHighlight: null,
+            },
+          ],
+        },
+        {
+          id: 'stop-2',
+          label: 'B',
+          displayPage: 436,
+          midPageNote: null,
+          hotspot: { pdfPage: 438, pageSide: 'left', x: 0.5, y: 0.9 },
+          questions: [
+            {
+              id: 'q2',
+              kind: 'true_false',
+              prompt: 'Two',
+              choices: [],
+              correctIndex: null,
+              correctTrue: true,
+              evidenceSnippet: null,
+              evidenceHighlight: null,
+            },
+          ],
+        },
+      ],
+    })
+    const pins = listReadingCheckLivePinsOnSpread(pack?.stops ?? [], {
+      leftPdfPage: 438,
+      rightPdfPage: 439,
+      leftDisplayPage: 436,
+      rightDisplayPage: 437,
+    })
+    expect(pins).toHaveLength(2)
+    expect(pins[0]?.y).not.toBe(pins[1]?.y)
   })
 
   it('keeps evidence highlight only when it appears in the snippet', () => {

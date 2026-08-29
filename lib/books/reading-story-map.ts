@@ -59,16 +59,52 @@ export function readingStoryPartKey(
  * Manual stories (`manual::…`) have no lesson.
  */
 export function lessonIdFromReadingStoryId(storyId: string): string | null {
+  const parsed = parseOutlineReadingStoryId(storyId)
+  return parsed?.lessonId ?? null
+}
+
+/** Parse an outline story key into book / unit / lesson / part. */
+export function parseOutlineReadingStoryId(storyId: string): {
+  bookId: string
+  unitId: string
+  lessonId: string
+  partId: string
+} | null {
   const id = storyId.trim()
   if (!id || id.startsWith('manual::')) return null
   const parts = id.split('::')
   if (parts.length < 4) return null
-  const lessonId = parts[2]?.trim()
-  return lessonId || null
+  const bookId = parts[0]?.trim() ?? ''
+  const unitId = parts[1]?.trim() ?? ''
+  const lessonId = parts[2]?.trim() ?? ''
+  const partId = parts.slice(3).join('::').trim()
+  if (!bookId || !unitId || !lessonId || !partId) return null
+  return { bookId, unitId, lessonId, partId }
 }
 
 export function readingStoryManualKey(bookId: string, unitId: string, localId: string): string {
   return `manual::${bookId}::${unitId}::${localId}`
+}
+
+/** Manual story ids look like `manual::bookId::unitId::localId`. */
+export function parseManualReadingStoryId(storyId: string): {
+  bookId: string
+  unitId: string
+  localId: string
+} | null {
+  const id = storyId.trim()
+  if (!id.startsWith('manual::')) return null
+  const parts = id.split('::')
+  if (parts.length < 4) return null
+  const bookId = parts[1]?.trim() ?? ''
+  const unitId = parts[2]?.trim() ?? ''
+  const localId = parts.slice(3).join('::').trim()
+  if (!bookId || !unitId || !localId) return null
+  return { bookId, unitId, localId }
+}
+
+export function isManualReadingStoryId(storyId: string): boolean {
+  return Boolean(parseManualReadingStoryId(storyId))
 }
 
 /**
@@ -372,6 +408,19 @@ export function isPdfPageInReadingStory(
   return pdfPage >= range.startPdfPage && pdfPage <= range.endPdfPage
 }
 
+function storyUnitForSharedPdf(
+  book: BookRecord,
+  selectedUnit: BookUnitRecord,
+  story: ReadingStoryMap,
+): BookUnitRecord | null {
+  if (story.bookId && story.bookId !== book.id) return null
+  if (story.unitId === selectedUnit.id) return selectedUnit
+  const storyUnit = book.units.find((u) => u.id === story.unitId) ?? null
+  if (!storyUnit) return null
+  if (storyUnit.filePath !== selectedUnit.filePath) return null
+  return storyUnit
+}
+
 export function findReadingStoryAtPdfPage(args: {
   book: BookRecord
   unit: BookUnitRecord
@@ -381,9 +430,21 @@ export function findReadingStoryAtPdfPage(args: {
   overridesByStoryId: Record<string, ReadingStoryRangeOverride>
 }): { story: ReadingStoryMap; range: ReadingStoryPdfRange } | null {
   const { book, unit, pdfPage, totalPdfPages, stories, overridesByStoryId } = args
-  for (const story of stories) {
-    if (story.unitId !== unit.id) continue
-    const range = resolveReadingStoryRange(story, book, unit, totalPdfPages, overridesByStoryId[story.id])
+  const ranked = [...stories].sort((a, b) => {
+    const aSame = a.unitId === unit.id ? 0 : 1
+    const bSame = b.unitId === unit.id ? 0 : 1
+    return aSame - bSame
+  })
+  for (const story of ranked) {
+    const storyUnit = storyUnitForSharedPdf(book, unit, story)
+    if (!storyUnit) continue
+    const range = resolveReadingStoryRange(
+      story,
+      book,
+      storyUnit,
+      totalPdfPages,
+      overridesByStoryId[story.id],
+    )
     if (isPdfPageInReadingStory(pdfPage, range)) {
       return { story, range }
     }

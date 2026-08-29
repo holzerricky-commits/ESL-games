@@ -1,6 +1,6 @@
 # Books library & prep — phased plan
 
-Last updated: 2026-08-10
+Last updated: 2026-08-20
 
 **Product:** `docs/BOOKS_LIBRARY_PRODUCT.md`  
 **Rule:** Implement **one phase at a time**. Test before continuing. Prefer **icons, covers, status dots** over text explanations and dense layouts.
@@ -103,10 +103,34 @@ Map / Ready / Tools shipped as a temporary desk. **Superseded** by lesson-shelf 
 
 ---
 
+## Phase E — Workshop book from a part (this slice)
+
+**Goal:** From a story/vocab part, **Open book** lands in the same reader as class prep (clock off), on those pages, with the Checks bar.
+
+- [x] Overlay can open a book+unit at an explicit PDF page (no student bookmark)
+- [x] Books part desk / story corner / vocab “open book” use that workshop reader
+- [x] Checks bar on the workshop book (same panel as class prep); story parts open Checks
+- [x] Checks sheet does not dim the pages (place on the book)
+- [x] Close returns to the part desk. No class clock / Save for this kid.
+
+**Test:** Library → lesson → story part → Open book → real pages + Checks. Place a pin. Close → still on that part. Class Continue still works.
+
+**Status:** Code in 2026-08-20 — test next.
+
+---
+
+## Workshop chrome (after E)
+
+**Product:** `docs/BOOKS_WORKSHOP_PRODUCT.md`  
+**Plan:** `docs/BOOKS_WORKSHOP_PHASED_PLAN.md` — place bar → outlined story tools → mark section → vocab.
+
+---
+
 ## Order
 
 ```text
-0 docs → 1 Library shelf → A Lesson shelf → B Parts → C Part prep → D Cleanup
+0 docs → 1 Library shelf → A Lesson shelf → B Parts → C Part prep → D Cleanup → E Workshop book
+  → workshop chrome (separate plan)
 ```
 
 **Park:** Lesson Hub, custom art pack, AI “what to prep next,” separate Browse mode, old Phase 3–5 Ready visual as peer tabs.

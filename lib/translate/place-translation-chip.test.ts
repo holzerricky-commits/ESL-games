@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   isTranslationChipText,
+  restoreTranslationChipFill,
   TRANSLATION_CHIP_CURSOR_NUDGE_X_PX,
   TRANSLATION_CHIP_FILL,
   TRANSLATION_CHIP_FONT_ID,
+  TRANSLATION_CHIP_TEXT,
   translationChipFontSizeNorm,
   translationChipHeightPx,
   translationChipPlacementNorm,
@@ -30,6 +32,33 @@ describe('place-translation-chip', () => {
         fillColor: TRANSLATION_CHIP_FILL,
       }),
     ).toBe(false)
+  })
+
+  it('restores charcoal when a chip was remapped to white on a prior load', () => {
+    expect(
+      restoreTranslationChipFill({
+        visualStyle: 'filled',
+        fontId: TRANSLATION_CHIP_FONT_ID,
+        color: TRANSLATION_CHIP_TEXT,
+        fillColor: '#ffffff',
+      }),
+    ).toBe(TRANSLATION_CHIP_FILL)
+    expect(
+      restoreTranslationChipFill({
+        visualStyle: 'filled',
+        fontId: TRANSLATION_CHIP_FONT_ID,
+        color: TRANSLATION_CHIP_TEXT,
+        fillColor: TRANSLATION_CHIP_FILL,
+      }),
+    ).toBe(TRANSLATION_CHIP_FILL)
+    expect(
+      restoreTranslationChipFill({
+        visualStyle: 'filled',
+        fontId: TRANSLATION_CHIP_FONT_ID,
+        color: '#1e293b',
+        fillColor: '#ffffff',
+      }),
+    ).toBeUndefined()
   })
 
   it('places chip with cursor nudge and vertical center — no caret inset', () => {

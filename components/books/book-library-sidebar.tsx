@@ -10,7 +10,6 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
-import { bookHasCustomCover } from '@/lib/books/book-cover-display'
 import { isPresentationBook, resolveBookCatalogIdentity } from '@/lib/books/book-catalog-labels'
 import { makeUnitFileUrl } from '@/lib/books/book-file-url'
 import {
@@ -89,7 +88,7 @@ function BookShelfRow({
           : 'border-[var(--border)] bg-[var(--surface-2)] hover:bg-background/30',
       )}
     >
-      {coverUrl && (bookHasCustomCover(book) || pdfReady) ? (
+      {coverUrl ? (
         <BookCoverThumbnail
           book={book}
           unitId={`${book.id}-cover`}

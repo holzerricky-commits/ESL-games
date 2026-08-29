@@ -14,7 +14,8 @@ function SchedulePageContent() {
     <>
       <PageHeader
         title="Schedule"
-        description="Your week or month at a glance — see classes, add times, and jump into planning."
+        titleClassName="text-3xl sm:text-4xl"
+        showDivider={false}
       />
       <div className="mx-auto w-full max-w-7xl">
         <WeekScheduleView highlightStudentId={highlightStudentId} />
@@ -28,8 +29,11 @@ export function ScheduleRouteClient() {
     <section>
       <Suspense
         fallback={
-          <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--surface-2)] p-6">
-            <p className="text-sm text-muted-foreground">Loading schedule…</p>
+          <div>
+            <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+              Schedule
+            </h1>
+            <p className="mt-4 text-[13px] text-muted-foreground">Loading…</p>
           </div>
         }
       >

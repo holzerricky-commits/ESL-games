@@ -70,17 +70,21 @@ export function textToolHoverOutlineFrames(
 }
 
 /**
- * No solid edit ring while typing — WYSIWYG caret + ink only (Figma / Excalidraw pattern).
- * Hover dashed chrome remains via {@link textToolHoverOutlineFrames}.
+ * Solid edit ring while typing so an empty click-to-place field is visible
+ * (caret alone is easy to miss on a busy page).
  */
 export function textToolEditingOutlineFrames(
-  _commands: readonly AnnotationCommand[],
-  _editingId: string | null,
-  _widthPx: number,
-  _heightPx: number,
-  _editingTextDraft?: string | null,
+  commands: readonly AnnotationCommand[],
+  editingId: string | null,
+  widthPx: number,
+  heightPx: number,
+  editingTextDraft?: string | null,
 ): OrientedSelectionFrame[] {
-  return []
+  if (!editingId) return []
+  const cmd = commands.find((c) => c.id === editingId)
+  if (!cmd) return []
+  const frame = textToolOutlineFrameForCommand(cmd, widthPx, heightPx, 'edit', editingTextDraft)
+  return frame ? [frame] : []
 }
 
 export function textToolPlacementCursor(
@@ -88,18 +92,14 @@ export function textToolPlacementCursor(
   isTextTool: boolean,
   isWritableTool: boolean,
   editingId?: string | null,
-  /** When hovering a selected label that can be grabbed while the Type tool stays active. */
-  grabHoverTargetId?: string | null,
-  /** Dragging that label. */
+  /** Dragging a label. */
   grabbing?: boolean,
 ): CSSProperties['cursor'] | undefined {
   if (!isTextTool && !isWritableTool) return undefined
   if (isTextTool) {
     if (editingId) return 'text'
     if (grabbing) return 'grabbing'
-    if (hoverTargetId && grabHoverTargetId != null && hoverTargetId === grabHoverTargetId) {
-      return 'grab'
-    }
+    if (hoverTargetId) return 'move'
     return 'text'
   }
   if (editingId) return 'text'

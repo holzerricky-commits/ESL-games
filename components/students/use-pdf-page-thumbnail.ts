@@ -41,7 +41,8 @@ export function usePdfPageThumbnail({
       return
     }
 
-    // Keep the previous page visible until the next thumbnail is ready (avoids layout shrink).
+    // Clear immediately so a turn never looks "stuck" on the previous page.
+    setDataUrl(null)
     setPhase('loading')
 
     const loadThumbnail = () => {
@@ -53,6 +54,7 @@ export function usePdfPageThumbnail({
         })
         .catch(() => {
           if (gen !== genRef.current) return
+          setDataUrl(null)
           setPhase('error')
         })
     }

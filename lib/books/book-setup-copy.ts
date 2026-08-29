@@ -1,4 +1,4 @@
-export const BOOK_SETUP_TABS = ['outline', 'materials', 'stories', 'plan', 'advanced'] as const
+export const BOOK_SETUP_TABS = ['outline', 'materials', 'audio', 'stories', 'plan', 'advanced'] as const
 
 export type BookSetupTab = (typeof BOOK_SETUP_TABS)[number]
 
@@ -6,7 +6,7 @@ export type BookSetupTab = (typeof BOOK_SETUP_TABS)[number]
 export const BOOK_PREP_STAGES = ['map', 'ready', 'tools'] as const
 export type BookPrepStage = (typeof BOOK_PREP_STAGES)[number]
 
-export const BOOK_TOOLS_TABS = ['materials', 'plan', 'advanced'] as const
+export const BOOK_TOOLS_TABS = ['materials', 'audio', 'plan', 'advanced'] as const
 export type BookToolsTab = (typeof BOOK_TOOLS_TABS)[number]
 
 export function parseBookSetupTab(value: string | null | undefined): BookSetupTab | null {
@@ -101,6 +101,16 @@ export const BOOK_SETUP_COPY = {
         'After you have supporting PDFs, scan them for unit, lesson, and part labels you can apply to your outline.',
     },
     tabLabel: 'Materials',
+  },
+  audio: {
+    label: 'Listening tracks',
+    subtitle: 'Attach the book\u2019s audio folder so you can play tracks in class.',
+    detail:
+      'Drop a folder of mp3/m4a/wav files. They stay with this book and open from the speaker icon on the left strip while teaching.',
+    autoPlaceLabel: 'Auto-place speakers',
+    autoPlaceDetail:
+      'Private shortcut: upload a crop of the book\u2019s listening mark, then scan pages. Matching numbers drop speakers for you — fix the rest on the page.',
+    tabLabel: 'Audio',
   },
   stories: {
     label: 'Reading stories',

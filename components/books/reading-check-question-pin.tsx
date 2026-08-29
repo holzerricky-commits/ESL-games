@@ -1,7 +1,18 @@
 'use client'
 
 import type { ButtonHTMLAttributes, CSSProperties } from 'react'
+import { Check, CircleHelp, X } from 'lucide-react'
+import {
+  BookPageLinkChip,
+  BOOK_PAGE_LINK_GLYPH_FILL_OPACITY,
+  BOOK_PAGE_LINK_GLYPH_STROKE,
+  type BookPageLinkChipTone,
+} from '@/components/students/fullscreen-book-overlay/sections/BookPageLinkChip'
 import { cn } from '@/lib/utils'
+
+/** Story checks sit larger than listening / board / exercise dots (24px). */
+export const READING_CHECK_PIN_SIZE_PX = 32
+const CHECK_PIN_GLYPH_CLASS = 'h-5 w-5'
 
 export type ReadingCheckQuestionPinTone = 'default' | 'correct' | 'incorrect' | 'skip'
 
@@ -12,9 +23,16 @@ type ReadingCheckQuestionPinProps = {
   style?: CSSProperties
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'>
 
+function chipTone(tone: ReadingCheckQuestionPinTone): BookPageLinkChipTone {
+  if (tone === 'correct') return 'check-correct'
+  if (tone === 'incorrect') return 'check-incorrect'
+  if (tone === 'skip') return 'check-skip'
+  return 'check'
+}
+
 /**
- * Question check pin — must not look like a board-link cream/gray dot.
- * Uses a clear "?" so students read it as a question.
+ * Question check pin — same family as listening / board / exercise pins, but larger.
+ * Orange "?" for kids; tick / X / skip after you mark an answer.
  */
 export function ReadingCheckQuestionPin({
   tone = 'default',
@@ -25,25 +43,44 @@ export function ReadingCheckQuestionPin({
   ...rest
 }: ReadingCheckQuestionPinProps) {
   return (
-    <button
+    <BookPageLinkChip
       type={type}
+      tone={chipTone(tone)}
       title={label}
       aria-label={label ? `Question: ${label}` : 'Reading check question'}
-      className={cn(
-        'relative flex h-11 w-11 items-center justify-center rounded-2xl border-2 border-white text-lg font-black leading-none text-white shadow-[0_12px_28px_rgba(15,23,42,0.32)] transition hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/70',
-        tone === 'correct' && 'bg-emerald-600',
-        tone === 'incorrect' && 'bg-rose-600',
-        tone === 'skip' && 'bg-slate-500',
-        tone === 'default' && 'bg-gradient-to-br from-amber-400 via-orange-500 to-rose-500',
-        className,
-      )}
+      className={cn('h-8 w-8', className)}
       style={style}
       {...rest}
     >
-      {tone === 'default' ? (
-        <span className="absolute inset-0 animate-pulse rounded-2xl bg-white/10" aria-hidden />
-      ) : null}
-      <span className="relative drop-shadow-sm">?</span>
-    </button>
+      {tone === 'correct' ? (
+        <Check
+          className={CHECK_PIN_GLYPH_CLASS}
+          strokeWidth={BOOK_PAGE_LINK_GLYPH_STROKE}
+          fill="currentColor"
+          fillOpacity={BOOK_PAGE_LINK_GLYPH_FILL_OPACITY}
+          aria-hidden
+        />
+      ) : tone === 'incorrect' ? (
+        <X
+          className={CHECK_PIN_GLYPH_CLASS}
+          strokeWidth={BOOK_PAGE_LINK_GLYPH_STROKE}
+          fill="currentColor"
+          fillOpacity={BOOK_PAGE_LINK_GLYPH_FILL_OPACITY}
+          aria-hidden
+        />
+      ) : tone === 'skip' ? (
+        <CircleHelp
+          className={CHECK_PIN_GLYPH_CLASS}
+          strokeWidth={BOOK_PAGE_LINK_GLYPH_STROKE}
+          fill="currentColor"
+          fillOpacity={BOOK_PAGE_LINK_GLYPH_FILL_OPACITY}
+          aria-hidden
+        />
+      ) : (
+        <span className="text-base font-semibold leading-none tracking-tight" aria-hidden>
+          ?
+        </span>
+      )}
+    </BookPageLinkChip>
   )
 }

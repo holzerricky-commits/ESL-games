@@ -53,7 +53,7 @@ describe('normalizeTocV2ToDrafts', () => {
     expect(out.lessonsByUnit[0]?.[2]?.endPageHint).toBe(out.lessonsByUnit[0]?.[2]?.startPageHint)
   })
 
-  it('infers glossary start from final wrap-up when missing', () => {
+  it('keeps glossary with empty page when TOC has no number (does not invent wrap-up + 1)', () => {
     const parsed = {
       units: [
         {
@@ -76,8 +76,48 @@ describe('normalizeTocV2ToDrafts', () => {
     const specialLessons = out.lessonsByUnit[0] ?? []
     const wrap = specialLessons.find((lesson) => /wrap/i.test(lesson.title))
     const glossary = specialLessons.find((lesson) => /glossary/i.test(lesson.title))
-    expect(wrap?.startPageHint).toBeTruthy()
-    expect(glossary?.startPageHint).toBe((wrap?.startPageHint ?? 0) + 1)
+    expect(wrap?.startPageHint).toBe(520)
+    expect(glossary).toBeTruthy()
+    expect(glossary?.startPageHint).toBeUndefined()
+  })
+
+  it('keeps titled entries and lessons when printed pages are null', () => {
+    const parsed = {
+      units: [
+        {
+          unitNumber: 1,
+          title: 'Amazing Animals',
+          lessons: [
+            {
+              lessonNumber: 1,
+              title: 'The Incredible Dolphin',
+              entries: [
+                { title: 'Before You Read', startPrintedPage: null },
+                { title: 'The Incredible Dolphin', startPrintedPage: null },
+                { title: 'Reading Skill', startPrintedPage: null },
+              ],
+            },
+          ],
+          specialSections: [{ title: 'Credits', startPrintedPage: null }],
+        },
+      ],
+    }
+    const out = normalizeTocV2ToDrafts(parsed, 'generic')
+    expect(out.drafts).toHaveLength(1)
+    expect(out.drafts[0]?.startPageHint).toBeUndefined()
+    expect(out.drafts[0]?.endPageHint).toBeUndefined()
+    const lessons = out.lessonsByUnit[0] ?? []
+    const main = lessons.find((l) => /dolphin/i.test(l.title))
+    const credits = lessons.find((l) => /credits/i.test(l.title))
+    expect(main?.parts?.map((p) => p.title)).toEqual([
+      'Before You Read',
+      'The Incredible Dolphin',
+      'Reading Skill',
+    ])
+    expect(main?.parts?.every((p) => p.startPageHint == null)).toBe(true)
+    expect(main?.startPageHint).toBeUndefined()
+    expect(credits).toBeTruthy()
+    expect(credits?.startPageHint).toBeUndefined()
   })
 
   it('labels Wonders Workshop weeks and tags Pedal Power-style parts', () => {

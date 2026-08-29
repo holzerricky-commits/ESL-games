@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { BookOpen, Check, Loader2, Sparkles } from 'lucide-react'
+import { BookOpen, Check, Loader2, MousePointer2, Sparkles } from 'lucide-react'
 import {
   DismissibleScanNotice,
   type ScanNotice,
@@ -22,6 +22,7 @@ import type {
   StoryScanProgress,
   StoryTextScanMode,
 } from '@/lib/books/story-text-scan-client'
+import type { SearchablePdfProgress } from '@/lib/books/searchable-pdf-client'
 import { cn } from '@/lib/utils'
 
 export type StoryTextFuelBusy = 'scan' | 'saveText' | null
@@ -41,6 +42,11 @@ export interface StoryTextFuelPanelProps {
   onSave: () => boolean | Promise<boolean>
   /** Disable Scan when pages / unit not ready */
   scanDisabled?: boolean
+  /** Hidden-text layer for image-only PDFs (class select / copy / translate). */
+  onMakeSelectable?: () => void
+  onStopMakeSelectable?: () => void
+  selectableProgress?: SearchablePdfProgress | null
+  selectableRunning?: boolean
   /** Partial scan — show Continue + Re-scan from start */
   canContinueScan?: boolean
   /** Controlled dialog open (for “View story” from checks). */
@@ -52,8 +58,13 @@ export interface StoryTextFuelPanelProps {
   className?: string
   /** Hide the left “Text” column label (Books already has one). */
   hideRowLabel?: boolean
-  /** `soft` = Apple part-prep cards; `desk` = Stories desk inset border. */
-  chrome?: 'desk' | 'soft'
+  /** `soft` = Apple part-prep cards; `desk` = Stories desk; `rail` = dark book desk rail. */
+  chrome?: 'desk' | 'soft' | 'rail'
+  /** Hide the collapsed status row — only the edit dialog (icon launchers). */
+  hideCollapsedRow?: boolean
+  /** Extra classes for DialogContent / overlay (e.g. z-[90] above workshop). */
+  dialogClassName?: string
+  dialogOverlayClassName?: string
 }
 
 function textSnippet(text: string, max = 90): string {
@@ -84,6 +95,10 @@ export function StoryTextFuelPanel({
   onStopScan,
   onSave,
   scanDisabled = false,
+  onMakeSelectable,
+  onStopMakeSelectable,
+  selectableProgress = null,
+  selectableRunning = false,
   canContinueScan = false,
   dialogOpen: controlledOpen,
   onDialogOpenChange,
@@ -92,6 +107,9 @@ export function StoryTextFuelPanel({
   className,
   hideRowLabel = false,
   chrome = 'desk',
+  hideCollapsedRow = false,
+  dialogClassName,
+  dialogOverlayClassName,
 }: StoryTextFuelPanelProps) {
   const [internalOpen, setInternalOpen] = useState(false)
   const open = controlledOpen ?? internalOpen
@@ -103,6 +121,8 @@ export function StoryTextFuelPanel({
   const range = pageRangeLabel?.trim() || null
   const showContinue = hasStoryText && canContinueScan
   const soft = chrome === 'soft'
+  const rail = chrome === 'rail'
+  const lightRow = !soft && !rail
 
   function openDialog() {
     setOpen(true)
@@ -116,10 +136,12 @@ export function StoryTextFuelPanel({
   const statusPill = !hasStoryText ? (
     <span
       className={cn(
-        'inline-flex items-center rounded-full px-2.5 py-1 text-[12px] font-medium',
+        'inline-flex items-center rounded-full font-medium',
         soft
-          ? 'bg-[var(--surface-2)] text-muted-foreground shadow-[inset_0_0_0_1px_var(--border)]'
-          : 'bg-[var(--checks-warn-soft)] text-[var(--checks-ink)] text-[10px] px-2 py-0.5',
+          ? 'bg-[var(--surface-2)] px-2.5 py-1 text-[12px] text-muted-foreground shadow-[inset_0_0_0_1px_var(--border)]'
+          : rail
+            ? 'bg-white/10 px-2 py-0.5 text-[10px] text-white/70'
+            : 'bg-[var(--checks-warn-soft)] px-2 py-0.5 text-[10px] text-[var(--checks-ink)]',
       )}
     >
       Needs text
@@ -127,14 +149,25 @@ export function StoryTextFuelPanel({
   ) : (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-medium',
+        'inline-flex items-center gap-1.5 rounded-full font-medium',
         soft
-          ? showContinue
-            ? 'bg-[var(--surface-2)] text-foreground shadow-[inset_0_0_0_1px_var(--border)]'
-            : 'bg-[var(--brand-blue)] text-white'
-          : showContinue
-            ? 'bg-[var(--checks-warn-soft)] text-[var(--checks-ink)] text-[10px] px-2 py-0.5'
-            : 'bg-[var(--checks-ok-soft)] text-[var(--checks-ok)] text-[10px] px-2 py-0.5',
+          ? cn(
+              'px-2.5 py-1 text-[12px]',
+              showContinue
+                ? 'bg-[var(--surface-2)] text-foreground shadow-[inset_0_0_0_1px_var(--border)]'
+                : 'bg-[var(--brand-blue)] text-white',
+            )
+          : rail
+            ? cn(
+                'px-2 py-0.5 text-[10px]',
+                showContinue ? 'bg-amber-400/15 text-amber-200' : 'bg-emerald-500/15 text-emerald-200',
+              )
+            : cn(
+                'px-2 py-0.5 text-[10px]',
+                showContinue
+                  ? 'bg-[var(--checks-warn-soft)] text-[var(--checks-ink)]'
+                  : 'bg-[var(--checks-ok-soft)] text-[var(--checks-ok)]',
+              ),
       )}
     >
       {soft && !showContinue ? <Check className="size-3 stroke-[3]" aria-hidden /> : null}
@@ -142,13 +175,37 @@ export function StoryTextFuelPanel({
     </span>
   )
 
+  const mutedText = soft
+    ? 'text-[14px] text-muted-foreground'
+    : rail
+      ? 'text-xs text-white/50'
+      : 'text-sm text-[var(--checks-muted)]'
+  const metaText = soft
+    ? 'text-[13px] text-muted-foreground'
+    : rail
+      ? 'text-[10px] text-white/45'
+      : 'text-[11px] text-[var(--checks-muted)]'
+  const ghostBtn = soft
+    ? 'h-9 rounded-full px-3 text-muted-foreground'
+    : rail
+      ? 'h-7 rounded-md px-2 text-white/70 hover:bg-white/10 hover:text-white'
+      : 'h-8 text-[var(--checks-muted)]'
+  const primaryBtn = soft
+    ? 'h-9 gap-1.5 rounded-full px-4'
+    : rail
+      ? 'h-7 gap-1.5 rounded-md border-white/15 bg-white/10 px-2 text-white hover:bg-white/15'
+      : 'h-8 gap-1.5'
+
   return (
-    <div className={cn(className)} style={soft ? undefined : CHECKS_DIALOG_STYLE}>
+    <div className={cn(className)} style={soft || rail ? undefined : CHECKS_DIALOG_STYLE}>
+      {!hideCollapsedRow ? (
       <div
         className={cn(
           soft
             ? 'rounded-2xl bg-[var(--surface-3)]'
-            : 'rounded-xl border border-[var(--checks-border)] bg-[var(--checks-card)]',
+            : rail
+              ? 'rounded-md border border-white/10 bg-black/20'
+              : 'rounded-xl border border-[var(--checks-border)] bg-[var(--checks-card)]',
         )}
       >
         {!hasStoryText ? (
@@ -156,16 +213,14 @@ export function StoryTextFuelPanel({
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0 space-y-1">
                 {statusPill}
-                <p className={cn(soft ? 'text-[14px] text-muted-foreground' : 'text-sm text-[var(--checks-muted)]')}>
-                  No story text yet
-                </p>
+                <p className={mutedText}>No story text yet</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <Button
                   type="button"
                   size="sm"
-                  variant="secondary"
-                  className={cn('gap-1.5', soft ? 'h-9 rounded-full px-4' : 'h-8')}
+                  variant={rail ? 'outline' : 'secondary'}
+                  className={primaryBtn}
                   disabled={scanning || scanDisabled}
                   onClick={() => onScan({ mode: 'full' })}
                 >
@@ -185,7 +240,7 @@ export function StoryTextFuelPanel({
                   type="button"
                   size="sm"
                   variant="ghost"
-                  className={cn(soft ? 'h-9 rounded-full px-3 text-muted-foreground' : 'h-8 text-[var(--checks-muted)]')}
+                  className={ghostBtn}
                   disabled={scanning}
                   onClick={openDialog}
                 >
@@ -207,20 +262,22 @@ export function StoryTextFuelPanel({
                 <div className="flex flex-wrap items-center gap-2">
                   {statusPill}
                   {words > 0 ? (
-                    <span className={cn(soft ? 'text-[13px] text-muted-foreground' : 'text-[11px] text-[var(--checks-muted)]')}>
+                    <span className={metaText}>
                       {words.toLocaleString()} word{words === 1 ? '' : 's'}
                       {range ? ` · ${range}` : ''}
                     </span>
                   ) : range ? (
-                    <span className={cn(soft ? 'text-[13px] text-muted-foreground' : 'text-[11px] text-[var(--checks-muted)]')}>
-                      {range}
-                    </span>
+                    <span className={metaText}>{range}</span>
                   ) : null}
                 </div>
                 <p
                   className={cn(
                     'line-clamp-2',
-                    soft ? 'text-[14px] leading-relaxed text-muted-foreground' : 'truncate text-sm text-[var(--checks-muted)]',
+                    soft
+                      ? 'text-[14px] leading-relaxed text-muted-foreground'
+                      : rail
+                        ? 'text-xs text-white/55'
+                        : 'truncate text-sm text-[var(--checks-muted)]',
                   )}
                 >
                   {textSnippet(textDraft, soft ? 140 : 90)}
@@ -232,8 +289,8 @@ export function StoryTextFuelPanel({
                   size="sm"
                   variant={soft ? 'secondary' : 'outline'}
                   className={cn(
-                    'gap-1.5',
-                    soft ? 'h-9 rounded-full px-4' : 'h-8 border-[var(--checks-border)]',
+                    primaryBtn,
+                    lightRow && 'border-[var(--checks-border)]',
                   )}
                   disabled={scanning}
                   onClick={openDialog}
@@ -246,9 +303,9 @@ export function StoryTextFuelPanel({
                     <Button
                       type="button"
                       size="sm"
-                      variant="secondary"
-                      className={cn('gap-1.5', soft ? 'h-9 rounded-full px-4' : 'h-8')}
-                      disabled={scanning || scanDisabled}
+                      variant={rail ? 'outline' : 'secondary'}
+                      className={primaryBtn}
+                      disabled={scanning || selectableRunning || scanDisabled}
                       onClick={() => onScan({ mode: 'continue' })}
                     >
                       {scanning ? (
@@ -267,8 +324,8 @@ export function StoryTextFuelPanel({
                       type="button"
                       size="sm"
                       variant="ghost"
-                      className={cn(soft ? 'h-9 rounded-full px-3 text-muted-foreground' : 'h-8 text-[var(--checks-muted)]')}
-                      disabled={scanning || scanDisabled}
+                      className={ghostBtn}
+                      disabled={scanning || selectableRunning || scanDisabled}
                       onClick={() => onScan({ mode: 'full' })}
                     >
                       Re-scan
@@ -279,8 +336,8 @@ export function StoryTextFuelPanel({
                     type="button"
                     size="sm"
                     variant="ghost"
-                    className={cn(soft ? 'h-9 rounded-full px-3 text-muted-foreground' : 'h-8 text-[var(--checks-muted)]')}
-                    disabled={scanning || scanDisabled}
+                    className={ghostBtn}
+                    disabled={scanning || selectableRunning || scanDisabled}
                     onClick={() => onScan({ mode: 'full' })}
                   >
                     {scanning ? 'Scanning…' : 'Re-scan'}
@@ -297,14 +354,17 @@ export function StoryTextFuelPanel({
           </div>
         )}
       </div>
+      ) : null}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent
+          overlayClassName={dialogOverlayClassName}
           className={cn(
             'flex h-[min(88vh,720px)] w-[min(96vw,42rem)] max-w-[42rem] flex-col gap-0 overflow-hidden p-0 sm:max-w-[42rem]',
             soft
               ? 'border-border/60 bg-[var(--surface-1)]'
               : 'border-[var(--checks-border)]',
+            dialogClassName,
           )}
           style={soft ? undefined : CHECKS_DIALOG_STYLE}
         >
@@ -338,6 +398,30 @@ export function StoryTextFuelPanel({
             {scanProgress ? (
               <StoryScanProgressBar progress={scanProgress} onCancel={onStopScan} />
             ) : null}
+            {selectableProgress ? (
+              <div
+                className="space-y-1.5 rounded-lg border border-border bg-muted/30 p-3"
+                role="status"
+                aria-live="polite"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-medium text-foreground">
+                    {selectableProgress.activeLabel
+                      ? `Selectable text · p. ${selectableProgress.activeLabel}`
+                      : 'Selectable text'}
+                    <span className="ml-1.5 font-normal text-muted-foreground">
+                      {selectableProgress.doneCount}/{selectableProgress.totalCount}
+                    </span>
+                  </p>
+                  {onStopMakeSelectable && selectableRunning ? (
+                    <Button type="button" size="sm" variant="ghost" className="h-7 px-2" onClick={onStopMakeSelectable}>
+                      Stop
+                    </Button>
+                  ) : null}
+                </div>
+                <p className="text-[11px] text-muted-foreground">{selectableProgress.message}</p>
+              </div>
+            ) : null}
             {scanNotice && onDismissScanNotice ? (
               <DismissibleScanNotice notice={scanNotice} onDismiss={onDismissScanNotice} />
             ) : null}
@@ -351,12 +435,12 @@ export function StoryTextFuelPanel({
                   ? 'rounded-2xl border-0 bg-[var(--surface-3)] font-sans text-[14px] leading-relaxed text-foreground shadow-none'
                   : 'border-[var(--checks-border)] bg-white font-mono text-xs text-[var(--checks-ink)]',
               )}
-              disabled={scanning}
+              disabled={scanning || selectableRunning}
             />
             <p className={cn('shrink-0', soft ? 'text-[12px] text-muted-foreground' : 'text-[11px] text-[var(--checks-muted)]')}>
               {showContinue
                 ? 'Continue scan picks up after saved pages. Re-scan from start replaces everything.'
-                : 'Scans this story’s page range. If the PDF has no selectable text, AI reads the page images. You can still paste or edit afterward.'}
+                : 'Scan text is for reading checks. Make pages selectable puts hidden words on the book so you can drag, copy, and translate in class.'}
             </p>
           </div>
 
@@ -376,7 +460,7 @@ export function StoryTextFuelPanel({
                     size="sm"
                     variant="secondary"
                     className={cn('gap-1.5', soft && 'h-9 rounded-full px-4')}
-                    disabled={scanning || scanDisabled}
+                    disabled={scanning || selectableRunning || scanDisabled}
                     onClick={() => onScan({ mode: 'continue' })}
                   >
                     {scanning ? (
@@ -398,7 +482,7 @@ export function StoryTextFuelPanel({
                     className={cn(
                       soft ? 'h-9 rounded-full px-3 text-muted-foreground' : 'text-[var(--checks-muted)]',
                     )}
-                    disabled={scanning || scanDisabled}
+                    disabled={scanning || selectableRunning || scanDisabled}
                     onClick={() => onScan({ mode: 'full' })}
                   >
                     Re-scan from start
@@ -433,16 +517,38 @@ export function StoryTextFuelPanel({
                 size="sm"
                 variant="ghost"
                 className={cn(soft && 'h-9 rounded-full px-3')}
-                disabled={scanning || saving}
+                disabled={scanning || saving || selectableRunning}
                 onClick={() => setOpen(false)}
               >
                 Cancel
               </Button>
+              {onMakeSelectable ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className={cn('gap-1.5', soft && 'h-9 rounded-full px-4')}
+                  disabled={scanning || selectableRunning || scanDisabled}
+                  onClick={onMakeSelectable}
+                >
+                  {selectableRunning ? (
+                    <>
+                      <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                      Adding text…
+                    </>
+                  ) : (
+                    <>
+                      <MousePointer2 className="size-3.5" aria-hidden />
+                      Make pages selectable
+                    </>
+                  )}
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 size="sm"
                 className={cn(soft && 'h-9 rounded-full px-5')}
-                disabled={scanning || saving}
+                disabled={scanning || saving || selectableRunning}
                 onClick={() => void handleSave()}
               >
                 {saving ? 'Saving…' : 'Save text'}

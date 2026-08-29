@@ -32,6 +32,20 @@ export interface InitialBookReaderSelection {
 }
 
 /**
+ * Seed book/unit/page only on first apply or when the resolved book/unit changes.
+ * Same book+unit must keep the live page — parent re-renders (praise, tool panels,
+ * assignment-list identity churn) must not snap back to the start-here page.
+ */
+export function shouldApplyInitialReaderSelection(
+  previous: { bookId: string | null; unitId: string | null } | null,
+  nextBookId: string | null,
+  nextUnitId: string | null,
+): boolean {
+  if (previous == null) return true
+  return previous.bookId !== nextBookId || previous.unitId !== nextUnitId
+}
+
+/**
  * Picks default book/unit/page for the fullscreen reader — must stay aligned with
  * `useBookLibraryLoader` behaviour (single source for product rules).
  */
@@ -142,6 +156,8 @@ export interface LauncherBookCoverEntry {
   filePath: string
   cacheUnitId: string
   bookTitle: string
+  /** Assigned (or first) unit title — shown on classroom-home cards. */
+  unitTitle?: string
   /** When set, shown instead of PDF page 1. */
   imagePath?: string
 }
@@ -181,12 +197,14 @@ export function resolveLauncherBookCovers({
     const imagePath = book.coverImagePath?.trim()
     if (!imagePath && !coverUnit.filePath) continue
 
+    const unitTitle = unit.title?.trim()
     covers.push({
       bookId: book.id,
       unitId: unit.id,
       filePath: coverUnit.filePath ?? '',
       cacheUnitId: `${book.id}-launcher-cover`,
       bookTitle: book.title,
+      ...(unitTitle ? { unitTitle } : {}),
       ...(imagePath ? { imagePath } : {}),
     })
   }

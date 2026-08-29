@@ -4,6 +4,7 @@ import {
   CLASS_SCHEDULE_GRACE_MINUTES,
   CLASS_STARTING_SOON_MINUTES,
   canExtendClassBy,
+  canOpenClassPrep,
   classEntryActionLabel,
   computeClassLiveClockPhase,
   findNextStudentSoon,
@@ -251,6 +252,17 @@ describe('ClassIn-style entry actions', () => {
     expect(classEntryActionLabel('prepare')).toBe('Prepare')
     expect(classEntryActionLabel('enter')).toBe('Enter')
     expect(classEntryActionLabel('continue')).toBe('Enter')
+    expect(
+      canOpenClassPrep({
+        status: 'planned',
+      }),
+    ).toBe(true)
+    expect(
+      canOpenClassPrep({
+        status: 'prepared',
+      }),
+    ).toBe(true)
+    expect(canOpenClassPrep({ status: 'in_progress' })).toBe(false)
   })
 
   it('formats countdown only inside 24h', () => {

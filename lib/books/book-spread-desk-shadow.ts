@@ -61,9 +61,12 @@ export const BOOK_SPREAD_DESK_SHADOW_SIDE_BLEED_PX = Math.max(
   bookForeEdgeStackSideBleedPx() + 10,
 )
 
-/** Vertical viewport budget removed when sizing the open-book frame in the reader. */
+/**
+ * Vertical viewport budget when sizing the open-book frame.
+ * Shadows mostly fall below the boards — keep full bottom bleed, a thin top pad only.
+ */
 export const BOOK_SPREAD_DESK_SHADOW_VIEWPORT_RESERVE_Y_PX =
-  BOOK_SPREAD_DESK_SHADOW_BOTTOM_BLEED_PX * 2 + 8
+  BOOK_SPREAD_DESK_SHADOW_BOTTOM_BLEED_PX + 28
 
 /** Horizontal viewport budget removed when sizing the open-book frame in the reader. */
 export const BOOK_SPREAD_DESK_SHADOW_VIEWPORT_RESERVE_X_PX =

@@ -427,13 +427,13 @@ export function ScheduleTimeGrid({
   }
 
   return (
-    <div
-      className="overflow-x-auto rounded-2xl border border-[var(--border)] bg-[var(--card)]"
-      aria-label="Weekly schedule"
-    >
+    <div className="overflow-x-auto" aria-label="Weekly schedule">
       <div className="min-w-[760px]">
-        <div className="grid border-b border-[var(--border)]" style={{ gridTemplateColumns: '4rem repeat(7, 1fr)' }}>
-          <div className="border-r border-[var(--border)] bg-[var(--surface-2)]" aria-hidden />
+        <div
+          className="grid border-b border-[var(--chrome-frost-border)]"
+          style={{ gridTemplateColumns: '4rem repeat(7, 1fr)' }}
+        >
+          <div className="border-r border-[var(--chrome-frost-border)]" aria-hidden />
           {weekDays.map((day) => {
             const header = formatDayColumnHeader(day)
             const working = isWorkingDay(day)
@@ -441,27 +441,23 @@ export function ScheduleTimeGrid({
             return (
               <div
                 key={day.toISOString()}
-                className={cn(
-                  'border-r border-[var(--border)] px-2 py-2 text-center last:border-r-0',
-                  working && (header.isToday ? 'bg-[var(--brand-blue)]/10' : 'bg-[var(--surface-2)]'),
-                  !working && 'bg-muted/50',
-                  isFocused && working && !header.isToday && 'bg-violet-500/10 ring-2 ring-inset ring-violet-400/60',
-                )}
+                className="border-r border-[var(--chrome-frost-border)] px-2 py-2.5 text-center last:border-r-0"
               >
                 <p
                   className={cn(
-                    'text-[10px] font-medium uppercase tracking-wide',
-                    working ? 'text-muted-foreground' : 'text-muted-foreground/70',
+                    'text-[11px] font-medium tracking-tight',
+                    working ? 'text-muted-foreground' : 'text-muted-foreground/55',
                   )}
                 >
                   {header.weekday}
                 </p>
                 <p
                   className={cn(
-                    'mx-auto mt-0.5 flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold',
+                    'mx-auto mt-1 flex h-7 w-7 items-center justify-center rounded-full text-[15px] font-semibold tracking-tight',
                     working && header.isToday && 'bg-[var(--brand-blue)] text-white',
-                    working && isFocused && !header.isToday && 'bg-violet-500/20 font-bold text-foreground',
-                    !working && 'text-muted-foreground/70',
+                    working && isFocused && !header.isToday && 'bg-[var(--chrome-pill-active)] text-[var(--chrome-pill-active-fg)]',
+                    working && !header.isToday && !isFocused && 'text-foreground',
+                    !working && 'text-muted-foreground/55',
                   )}
                 >
                   {header.dayNum}
@@ -472,11 +468,11 @@ export function ScheduleTimeGrid({
         </div>
 
         <div ref={gridRef} className="relative flex" style={{ minHeight: Math.max(heightPx, 480) }}>
-          <div className="relative w-16 shrink-0 border-r border-[var(--border)] bg-[var(--surface-2)]" aria-hidden>
+          <div className="relative w-16 shrink-0 border-r border-[var(--chrome-frost-border)]" aria-hidden>
             {hourLabels.map(({ minute, label }) => (
               <div
                 key={minute}
-                className="absolute right-2 -translate-y-1/2 text-[10px] font-medium text-muted-foreground"
+                className="absolute right-2.5 -translate-y-1/2 text-[11px] font-medium tabular-nums tracking-tight text-muted-foreground/80"
                 style={{ top: (minute - config.startMinute) * PX_PER_MINUTE }}
               >
                 {label}
@@ -508,12 +504,12 @@ export function ScheduleTimeGrid({
                   isWorkingDay: working,
                 })}
                 className={cn(
-                  'relative border-r border-[var(--border)] last:border-r-0',
-                  working && header.isToday && 'bg-[var(--brand-blue)]/[0.03]',
-                  working && isFocused && !header.isToday && 'bg-violet-500/[0.06] ring-2 ring-inset ring-violet-400/50',
-                  !working && 'bg-[repeating-linear-gradient(-45deg,transparent,transparent_6px,rgba(0,0,0,0.035)_6px,rgba(0,0,0,0.035)_12px)] bg-muted/30',
+                  'relative border-r border-[var(--chrome-frost-border)] last:border-r-0',
+                  working && header.isToday && 'bg-[var(--brand-blue)]/[0.04]',
+                  working && isFocused && !header.isToday && 'bg-[var(--chrome-pill-active)]',
+                  !working && 'bg-[var(--surface-3)]/70',
                   isDragging ? 'cursor-grabbing' : working ? 'cursor-pointer' : 'cursor-not-allowed',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--brand-blue)]',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--brand-blue)]/50',
                 )}
                 onClick={(e) => handleColumnClick(day, e)}
                 onMouseMove={(e) => handleColumnMouseMove(dayIndex, day, e)}
@@ -524,7 +520,7 @@ export function ScheduleTimeGrid({
                   ? hourLabels.map(({ minute }) => (
                       <div
                         key={`line-${minute}`}
-                        className="pointer-events-none absolute inset-x-0 border-t border-[var(--border)]/60"
+                        className="pointer-events-none absolute inset-x-0 border-t border-[var(--chrome-frost-border)]"
                         style={{ top: (minute - config.startMinute) * PX_PER_MINUTE }}
                       />
                     ))
@@ -533,7 +529,7 @@ export function ScheduleTimeGrid({
                   ? hourLabels.map(({ minute }) => (
                       <div
                         key={`half-${minute}`}
-                        className="pointer-events-none absolute inset-x-0 border-t border-dashed border-[var(--border)]/30"
+                        className="pointer-events-none absolute inset-x-0 border-t border-[color-mix(in_srgb,var(--foreground)_4%,transparent)]"
                         style={{ top: (minute - config.startMinute + 30) * PX_PER_MINUTE }}
                       />
                     ))
@@ -541,14 +537,14 @@ export function ScheduleTimeGrid({
 
                 {emptyHover && emptyHover.dayIndex === dayIndex && !isDragging ? (
                   <div
-                    className="pointer-events-none absolute inset-x-0.5 z-[1] flex items-start rounded-sm bg-[var(--brand-blue)]/12 px-1.5 py-0.5 ring-1 ring-inset ring-[var(--brand-blue)]/25"
+                    className="pointer-events-none absolute inset-x-1 z-[1] flex items-start rounded-xl bg-[var(--chrome-pill-active)] px-2 py-1"
                     style={{
                       top: minuteToTopPx(emptyHover.startMinute, config.startMinute, PX_PER_MINUTE),
                       height: SNAP_MINUTES * PX_PER_MINUTE,
                     }}
                     aria-hidden
                   >
-                    <span className="truncate text-[10px] font-medium text-[var(--brand-blue)]/80">
+                    <span className="truncate text-[11px] font-medium tracking-tight text-[var(--chrome-pill-active-fg)]">
                       {fmtScheduleMinute(emptyHover.startMinute)}
                     </span>
                   </div>

@@ -17,6 +17,7 @@ import { PDF_THUMB_WIDTH } from '@/lib/books/pdf-thumbnail-cache'
 import {
   BOOK_PAGE_LIST_RAIL_WIDTH_PX,
   BOOK_WORKSPACE_LEFT_BAR_WIDTH,
+  BOOK_WORKSPACE_RAIL_MOTION_TW,
 } from '@/components/students/fullscreen-book-overlay/constants'
 import type { WhiteboardSessionDocument } from '@/lib/books/whiteboard-session-types'
 import type { BookLibraryPayload } from '@/lib/books/types'
@@ -162,7 +163,8 @@ export function PageListRail({
     <>
       <div
         className={cn(
-          'absolute inset-y-0 z-50 flex min-h-0 flex-col overflow-hidden border-r border-white/10 bg-[#2a2a2e] text-[#a1a1aa] shadow-[4px_0_16px_rgba(0,0,0,0.35)] transition-transform duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
+          'absolute inset-y-0 z-50 flex min-h-0 flex-col overflow-hidden border-r border-white/10 bg-[#2a2a2e] text-[#a1a1aa] shadow-[4px_0_16px_rgba(0,0,0,0.35)] transition-transform',
+          BOOK_WORKSPACE_RAIL_MOTION_TW,
           isPageListOpen ? 'translate-x-0' : '-translate-x-full pointer-events-none',
         )}
         style={{

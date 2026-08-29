@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   flushPendingUnitPageSave,
+  getLatestSavedUnitPageForBook,
   getSavedUnitPage,
+  peekSavedUnitPage,
   scheduleSaveUnitPage,
+  saveUnitPage,
   UNIT_PAGE_SAVE_DEBOUNCE_MS,
 } from '@/lib/books/progress'
 
@@ -45,5 +48,22 @@ describe('unit page progress debounce', () => {
     scheduleSaveUnitPage('book-a', 'unit-1', 12)
     flushPendingUnitPageSave()
     expect(getSavedUnitPage('book-a', 'unit-1')).toBe(12)
+  })
+
+  it('peekSavedUnitPage returns null until a page is stored', () => {
+    expect(peekSavedUnitPage('book-a', 'unit-1')).toBeNull()
+    saveUnitPage('book-a', 'unit-1', 9)
+    expect(peekSavedUnitPage('book-a', 'unit-1')).toBe(9)
+  })
+
+  it('getLatestSavedUnitPageForBook picks the newest unit entry', () => {
+    vi.setSystemTime(new Date('2026-05-01T12:00:00.000Z'))
+    saveUnitPage('book-a', 'unit-1', 3)
+    vi.setSystemTime(new Date('2026-05-02T12:00:00.000Z'))
+    saveUnitPage('book-a', 'unit-2', 40)
+    expect(getLatestSavedUnitPageForBook('book-a')).toMatchObject({
+      unitId: 'unit-2',
+      page: 40,
+    })
   })
 })

@@ -2,19 +2,37 @@
 
 import type { ReactNode } from 'react'
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { ArrowLeft, BookOpen, Loader2 } from 'lucide-react'
 import { BookCoverMockup } from '@/components/books/book-cover-mockup'
 import { BookCoverMockupArt } from '@/components/books/book-cover-mockup-art'
-import { Button } from '@/components/ui/button'
-import { makeUnitFileUrl } from '@/components/students/fullscreen-book-overlay/constants'
+import { CachedBookImage } from '@/components/books/cached-book-image'
 import { bookCoverImageUrl } from '@/lib/books/book-cover-display'
 import { bookOverlayMaterialBgTextureEnabled } from '@/lib/books/feature-flags'
-import { ensureReactPdfWorker } from '@/lib/books/ensure-react-pdf-worker'
 import { PDF_HERO_THUMB_WIDTH } from '@/lib/books/pdf-thumbnail-cache'
-import type { ReadingCheckClassWrapSummary } from '@/lib/books/reading-check-live-marks'
 import { WelcomeCelebrationLayer } from '@/components/students/welcome-celebration-layer'
+import { CLASS_LAUNCH_BTN } from '@/components/students/fullscreen-book-overlay/constants'
 import { isBookOverlayKeyboardTypingTarget } from '@/lib/books/book-overlay-keyboard-guards'
+import {
+  classroomHomeCoverAction,
+  classroomHomeCoverMeta,
+  splitClassroomHomeCovers,
+} from '@/lib/students/classroom-home-covers'
+import { type ClassroomHomeGoalLine } from '@/lib/students/classroom-home-goals'
+import { ClassroomHomeTodayLesson } from '@/components/students/classroom-home-today-lesson'
+import { ClassroomHomeReviewCard } from '@/components/students/classroom-home-review'
+import {
+  ClassroomHomeLastTime,
+  ClassroomHomeStreakChip,
+} from '@/components/students/classroom-home-continuity'
+import {
+  classroomHomeShouldShowStreak,
+  type ClassroomHomeLastTime as ClassroomHomeLastTimeData,
+} from '@/lib/students/classroom-home-continuity'
+import {
+  classroomHomeReviewHasExtras,
+  type ClassroomHomeReview,
+} from '@/lib/students/classroom-home-review'
 import { cn } from '@/lib/utils'
 
 export interface SimpleBookLaunchCover {
@@ -27,8 +45,12 @@ export interface SimpleBookLaunchCover {
   imagePath?: string
   /** Short resume hint under the title (e.g. "p. 42"). */
   lastStopLabel?: string
-  /** Planned book for this class — soft "Today" hint on the cover. */
+  /** Planned book for this class — leads the Continue card. */
   isTodayPlan?: boolean
+  /** Current unit name (e.g. "Unit 3"). */
+  unitLabel?: string
+  /** Current lesson / part name when known. */
+  lessonLabel?: string
 }
 
 /** prep = teacher-only; welcome = student ceremony; pick = mid-class shelf; wrap = end-of-class goodbye. */
@@ -47,9 +69,17 @@ interface SimpleBookLaunchShellProps {
   openingBookId?: string | null
   isBookOpeningPending?: boolean
   hidden?: boolean
-  /** End-of-class reading-check summary (shown when shelfTone is wrap). */
-  wrapSummary?: ReadingCheckClassWrapSummary | null
   onWrapDone?: () => void
+  /** When set, Exit/Back runs this instead of navigating to `exitHref`. */
+  onExit?: () => void
+  exitLabel?: string
+  todayLesson?: {
+    contextLine: string | null
+    lines: ClassroomHomeGoalLine[]
+  } | null
+  lastTime?: ClassroomHomeLastTimeData | null
+  streakCount?: number
+  review?: ClassroomHomeReview | null
 }
 
 function getStudentFirstName(name: string | null | undefined): string | null {
@@ -59,65 +89,86 @@ function getStudentFirstName(name: string | null | undefined): string | null {
   return first || trimmed
 }
 
+function studentGreeting(displayName: string | null, firstClass: boolean): { aria: string; header: ReactNode } {
+  const kicker = firstClass ? 'Welcome,' : 'Welcome back,'
+  const solo = firstClass ? 'Welcome' : 'Welcome back'
+  const aria = displayName ? `${kicker.replace(/,$/, '')} ${displayName}` : solo
+  const header = displayName ? (
+    <>
+      <p className="book-launch-welcome__kicker">{kicker}</p>
+      <p className="book-launch-welcome__name">{displayName}</p>
+    </>
+  ) : (
+    <p className="book-launch-welcome__name book-launch-welcome__name--solo">{solo}</p>
+  )
+  return { aria, header }
+}
+
 function CoverButton({
   cover,
-  pdfReady,
-  multi,
+  layout,
   isPending,
+  dimmed = false,
   shortcutHint,
+  showTodayBadge = false,
+  showAction = false,
   onOpen,
 }: {
   cover: SimpleBookLaunchCover
-  pdfReady: boolean
-  multi: boolean
+  layout: 'feature' | 'row'
   isPending: boolean
+  dimmed?: boolean
   shortcutHint?: string
+  showTodayBadge?: boolean
+  showAction?: boolean
   onOpen: () => void
 }) {
-  const widthPx = multi ? Math.round(PDF_HERO_THUMB_WIDTH * 0.82) : PDF_HERO_THUMB_WIDTH
+  const isFeature = layout === 'feature'
+  const widthPx = isFeature
+    ? Math.round(PDF_HERO_THUMB_WIDTH * 1.08)
+    : Math.round(PDF_HERO_THUMB_WIDTH * 0.82)
+  const action = classroomHomeCoverAction(cover)
+  const meta = classroomHomeCoverMeta(cover)
   const openLabel = isPending
     ? `Opening ${cover.bookTitle}`
     : shortcutHint
-      ? `Open ${cover.bookTitle} (${shortcutHint})`
-      : `Open ${cover.bookTitle}`
+      ? `${action} ${cover.bookTitle} (${shortcutHint})`
+      : `${action} ${cover.bookTitle}`
 
   return (
     <button
       type="button"
       aria-label={openLabel}
       aria-busy={isPending}
-      disabled={isPending}
+      disabled={isPending || dimmed}
       onClick={onOpen}
-      title={isPending ? undefined : `${openLabel} · Esc to close`}
+      title={isPending || dimmed ? undefined : `${openLabel} · Esc to close`}
       className={cn(
-        'book-launch-cover-btn group flex flex-col items-center gap-3 transition-transform duration-200',
-        multi ? 'max-w-[min(42vw,240px)]' : 'max-w-[min(56vw,300px)]',
+        'book-launch-cover-btn group flex flex-col items-center transition-transform duration-200',
+        isFeature ? 'book-launch-cover-btn--feature gap-3.5' : 'max-w-[min(42vw,240px)] gap-3',
         isPending && 'book-launch-cover-btn--opening',
+        dimmed && 'pointer-events-none opacity-40',
       )}
     >
+      {isFeature && !cover.isTodayPlan && action === 'Continue' ? (
+        <span className="book-launch-feature__kicker">Continue lesson</span>
+      ) : null}
       <span className="relative inline-block shrink-0">
         <BookCoverMockup widthPx={widthPx} interactive>
           {cover.imagePath ? (
-            // eslint-disable-next-line @next/next/no-img-element -- local book-library cover
-            <img
+            <CachedBookImage
               src={bookCoverImageUrl(cover.imagePath)}
-              alt=""
               className="book-cover-mockup__art"
-              draggable={false}
             />
           ) : (
             <BookCoverMockupArt
-              fileUrl={makeUnitFileUrl(cover.filePath)}
-              unitId={cover.cacheUnitId}
+              filePath={cover.filePath}
               pageNumber={1}
-              width={widthPx}
-              pdfReady={pdfReady}
               label={cover.bookTitle}
-              eager
             />
           )}
         </BookCoverMockup>
-        {multi && cover.isTodayPlan ? (
+        {showTodayBadge ? (
           <span
             className="book-launch-cover-btn__today pointer-events-none absolute left-1/2 top-0 z-10 -translate-x-1/2 -translate-y-[145%]"
             role="note"
@@ -134,12 +185,29 @@ function CoverButton({
           </span>
         ) : null}
       </span>
-      <span className="flex max-w-[min(70vw,320px)] flex-col items-center gap-0.5 text-center">
-        <span className="truncate text-sm font-semibold text-[#5c3d0a] drop-shadow-sm">{cover.bookTitle}</span>
+      <span
+        className={cn(
+          'flex flex-col items-center text-center',
+          isFeature ? 'max-w-[min(80vw,22rem)] gap-1.5' : 'max-w-[min(70vw,320px)] gap-0.5',
+        )}
+      >
+        <span
+          className={cn(
+            'truncate font-semibold text-[#5c3d0a] drop-shadow-sm',
+            isFeature ? 'text-base sm:text-lg' : 'text-sm',
+          )}
+        >
+          {cover.bookTitle}
+        </span>
         {isPending ? (
           <span className="text-xs font-semibold text-[#5c3d0a]/85">Opening…</span>
-        ) : cover.lastStopLabel ? (
-          <span className="text-xs font-medium text-[#5c3d0a]/70">{cover.lastStopLabel}</span>
+        ) : meta ? (
+          <span className="text-xs font-medium leading-snug text-[#5c3d0a]/70">{meta}</span>
+        ) : null}
+        {(isFeature || showAction) && !isPending ? (
+          <span className={cn('book-launch-cover-btn__action', isFeature && 'book-launch-cover-btn__action--feature')}>
+            {action}
+          </span>
         ) : null}
       </span>
     </button>
@@ -156,21 +224,18 @@ export function SimpleBookLaunchShell({
   openingBookId = null,
   isBookOpeningPending = false,
   hidden = false,
-  wrapSummary = null,
   onWrapDone,
+  onExit,
+  exitLabel = 'Exit',
+  todayLesson = null,
+  lastTime = null,
+  streakCount = 0,
+  review = null,
 }: SimpleBookLaunchShellProps) {
-  const [pdfReady, setPdfReady] = useState(false)
   const isWrap = shelfTone === 'wrap'
-
-  useEffect(() => {
-    let cancelled = false
-    void ensureReactPdfWorker().then(() => {
-      if (!cancelled) setPdfReady(true)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [])
+  const isHome = shelfTone === 'prep' || shelfTone === 'welcome'
+  const isQuietShelf = shelfTone === 'pick'
+  const useHomeChrome = isHome || isWrap
 
   useEffect(() => {
     if (hidden || isWrap || !onOpenBook) return
@@ -204,16 +269,12 @@ export function SimpleBookLaunchShell({
 
   const displayName = getStudentFirstName(studentName)
   const isCeremony = shelfTone === 'welcome'
-  const isQuietShelf = shelfTone === 'prep' || shelfTone === 'pick'
-  const attempted = wrapSummary?.attempted ?? 0
+  const greeting = studentGreeting(displayName, showFirstClassWelcome)
 
   let header: ReactNode
   let welcomeAria: string
 
-  if (shelfTone === 'prep') {
-    welcomeAria = 'Prep'
-    header = <p className="book-launch-welcome__name book-launch-welcome__name--solo">Prep</p>
-  } else if (shelfTone === 'pick') {
+  if (shelfTone === 'pick') {
     welcomeAria = displayName ? `${displayName}'s books` : 'Books'
     header = (
       <p className="book-launch-welcome__name book-launch-welcome__name--solo">
@@ -231,29 +292,59 @@ export function SimpleBookLaunchShell({
       <p className="book-launch-welcome__name book-launch-welcome__name--solo">Great work today</p>
     )
   } else {
-    const welcomeKicker = showFirstClassWelcome ? 'Welcome,' : 'Welcome back,'
-    welcomeAria = displayName
-      ? showFirstClassWelcome
-        ? `Welcome, ${displayName}`
-        : `Welcome back, ${displayName}`
-      : showFirstClassWelcome
-        ? 'Welcome'
-        : 'Welcome back'
-    const welcomeSolo = showFirstClassWelcome ? 'Welcome' : 'Welcome back'
-    header = displayName ? (
-      <>
-        <p className="book-launch-welcome__kicker">{welcomeKicker}</p>
-        <p className="book-launch-welcome__name">{displayName}</p>
-      </>
-    ) : (
-      <p className="book-launch-welcome__name book-launch-welcome__name--solo">{welcomeSolo}</p>
-    )
+    welcomeAria = greeting.aria
+    header = greeting.header
   }
 
-  const multi = covers.length > 1
   const todayCover = covers.find((c) => c.isTodayPlan)
   const primaryBookId = (todayCover ?? covers[0])?.bookId
   const secondaryBookId = covers.find((c) => c.bookId !== primaryBookId)?.bookId
+  const homeSplit = isHome ? splitClassroomHomeCovers(covers) : { featured: null, others: covers }
+  const showStreak = (isHome || isWrap) && classroomHomeShouldShowStreak(streakCount)
+  const showLastTime = isHome && lastTime != null
+  const showReview = isWrap && review != null && classroomHomeReviewHasExtras(review)
+
+  function renderCover(
+    cover: SimpleBookLaunchCover,
+    layout: 'feature' | 'row',
+    options?: { showTodayBadge?: boolean; showAction?: boolean },
+  ) {
+    const isPending = isBookOpeningPending && openingBookId === cover.bookId
+    const shortcutHint =
+      cover.bookId === primaryBookId ? 'B' : cover.bookId === secondaryBookId ? '2' : undefined
+    return (
+      <CoverButton
+        key={cover.bookId}
+        cover={cover}
+        layout={layout}
+        isPending={isPending}
+        dimmed={isBookOpeningPending && !isPending}
+        shortcutHint={shortcutHint}
+        showTodayBadge={options?.showTodayBadge}
+        showAction={options?.showAction}
+        onOpen={() => onOpenBook?.(cover.bookId, cover.unitId)}
+      />
+    )
+  }
+
+  const emptyBook = (
+    <button
+      type="button"
+      aria-label={isBookOpeningPending ? 'Loading book' : 'Open book (B)'}
+      aria-busy={isBookOpeningPending}
+      disabled
+      className="group flex max-w-[min(56vw,300px)] flex-col items-center gap-3 disabled:pointer-events-none disabled:opacity-90"
+    >
+      <span className="relative w-[min(48vw,260px)] shrink-0">
+        <BookCoverMockup widthPx={PDF_HERO_THUMB_WIDTH} interactive>
+          <div className="book-cover-mockup__fallback">
+            <BookOpen className="h-10 w-10 opacity-60" aria-hidden />
+            <span className="book-cover-mockup__fallback-label">No book assigned</span>
+          </div>
+        </BookCoverMockup>
+      </span>
+    </button>
+  )
 
   return (
     <div
@@ -273,112 +364,99 @@ export function SimpleBookLaunchShell({
       <WelcomeCelebrationLayer active={isCeremony && showFirstClassWelcome} />
 
       {!isWrap ? (
-        <Link
-          href={exitHref}
-          aria-label="Exit lesson screen"
-          className="absolute left-4 top-4 z-10 inline-flex items-center gap-2 rounded-full border border-[#b48218]/40 bg-[#eab333]/80 px-3 py-1.5 text-sm font-semibold text-[#5c3d0a] shadow-sm backdrop-blur-sm transition hover:bg-[#f0c040]/90 active:scale-[0.98]"
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden />
-          Exit
-        </Link>
+        onExit ? (
+          <button
+            type="button"
+            onClick={onExit}
+            aria-label={exitLabel}
+            className={cn(
+              CLASS_LAUNCH_BTN,
+              'absolute left-4 top-4 z-10 inline-flex items-center gap-2 px-3.5 py-1.5 text-sm',
+            )}
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden />
+            {exitLabel}
+          </button>
+        ) : (
+          <Link
+            href={exitHref}
+            aria-label="Exit lesson screen"
+            className={cn(
+              CLASS_LAUNCH_BTN,
+              'absolute left-4 top-4 z-10 inline-flex items-center gap-2 px-3.5 py-1.5 text-sm',
+            )}
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden />
+            Exit
+          </Link>
+        )
       ) : null}
 
-      <div className={cn('book-launch-stage', isQuietShelf && 'book-launch-stage--shelf')}>
+      <div
+        className={cn(
+          'book-launch-stage',
+          useHomeChrome && 'book-launch-stage--home',
+          isQuietShelf && 'book-launch-stage--shelf',
+        )}
+      >
         <header
-          className={cn('book-launch-welcome', isQuietShelf && 'book-launch-welcome--shelf')}
+          className={cn(
+            'book-launch-welcome',
+            useHomeChrome && 'book-launch-welcome--home',
+            isQuietShelf && 'book-launch-welcome--shelf',
+          )}
           aria-label={welcomeAria}
         >
           {header}
         </header>
 
-        {isWrap ? (
-          <div className="book-launch-wrap pointer-events-auto flex flex-col items-center gap-8">
-            {attempted > 0 && wrapSummary ? (
-              <div className="book-launch-wrap__stats flex flex-col items-center gap-3 text-center">
-                <p className="text-sm font-semibold uppercase tracking-[0.14em] text-[#5c3d0a]/70">
-                  Reading checks today
-                </p>
-                <div className="flex flex-wrap items-end justify-center gap-6 sm:gap-10">
-                  <div>
-                    <p className="text-5xl font-bold tabular-nums text-emerald-800 sm:text-6xl">
-                      {wrapSummary.correct}
-                    </p>
-                    <p className="mt-1 text-sm font-semibold text-[#5c3d0a]/80">right</p>
-                  </div>
-                  {wrapSummary.incorrect > 0 ? (
-                    <div>
-                      <p className="text-5xl font-bold tabular-nums text-rose-800 sm:text-6xl">
-                        {wrapSummary.incorrect}
-                      </p>
-                      <p className="mt-1 text-sm font-semibold text-[#5c3d0a]/80">miss</p>
-                    </div>
-                  ) : null}
-                  {wrapSummary.skip > 0 ? (
-                    <div>
-                      <p className="text-5xl font-bold tabular-nums text-[#5c3d0a]/70 sm:text-6xl">
-                        {wrapSummary.skip}
-                      </p>
-                      <p className="mt-1 text-sm font-semibold text-[#5c3d0a]/80">skip</p>
-                    </div>
-                  ) : null}
-                </div>
-                <p className="max-w-md text-base font-medium text-[#5c3d0a]/85">
-                  {wrapSummary.totalInPack != null && wrapSummary.totalInPack > 0
-                    ? `${wrapSummary.attempted} of ${wrapSummary.totalInPack} for this story — more next time`
-                    : `${wrapSummary.attempted} check${wrapSummary.attempted === 1 ? '' : 's'} today`}
-                </p>
-              </div>
-            ) : null}
+        {showStreak ? (
+          <ClassroomHomeStreakChip count={streakCount} encourage={isHome} />
+        ) : null}
 
-            <Button
+        {isWrap ? (
+          <div className="book-launch-wrap pointer-events-auto flex flex-col items-center gap-6">
+            {showReview && review ? <ClassroomHomeReviewCard review={review} /> : null}
+            <button
               type="button"
-              size="lg"
-              className="min-w-[10rem] rounded-full border border-[#b48218]/40 bg-[#eab333] px-8 text-base font-semibold text-[#5c3d0a] shadow-sm hover:bg-[#f0c040]"
+              className={cn(CLASS_LAUNCH_BTN, 'min-w-[10rem] px-8 py-2.5 text-base')}
               onClick={() => onWrapDone?.()}
             >
               Done
-            </Button>
+            </button>
           </div>
+        ) : isHome ? (
+          <div className="book-launch-home-split">
+            <div className="book-launch-home-plan">
+              <ClassroomHomeTodayLesson
+                contextLine={todayLesson?.contextLine ?? null}
+                lines={todayLesson?.lines ?? []}
+              />
+              {showLastTime && lastTime ? <ClassroomHomeLastTime lastTime={lastTime} /> : null}
+            </div>
+            <div className="book-launch-home-books" aria-label="Books">
+              {covers.length === 0
+                ? emptyBook
+                : (homeSplit.featured
+                    ? [homeSplit.featured, ...homeSplit.others]
+                    : homeSplit.others
+                  ).map((cover) =>
+                    renderCover(cover, 'row', {
+                      showAction: true,
+                      showTodayBadge: covers.length > 1 && Boolean(cover.isTodayPlan),
+                    }),
+                  )}
+            </div>
+          </div>
+        ) : covers.length === 0 ? (
+          <div className="book-launch-book">{emptyBook}</div>
         ) : (
-          <div className={cn('book-launch-book', multi && 'book-launch-book--multi')}>
-            {covers.length > 0 ? (
-              covers.map((cover) => {
-                const isPending = isBookOpeningPending && openingBookId === cover.bookId
-                const shortcutHint =
-                  cover.bookId === primaryBookId
-                    ? 'B'
-                    : cover.bookId === secondaryBookId
-                      ? '2'
-                      : undefined
-                return (
-                  <CoverButton
-                    key={cover.bookId}
-                    cover={cover}
-                    pdfReady={pdfReady}
-                    multi={multi}
-                    isPending={isPending}
-                    shortcutHint={shortcutHint}
-                    onOpen={() => onOpenBook?.(cover.bookId, cover.unitId)}
-                  />
-                )
-              })
-            ) : (
-              <button
-                type="button"
-                aria-label={isBookOpeningPending ? 'Loading book' : 'Open book (B)'}
-                aria-busy={isBookOpeningPending}
-                disabled
-                className="group flex max-w-[min(56vw,300px)] flex-col items-center gap-3 disabled:pointer-events-none disabled:opacity-90"
-              >
-                <span className="relative w-[min(48vw,260px)] shrink-0">
-                  <BookCoverMockup widthPx={PDF_HERO_THUMB_WIDTH} interactive>
-                    <div className="book-cover-mockup__fallback">
-                      <BookOpen className="h-10 w-10 opacity-60" aria-hidden />
-                      <span className="book-cover-mockup__fallback-label">No book assigned</span>
-                    </div>
-                  </BookCoverMockup>
-                </span>
-              </button>
+          <div className={cn('book-launch-book', covers.length > 1 && 'book-launch-book--multi')}>
+            {covers.map((cover) =>
+              renderCover(cover, 'row', {
+                showTodayBadge: covers.length > 1 && Boolean(cover.isTodayPlan),
+                showAction: false,
+              }),
             )}
           </div>
         )}

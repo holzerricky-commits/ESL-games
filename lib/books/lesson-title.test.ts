@@ -27,4 +27,9 @@ describe('formatTocChunkTitle', () => {
   it('rewrites mistaken Lesson labels when week style is requested', () => {
     expect(formatTocChunkTitle(2, 'Lesson 2: Pedal Power', 'week')).toBe('Week 2: Pedal Power')
   })
+
+  it('keeps plain titles for generic extracts', () => {
+    expect(formatTocChunkTitle(1, 'The Incredible Dolphin', 'plain')).toBe('The Incredible Dolphin')
+    expect(formatTocChunkTitle(2, '', 'plain')).toBe('Section 2')
+  })
 })

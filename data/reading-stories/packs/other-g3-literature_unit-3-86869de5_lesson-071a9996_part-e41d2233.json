@@ -1,0 +1,121 @@
+{
+  "storyId": "other-g3-literature::unit-3-86869de5::lesson-071a9996::part-e41d2233",
+  "bookId": "other-g3-literature",
+  "unitId": "unit-3-86869de5",
+  "status": "draft",
+  "stops": [
+    {
+      "id": "stop-47e402bb",
+      "label": "The argument begins",
+      "displayPage": 504,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 506,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-8e6bc47e",
+          "kind": "mcq",
+          "prompt": "What did the Wind and the Sun argue about?",
+          "choices": [
+            "who could fly the highest",
+            "who was strongest",
+            "who could make the most noise",
+            "who had the most friends"
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "The Wind and the Sun both lived in the sky. Like most neighbors, they got along much of the time. However, sometimes they argued about who was strongest.",
+          "evidenceHighlight": "who was strongest"
+        }
+      ]
+    },
+    {
+      "id": "stop-4f616c29",
+      "label": "The Wind's turn",
+      "displayPage": 504,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 506,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-3313487e",
+          "kind": "mcq",
+          "prompt": "How did the Wind try to make the farmer take off his coat?",
+          "choices": [
+            "He whispered to the farmer.",
+            "He blew very hard.",
+            "He sang a song to the farmer.",
+            "He asked the farmer politely."
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "The Wind took a big breath and blew and blew. He tried to blast away the farmer’s coat with all his strength, but the farmer only pulled his coat tighter.",
+          "evidenceHighlight": "blew and blew. He tried to blast away the farmer’s coat"
+        }
+      ]
+    },
+    {
+      "id": "stop-2f4477e6",
+      "label": "The Sun's turn",
+      "displayPage": 504,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 506,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-aeb635ff",
+          "kind": "true_false",
+          "prompt": "True or False: The Sun made the farmer take off his coat by sending out warm rays.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": true,
+          "evidenceSnippet": "Sun nodded and smiled. He sent out his warmest rays. The farmer began to sweat as he labored in the field. “Ah, it certainly has become a warm, sunny day,” he sighed with relief as he removed his coat. And with that, the Sun won the contest.",
+          "evidenceHighlight": "He sent out his warmest rays."
+        }
+      ]
+    },
+    {
+      "id": "stop-c48df3b9",
+      "label": "Who won?",
+      "displayPage": 504,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 506,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-1ef045ab",
+          "kind": "mcq",
+          "prompt": "Who won the contest?",
+          "choices": [
+            "The Wind",
+            "The farmer",
+            "The Sun",
+            "No one"
+          ],
+          "correctIndex": 2,
+          "correctTrue": null,
+          "evidenceSnippet": "The farmer began to sweat as he labored in the field. “Ah, it certainly has become a warm, sunny day,” he sighed with relief as he removed his coat. And with that, the Sun won the contest.",
+          "evidenceHighlight": "the Sun won the contest."
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-08-14T13:03:50.883Z",
+  "approvedAt": null
+}

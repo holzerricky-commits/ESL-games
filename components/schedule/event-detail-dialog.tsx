@@ -33,10 +33,12 @@ import {
   isSessionToday,
 } from '@/lib/schedule/week-view-layout'
 import { normalizeClassDurationMinutes } from '@/lib/schedule/class-duration'
+import { canOpenClassPrep } from '@/lib/students/class-schedule-lifecycle'
 import { canMoveClassSessionStatus } from '@/lib/schedule/move-class-targets'
 import type { PendingRecurringScheduleChange } from '@/lib/schedule/recurring-change-types'
 import { ensureStudentRecordsHydrated } from '@/lib/local-data/student-records-client'
 import {
+  buildPrepareLessonMapHref,
   cancelClassOccurrence,
   clearStudentClassesInDateRange,
   getWeeklySlotAssignments,
@@ -48,6 +50,16 @@ import {
   type TodaysClassSessionRow,
 } from '@/lib/students/selectors'
 import type { TeacherWeeklyScheduleConfig } from '@/lib/types'
+import {
+  scheduleDialogContentClass,
+  scheduleDialogDescriptionClass,
+  scheduleDialogOverlayClass,
+  scheduleDialogTitleClass,
+  scheduleGhostBtnClass,
+  scheduleMenuContentClass,
+  schedulePrimaryBtnClass,
+  scheduleQuietBtnClass,
+} from '@/components/schedule/schedule-sheet-chrome'
 
 interface EventDetailDialogProps {
   open: boolean
@@ -367,24 +379,27 @@ export function EventDetailDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent>
+        <DialogContent
+          overlayClassName={scheduleDialogOverlayClass}
+          className={scheduleDialogContentClass}
+        >
           <DialogHeader>
-            <DialogTitle>{studentName}</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className={scheduleDialogTitleClass}>{studentName}</DialogTitle>
+            <DialogDescription className={scheduleDialogDescriptionClass}>
               {formatSessionDateTime(session.scheduledFor)} · {session.durationMin} min
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex flex-wrap gap-2">
-            <span className="inline-flex rounded-full bg-[var(--surface-2)] px-2 py-0.5 text-xs font-medium text-foreground">
+          <div className="flex flex-wrap gap-1.5">
+            <span className="inline-flex rounded-full bg-[var(--surface-3)] px-2.5 py-1 text-[12px] font-medium tracking-tight text-foreground">
               {STATUS_LABELS[session.status] ?? session.status}
             </span>
             {slot ? (
-              <span className="inline-flex rounded-full border border-[var(--border)] px-2 py-0.5 text-xs font-medium">
+              <span className="inline-flex rounded-full bg-[var(--surface-3)] px-2.5 py-1 text-[12px] font-medium tracking-tight text-muted-foreground">
                 Repeats weekly
               </span>
             ) : isOneOff ? (
-              <span className="inline-flex rounded-full border border-[var(--border)] px-2 py-0.5 text-xs font-medium">
+              <span className="inline-flex rounded-full bg-[var(--surface-3)] px-2.5 py-1 text-[12px] font-medium tracking-tight text-muted-foreground">
                 One-time class
               </span>
             ) : null}
@@ -402,25 +417,32 @@ export function EventDetailDialog({
             />
           ) : null}
 
-          {error ? <p className="text-sm text-[var(--brand-red)]">{error}</p> : null}
+          {error ? <p className="text-[13px] text-[var(--brand-red)]">{error}</p> : null}
 
           <DialogFooter className="flex-col gap-2 sm:items-stretch">
             {mode === 'view' ? (
               <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
                 {canStart ? (
-                  <Button type="button" onClick={handleStart} disabled={busy}>
+                  <Button type="button" className={schedulePrimaryBtnClass} onClick={handleStart} disabled={busy}>
                     Enter
                   </Button>
                 ) : null}
                 {isMissed ? (
-                  <Button type="button" variant="secondary" onClick={() => void handleMarkTaught()} disabled={busy}>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className={scheduleQuietBtnClass}
+                    onClick={() => void handleMarkTaught()}
+                    disabled={busy}
+                  >
                     Mark taught
                   </Button>
                 ) : null}
                 {canMove ? (
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="secondary"
+                    className={scheduleQuietBtnClass}
                     disabled={busy}
                     onClick={() => {
                       setMoveTarget({ studentId, studentName, session })
@@ -431,21 +453,35 @@ export function EventDetailDialog({
                     {isMissed ? 'Reschedule' : isLive ? 'Move instead' : 'Move'}
                   </Button>
                 ) : null}
-                <Button type="button" variant="outline" asChild>
-                  <Link href={`/students/${studentId}?tab=classes`}>Prep</Link>
+                <Button type="button" variant="secondary" className={scheduleQuietBtnClass} asChild>
+                  <Link
+                    href={
+                      canOpenClassPrep(session)
+                        ? buildPrepareLessonMapHref(studentId, session.id)
+                        : `/students/${studentId}?tab=classes`
+                    }
+                  >
+                    Prep
+                  </Link>
                 </Button>
                 {slot || canEditOneOff ? (
-                  <Button type="button" variant="outline" onClick={() => setMode('edit')} disabled={busy}>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className={scheduleQuietBtnClass}
+                    onClick={() => setMode('edit')}
+                    disabled={busy}
+                  >
                     Edit time
                   </Button>
                 ) : null}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button type="button" variant="outline" disabled={busy}>
+                    <Button type="button" variant="secondary" className={scheduleQuietBtnClass} disabled={busy}>
                       Remove…
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="min-w-[14rem]">
+                  <DropdownMenuContent align="end" className={`min-w-[14rem] ${scheduleMenuContentClass}`}>
                     {canCancel ? (
                       <DropdownMenuItem
                         onSelect={() => {
@@ -486,10 +522,10 @@ export function EventDetailDialog({
               </div>
             ) : (
               <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-                <Button type="button" variant="outline" onClick={() => setMode('view')}>
+                <Button type="button" variant="ghost" className={scheduleGhostBtnClass} onClick={() => setMode('view')}>
                   Back
                 </Button>
-                <Button type="button" onClick={handleSaveEdit} disabled={busy}>
+                <Button type="button" className={schedulePrimaryBtnClass} onClick={handleSaveEdit} disabled={busy}>
                   {slot ? 'Continue' : 'Save'}
                 </Button>
               </div>

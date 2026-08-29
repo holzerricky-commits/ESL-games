@@ -1,0 +1,92 @@
+{
+  "storyId": "literature-anthology-g2::unit-3-70e33f85::lesson-31dae838::part-93fc5b30",
+  "bookId": "literature-anthology-g2",
+  "unitId": "unit-3-70e33f85",
+  "status": "approved",
+  "stops": [
+    {
+      "id": "stop-fc437996",
+      "label": "Water cycle intro",
+      "displayPage": 532,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 534,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-2729b984",
+          "kind": "true_false",
+          "prompt": "True or False: When puddles disappear, the water is gone from Earth forever.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "Soon the puddles disappear, too. What has happened to the water? Is it gone for good? The water does not disappear. Earth's water is always being recycled.",
+          "evidenceHighlight": "The water does not disappear."
+        }
+      ]
+    },
+    {
+      "id": "stop-8de19845",
+      "label": "Water cycle step",
+      "displayPage": 533,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 535,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-82af8d6d",
+          "kind": "mcq",
+          "prompt": "What makes liquid water turn into a gas called water vapor?",
+          "choices": [
+            "The cold air",
+            "The warmth of the Sun",
+            "The heavy clouds",
+            "The fast-flowing rivers"
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "The warmth of the Sun heats up the water on Earth's surface. This solar energy changes the liquid water into a gas called water vapor.",
+          "evidenceHighlight": "The warmth of the Sun heats up the water on Earth's surface. This solar energy changes the liquid water into a gas called water vapor."
+        }
+      ]
+    },
+    {
+      "id": "stop-11d42af7",
+      "label": "Water energy",
+      "displayPage": 534,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 536,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-f8eb42b3",
+          "kind": "mcq",
+          "prompt": "How do people use moving water to create electricity?",
+          "choices": [
+            "They drink it to get energy.",
+            "They build dams to control it and make it flow through pipes.",
+            "They swim in fast rivers to feel strong.",
+            "They watch waterfalls for fun."
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "People know how to put moving water to work. Waterpower is used to create electricity. First workers build a dam on a fast-flowing river. The dam holds back the river's flow. Workers control the amount of water that passes through it. Once inside the dam, the water moves through a pipe to make electricity.",
+          "evidenceHighlight": null
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-08-18T09:35:25.337Z",
+  "approvedAt": "2026-08-18T09:35:25.337Z"
+}

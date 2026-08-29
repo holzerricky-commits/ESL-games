@@ -44,12 +44,8 @@ export function ScheduleMonthGrid({
   }
 
   return (
-    <div
-      className="overflow-hidden rounded-xl border border-[var(--border)] bg-background"
-      role="grid"
-      aria-label="Monthly schedule"
-    >
-      <div className="grid grid-cols-7 border-b border-[var(--border)] bg-[var(--surface-2)]">
+    <div className="overflow-hidden" role="grid" aria-label="Monthly schedule">
+      <div className="grid grid-cols-7 border-b border-[var(--chrome-frost-border)]">
         {MONTH_WEEKDAY_LABELS.map((label, index) => {
           const dayOfWeek = (index + 1) % 7
           const isOff = !teachDays.includes(dayOfWeek)
@@ -57,7 +53,7 @@ export function ScheduleMonthGrid({
             <div
               key={label}
               className={cn(
-                'px-2 py-2 text-center text-xs font-semibold uppercase tracking-wide',
+                'px-2 py-2.5 text-center text-[11px] font-medium tracking-tight',
                 isOff ? 'text-muted-foreground/55' : 'text-muted-foreground',
               )}
             >
@@ -85,19 +81,19 @@ export function ScheduleMonthGrid({
               key={key}
               role="gridcell"
               className={cn(
-                'flex min-h-[6.5rem] flex-col border-b border-r border-[var(--border)] p-1.5 last:border-r-0',
-                !inMonth && 'bg-muted/20',
-                inMonth && !working && 'bg-muted/35',
+                'flex min-h-[6.5rem] flex-col border-b border-r border-[var(--chrome-frost-border)] p-1.5 last:border-r-0',
+                inMonth && !working && 'bg-[var(--surface-3)]/70',
+                today && 'bg-[var(--brand-blue)]/[0.04]',
               )}
             >
               <button
                 type="button"
                 className={cn(
-                  'mb-1 inline-flex h-7 w-7 shrink-0 items-center justify-center self-end rounded-full text-sm font-medium transition-colors',
+                  'chrome-motion mb-1 inline-flex h-7 w-7 shrink-0 items-center justify-center self-end rounded-full text-[15px] font-semibold tracking-tight',
                   today && 'bg-[var(--brand-blue)] text-white',
-                  !today && inMonth && working && 'text-foreground hover:bg-[var(--surface-2)]',
-                  !today && inMonth && !working && 'text-muted-foreground/70 hover:bg-muted/50',
-                  !today && !inMonth && 'text-muted-foreground hover:bg-muted/40',
+                  !today && inMonth && working && 'text-foreground hover:bg-[var(--chrome-pill-hover)]',
+                  !today && inMonth && !working && 'text-muted-foreground/55 hover:bg-[var(--chrome-pill-hover)]',
+                  !today && !inMonth && 'text-muted-foreground hover:bg-[var(--chrome-pill-hover)]',
                 )}
                 onClick={() => onDayZoom(day)}
                 aria-label={`Open week view for ${dayLabel(day)}`}
@@ -109,7 +105,7 @@ export function ScheduleMonthGrid({
                 role="button"
                 tabIndex={0}
                 aria-label={`Open week view for ${dayLabel(day)}`}
-                className="flex min-h-0 flex-1 cursor-pointer flex-col gap-0.5 overflow-hidden rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--brand-blue)]"
+                className="flex min-h-0 flex-1 cursor-pointer flex-col gap-0.5 overflow-hidden rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--brand-blue)]/50"
                 onClick={(event) => {
                   if ((event.target as HTMLElement).closest('[data-month-event]')) return
                   onDayZoom(day)
@@ -137,13 +133,12 @@ export function ScheduleMonthGrid({
                       data-month-event
                       aria-label={formatClassSessionAriaLabel(row)}
                       className={cn(
-                        'flex w-full min-w-0 items-center gap-1 rounded px-1 py-0.5 text-left text-[11px] leading-tight',
+                        'chrome-motion flex w-full min-w-0 items-center gap-1 rounded-lg px-1.5 py-0.5 text-left text-[11px] leading-tight tracking-tight',
                         colors.bg,
-                        colors.border,
-                        'border hover:brightness-95',
-                        isLive && 'ring-1 ring-amber-400',
-                        highlighted && 'ring-1 ring-amber-400',
+                        isLive && 'bg-amber-500/30',
+                        highlighted && 'brightness-[1.06]',
                         dimmed && 'opacity-40',
+                        'hover:brightness-[0.97]',
                       )}
                       onClick={(event) => {
                         event.stopPropagation()
@@ -168,7 +163,7 @@ export function ScheduleMonthGrid({
                 {hiddenCount > 0 ? (
                   <button
                     type="button"
-                    className="truncate px-1 text-left text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                    className="truncate px-1.5 text-left text-[11px] font-medium tracking-tight text-muted-foreground hover:text-foreground"
                     onClick={(event) => {
                       event.stopPropagation()
                       onDayZoom(day)

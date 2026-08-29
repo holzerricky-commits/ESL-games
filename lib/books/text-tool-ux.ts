@@ -3,7 +3,7 @@ export const WRITABLE_STICKY_PLACEHOLDER = 'Add a note…'
 
 /** Hint under the annotation rail when the text tool is active. */
 export const TEXT_TOOL_RAIL_HINT =
-  'Click to place · drag selected text to move · double-click to edit'
+  'Click empty page to place · drag to move · double-click to edit'
 
 /** Ctrl+Enter / Cmd+Enter commits the active book label or sticky field. */
 export function isBookAnnotationTextCommitShortcut(e: {
@@ -26,7 +26,7 @@ export const BOOK_ANNOTATION_FOCUS_ACQUIRE_MS = 400
  * Committed plain text must never keep a textarea (and blinking caret) mounted.
  */
 /**
- * Committed plain text stays click-through so the overlay can open edit on single-click.
+ * Committed plain text stays click-through so the overlay can select, move, and double-click to edit.
  * Stickies and active edit sessions (textarea mounted) capture pointer events.
  */
 export function shouldBookAnnotationLabelCapturePointer(args: {

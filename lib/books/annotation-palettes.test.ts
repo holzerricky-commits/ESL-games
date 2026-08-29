@@ -5,12 +5,18 @@ import {
   ANNOTATION_SHAPE_FILL_SWATCHES,
   ANNOTATION_STICKY_FILL_SWATCHES,
   ANNOTATION_TEXT_FILL_SWATCHES,
+  DEFAULT_TEXT_FILL_COLOR,
   migrateMarkerColor,
   migrateTextFillColor,
   TEXT_FILL_BY_STROKE,
 } from '@/lib/books/annotation-palettes'
 
 describe('annotation-palettes text fills', () => {
+  it('defaults filled text to white on dark ink', () => {
+    expect(DEFAULT_TEXT_FILL_COLOR).toBe('#ffffff')
+    expect(TEXT_FILL_BY_STROKE['#1e293b']).toBe('#ffffff')
+  })
+
   it('uses balanced yellow and matching stroke family', () => {
     const solids = ANNOTATION_PEN_SWATCHES.filter((s) => s.patternId === 'solid').map((s) => s.color)
     expect(solids).toContain('#facc15')
@@ -23,6 +29,11 @@ describe('annotation-palettes text fills', () => {
     expect(migrateTextFillColor('#93c5fd')).toBe('#bfdbfe')
     expect(migrateTextFillColor('#ffeb3b')).toBe('#fef08a')
     expect(migrateTextFillColor('#e2e8f0')).toBe('#cbd5e1')
+  })
+
+  it('keeps translate chip charcoal fill (not a classroom swatch)', () => {
+    expect(migrateTextFillColor('#2a2a2e')).toBe('#2a2a2e')
+    expect(migrateTextFillColor('#2A2A2E')).toBe('#2A2A2E')
   })
 
   it('migrates retired highlighter yellow to fluorescent default', () => {

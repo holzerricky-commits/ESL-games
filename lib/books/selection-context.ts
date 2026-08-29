@@ -11,7 +11,8 @@ import type {
 } from '@/lib/books/annotation-command-types'
 import { isPenOrMarkerStroke } from '@/lib/books/annotation-connected-strokes'
 import { DEFAULT_STICKY_FILL_COLOR } from '@/lib/books/annotation-palettes'
-import type { AnnotationTextFontId } from '@/lib/books/annotation-text-fonts'
+import type { AnnotationTextFontId, AnnotationTextFontWeight } from '@/lib/books/annotation-text-fonts'
+import { DEFAULT_ANNOTATION_TEXT_FONT_WEIGHT } from '@/lib/books/annotation-text-fonts'
 import {
   getAnnotationBounds,
   type NormRect,
@@ -217,6 +218,12 @@ export function commonTextFontId(
   return commonField(texts, (cmd) => cmd.fontId, (a, b) => a === b)
 }
 
+export function commonTextFontWeight(
+  texts: readonly TextAnnotationCommand[],
+): CommonValue<AnnotationTextFontWeight> {
+  return commonField(texts, (cmd) => cmd.fontWeight ?? DEFAULT_ANNOTATION_TEXT_FONT_WEIGHT)
+}
+
 export function commonTextVisualStyle(
   texts: readonly TextAnnotationCommand[],
 ): CommonValue<TextAnnotationVisualStyle | undefined> {
@@ -271,6 +278,15 @@ export function commonStickyFontId(
   stickies: readonly StickyAnnotationCommand[],
 ): CommonValue<AnnotationTextFontId | undefined> {
   return commonFieldOn(stickies, (cmd) => cmd.fontId, (a, b) => a === b)
+}
+
+export function commonStickyFontWeight(
+  stickies: readonly StickyAnnotationCommand[],
+): CommonValue<AnnotationTextFontWeight> {
+  return commonFieldOn(
+    stickies,
+    (cmd) => cmd.fontWeight ?? DEFAULT_ANNOTATION_TEXT_FONT_WEIGHT,
+  )
 }
 
 export function commonStickyFontSizeNorm(

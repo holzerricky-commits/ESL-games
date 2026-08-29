@@ -77,7 +77,13 @@ Phase 1 preview items above (bookmark paths, **Open book**, session log) are **c
 
 **Reading checks (story popups):** Product locked in `docs/READING_CHECKS_PRODUCT.md`. Implement **phase by phase** per `docs/READING_CHECKS_PHASED_PLAN.md` (test after each phase). Story map → text fuel → check pack (draft/approve) → Books desk → AI draft → Prepare glance → in-class check links (speak→mark). **Phase 0–7 done**; **Phase 9a–9c + 9e** lesson frame, skill-aware Generate, Stop and Check, Literature→Workshop link in `docs/READING_CHECKS_LESSON_AWARE_PHASED_PLAN.md`. Phase 8 polish only after real class use.
 
-**Books library & prep desk:** Product locked in `docs/BOOKS_LIBRARY_PRODUCT.md`. Implement **phase by phase** per `docs/BOOKS_LIBRARY_PHASED_PLAN.md` (test after each phase). Library → lesson shelf → parts → part shell — **not** a teaching lobby. Teach stays on student/class. **Phase B–D done** (part prep + old desk cleanup). Parked items remain in the plan.
+**Books library & prep desk:** Product locked in `docs/BOOKS_LIBRARY_PRODUCT.md`. Implement **phase by phase** per `docs/BOOKS_LIBRARY_PHASED_PLAN.md` (test after each phase). Library → lesson shelf → parts → part shell — **not** a teaching lobby. Teach stays on student/class. **Phase B–E done** (part prep + workshop open). **Workshop chrome:** `docs/BOOKS_WORKSHOP_PRODUCT.md` — Phase 1–4 (place bar through vocab Words on the bar).
+
+**Book exercises (workbook word-bank + choose-answer):** Product locked in `docs/BOOK_EXERCISES_PRODUCT.md`. Implement **phase by phase** per `docs/BOOK_EXERCISES_PHASED_PLAN.md` (test after each phase). Box one exercise → draft (hand or Gemini) → Approve → **Check in class**. Not reading checks and not timed challenge. **Word-bank Phase 1–5 done.** **Choose-answer Phase 1–5 done** — both types ship the full loop.
+
+**Classroom home (Welcome / Wrap):** Product locked in `docs/CLASSROOM_HOME_PRODUCT.md`. Implement **phase by phase** per `docs/CLASSROOM_HOME_PHASED_PLAN.md` (test after each phase). Evolves the existing welcome/wrap book screen into a personal classroom home — not Lesson Hub, not a dashboard. **Phase 0–4 done.** Yellow home is the student stage. Teacher editing on yellow is superseded by Today’s class. Next: **Phase 5 greetings** only if you want them, or **Phase 6 polish** after a real class.
+
+**Today’s class (Prepare desk):** Product locked in `docs/CLASS_PREP_DESK_PRODUCT.md`. Implement **phase by phase** per `docs/CLASS_PREP_DESK_PHASED_PLAN.md`. Prepare → teacher sheet; yellow stays Welcome / Wrap. **Phase 0–4 done** (desk + parts + Preview + part content). Next: Phase 5 ready dots.
 
 ---
 
@@ -116,6 +122,45 @@ Legacy one-liners (superseded by the docs above): reading span → teacher trigg
 ---
 
 ## Last updated
+
+2026-08-20 — **Workshop chrome Phase 4:** Vocab Words on the place bar (outlined + Mark → Vocab).
+2026-08-20 — **Workshop chrome Phase 3:** Shelf Open book → Mark this section → Story / Exercise (Vocab stub).
+2026-08-20 — **Workshop chrome Phase 1:** Place bar on the open book (where you are + Close). Checks wizard does not auto-open.
+2026-08-20 — **Workshop chrome Phase 2:** Outlined story opens scan / checks / pin / Approve beside the book (no pick-story wizard).
+
+2026-08-20 — **Books Phase E:** Story/vocab **Open book** from the part desk opens the same workshop reader as class prep (clock off) with the Checks bar. Panel no longer dims the pages.
+
+2026-08-19 — **Today’s class Phase 4:** Prepare shows saved words / story / grammar on a part; skip + star words for this class; jump to Books if empty.
+
+2026-08-19 — **Today’s class Phase 3:** Preview yellow Welcome from the desk; Back; clock stays off.
+
+2026-08-19 — **Today’s class Phase 2:** Lesson parts + start here; Start class off Prepare; wide desk.
+
+2026-08-19 — **Today’s class Phase 1:** Prepare opens a teacher desk (not yellow Welcome). Continue clock off; Start class → Welcome.
+
+2026-08-19 — **Classroom home Phase 4:** End class Review on the same home — duration, practiced lines, compact scores, review words, streak. Giant check-count board retired.
+
+2026-08-19 — **Classroom home:** product + phased plan locked (`docs/CLASSROOM_HOME_*.md`).
+
+2026-08-18 — **Book exercises choose-answer Phase 5:** Show answers after a wrong Check; choose-answer track complete.
+
+2026-08-18 — **Book exercises choose-answer Phase 4:** Draft from box (Gemini fills questions + choices as draft; you still Approve).
+
+2026-08-18 — **Book exercises choose-answer Phase 3:** approved pin → Check sheet → tap choices → green/red → close, still on the book.
+
+2026-08-18 — **Book exercises choose-answer Phase 2:** type questions by hand, 2–4 choices, Approve when complete; Check still Phase 3.
+
+2026-08-17 — **Book exercises:** second type locked (choose the correct answer); Phase 1 = pick type, box empty. Word-bank v1 stays.
+
+2026-08-17 — **Book exercises Phase 5:** Show answers after Check; extra unused bank words; two gaps in one sentence.
+
+2026-08-17 — **Book exercises Phase 4:** Draft from box (Gemini fills bank + gaps as draft; you still Approve).
+
+2026-08-17 — **Book exercises Phase 3:** tap an approved pin → word-bank Check sheet (green/red) → close, still on the book.
+
+2026-08-17 — **Book exercises Phase 2:** hand-typed word bank + gapped sentences + Approve (draft never live).
+
+2026-08-17 — **Book exercises:** product + phased plan locked (`docs/BOOK_EXERCISES_*.md`); Phase 1 = box a task on the open book (no Gemini, no Check).
 
 2026-08-10 — **Books library Phase D done:** Advanced tools hub no longer Map/Ready/Tools equal tabs; checklist removed; default Advanced tab Materials; Stories copy points to part prep. This phased plan is complete.
 

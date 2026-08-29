@@ -131,4 +131,33 @@ describe('ink-session-selection-display', () => {
       expect(stroke.points[0]![1]).toBeCloseTo(0.15)
     }
   })
+
+  it('hides scale handles when a tiny text label would be covered by them', () => {
+    const tiny: AnnotationCommand = {
+      kind: 'text',
+      id: 't',
+      x: 0.4,
+      y: 0.4,
+      text: 'a',
+      fontSizeNorm: 0.008,
+      color: '#111827',
+      yAnchor: 'top',
+    }
+    const chrome = computeInkSessionSelectionChrome({
+      displayCommands: [tiny],
+      selectedIds: ['t'],
+      widthPx: 800,
+      heightPx: 600,
+      enabled: true,
+      editingId: null,
+      marqueeRect: null,
+      selectRotationLiveDelta: null,
+      selectRotationStartFrame: null,
+      rotateCommitFrame: null,
+      selectScaleLiveFrame: null,
+      hoverTargetIds: [],
+    })
+    expect(chrome.selectionOutlineFramesList).toHaveLength(1)
+    expect(chrome.showScaleHandles).toBe(false)
+  })
 })

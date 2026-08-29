@@ -8,6 +8,7 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
+  useState,
 } from 'react'
 import { useBrowserZoomRepaintRevision } from '@/components/students/fullscreen-book-overlay/hooks/useBrowserZoomRepaintRevision'
 import type { CSSProperties, MutableRefObject } from 'react'
@@ -84,6 +85,13 @@ import {
   isAnnotationPointerDownAccepted,
 } from '@/lib/books/pen-barrel-button'
 import {
+  createStrokePointerLock,
+  isStrokePointerLockedTo,
+  shouldAcceptStrokePointerDown,
+  shouldStealStrokePointerLock,
+  type StrokePointerLock,
+} from '@/lib/books/stroke-pointer-lock'
+import {
   buildHoldMarkerLineStrokeCommand,
   buildHoldShapeCommand,
 } from '@/lib/books/hold-shape-commit'
@@ -106,7 +114,11 @@ import {
   type HoldShapeDraft,
 } from '@/lib/books/stroke-shape-recognition'
 import { coalescedPointerEvents } from '@/lib/books/stroke-pointer-samples'
-import { ensureStrokeCommitPoints } from '@/lib/books/stroke-tap-dot'
+import {
+  ensureStrokeCommitPoints,
+  strokeLayoutPxFromClientRect,
+  type StrokeNormLayoutPx,
+} from '@/lib/books/stroke-tap-dot'
 import { drawTwoPointShapePreview } from '@/lib/books/two-point-shape-preview'
 import type { StrokeTool } from '@/lib/books/annotation-command-types'
 
@@ -615,6 +627,9 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
     )
 
     const gestureRef = useRef<'stroke' | 'two' | null>(null)
+    /** Owner of the in-progress stroke / shape — blocks palm / second finger. */
+    const strokePointerLockRef = useRef<StrokePointerLock>(null)
+    const [strokePointerActive, setStrokePointerActive] = useState(false)
     const inkPrefetchPointerActiveRef = useRef(false)
 
     const markInkPrefetchPointerDownOnce = useCallback(() => {
@@ -1044,12 +1059,31 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
       return () => el.removeEventListener('touchstart', onTouchStart)
     }, [captureEnabled])
 
+    useEffect(() => {
+      if (!captureEnabled) setStrokePointerActive(false)
+    }, [captureEnabled])
+
+    const resolveInkNormLayoutPx = useCallback((): StrokeNormLayoutPx | null => {
+      if (whiteboardViewportInk) {
+        const contentEl = whiteboardContentCaptureRef?.current
+        if (contentEl) {
+          const fromContent = strokeLayoutPxFromClientRect(contentEl.getBoundingClientRect())
+          if (fromContent) return fromContent
+        }
+        const overlay = strokeLayoutPxFromClientRect(captureRef.current?.getBoundingClientRect())
+        if (overlay && whiteboardViewportInk.contentHeightPx > 0) {
+          return { widthPx: overlay.widthPx, heightPx: whiteboardViewportInk.contentHeightPx }
+        }
+      }
+      return strokeLayoutPxFromClientRect(captureRef.current?.getBoundingClientRect())
+    }, [whiteboardContentCaptureRef, whiteboardViewportInk])
+
     const commitStrokeFromClientPoints = useCallback(() => {
       pointsClientRef.current = []
       const draft = draftStrokeRef.current
       if (!draft || draft.points.length < 1) return
 
-      const commitPoints = ensureStrokeCommitPoints(draft.points)
+      const commitPoints = ensureStrokeCommitPoints(draft.points, resolveInkNormLayoutPx())
       if (commitPoints.length < 2) return
 
       const layout = spreadInkLayoutRef.current
@@ -1113,7 +1147,7 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
         redoStackRef.current = []
         emitCapabilities()
       }
-    }, [emitCapabilities, leftAnnRef, onSpreadSessionAppendCommand, spreadSessionMode, rightAnnRef])
+    }, [emitCapabilities, leftAnnRef, onSpreadSessionAppendCommand, resolveInkNormLayoutPx, spreadSessionMode, rightAnnRef])
 
     const commitTwoPointFromSpread = useCallback(() => {
       const td = twoDraftRef.current
@@ -1498,10 +1532,43 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
       }
     }
 
+    function abandonInProgressInkGesture(): void {
+      gestureRef.current = null
+      setStrokePointerActive(false)
+      strokePointerLockRef.current = null
+      straightStrokeAxisRef.current = null
+      holdShapeDraftRef.current = null
+      resetStrokeHoldStraightTracker(holdStraightRef.current)
+      draftStrokeRef.current = null
+      twoDraftRef.current = null
+      pointsClientRef.current = []
+      cancelLiveSpreadStrokePaint()
+      clearLiveEraserDraftsBothPages(leftAnnRef, rightAnnRef)
+      clearLiveStrokeDraftsBothPages(leftAnnRef, rightAnnRef)
+      clearLiveTwoPointDraftsBothPages(leftAnnRef, rightAnnRef)
+      clearSpreadLiveDraftCanvases()
+      onSpreadEraserLineDraftChange?.(null)
+      onSpreadMarkerStrokeDraftChange?.(null)
+    }
+
     function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
       if (!captureEnabled || !isAnnotationPointerDownAccepted(e)) return
       cancelDeferredClearSpreadDraft()
       if (e.pointerType === 'touch') e.preventDefault()
+
+      const wantsInk =
+        Boolean(effectiveStrokeToolForPointer(annotationMode, e)) ||
+        isTwoPointShapeMode(annotationMode)
+      if (wantsInk) {
+        if (!shouldAcceptStrokePointerDown(strokePointerLockRef.current, e)) {
+          // Palm / second finger while stylus (or another pointer) owns the stroke.
+          return
+        }
+        if (shouldStealStrokePointerLock(strokePointerLockRef.current, e)) {
+          abandonInProgressInkGesture()
+        }
+      }
+
       const strokeTool = effectiveStrokeToolForPointer(annotationMode, e)
       const canvasRect = e.currentTarget.getBoundingClientRect()
 
@@ -1518,6 +1585,8 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
       if (strokeTool) {
         onAnnotationToolUseOnSpread?.()
         gestureRef.current = 'stroke'
+        strokePointerLockRef.current = createStrokePointerLock(e)
+        setStrokePointerActive(true)
         straightStrokeAxisRef.current = null
         holdShapeDraftRef.current = null
         resetStrokeHoldStraightTracker(holdStraightRef.current)
@@ -1538,6 +1607,7 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
       if (isTwoPointShapeMode(annotationMode)) {
         onAnnotationToolUseOnSpread?.()
         gestureRef.current = 'two'
+        strokePointerLockRef.current = createStrokePointerLock(e)
         clearLiveEraserDraftsBothPages(leftAnnRef, rightAnnRef)
         clearLiveStrokeDraftsBothPages(leftAnnRef, rightAnnRef)
         onSpreadEraserLineDraftChange?.(null)
@@ -1554,6 +1624,7 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
 
     function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
       if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
+      if (!isStrokePointerLockedTo(strokePointerLockRef.current, e.pointerId)) return
       if (e.pointerType === 'touch') e.preventDefault()
       const canvasRect = e.currentTarget.getBoundingClientRect()
 
@@ -1626,12 +1697,20 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
     }
 
     function onPointerUp(e: React.PointerEvent<HTMLDivElement>) {
+      if (!isStrokePointerLockedTo(strokePointerLockRef.current, e.pointerId)) {
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+          e.currentTarget.releasePointerCapture(e.pointerId)
+        }
+        return
+      }
       markInkPrefetchPointerUpOnce()
       if (e.currentTarget.hasPointerCapture(e.pointerId)) {
         e.currentTarget.releasePointerCapture(e.pointerId)
       }
       const gesture = gestureRef.current
       gestureRef.current = null
+      strokePointerLockRef.current = null
+      setStrokePointerActive(false)
 
       if (gesture === 'two') {
         const td = twoDraftRef.current
@@ -1702,24 +1781,17 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
     }
 
     function onPointerCancel(e: React.PointerEvent<HTMLDivElement>) {
+      if (!isStrokePointerLockedTo(strokePointerLockRef.current, e.pointerId)) {
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+          e.currentTarget.releasePointerCapture(e.pointerId)
+        }
+        return
+      }
       markInkPrefetchPointerUpOnce()
       if (e.currentTarget.hasPointerCapture(e.pointerId)) {
         e.currentTarget.releasePointerCapture(e.pointerId)
       }
-      gestureRef.current = null
-      straightStrokeAxisRef.current = null
-      holdShapeDraftRef.current = null
-      resetStrokeHoldStraightTracker(holdStraightRef.current)
-      draftStrokeRef.current = null
-      twoDraftRef.current = null
-      pointsClientRef.current = []
-      cancelLiveSpreadStrokePaint()
-      clearLiveEraserDraftsBothPages(leftAnnRef, rightAnnRef)
-      clearLiveStrokeDraftsBothPages(leftAnnRef, rightAnnRef)
-      clearLiveTwoPointDraftsBothPages(leftAnnRef, rightAnnRef)
-      clearSpreadLiveDraftCanvases()
-      onSpreadEraserLineDraftChange?.(null)
-      onSpreadMarkerStrokeDraftChange?.(null)
+      abandonInProgressInkGesture()
     }
 
     const overlayCursor = useMemo(() => {
@@ -1760,7 +1832,11 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
         )}
         aria-hidden={!captureEnabled}
         style={{
-          cursor: captureEnabled ? overlayCursor : undefined,
+          cursor: captureEnabled
+            ? strokePointerActive
+              ? 'none'
+              : overlayCursor
+            : undefined,
           touchAction: captureEnabled ? 'none' : undefined,
         }}
         onPointerDown={onPointerDown}

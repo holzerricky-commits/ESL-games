@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Check, ListChecks, Loader2, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { CHECKS_DIALOG_STYLE } from '@/components/books/checks-editor-theme'
 import { StoryCheckPackPanel } from '@/components/books/story-check-pack-panel'
 import { StoryTextFuelPanel } from '@/components/books/story-text-fuel-panel'
 import { PdfPageThumbnail } from '@/components/students/pdf-page-thumbnail'
@@ -37,6 +36,7 @@ import {
   stopStoryTextScan,
   subscribeStoryTextScan,
 } from '@/lib/books/story-text-scan-manager'
+import { useSearchablePdfJob } from '@/lib/books/use-searchable-pdf-job'
 import {
   READING_CHECK_HOTSPOT_PLACE_RESULT_EVENT,
   READING_CHECK_HOTSPOT_PLACE_UI_DISMISS_EVENT,
@@ -67,10 +67,10 @@ function PrepStepHeader({
           className={cn(
             'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums',
             done
-              ? 'bg-[var(--checks-ok-soft)] text-[var(--checks-ok)]'
+              ? 'bg-[color-mix(in_srgb,var(--brand-green)_14%,var(--surface-2))] text-[var(--brand-green)]'
               : active
-                ? 'bg-[var(--checks-accent-soft)] text-[var(--checks-accent)]'
-                : 'bg-[var(--checks-bg)] text-[var(--checks-muted)]',
+                ? 'bg-[color-mix(in_srgb,var(--brand-blue)_12%,var(--surface-3))] text-[var(--brand-blue)]'
+                : 'bg-[var(--surface-3)] text-muted-foreground',
           )}
         >
           {done ? (
@@ -84,7 +84,7 @@ function PrepStepHeader({
         <p
           className={cn(
             'text-xs font-semibold tracking-wide',
-            active || done ? 'text-[var(--checks-ink)]' : 'text-[var(--checks-muted)]',
+            active || done ? 'text-foreground' : 'text-muted-foreground',
           )}
         >
           {label}
@@ -103,6 +103,8 @@ export interface ReadingCheckPrepPanelProps {
   bookId?: string | null
   /** Locked to the unit already open in Prep — no picker. */
   unitId?: string | null
+  /** Preselect this story when the panel opens (Books part workshop). */
+  preferStoryId?: string | null
 }
 
 /**
@@ -116,6 +118,7 @@ export function ReadingCheckPrepPanel({
   studentId: _studentId,
   bookId: lockedBookId = null,
   unitId: lockedUnitId = null,
+  preferStoryId = null,
 }: ReadingCheckPrepPanelProps) {
   const [library, setLibrary] = useState<BookLibraryPayload | null>(null)
   const [stories, setStories] = useState<ReadingStoryMap[]>([])
@@ -123,6 +126,8 @@ export function ReadingCheckPrepPanel({
   const [textById, setTextById] = useState<Record<string, ReadingStoryTextRecord>>({})
   const [packById, setPackById] = useState<Record<string, ReadingCheckPack>>({})
   const [storyId, setStoryId] = useState<string>('')
+  const { selectableRunning, selectableProgress, startSelectable, stopSelectable } =
+    useSearchablePdfJob(storyId)
   const [pack, setPack] = useState<ReadingCheckPack | null>(null)
   const [textRecord, setTextRecord] = useState<ReadingStoryTextRecord | null>(null)
   const [textDraft, setTextDraft] = useState('')
@@ -215,14 +220,14 @@ export function ReadingCheckPrepPanel({
 
   // Reset story selection when the open book/unit changes
   useEffect(() => {
-    setStoryId('')
+    setStoryId(preferStoryId?.trim() ?? '')
     setPack(null)
     setTextRecord(null)
     setTextDraft('')
     setAddingNew(false)
     setUnitPdfPages(null)
     setTextDialogOpen(false)
-  }, [bookId, unitId])
+  }, [bookId, unitId, preferStoryId])
 
   useEffect(() => {
     if (!open || !unitFileUrl) {
@@ -719,41 +724,38 @@ export function ReadingCheckPrepPanel({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="flex h-full w-full max-w-lg flex-col gap-0 overflow-hidden p-0 sm:max-w-lg"
-        style={CHECKS_DIALOG_STYLE}
+        overlayClassName="z-[90] bg-transparent pointer-events-none"
+        className="z-[90] flex h-full w-full max-w-md flex-col gap-0 overflow-hidden border-l border-border/60 bg-[var(--surface-1)] p-0 shadow-[-12px_0_40px_-24px_rgba(0,0,0,0.35)] sm:max-w-md"
       >
-        <SheetHeader className="shrink-0 border-b border-[var(--checks-border)] bg-white px-4 py-3 text-left">
-          <SheetTitle className="flex items-center gap-2 text-base font-semibold text-[var(--checks-ink)]">
-            <ListChecks className="h-4 w-4 text-[var(--checks-accent)]" aria-hidden />
-            Reading checks prep
+        <SheetHeader className="shrink-0 border-b border-border/60 bg-[var(--surface-2)] px-4 py-3 text-left">
+          <SheetTitle className="flex items-center gap-2 text-[17px] font-semibold tracking-tight text-foreground">
+            <ListChecks className="h-4 w-4 text-[var(--brand-blue)]" aria-hidden />
+            Reading checks
           </SheetTitle>
-          <p className="text-xs font-normal text-[var(--checks-muted)]">
-            Pages → text → questions. Saves into Books → Stories for this title.
-          </p>
         </SheetHeader>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[var(--checks-bg)]">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[var(--surface-1)]">
           <div className="space-y-3 px-4 py-4">
-            <section className="rounded-xl border border-[var(--checks-border)] bg-white px-3 py-3">
+            <section className="rounded-xl border border-border/60 bg-white px-3 py-3">
               <PrepStepHeader step={null} label="Preparing" done={bookReady} active={!bookReady} />
               <div className="mt-2 pl-8">
                 {bookReady && selectedBook && selectedUnit ? (
-                  <p className="text-sm font-medium text-[var(--checks-ink)]">
+                  <p className="text-sm font-medium text-foreground">
                     {selectedBook.title}
                     {selectedUnit.title && selectedUnit.title !== selectedBook.title ? (
-                      <span className="font-normal text-[var(--checks-muted)]">
+                      <span className="font-normal text-muted-foreground">
                         {' '}
                         · {selectedUnit.title}
                       </span>
                     ) : null}
                   </p>
                 ) : needsUnitFromMap ? (
-                  <p className="text-sm text-[var(--checks-muted)]">
+                  <p className="text-sm text-muted-foreground">
                     This title has more than one part. Open the part you’re prep-ing on the map,
                     then come back here.
                   </p>
                 ) : (
-                  <p className="text-sm text-[var(--checks-muted)]">
+                  <p className="text-sm text-muted-foreground">
                     Open a book on the map first — prep uses that title, not a separate pick.
                   </p>
                 )}
@@ -761,8 +763,8 @@ export function ReadingCheckPrepPanel({
             </section>
 
             {!bookReady ? null : (
-              <div className="overflow-hidden rounded-xl border border-[var(--checks-border)] bg-white">
-                <section className="space-y-3 border-b border-[var(--checks-border)] px-3 py-3">
+              <div className="overflow-hidden rounded-xl border border-border/60 bg-white">
+                <section className="space-y-3 border-b border-border/60 px-3 py-3">
                   <PrepStepHeader
                     step={1}
                     label="Story"
@@ -774,7 +776,7 @@ export function ReadingCheckPrepPanel({
                           type="button"
                           size="sm"
                           variant="ghost"
-                          className="h-7 px-2 text-xs text-[var(--checks-muted)]"
+                          className="h-7 px-2 text-xs text-muted-foreground"
                           onClick={clearStorySelection}
                         >
                           Change
@@ -816,7 +818,7 @@ export function ReadingCheckPrepPanel({
                             />
                           </div>
                         </div>
-                        <p className="text-[11px] text-[var(--checks-muted)]">
+                        <p className="text-[11px] text-muted-foreground">
                           Use the book’s printed page numbers when this title has page alignment;
                           otherwise count from the start of the unit PDF.
                         </p>
@@ -851,7 +853,7 @@ export function ReadingCheckPrepPanel({
                       (() => {
                         const meta = storyListMeta(activeStory)
                         return (
-                          <div className="flex items-start gap-2.5 rounded-lg border border-[var(--checks-border)] bg-[var(--checks-bg)]/60 p-2">
+                          <div className="flex items-start gap-2.5 rounded-lg border border-border/60 bg-[var(--surface-3)] p-2">
                             {unitFileUrl && meta.thumbPdfPage != null ? (
                               <PdfPageThumbnail
                                 fileUrl={unitFileUrl}
@@ -864,7 +866,7 @@ export function ReadingCheckPrepPanel({
                               />
                             ) : (
                               <div
-                                className="shrink-0 rounded-md border border-dashed border-[var(--checks-border)] bg-white"
+                                className="shrink-0 rounded-md border border-dashed border-border/60 bg-white"
                                 style={{
                                   width: PREP_STORY_THUMB_WIDTH,
                                   aspectRatio: '1 / 1.414',
@@ -872,10 +874,10 @@ export function ReadingCheckPrepPanel({
                               />
                             )}
                             <div className="min-w-0 flex-1 pt-0.5">
-                              <p className="text-sm font-medium text-[var(--checks-ink)]">
+                              <p className="text-sm font-medium text-foreground">
                                 {editTitle.trim() || activeStory.title}
                               </p>
-                              <p className="mt-0.5 text-[11px] text-[var(--checks-muted)]">
+                              <p className="mt-0.5 text-[11px] text-muted-foreground">
                                 {meta.rangeLabel ?? 'Set pages below'}
                                 {' · '}
                                 {meta.pagesLabel}
@@ -889,11 +891,11 @@ export function ReadingCheckPrepPanel({
                         )
                       })()
                     ) : loadingStories ? (
-                      <p className="text-xs text-[var(--checks-muted)]">Loading stories…</p>
+                      <p className="text-xs text-muted-foreground">Loading stories…</p>
                     ) : (
                       <div className="space-y-2">
                         {unitStories.length === 0 ? (
-                          <p className="text-xs text-[var(--checks-muted)]">
+                          <p className="text-xs text-muted-foreground">
                             No stories in this unit yet.
                           </p>
                         ) : (
@@ -907,7 +909,7 @@ export function ReadingCheckPrepPanel({
                                   <button
                                     type="button"
                                     onClick={() => selectStory(story.id)}
-                                    className="flex w-full items-start gap-2.5 rounded-lg border border-[var(--checks-border)] bg-[var(--checks-bg)]/40 p-2 text-left transition-colors hover:border-[var(--checks-accent)]/40 hover:bg-[var(--checks-accent-soft)]/40"
+                                    className="flex w-full items-start gap-2.5 rounded-lg border border-border/60 bg-[var(--surface-3)]/60 p-2 text-left transition-colors hover:border-[var(--brand-blue)]/40 hover:bg-[color-mix(in_srgb,var(--brand-blue)_12%,var(--surface-3))]/40"
                                   >
                                     {unitFileUrl && meta.thumbPdfPage != null ? (
                                       <PdfPageThumbnail
@@ -920,7 +922,7 @@ export function ReadingCheckPrepPanel({
                                       />
                                     ) : (
                                       <div
-                                        className="flex shrink-0 items-center justify-center rounded-md border border-dashed border-[var(--checks-border)] bg-white text-[10px] text-[var(--checks-muted)]"
+                                        className="flex shrink-0 items-center justify-center rounded-md border border-dashed border-border/60 bg-white text-[10px] text-muted-foreground"
                                         style={{
                                           width: PREP_STORY_THUMB_WIDTH,
                                           aspectRatio: '1 / 1.414',
@@ -930,10 +932,10 @@ export function ReadingCheckPrepPanel({
                                       </div>
                                     )}
                                     <span className="min-w-0 flex-1 pt-0.5">
-                                      <span className="block text-sm font-medium text-[var(--checks-ink)]">
+                                      <span className="block text-sm font-medium text-foreground">
                                         {title}
                                       </span>
-                                      <span className="mt-0.5 block text-[11px] text-[var(--checks-muted)]">
+                                      <span className="mt-0.5 block text-[11px] text-muted-foreground">
                                         {meta.rangeLabel ?? 'Pages not set'}
                                       </span>
                                       <span className="mt-1 flex flex-wrap gap-1">
@@ -941,7 +943,7 @@ export function ReadingCheckPrepPanel({
                                           (chip) => (
                                             <span
                                               key={chip}
-                                              className="rounded bg-white px-1.5 py-0.5 text-[10px] font-medium text-[var(--checks-muted)] ring-1 ring-[var(--checks-border)]"
+                                              className="rounded bg-white px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground ring-1 ring-border"
                                             >
                                               {chip}
                                             </span>
@@ -972,7 +974,7 @@ export function ReadingCheckPrepPanel({
 
                 {storyPicked && activeStory ? (
                   <>
-                    <section className="space-y-3 border-b border-[var(--checks-border)] px-3 py-3">
+                    <section className="space-y-3 border-b border-border/60 px-3 py-3">
                       <PrepStepHeader
                         step={2}
                         label="Pages"
@@ -983,7 +985,7 @@ export function ReadingCheckPrepPanel({
                             type="button"
                             size="sm"
                             variant="ghost"
-                            className="h-8 px-2 text-[var(--checks-muted)] hover:text-rose-700"
+                            className="h-8 px-2 text-muted-foreground hover:text-rose-700"
                             disabled={busy === 'delete'}
                             onClick={() => void deleteActiveStory()}
                           >
@@ -1039,7 +1041,7 @@ export function ReadingCheckPrepPanel({
                       </div>
                     </section>
 
-                    <section className="space-y-3 border-b border-[var(--checks-border)] px-3 py-3">
+                    <section className="space-y-3 border-b border-border/60 px-3 py-3">
                       <PrepStepHeader
                         step={3}
                         label="Text"
@@ -1066,6 +1068,24 @@ export function ReadingCheckPrepPanel({
                           onSave={() => saveTextPaste()}
                           scanDisabled={!pagesReady || !selectedUnit}
                           canContinueScan={canContinueScan}
+                          onMakeSelectable={() => {
+                            if (!activeStory || !selectedUnit) return
+                            if (!pagesReady) {
+                              toast.error('Set pages for this story first.')
+                              return
+                            }
+                            startSelectable({
+                              bookId: activeStory.bookId,
+                              unitId: activeStory.unitId,
+                              lessonId: activeStory.lessonId,
+                              partId: activeStory.partId,
+                              title: editTitle.trim() || activeStory.title,
+                              totalPdfPages: unitPdfPages,
+                            })
+                          }}
+                          onStopMakeSelectable={stopSelectable}
+                          selectableProgress={selectableProgress}
+                          selectableRunning={selectableRunning}
                           dialogOpen={textDialogOpen}
                           onDialogOpenChange={setTextDialogOpen}
                         />
@@ -1099,6 +1119,7 @@ export function ReadingCheckPrepPanel({
                             }
                           }}
                           onOpenStoryText={() => setTextDialogOpen(true)}
+                          chrome="soft"
                         />
                       </div>
                     </section>

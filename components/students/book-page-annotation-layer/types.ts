@@ -197,6 +197,7 @@ export interface BookPageAnnotationLayerProps {
   shapeRoundedCorners?: boolean
   textFontSizeNorm: number
   textFontId: import('@/lib/books/annotation-text-fonts').AnnotationTextFontId
+  textFontWeight?: import('@/lib/books/annotation-text-fonts').AnnotationTextFontWeight
   stickyFontSizeNorm: number
   /** New text boxes: plain (no box) or filled background (no border). */
   textVisualStyle?: TextAnnotationVisualStyle

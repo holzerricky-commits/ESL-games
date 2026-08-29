@@ -24,6 +24,8 @@ import {
   ANNOTATION_MARKER_SWATCHES,
   ANNOTATION_PEN_SWATCHES,
   DEFAULT_TEXT_FILL_COLOR,
+  LEGACY_DEFAULT_TEXT_FILL_COLOR,
+  TEXT_FILL_DEFAULT_REV,
   migrateTextFillColor,
   DEFAULT_PEN_SWATCH_ID,
   DEFAULT_SHAPE_FILL_COLOR,
@@ -43,6 +45,7 @@ import type {
   AnnotationStrokeThicknessStep,
   BookAnnotationInteractionMode,
 } from '@/lib/books/annotation-storage'
+import { DEFAULT_TEXT_THICKNESS_STEP, TEXT_THICKNESS_STEP_MAX } from '@/lib/books/text-font-size-steps'
 import {
   DEFAULT_EYEDROPPER_VARIANT,
   isEyedropperVariant,
@@ -57,8 +60,12 @@ import {
 } from '@/lib/books/pen-stroke-profile'
 import {
   DEFAULT_ANNOTATION_TEXT_FONT_ID,
+  DEFAULT_ANNOTATION_TEXT_FONT_WEIGHT,
   isAnnotationTextFontId,
+  isAnnotationTextFontWeight,
+  resolvePickerAnnotationTextFontId,
   type AnnotationTextFontId,
+  type AnnotationTextFontWeight,
 } from '@/lib/books/annotation-text-fonts'
 import { isEffectPenInkStyle } from '@/lib/books/pen-ink'
 
@@ -77,10 +84,13 @@ export type StudentAnnotationToolPrefs = {
   textColor?: string
   textThicknessStep?: AnnotationStrokeThicknessStep
   textFontId?: AnnotationTextFontId
+  textFontWeight?: AnnotationTextFontWeight
   textVisualStyle?: TextAnnotationVisualStyle
   bookTextVisualStyle?: TextAnnotationVisualStyle
   textAlign?: TextAnnotationAlign
   textFillColor?: string
+  /** 2+ means fill was saved after the white factory default. */
+  textFillDefaultRev?: number
   shapeStrokeSwatchId?: string
   shapeThicknessStep?: AnnotationStrokeThicknessStep
   shapeLineDashStyle?: AnnotationLineDashStyle
@@ -152,7 +162,7 @@ const SHAPE_FILL_MODES: ShapeFillMode[] = ['none', 'transparent', 'solid']
 const MARQUEE_SELECT_RULES: MarqueeSelectRule[] = ['follow-drag', 'crossing', 'window']
 
 function isThicknessStep(v: unknown): v is AnnotationStrokeThicknessStep {
-  return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 6
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= TEXT_THICKNESS_STEP_MAX
 }
 
 /** Prefer dedicated step; fall back to legacy shared step (marker / pen). */
@@ -163,6 +173,15 @@ function resolveThicknessStep(
   if (isThicknessStep(dedicated)) return dedicated
   if (isThicknessStep(legacyFallback)) return legacyFallback
   return 3
+}
+
+function resolveTextLikeThicknessStep(
+  dedicated: unknown,
+  legacyFallback: unknown,
+): AnnotationStrokeThicknessStep {
+  if (isThicknessStep(dedicated)) return dedicated
+  if (isThicknessStep(legacyFallback)) return legacyFallback
+  return DEFAULT_TEXT_THICKNESS_STEP
 }
 
 function isLineDash(v: unknown): v is AnnotationLineDashStyle {
@@ -233,10 +252,17 @@ export function normalizeStudentAnnotationToolPrefs(raw: unknown): StudentAnnota
   if (typeof o.textColor === 'string') out.textColor = migrateTextStrokeColor(o.textColor)
   if (isThicknessStep(o.textThicknessStep)) out.textThicknessStep = o.textThicknessStep
   if (isAnnotationTextFontId(o.textFontId)) out.textFontId = o.textFontId
+  if (isAnnotationTextFontWeight(o.textFontWeight)) out.textFontWeight = o.textFontWeight
   if (isTextVisualStyle(o.textVisualStyle)) out.textVisualStyle = o.textVisualStyle
   if (isTextVisualStyle(o.bookTextVisualStyle)) out.bookTextVisualStyle = o.bookTextVisualStyle
   if (isTextAlign(o.textAlign)) out.textAlign = o.textAlign
   if (typeof o.textFillColor === 'string') out.textFillColor = migrateTextFillColor(o.textFillColor)
+  if (
+    typeof o.textFillDefaultRev === 'number' &&
+    Number.isFinite(o.textFillDefaultRev)
+  ) {
+    out.textFillDefaultRev = o.textFillDefaultRev
+  }
   if (isValidPenSwatchId(o.shapeStrokeSwatchId)) {
     out.shapeStrokeSwatchId = migratePenSwatchId(o.shapeStrokeSwatchId)
   }
@@ -320,6 +346,9 @@ export function patchStudentAnnotationToolPrefs(
 ): void {
   if (!studentId) return
   const normalized = normalizeStudentAnnotationToolPrefs(patch)
+  if (normalized.textFillColor && normalized.textFillDefaultRev == null) {
+    normalized.textFillDefaultRev = TEXT_FILL_DEFAULT_REV
+  }
   if (Object.keys(normalized).length === 0) return
   const root = readRoot()
   root[studentId] = { ...root[studentId], ...normalized }
@@ -480,11 +509,24 @@ export function resolveStickerToolPrefsFromStorage(studentId: string): {
 
 export { DEFAULT_PEN_CUSTOM_HEX, DEFAULT_MARKER_CUSTOM_HEX }
 
+function resolveTextFillColorFromSaved(saved: StudentAnnotationToolPrefs): string {
+  const migrated =
+    typeof saved.textFillColor === 'string' ? migrateTextFillColor(saved.textFillColor) : undefined
+  if ((saved.textFillDefaultRev ?? 0) >= TEXT_FILL_DEFAULT_REV) {
+    return migrated ?? DEFAULT_TEXT_FILL_COLOR
+  }
+  if (!migrated || migrated.toLowerCase() === LEGACY_DEFAULT_TEXT_FILL_COLOR) {
+    return DEFAULT_TEXT_FILL_COLOR
+  }
+  return migrated
+}
+
 /** Resolved text tool prefs; migrates from legacy swatch ids when needed. */
 export function resolveTextToolPrefsFromStorage(studentId: string): {
   textColor: string
   textThicknessStep: AnnotationStrokeThicknessStep
   textFontId: AnnotationTextFontId
+  textFontWeight: AnnotationTextFontWeight
   textVisualStyle: TextAnnotationVisualStyle
   bookTextVisualStyle: TextAnnotationVisualStyle
   textAlign: TextAnnotationAlign
@@ -501,19 +543,19 @@ export function resolveTextToolPrefsFromStorage(studentId: string): {
   }
   return {
     textColor,
-    textThicknessStep: resolveThicknessStep(saved.textThicknessStep, saved.penThicknessStep),
-    textFontId: isAnnotationTextFontId(saved.textFontId)
-      ? saved.textFontId
-      : DEFAULT_ANNOTATION_TEXT_FONT_ID,
+    textThicknessStep: resolveTextLikeThicknessStep(saved.textThicknessStep, saved.penThicknessStep),
+    textFontId: resolvePickerAnnotationTextFontId(
+      isAnnotationTextFontId(saved.textFontId) ? saved.textFontId : DEFAULT_ANNOTATION_TEXT_FONT_ID,
+    ),
+    textFontWeight: isAnnotationTextFontWeight(saved.textFontWeight)
+      ? saved.textFontWeight
+      : DEFAULT_ANNOTATION_TEXT_FONT_WEIGHT,
     textVisualStyle: isTextVisualStyle(saved.textVisualStyle) ? saved.textVisualStyle : 'plain',
     bookTextVisualStyle: isTextVisualStyle(saved.bookTextVisualStyle)
       ? saved.bookTextVisualStyle
       : 'filled',
     textAlign: isTextAlign(saved.textAlign) ? saved.textAlign : 'left',
-    textFillColor:
-      typeof saved.textFillColor === 'string'
-        ? migrateTextFillColor(saved.textFillColor)
-        : DEFAULT_TEXT_FILL_COLOR,
+    textFillColor: resolveTextFillColorFromSaved(saved),
   }
 }
 
@@ -526,7 +568,7 @@ export function resolveStickyToolPrefsFromStorage(studentId: string): {
     stickyFillColor: isValidStickyFillColor(saved.stickyFillColor)
       ? saved.stickyFillColor!
       : DEFAULT_STICKY_FILL_COLOR,
-    stickyThicknessStep: resolveThicknessStep(saved.stickyThicknessStep, saved.markerThicknessStep),
+    stickyThicknessStep: resolveTextLikeThicknessStep(saved.stickyThicknessStep, saved.markerThicknessStep),
   }
 }
 
@@ -609,7 +651,10 @@ export type ResolvedAnnotationToolPrefs = ReturnType<typeof resolveAnnotationToo
 export function buildStudentAnnotationToolPrefsPatch(
   state: ResolvedAnnotationToolPrefs,
 ): StudentAnnotationToolPrefs {
-  return normalizeStudentAnnotationToolPrefs(state)
+  return normalizeStudentAnnotationToolPrefs({
+    ...state,
+    textFillDefaultRev: TEXT_FILL_DEFAULT_REV,
+  })
 }
 
 /**

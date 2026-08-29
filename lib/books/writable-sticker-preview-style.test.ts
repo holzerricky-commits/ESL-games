@@ -29,7 +29,7 @@ describe('buildWritableStickerPreviewFill', () => {
 describe('buildWritableStickerPreviewFontSizePx', () => {
   it('grows with thickness step', () => {
     const small = buildWritableStickerPreviewFontSizePx(0, 600)
-    const large = buildWritableStickerPreviewFontSizePx(6, 600)
+    const large = buildWritableStickerPreviewFontSizePx(7, 600)
     expect(large).toBeGreaterThan(small)
   })
 })

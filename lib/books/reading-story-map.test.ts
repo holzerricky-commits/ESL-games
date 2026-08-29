@@ -7,6 +7,10 @@ import {
   isPdfPageInReadingStory,
   lessonIdFromReadingStoryId,
   mergeStoriesForBook,
+  parseOutlineReadingStoryId,
+  parseManualReadingStoryId,
+  isManualReadingStoryId,
+  readingStoryManualKey,
   readingStoryPartKey,
   resolveOutlineDisplayRange,
   resolveReadingStoryRange,
@@ -21,6 +25,39 @@ describe('lessonIdFromReadingStoryId', () => {
   it('parses outline story ids and ignores manual', () => {
     expect(lessonIdFromReadingStoryId(jumpSeed.id)).toBe('lesson-2d6f0fe0')
     expect(lessonIdFromReadingStoryId('manual::book::unit::x')).toBeNull()
+  })
+})
+
+describe('parseOutlineReadingStoryId', () => {
+  it('parses outline story keys', () => {
+    expect(parseOutlineReadingStoryId(jumpSeed.id)).toEqual({
+      bookId: 'journeys-g3-book-1',
+      unitId: 'unit-3-3e7eaa87',
+      lessonId: 'lesson-2d6f0fe0',
+      partId: 'part-ab394f3e',
+    })
+  })
+
+  it('returns null for manual or short ids', () => {
+    expect(parseOutlineReadingStoryId('manual::book::unit::x')).toBeNull()
+    expect(parseOutlineReadingStoryId('book::unit')).toBeNull()
+  })
+})
+
+describe('parseManualReadingStoryId', () => {
+  it('parses manual story keys', () => {
+    const id = readingStoryManualKey('book-a', 'unit-b', 's123')
+    expect(parseManualReadingStoryId(id)).toEqual({
+      bookId: 'book-a',
+      unitId: 'unit-b',
+      localId: 's123',
+    })
+    expect(isManualReadingStoryId(id)).toBe(true)
+  })
+
+  it('returns null for outline ids', () => {
+    expect(parseManualReadingStoryId(jumpSeed.id)).toBeNull()
+    expect(isManualReadingStoryId(jumpSeed.id)).toBe(false)
   })
 })
 
@@ -161,6 +198,57 @@ describe('reading-story-map', () => {
     })
     expect(hit?.story.id).toBe(jumpSeed.id)
     expect(hit?.range.startDisplayPage).toBe(366)
+  })
+
+  it('findReadingStoryAtPdfPage hits a story on a sibling unit that shares the PDF', () => {
+    const filePath = 'book-library/wonders-g2-workshop/wonders-g2-workshop.pdf'
+    const unit1: BookUnitRecord = {
+      id: 'unit-1',
+      title: 'Friends and Family',
+      filePath,
+      startPageHint: 16,
+      lessons: [],
+    }
+    const unit2: BookUnitRecord = {
+      id: 'unit-2',
+      title: 'How on Earth?',
+      filePath,
+      startPageHint: 400,
+      lessons: [],
+    }
+    const book: BookRecord = {
+      id: 'readingwriting-workshop-g2',
+      title: 'Workshop',
+      units: [unit1, unit2],
+    }
+    const storyId = readingStoryPartKey(book.id, unit2.id, 'lesson-dive', 'part-dive')
+    const story = {
+      id: storyId,
+      bookId: book.id,
+      unitId: unit2.id,
+      lessonId: 'lesson-dive',
+      partId: 'part-dive',
+      title: 'Shared Read Dive Teams',
+      kind: 'main_story' as const,
+    }
+    const hit = findReadingStoryAtPdfPage({
+      book,
+      unit: unit1,
+      pdfPage: 434,
+      totalPdfPages: 500,
+      stories: [story],
+      overridesByStoryId: {
+        [storyId]: {
+          storyId,
+          startPage: 434,
+          endPage: 437,
+          rangeConfirmed: true,
+          updatedAt: '2026-08-19T00:00:00.000Z',
+        },
+      },
+    })
+    expect(hit?.story.id).toBe(storyId)
+    expect(hit?.range.startDisplayPage).toBe(434)
   })
 
   it('mergeStoriesForBook adds manual stories from overrides', () => {

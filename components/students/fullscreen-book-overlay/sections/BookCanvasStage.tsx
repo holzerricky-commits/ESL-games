@@ -51,10 +51,17 @@ import { notifyStampPlacedFromCommand } from '@/lib/books/notify-stamp-placed'
 import { effectiveSpreadGutterPullPx, effectiveSpreadOverlayWidthPx } from '@/lib/books/spread-gutter'
 import { SpreadPageCluster } from '@/components/books/spread-page-cluster'
 import { BoardPageLinkMarkers } from '@/components/students/fullscreen-book-overlay/sections/BoardPageLinkMarkers'
-import { ReadingCheckHotspotPlacementLayer } from '@/components/students/fullscreen-book-overlay/sections/ReadingCheckHotspotPlacementLayer'
+import { BookAudioPinMarkers } from '@/components/students/fullscreen-book-overlay/sections/BookAudioPinMarkers'
+import { BookExerciseBoxDrawOverlay } from '@/components/students/fullscreen-book-overlay/sections/BookExerciseBoxDrawOverlay'
+import { BookExerciseTaskMarkers } from '@/components/students/fullscreen-book-overlay/sections/BookExerciseTaskMarkers'
+import { ReadingCheckHotspotPlacementLayer, type ReadingCheckLivePin } from '@/components/students/fullscreen-book-overlay/sections/ReadingCheckHotspotPlacementLayer'
 import type { LessonBoardPageLink } from '@/lib/books/lesson-board-page-links'
+import type { BookAudioPin, BookAudioTrack } from '@/lib/books/book-audio'
+import type { BookExerciseTask, PageNormRect } from '@/lib/books/book-exercises'
 import { seamClientX } from '@/lib/books/spread-stroke-split'
-import { loadCachedPdfDocument } from '@/lib/books/pdf-thumbnail-cache'
+import { loadCachedPdfDocument, clearPdfLoadCacheForFileUrl } from '@/lib/books/pdf-thumbnail-cache'
+import { invalidatePdfPageTextProbeCacheForFileUrl } from '@/lib/books/pdf-page-text-probe'
+import { SEARCHABLE_PDF_UPDATED_EVENT } from '@/lib/books/searchable-pdf-events'
 import {
   pageHasSelectablePdfText,
   spreadHasSelectablePdfText,
@@ -100,6 +107,7 @@ import { cn } from '@/lib/utils'
 import { InfiniteWhiteboardPanel } from '@/components/students/fullscreen-book-overlay/sections/InfiniteWhiteboardPanel'
 import { WHITEBOARD_EYEDROPER_PAGE } from '@/lib/books/whiteboard-storage'
 import {
+  BOOK_WORKSPACE_RAIL_MOTION_TW,
   WHITEBOARD_CHROME_HEIGHT_PX,
   WHITEBOARD_SLOT_INSET_PX,
 } from '@/components/students/fullscreen-book-overlay/constants'
@@ -162,8 +170,10 @@ interface BookCanvasStageProps {
   hasResolvedUnit: boolean
   pdfReady: boolean
   spreadDisplayScale: number
-  /** Frame-aware capped scale â€” use for CSS transform when open-book chrome is visible. */
+  /** Frame-aware capped scale — use for CSS transform when open-book chrome is visible. */
   spreadReaderDisplayScale?: number
+  /** Ease scale only during the list open/close move — later size ticks must not start a second ease. */
+  spreadFitMotionActive?: boolean
   effectiveSpreadScreenScale?: number
   focusZoomDrawActive?: boolean
   focusLayout?: FocusSpreadLayout | null
@@ -251,6 +261,7 @@ interface BookCanvasStageProps {
   shapeRoundedCorners?: boolean
   textFontSizeNorm: number
   textFontId: import('@/lib/books/annotation-text-fonts').AnnotationTextFontId
+  textFontWeight?: import('@/lib/books/annotation-text-fonts').AnnotationTextFontWeight
   bookTextVisualStyle?: 'plain' | 'filled'
   textVisualStyle?: 'plain' | 'filled'
   textAlign?: import('@/lib/books/annotation-command-types').TextAnnotationAlign
@@ -290,12 +301,31 @@ interface BookCanvasStageProps {
   activeBoardPageLink?: LessonBoardPageLink | null
   /** Prep mode: keep link-to-book as a header icon. */
   boardLinkInHeader?: boolean
+  audioPinPlacementActive?: boolean
+  audioPins?: readonly BookAudioPin[]
+  audioTracks?: readonly BookAudioTrack[]
+  audioPlayingTrackId?: string | null
+  audioIsPlaying?: boolean
+  onPlaceAudioPin?: (pdfPage: number, center: [number, number]) => void
+  onPlayAudioPin?: (pin: BookAudioPin) => void
+  onRemoveAudioPin?: (pin: BookAudioPin) => void
+  onMoveAudioPin?: (pin: BookAudioPin, pdfPage: number, center: [number, number]) => void
   readingCheckHotspotPlacementActive?: boolean
   onPlaceReadingCheckHotspot?: (pdfPage: number, center: [number, number]) => void
   readingCheckHotspotPreviewPdfPage?: number | null
   readingCheckHotspotPreviewCenter?: [number, number] | null
   readingCheckHotspotPreviewLabel?: string
   onReadingCheckHotspotPreviewClick?: () => void
+  readingCheckLivePins?: readonly ReadingCheckLivePin[]
+  onReadingCheckLivePinClick?: (stopId: string) => void
+  exerciseBoxDrawActive?: boolean
+  exerciseTasks?: readonly BookExerciseTask[]
+  selectedExerciseTaskId?: string | null
+  onPlaceExerciseBox?: (pdfPage: number, rect: PageNormRect) => void
+  onCancelExerciseBoxDraw?: () => void
+  onSelectExerciseTask?: (task: BookExerciseTask) => void
+  onRemoveExerciseTask?: (task: BookExerciseTask) => void
+  onMoveExerciseTask?: (task: BookExerciseTask, center: [number, number]) => void
   wbAnnRef: MutableRefObject<BookPageAnnotationHandle | null>
   onWhiteboardCaps: (caps: AnnotationCapabilities) => void
   regionSelectOpen: boolean
@@ -364,6 +394,7 @@ export function BookCanvasStage({
   pdfReady,
   spreadDisplayScale,
   spreadReaderDisplayScale,
+  spreadFitMotionActive = false,
   effectiveSpreadScreenScale,
   focusZoomDrawActive = false,
   focusLayout = null,
@@ -444,6 +475,7 @@ export function BookCanvasStage({
   shapeRoundedCorners = true,
   textFontSizeNorm,
   textFontId,
+  textFontWeight = 'regular',
   bookTextVisualStyle = 'filled',
   textVisualStyle = 'plain',
   textAlign = 'left',
@@ -482,12 +514,31 @@ export function BookCanvasStage({
   removeActiveBoardPageLink,
   activeBoardPageLink = null,
   boardLinkInHeader = false,
+  audioPinPlacementActive = false,
+  audioPins = [],
+  audioTracks = [],
+  audioPlayingTrackId = null,
+  audioIsPlaying = false,
+  onPlaceAudioPin,
+  onPlayAudioPin,
+  onRemoveAudioPin,
+  onMoveAudioPin,
   readingCheckHotspotPlacementActive = false,
   onPlaceReadingCheckHotspot,
   readingCheckHotspotPreviewPdfPage = null,
   readingCheckHotspotPreviewCenter = null,
   readingCheckHotspotPreviewLabel,
   onReadingCheckHotspotPreviewClick,
+  readingCheckLivePins = [],
+  onReadingCheckLivePinClick,
+  exerciseBoxDrawActive = false,
+  exerciseTasks = [],
+  selectedExerciseTaskId = null,
+  onPlaceExerciseBox,
+  onCancelExerciseBoxDraw,
+  onSelectExerciseTask,
+  onRemoveExerciseTask,
+  onMoveExerciseTask,
   wbAnnRef,
   onWhiteboardCaps,
   regionSelectOpen,
@@ -531,10 +582,21 @@ export function BookCanvasStage({
   const spreadScreenScale =
     effectiveSpreadScreenScale != null && effectiveSpreadScreenScale > 0
       ? effectiveSpreadScreenScale
+      : 1
+  const focusTransformActive = focusLayout != null
+  const readerFitScale =
+    spreadReaderDisplayScale != null && spreadReaderDisplayScale > 0
+      ? spreadReaderDisplayScale
       : spreadDisplayScale > 0
         ? spreadDisplayScale
         : 1
-  const focusTransformActive = focusLayout != null
+  const applyResizeScale = !focusTransformActive
+  const resizeScaleStyle: CSSProperties | undefined = applyResizeScale
+    ? {
+        transform: `scale(${readerFitScale})`,
+        transformOrigin: 'center center',
+      }
+    : undefined
   const shapeColorResolved = shapeColor ?? '#111827'
 
   const eyedropperForPage = useCallback(
@@ -556,6 +618,21 @@ export function BookCanvasStage({
   const [sharedPdf, setSharedPdf] = useState<PDFDocumentProxy | null>(null)
   const [unitPdfLoading, setUnitPdfLoading] = useState(false)
   const [unitPdfError, setUnitPdfError] = useState<string | null>(null)
+  const [pdfFileEpoch, setPdfFileEpoch] = useState(0)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const onUpdated = (event: Event) => {
+      const filePath = (event as CustomEvent<{ filePath?: string }>).detail?.filePath
+      if (!filePath || filePath !== selectedUnitFilePath) return
+      const fileUrl = makeUnitFileUrl(filePath)
+      clearPdfLoadCacheForFileUrl(fileUrl)
+      invalidatePdfPageTextProbeCacheForFileUrl(fileUrl)
+      setPdfFileEpoch((n) => n + 1)
+    }
+    window.addEventListener(SEARCHABLE_PDF_UPDATED_EVENT, onUpdated)
+    return () => window.removeEventListener(SEARCHABLE_PDF_UPDATED_EVENT, onUpdated)
+  }, [selectedUnitFilePath, makeUnitFileUrl])
 
   useEffect(() => {
     if (unitPdfError) onSpreadSlotsPixelsReady?.()
@@ -611,9 +688,9 @@ export function BookCanvasStage({
     return () => {
       cancelled = true
     }
-    // Intentionally omit `onDocumentLoadSuccess` â€” use ref so page turns do not reload the PDF.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only reload when unit or worker readiness changes
-  }, [pdfReady, selectedUnitFilePath, makeUnitFileUrl])
+    // Intentionally omit `onDocumentLoadSuccess` — use ref so page turns do not reload the PDF.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only reload when unit, worker, or searchable copy changes
+  }, [pdfReady, selectedUnitFilePath, makeUnitFileUrl, pdfFileEpoch])
 
   const tryReportSpreadSlotsPixelsReady = useCallback(() => {
     if (spreadSlotsReportedRef.current) return
@@ -742,7 +819,8 @@ export function BookCanvasStage({
     bookPdfTextSelectionEnabled &&
     annotationMode === 'select' &&
     !whiteboardActive &&
-    !focusZoomDrawActive
+    !focusZoomDrawActive &&
+    !exerciseBoxDrawActive
   const unitFileUrl = useMemo(
     () => (selectedUnitFilePath ? makeUnitFileUrl(selectedUnitFilePath) : null),
     [selectedUnitFilePath, makeUnitFileUrl],
@@ -811,12 +889,35 @@ export function BookCanvasStage({
   )
   const whiteboardWideSpreadPresented = whiteboardActive && lessonBoardWideActive
   const whiteboardStandardActive = whiteboardActive && !lessonBoardWideActive
-  /** Clickable when the board is minimized/closed â€” sit above ink, under an open board. */
+  /** Clickable when the board is minimized/closed — sit above ink, under an open board. */
   const boardLinkMarkersInteractive =
     !boardLinkPlacementActive &&
+    !audioPinPlacementActive &&
     !readingCheckHotspotPlacementActive &&
+    !exerciseBoxDrawActive &&
     !whiteboardActive &&
     Boolean(onOpenBoardFromLink)
+  const audioPinMarkersInteractive =
+    !boardLinkPlacementActive &&
+    !audioPinPlacementActive &&
+    !readingCheckHotspotPlacementActive &&
+    !exerciseBoxDrawActive &&
+    !whiteboardActive &&
+    Boolean(onPlayAudioPin)
+  const exerciseMarkersInteractive =
+    !boardLinkPlacementActive &&
+    !audioPinPlacementActive &&
+    !readingCheckHotspotPlacementActive &&
+    !exerciseBoxDrawActive &&
+    !whiteboardActive &&
+    Boolean(onSelectExerciseTask)
+  const readingCheckLivePinsInteractive =
+    !boardLinkPlacementActive &&
+    !audioPinPlacementActive &&
+    !readingCheckHotspotPlacementActive &&
+    !exerciseBoxDrawActive &&
+    !whiteboardActive &&
+    Boolean(onReadingCheckLivePinClick)
   const whiteboardInSlot = whiteboardStandardActive && whiteboardLayoutMode === 'slot'
   const whiteboardFloating =
     whiteboardStandardActive && whiteboardLayoutMode === 'floating'
@@ -1012,6 +1113,7 @@ export function BookCanvasStage({
         shapeRoundedCorners={shapeRoundedCorners}
         textFontSizeNorm={textFontSizeNorm}
         textFontId={textFontId}
+        textFontWeight={textFontWeight}
         textVisualStyle={textVisualStyle}
         textAlign={textAlign}
         textFillColor={textFillColor}
@@ -1788,6 +1890,7 @@ export function BookCanvasStage({
       textColor: textColorResolved,
       textFontSizeNorm,
       textFontId,
+      textFontWeight,
       textVisualStyle: bookTextVisualStyle,
       textAlign,
       textFillColor,
@@ -1847,6 +1950,7 @@ export function BookCanvasStage({
     textColorResolved,
     textFillColor,
     textFontId,
+    textFontWeight,
     textFontSizeNorm,
     bookTextVisualStyle,
     textAlign,
@@ -2006,6 +2110,7 @@ export function BookCanvasStage({
         shapeRoundedCorners={shapeRoundedCorners}
           textFontSizeNorm={textFontSizeNorm}
           textFontId={textFontId}
+          textFontWeight={textFontWeight}
           textVisualStyle={bookTextVisualStyle}
           textAlign={textAlign}
           textFillColor={textFillColor}
@@ -2084,6 +2189,7 @@ export function BookCanvasStage({
       textFillColor,
       textFontSizeNorm,
       textFontId,
+      textFontWeight,
       bookTextVisualStyle,
     ],
   )
@@ -2165,7 +2271,29 @@ export function BookCanvasStage({
           onOpenLink={onOpenBoardFromLink}
         />
       ) : null}
-      {selectedBookId && selectedUnitId && onPlaceReadingCheckHotspot ? (
+      {selectedBookId && selectedUnitId && onPlaceAudioPin && onPlayAudioPin ? (
+        <BookAudioPinMarkers
+          pageNumber={pageNumber}
+          spreadRightPage={spreadRightPage}
+          showSpreadRightPage={showSpreadRightPage}
+          spreadOverlayWidthPx={spreadOverlayWidthPx}
+          spreadPageWidthPx={spreadPageWidth}
+          pageCanvasHeightPx={pageCanvasHeightPx}
+          leftPageCaptureRef={leftPageCaptureRef}
+          rightPageCaptureRef={rightPageCaptureRef}
+          pins={audioPins}
+          tracks={audioTracks}
+          placementActive={audioPinPlacementActive}
+          markersInteractive={audioPinMarkersInteractive}
+          playingTrackId={audioPlayingTrackId}
+          isPlaying={audioIsPlaying}
+          onPlacePin={onPlaceAudioPin}
+          onPlayPin={onPlayAudioPin}
+          onRemovePin={onRemoveAudioPin}
+          onMovePin={onMoveAudioPin ?? (() => {})}
+        />
+      ) : null}
+      {selectedBookId && selectedUnitId && (onPlaceReadingCheckHotspot || readingCheckLivePins.length > 0) ? (
         <ReadingCheckHotspotPlacementLayer
           pageNumber={pageNumber}
           spreadRightPage={spreadRightPage}
@@ -2181,6 +2309,27 @@ export function BookCanvasStage({
           previewLabel={readingCheckHotspotPreviewLabel}
           onPlace={onPlaceReadingCheckHotspot}
           onPreviewClick={onReadingCheckHotspotPreviewClick}
+          livePins={readingCheckLivePins}
+          livePinsInteractive={readingCheckLivePinsInteractive}
+          onLivePinClick={onReadingCheckLivePinClick}
+        />
+      ) : null}
+      {selectedBookId && selectedUnitId ? (
+        <BookExerciseTaskMarkers
+          pageNumber={pageNumber}
+          spreadRightPage={spreadRightPage}
+          showSpreadRightPage={showSpreadRightPage}
+          spreadOverlayWidthPx={spreadOverlayWidthPx}
+          spreadPageWidthPx={spreadPageWidth}
+          pageCanvasHeightPx={pageCanvasHeightPx}
+          leftPageCaptureRef={leftPageCaptureRef}
+          rightPageCaptureRef={rightPageCaptureRef}
+          tasks={exerciseTasks}
+          selectedTaskId={selectedExerciseTaskId}
+          markersInteractive={exerciseMarkersInteractive}
+          onSelectTask={onSelectExerciseTask}
+          onRemoveTask={onRemoveExerciseTask}
+          onMoveTask={onMoveExerciseTask}
         />
       ) : null}
       {!whiteboardActive && selectedBookId && selectedUnitId ? (
@@ -2288,7 +2437,7 @@ export function BookCanvasStage({
         ref={pageAreaRef}
         className={cn(
           'absolute inset-0 overscroll-none',
-          pinchZoomActive ? 'overflow-visible' : 'overflow-hidden',
+          pinchZoomActive || applyResizeScale ? 'overflow-visible' : 'overflow-hidden',
           spreadStrokeCaptureEnabled && 'touch-none',
         )}
         style={spreadStrokeCaptureEnabled ? { touchAction: 'none' } : undefined}
@@ -2331,7 +2480,15 @@ export function BookCanvasStage({
         ) : unitPdfError ? (
           <p className="p-6 text-sm text-[var(--brand-red)]">{unitPdfError}</p>
         ) : (
-          <div className="absolute inset-0 min-h-0 min-w-0">
+          <div
+            className={cn(
+              'absolute inset-0 min-h-0 min-w-0',
+              applyResizeScale &&
+                spreadFitMotionActive &&
+                `transition-transform ${BOOK_WORKSPACE_RAIL_MOTION_TW}`,
+            )}
+            style={resizeScaleStyle}
+          >
             <div
               ref={pinchSpreadRef}
               className={cn(
@@ -2416,6 +2573,7 @@ export function BookCanvasStage({
         shapeRoundedCorners={shapeRoundedCorners}
                           textFontSizeNorm={textFontSizeNorm}
                           textFontId={textFontId}
+                          textFontWeight={textFontWeight}
                           textVisualStyle={bookTextVisualStyle}
                           textAlign={textAlign}
                           textFillColor={textFillColor}
@@ -2534,6 +2692,7 @@ export function BookCanvasStage({
         shapeRoundedCorners={shapeRoundedCorners}
                               textFontSizeNorm={textFontSizeNorm}
                               textFontId={textFontId}
+                              textFontWeight={textFontWeight}
                               textVisualStyle={bookTextVisualStyle}
                               textAlign={textAlign}
                               textFillColor={textFillColor}
@@ -2639,6 +2798,7 @@ export function BookCanvasStage({
         shapeRoundedCorners={shapeRoundedCorners}
                                 textFontSizeNorm={textFontSizeNorm}
                                 textFontId={textFontId}
+                                textFontWeight={textFontWeight}
                                 textVisualStyle={bookTextVisualStyle}
                                 textAlign={textAlign}
                                 textFillColor={textFillColor}
@@ -2782,6 +2942,18 @@ export function BookCanvasStage({
             spreadGridRef={spreadGridRef}
             onCancel={onFocusDrawCancel}
             onConfirm={onFocusDrawConfirm}
+          />
+        ) : null}
+        {exerciseBoxDrawActive && onPlaceExerciseBox && onCancelExerciseBoxDraw ? (
+          <BookExerciseBoxDrawOverlay
+            open={exerciseBoxDrawActive}
+            pageNumber={pageNumber}
+            spreadRightPage={spreadRightPage}
+            showSpreadRightPage={showSpreadRightPage}
+            leftPageCaptureRef={leftPageCaptureRef}
+            rightPageCaptureRef={rightPageCaptureRef}
+            onCancel={onCancelExerciseBoxDraw}
+            onConfirm={onPlaceExerciseBox}
           />
         ) : null}
         {pdfExporting ? (

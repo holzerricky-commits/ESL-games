@@ -144,6 +144,7 @@ export function BookSpreadSessionLayer({
     viewportInk && isWhiteboardViewportInkActive(viewportInk),
   )
   const useDocumentCanvasLayout = documentScrollPaint || tallRunwayDocumentLayout
+  const [selectionMoveSeq, setSelectionMoveSeq] = useState(0)
   const [rotateCommitOverlay, setRotateCommitOverlay] = useState<AnnotationCommand[] | null>(null)
   const [rotateCommitFrame, setRotateCommitFrame] = useState<OrientedSelectionFrame | null>(null)
   const effectiveCommands = useMemo(
@@ -270,7 +271,10 @@ export function BookSpreadSessionLayer({
       clearSelectionOnEmptyClick: true,
       marqueeSelectRule: 'follow-drag',
       onSelectedIdsChange: (ids) => onSelectedIdsChange?.(ids),
-      onMoveCommitted: (dx, dy) => onMoveSelectedBy?.(dx, dy),
+      onMoveCommitted: (dx, dy) => {
+        onMoveSelectedBy?.(dx, dy)
+        setSelectionMoveSeq((n) => n + 1)
+      },
       onScaleCommitted: (start, end) => onScaleSelectedBy?.(start, end),
       onScaleCommitFrame: (frame) => setRotateCommitFrame(frame),
       onRotateCommitted: ({
@@ -614,6 +618,7 @@ export function BookSpreadSessionLayer({
           deadIndices={deadIndices}
           selectEnabled={selectEnabled}
           hidden={activeGesture === 'move' || hideSelectionContextBar}
+          positionEpoch={dom.textToolDragSeq + selectionMoveSeq}
           textToolActive={domTextTool && !selectEnabled}
           stickyToolActive={domWritableStickerTool && !selectEnabled}
           onPatchSelectedText={domConfig.onPatchSelectedText}

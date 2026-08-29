@@ -1,4 +1,5 @@
 import type { BookRecord, BookUnitRecord } from '@/lib/books/types'
+import { migrateBookVolumes, normalizeBookFilePath } from '@/lib/books/book-volumes'
 
 function slugFromFilePath(filePath: string, index: number): string {
   const s = filePath
@@ -20,18 +21,30 @@ export function bookHasTocMapping(book: BookRecord): boolean {
 /**
  * Remove lesson trees.
  * Collapses to one unit row per distinct `filePath` (typical after TOC split of one PDF).
+ * Preserves volumes when present.
  */
 export function stripBookTocMapping(book: BookRecord): BookRecord {
-  const paths = [...new Set(book.units.map((u) => u.filePath))].sort()
+  const paths = [
+    ...new Set(
+      book.units
+        .map((u) => normalizeBookFilePath(u.filePath ?? ''))
+        .filter(Boolean),
+    ),
+  ].sort()
+  const volumeByPath = new Map(
+    (book.volumes ?? []).map((v) => [normalizeBookFilePath(v.filePath), v]),
+  )
   const units: BookUnitRecord[] = paths.map((filePath, i) => {
     const base = filePath.split('/').pop() ?? filePath
     const title = base.replace(/\.pdf$/i, '') || `Unit ${i + 1}`
     const slug = slugFromFilePath(filePath, i)
+    const volume = volumeByPath.get(filePath)
     return {
       id: `unit-${slug}-${i + 1}`,
       title,
       filePath,
+      ...(volume ? { volumeId: volume.id } : {}),
     }
   })
-  return { ...book, units }
+  return migrateBookVolumes({ ...book, units })
 }

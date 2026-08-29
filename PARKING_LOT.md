@@ -6,6 +6,15 @@ Deferred ideas and polish. Paste assistant `--- PARKING_LOT ---` blocks under **
 
 <!-- Newest on top -->
 
+### Outline Align — bulk folio auto-scan (retired)
+
+- **What:** Scan PDF text for footer page numbers and auto-fill a long “not counted” list; consistency voting across later pages.
+- **Why parked:** Produced unsafe “weak match” results (e.g. printed 1 ≈ PDF 109 → ghost pages 2–108). Wrong folio reads amplify into huge skip lists.
+- **Keep intact:** `lib/books/page-alignment-detect.ts` helpers + `detect-page-alignment-client.ts` remain for experiments; wizard no longer auto-runs them.
+- **Shipped instead:** One sync point in the Align step (`notCountedFromSyncPoint`, max 20 not-counted) + skip / advanced lists.
+- **Resume when:** Only with hard caps, no auto-apply on weak, and teacher confirm for large offsets — or never.
+- **Next if resumed:** Cap max not-counted; never auto-apply weak; require confirm before applying >~10 skips.
+
 ### Spread seam overlap — revive outside structure wizard
 
 - **What:** Controls to set / auto-adjust how much facing pages overlap at the binding (spread gutter) while mapping book structure.

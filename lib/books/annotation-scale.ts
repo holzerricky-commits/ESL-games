@@ -14,6 +14,7 @@ import {
   rotateNormPointInPixelSpace,
 } from '@/lib/books/annotation-rotation'
 import { SELECTION_HANDLE_HIT_RADIUS_PX } from '@/lib/books/annotation-selection-chrome'
+import { TEXT_FONT_SIZE_NORM_MIN } from '@/lib/books/text-font-size-min'
 
 export type ScaleHandleId = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
 
@@ -831,7 +832,7 @@ export function scaleAnnotationCommand(
     }
     case 'text': {
       const pos = mapPointInBounds([cmd.x, cmd.y], startBounds, newBounds)
-      const nextFont = Math.max(0.008, cmd.fontSizeNorm * thicknessScale)
+      const nextFont = Math.max(TEXT_FONT_SIZE_NORM_MIN, cmd.fontSizeNorm * thicknessScale)
       return {
         ...cmd,
         x: pos[0],
@@ -851,7 +852,7 @@ export function scaleAnnotationCommand(
         y: Math.min(p0[1], p1[1]),
         w: Math.max(MIN_BOUNDS_NORM, Math.abs(p1[0] - p0[0])),
         h: Math.max(MIN_BOUNDS_NORM, Math.abs(p1[1] - p0[1])),
-        fontSizeNorm: Math.max(0.008, cmd.fontSizeNorm * thicknessScale),
+        fontSizeNorm: Math.max(TEXT_FONT_SIZE_NORM_MIN, cmd.fontSizeNorm * thicknessScale),
       }
     }
     case 'image': {
@@ -1010,7 +1011,7 @@ export function scaleAnnotationCommandFromOrientedFrames(
     }
     case 'text': {
       const pos = mapPt([cmd.x, cmd.y])
-      const nextFont = Math.max(0.008, cmd.fontSizeNorm * thicknessScale)
+      const nextFont = Math.max(TEXT_FONT_SIZE_NORM_MIN, cmd.fontSizeNorm * thicknessScale)
       return {
         ...cmd,
         x: pos[0],
@@ -1030,7 +1031,7 @@ export function scaleAnnotationCommandFromOrientedFrames(
         y: Math.min(p0[1], p1[1]),
         w: Math.max(MIN_BOUNDS_NORM, Math.abs(p1[0] - p0[0])),
         h: Math.max(MIN_BOUNDS_NORM, Math.abs(p1[1] - p0[1])),
-        fontSizeNorm: Math.max(0.008, cmd.fontSizeNorm * thicknessScale),
+        fontSizeNorm: Math.max(TEXT_FONT_SIZE_NORM_MIN, cmd.fontSizeNorm * thicknessScale),
       }
     }
     default:

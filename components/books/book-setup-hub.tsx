@@ -20,6 +20,7 @@ import { useState } from 'react'
 
 const HUB_TABS: { id: BookSetupTab; label: string }[] = [
   { id: 'materials', label: BOOK_SETUP_COPY.materials.tabLabel },
+  { id: 'audio', label: BOOK_SETUP_COPY.audio.tabLabel },
   { id: 'outline', label: BOOK_SETUP_COPY.outline.tabLabel },
   { id: 'stories', label: BOOK_SETUP_COPY.stories.tabLabel },
   { id: 'plan', label: BOOK_SETUP_COPY.plan.tabLabel },
@@ -39,6 +40,7 @@ interface BookSetupHubProps {
   onUnitsUploaded?: () => Promise<void> | void
   outlineTab: React.ReactNode
   materialsTab: React.ReactNode
+  audioTab: React.ReactNode
   storiesTab: React.ReactNode
   planTab: React.ReactNode
   advancedTab: React.ReactNode
@@ -57,6 +59,7 @@ export function BookSetupHub({
   onUnitsUploaded,
   outlineTab,
   materialsTab,
+  audioTab,
   storiesTab,
   planTab,
   advancedTab,
@@ -167,6 +170,7 @@ export function BookSetupHub({
         {activeTab === 'outline' ? outlineTab : null}
         {activeTab === 'stories' ? storiesTab : null}
         {activeTab === 'materials' ? materialsTab : null}
+        {activeTab === 'audio' ? audioTab : null}
         {activeTab === 'plan' ? planTab : null}
         {activeTab === 'advanced' ? advancedTab : null}
       </div>

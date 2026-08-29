@@ -1,6 +1,6 @@
 # Reading checks — product decisions (locked)
 
-Last updated: 2026-08-03
+Last updated: 2026-08-20
 
 **Status:** Agreed direction from brainstorm. Implementation order lives in **`READING_CHECKS_PHASED_PLAN.md`**.
 
@@ -8,7 +8,7 @@ Last updated: 2026-08-03
 
 **Milestone tie-in:** Roadmap **Phase 3 — Reading checks v0**. Follows interactive vocab v0 (Phase 2 pattern: mark section → content pack → on-book UI).
 
-**Related:** `PROJECT_CONTEXT.md` (interactive book · reading / story sections), `MILESTONE.md` Phase 3, existing book outline / part tags, book context (unit · lesson · part).
+**Related:** `PROJECT_CONTEXT.md` (interactive book · reading / story sections), `MILESTONE.md` Phase 3, `docs/BOOKS_WORKSHOP_PRODUCT.md` (workshop chrome), existing book outline / part tags.
 
 ---
 
@@ -36,11 +36,12 @@ AI only helps fill the check pack from story fuel. Hand-written checks always wo
 
 | Surface | Role |
 |---------|------|
-| **Books · story desk** | Standing **content desk**: mark story, scan/save text, generate or edit checks, place/move stops, **Approve**. |
-| **Prepare / next class** | Short **status only** (e.g. “4 checks · approved” or “Needs review”). Opens the desk for that story — not a second full editor. |
+| **Books · workshop book** | Standing **working surface** (place bar). Story tools (scan / checks / pins / Approve) attach to the marked or outlined story — not a pick-book wizard. See `docs/BOOKS_WORKSHOP_PRODUCT.md`. |
+| **Books · part desk** | Confirm page range + status. Jump to workshop to place on the pages. |
+| **Prepare / next class** | Short **status only** (e.g. “4 checks · approved” or “Needs review”). Opens workshop / Stories for that story — not a second full editor. |
 | **Fullscreen book reader** | **Live teaching**: list of check links for the **current approved** story pack; tap → popup; you mark; dismiss/skip anytime. |
 
-Do **not** bury approve-only UI inside live class chrome. Do **not** invent a giant separate “content CMS” product for v1 — extend Books + a prepare glance.
+Do **not** bury approve-only UI inside live class chrome. Do **not** invent a giant separate “content CMS” product for v1. The Checks prep **sheet/wizard** is retired as workshop UI.
 
 ---
 
@@ -131,7 +132,7 @@ You pick one Literature story, save its text, get an AI draft (or write checks y
 
 ## Changelog
 
-- **2026-08-09** — Class wrap: student-facing end ceremony + session-scoped live marks + teacher wrap line on past classes.
+- **2026-08-19** — Prepare destination is Today’s class; glance still status-only (Stories jump).
 - **2026-08-05** — Literature → Workshop lesson link (Phase 9e): Literature Stories pick a Workshop week; Generate uses that skill frame.
 - **2026-08-05** — Stop and Check harvest (Phase 9c): detect publisher pauses in story text; import to pack; Generate must-cover anchors.
 - **2026-08-05** — Skill-aware Generate (Phase 9b): ready lesson frame steers checks toward skill / EQ / target vocab.

@@ -1,8 +1,10 @@
 import path from 'node:path'
 import { promises as fs } from 'node:fs'
+import { migrateBookVolumes } from '@/lib/books/book-volumes'
 import { dedupeBookLibraryPayload } from '@/lib/books/dedupe-book-library'
 import { clampSpreadGutterPullRatio } from '@/lib/books/spread-gutter'
-import type { BookLibraryPayload, BookRecord } from '@/lib/books/types'
+import type { BookLibraryPayload, BookRecord, BookVolumeRecord } from '@/lib/books/types'
+import { isHiddenLibraryDirName } from '@/lib/books/searchable-pdf-path'
 
 /** Runtime cwd; marked so Turbopack does not treat tracing as “whole repo”. */
 const PROJECT_ROOT = /* turbopackIgnore: true */ process.cwd()
@@ -94,6 +96,27 @@ function normalizeSpreadGutterPullRatio(value: unknown): number | null {
   return clampSpreadGutterPullRatio(value)
 }
 
+function normalizeVolumes(value: unknown): BookVolumeRecord[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null
+  const out: BookVolumeRecord[] = []
+  for (let i = 0; i < value.length; i++) {
+    const raw = value[i] as Record<string, unknown> | null
+    if (raw == null || typeof raw !== 'object') continue
+    const filePath = typeof raw.filePath === 'string' ? raw.filePath.trim().replaceAll('\\', '/') : ''
+    if (!filePath) continue
+    const id =
+      typeof raw.id === 'string' && raw.id.trim()
+        ? raw.id.trim()
+        : `vol-${i + 1}`
+    const title =
+      typeof raw.title === 'string' && raw.title.trim()
+        ? raw.title.trim()
+        : `Volume ${i + 1}`
+    out.push({ id, title, filePath })
+  }
+  return out.length ? out : null
+}
+
 async function fileExists(absPath: string): Promise<boolean> {
   try {
     await fs.access(absPath)
@@ -113,7 +136,8 @@ async function loadManifestIfPresent(): Promise<BookLibraryPayload | null> {
     const pageAlignmentByFile = normalizePageAlignmentByFile(book?.pageAlignmentByFile)
     const spreadGutterPullRatio = normalizeSpreadGutterPullRatio(book?.spreadGutterPullRatio)
     const spreadGutterByFile = normalizeSpreadGutterByFile(book?.spreadGutterByFile)
-    return {
+    const volumes = normalizeVolumes(book?.volumes)
+    const rawBook: BookRecord = {
     id: typeof book?.id === 'string' && book.id ? book.id : `book-${bi + 1}`,
     title: typeof book?.title === 'string' && book.title ? book.title : `Book ${bi + 1}`,
     ...(typeof book?.description === 'string' ? { description: book.description } : {}),
@@ -129,11 +153,15 @@ async function loadManifestIfPresent(): Promise<BookLibraryPayload | null> {
     ...(typeof book?.coverImagePath === 'string' && book.coverImagePath.trim()
       ? { coverImagePath: book.coverImagePath.trim() }
       : {}),
+    ...(volumes ? { volumes } : {}),
     units: Array.isArray(book?.units)
       ? book.units.map((unit, ui) => ({
           id: typeof unit?.id === 'string' && unit.id ? unit.id : `unit-${ui + 1}`,
           title: typeof unit?.title === 'string' && unit.title ? unit.title : `Unit ${ui + 1}`,
           filePath: typeof unit?.filePath === 'string' ? unit.filePath : '',
+          ...(typeof unit?.volumeId === 'string' && unit.volumeId.trim()
+            ? { volumeId: unit.volumeId.trim() }
+            : {}),
           ...(optionalStartPageHint(unit?.startPageHint) != null
             ? { startPageHint: optionalStartPageHint(unit?.startPageHint) as number }
             : {}),
@@ -182,6 +210,7 @@ async function loadManifestIfPresent(): Promise<BookLibraryPayload | null> {
         }))
       : [],
     }
+    return migrateBookVolumes(rawBook)
   })
   return dedupeBookLibraryPayload({ books: migrated })
 }
@@ -192,7 +221,7 @@ async function autoDiscoverBooks(): Promise<BookLibraryPayload> {
   const books: BookRecord[] = []
 
   for (const entry of entries) {
-    if (!entry.isDirectory()) continue
+    if (!entry.isDirectory() || isHiddenLibraryDirName(entry.name)) continue
     const dirName = entry.name
     const absDir = path.resolve(BOOK_LIBRARY_ROOT, dirName)
     const unitEntries = await fs.readdir(absDir, { withFileTypes: true })
@@ -204,15 +233,17 @@ async function autoDiscoverBooks(): Promise<BookLibraryPayload> {
     if (pdfFiles.length === 0) continue
 
     const bookId = toSlug(dirName) || `book-${books.length + 1}`
-    books.push({
-      id: bookId,
-      title: dirName.replace(/[-_]+/g, ' ').trim(),
-      units: pdfFiles.map((fileName, index) => ({
-        id: toSlug(fileName) || `${bookId}-unit-${index + 1}`,
-        title: titleFromFileName(fileName),
-        filePath: `book-library/${dirName}/${fileName}`.replaceAll('\\', '/'),
-      })),
-    })
+    books.push(
+      migrateBookVolumes({
+        id: bookId,
+        title: dirName.replace(/[-_]+/g, ' ').trim(),
+        units: pdfFiles.map((fileName, index) => ({
+          id: toSlug(fileName) || `${bookId}-unit-${index + 1}`,
+          title: titleFromFileName(fileName),
+          filePath: `book-library/${dirName}/${fileName}`.replaceAll('\\', '/'),
+        })),
+      }),
+    )
   }
 
   return { books }

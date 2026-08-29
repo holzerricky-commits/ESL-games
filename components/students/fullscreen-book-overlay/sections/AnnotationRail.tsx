@@ -21,7 +21,7 @@ import {
   FLOATING_SIDE_TOOLBAR_BUTTON_ACTIVE,
 } from '@/components/students/fullscreen-book-overlay/FloatingSideToolbar'
 import type { MarqueeSelectRule } from '@/lib/books/annotation-select'
-import type { AnnotationTextFontId } from '@/lib/books/annotation-text-fonts'
+import type { AnnotationTextFontId, AnnotationTextFontWeight } from '@/lib/books/annotation-text-fonts'
 
 function AnnotationRailHandle({
   revealed,
@@ -146,10 +146,11 @@ interface AnnotationRailProps {
   setMarqueeSelectRule: (r: MarqueeSelectRule) => void
   textFontId: AnnotationTextFontId
   setTextFontId: (id: AnnotationTextFontId) => void
+  textFontWeight: AnnotationTextFontWeight
+  setTextFontWeight: (weight: AnnotationTextFontWeight) => void
   pickTextColor: (hex: string) => void
   pickTextFillColor: (hex: string) => void
   pickStickyFillColor: (hex: string) => void
-  textSelectionActive?: boolean
   stickySelectionActive?: boolean
   shapeSelectionActive?: boolean
   penStrokeSelectionActive?: boolean
@@ -251,10 +252,11 @@ export function AnnotationRail({
   setMarqueeSelectRule,
   textFontId,
   setTextFontId,
+  textFontWeight,
+  setTextFontWeight,
   pickTextColor,
   pickTextFillColor,
   pickStickyFillColor,
-  textSelectionActive = false,
   stickySelectionActive = false,
   shapeSelectionActive = false,
   penStrokeSelectionActive = false,
@@ -406,6 +408,8 @@ export function AnnotationRail({
               setTextAlign={setTextAlign}
               textFontId={textFontId}
               setTextFontId={setTextFontId}
+              textFontWeight={textFontWeight}
+              setTextFontWeight={setTextFontWeight}
               textFillColor={textFillColor}
               setTextFillColor={setTextFillColor}
               textPageHeightPx={pageCanvasHeightPx}
@@ -431,7 +435,6 @@ export function AnnotationRail({
               setPenAutoGroupConnected={setPenAutoGroupConnected}
               marqueeSelectRule={marqueeSelectRule}
               setMarqueeSelectRule={setMarqueeSelectRule}
-              textSelectionActive={textSelectionActive}
               stickySelectionActive={stickySelectionActive}
               shapeSelectionActive={shapeSelectionActive}
               penStrokeSelectionActive={penStrokeSelectionActive}

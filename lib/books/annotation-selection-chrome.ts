@@ -39,6 +39,18 @@ export const SELECTION_HANDLE_SIZE_PX = 9
 /** Pointer hit radius around handle center (px). */
 export const SELECTION_HANDLE_HIT_RADIUS_PX = 13
 
+/** True when resize handles would cover the box — drag should move, not scale. */
+export function selectionBoundsTooSmallForScaleHandles(
+  bounds: { w: number; h: number },
+  widthPx: number,
+  heightPx: number,
+  hitRadiusPx: number = SELECTION_HANDLE_HIT_RADIUS_PX,
+): boolean {
+  if (!(widthPx > 0) || !(heightPx > 0)) return false
+  const minSpanPx = hitRadiusPx * 2
+  return bounds.w * widthPx < minSpanPx || bounds.h * heightPx < minSpanPx
+}
+
 /** Corner / edge handles — solid fill, no shadow. */
 export const SELECTION_HANDLE_CLASS = 'absolute box-border pointer-events-none'
 

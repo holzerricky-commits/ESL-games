@@ -19,5 +19,5 @@ export function markerWidthScaleToThicknessStep(scale: number): AnnotationStroke
 }
 
 export function markerThicknessStepToWidthScale(step: AnnotationStrokeThicknessStep): number {
-  return ANNOTATION_STROKE_WIDTH_STEPS[step]!
+  return ANNOTATION_STROKE_WIDTH_STEPS[step] ?? ANNOTATION_STROKE_WIDTH_STEPS[3]!
 }

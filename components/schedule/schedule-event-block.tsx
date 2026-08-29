@@ -1,6 +1,5 @@
 'use client'
 
-import { GripVertical } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   PX_PER_MINUTE,
@@ -57,15 +56,14 @@ export function ScheduleEventBlock({
     <div
       data-schedule-event-block
       className={cn(
-        'group absolute overflow-hidden rounded-lg border shadow-sm transition-[opacity,box-shadow,filter]',
+        'group absolute overflow-hidden rounded-xl chrome-motion',
         colors.bg,
-        colors.border,
-        isLive && 'ring-2 ring-amber-400',
-        highlighted && 'ring-2 ring-amber-400 ring-offset-1',
-        isKeyboardAdjusted && 'ring-2 ring-[var(--brand-blue)] ring-offset-1',
+        isLive && 'bg-amber-500/30',
+        highlighted && 'brightness-[1.06]',
+        isKeyboardAdjusted && 'ring-1 ring-inset ring-[var(--brand-blue)]/45',
         dimmed && 'opacity-40',
         isDraggingSource && 'opacity-35',
-        'hover:z-30 hover:shadow-md focus-within:z-30',
+        'hover:z-30 hover:brightness-[0.97] focus-within:z-30',
       )}
       style={{
         top: topPx,
@@ -76,7 +74,7 @@ export function ScheduleEventBlock({
         zIndex: isDraggingSource ? 5 : 10 + safeLaneIndex,
       }}
     >
-      <div className={cn('absolute inset-y-0 left-0 w-1', colors.accent)} aria-hidden />
+      <div className={cn('absolute inset-y-0.5 left-0.5 w-[3px] rounded-full', colors.accent)} aria-hidden />
 
       <div
         role="button"
@@ -84,9 +82,9 @@ export function ScheduleEventBlock({
         aria-label={ariaLabel}
         aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Enter Escape"
         className={cn(
-          'relative flex h-full min-w-0 flex-col justify-center pl-2.5 pr-2 text-left',
+          'relative flex h-full min-w-0 flex-col justify-center py-0.5 pl-2.5 pr-2 text-left',
           draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
-          'hover:brightness-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--brand-blue)]',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--brand-blue)]/50',
         )}
         onClick={(e) => {
           e.stopPropagation()
@@ -108,42 +106,43 @@ export function ScheduleEventBlock({
           onPointerDownMove(e)
         }}
       >
-        {draggable ? (
-          <span
-            className="pointer-events-none absolute left-1.5 top-0.5 opacity-0 transition-opacity group-hover:opacity-50 group-focus-within:opacity-50"
-            aria-hidden
-          >
-            <GripVertical className="h-2.5 w-2.5 text-foreground" />
-          </span>
-        ) : null}
-
         {isCompact ? (
-          <p className="truncate text-[11px] font-semibold leading-none text-foreground">
+          <p className="truncate text-[12px] font-semibold leading-none tracking-tight text-foreground">
             <span className={cn(isCancelled && 'line-through decoration-slate-500/70')}>
               {row.studentName}
             </span>
             {timeLabel ? (
-              <span className="font-normal text-muted-foreground"> · {timeLabel}</span>
+              <span className="font-medium text-muted-foreground"> · {timeLabel}</span>
             ) : null}
-            {isLive ? <span className="font-medium text-amber-700"> · Live</span> : null}
+            {isLive ? (
+              <span className="font-semibold text-[color-mix(in_srgb,var(--brand-yellow)_80%,#1a1a18)]">
+                {' '}
+                · Live
+              </span>
+            ) : null}
           </p>
         ) : (
           <div className="min-w-0 leading-tight">
             <p
               className={cn(
-                'truncate text-xs font-semibold text-foreground',
+                'truncate text-[13px] font-semibold tracking-tight text-foreground',
                 isCancelled && 'line-through decoration-slate-500/70',
               )}
             >
               {row.studentName}
             </p>
-            <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
+            <p className="mt-0.5 truncate text-[11px] font-medium tabular-nums text-muted-foreground">
               {timeLabel}
               {durationLabel ? ` · ${durationLabel}` : null}
-              {isLive ? ' · Live' : null}
+              {isLive ? (
+                <span className="font-semibold text-[color-mix(in_srgb,var(--brand-yellow)_80%,#1a1a18)]">
+                  {' '}
+                  · Live
+                </span>
+              ) : null}
             </p>
             {keyboardHint ? (
-              <p className="mt-0.5 truncate text-[10px] font-medium text-[var(--brand-blue)]">
+              <p className="mt-0.5 truncate text-[11px] font-medium text-[var(--chrome-pill-active-fg)]">
                 {keyboardHint}
               </p>
             ) : null}
@@ -176,24 +175,24 @@ export function ScheduleEventGhost({
   return (
     <div
       className={cn(
-        'pointer-events-none absolute left-1 right-1 z-30 overflow-hidden rounded-lg border-2 border-dashed shadow-md',
-        valid ? cn(colors.bg, colors.border) : 'border-[var(--brand-red)] bg-[var(--brand-red)]/10',
+        'pointer-events-none absolute left-1 right-1 z-30 overflow-hidden rounded-xl border border-dashed',
+        valid ? cn(colors.bg, colors.border) : 'border-[var(--brand-red)]/50 bg-[var(--brand-red)]/10',
       )}
       style={{ top: topPx, height: heightPx, minHeight: 24 }}
       aria-hidden
     >
-      <div className={cn('absolute inset-y-0 left-0 w-1', valid ? colors.accent : 'bg-[var(--brand-red)]')} />
-      <div className="flex h-full flex-col justify-center pl-2.5 pr-2 leading-tight">
+      <div className={cn('absolute inset-y-0.5 left-0.5 w-[3px] rounded-full', valid ? colors.accent : 'bg-[var(--brand-red)]')} />
+      <div className="flex h-full flex-col justify-center py-0.5 pl-2.5 pr-2 leading-tight">
         <p
           className={cn(
-            'truncate font-semibold text-foreground',
-            isCompact ? 'text-[11px] leading-none' : 'text-xs',
+            'truncate font-semibold tracking-tight text-foreground',
+            isCompact ? 'text-[12px] leading-none' : 'text-[13px]',
           )}
         >
           {studentName}
         </p>
         {!isCompact ? (
-          <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
+          <p className="mt-0.5 truncate text-[11px] font-medium text-muted-foreground">
             {label ?? (valid ? 'Drop to update weekly time' : 'Time not available')}
           </p>
         ) : null}

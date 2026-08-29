@@ -39,6 +39,16 @@ import {
 } from '@/lib/students/selectors'
 import type { StudentClassSession } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import {
+  scheduleDialogContentClass,
+  scheduleDialogDescriptionClass,
+  scheduleDialogOverlayClass,
+  scheduleDialogTitleClass,
+  scheduleFieldClass,
+  scheduleGhostBtnClass,
+  schedulePrimaryBtnClass,
+  scheduleQuietBtnClass,
+} from '@/components/schedule/schedule-sheet-chrome'
 
 export interface MoveClassDialogProps {
   open: boolean
@@ -211,16 +221,21 @@ export function MoveClassDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent
+        overlayClassName={scheduleDialogOverlayClass}
+        className={scheduleDialogContentClass}
+      >
         <DialogHeader>
-          <DialogTitle>{isMissed ? 'Reschedule' : isLive ? 'Move instead' : 'Move class'}</DialogTitle>
-          <DialogDescription>
+          <DialogTitle className={scheduleDialogTitleClass}>
+            {isMissed ? 'Reschedule' : isLive ? 'Move instead' : 'Move class'}
+          </DialogTitle>
+          <DialogDescription className={scheduleDialogDescriptionClass}>
             {studentName} · {formatSessionDateTime(session.scheduledFor)} · {session.durationMin}{' '}
             min
           </DialogDescription>
         </DialogHeader>
 
-        <p className="text-sm text-muted-foreground">
+        <p className="text-[13px] text-muted-foreground">
           Moves <span className="font-medium text-foreground">this class only</span>. The weekly
           time stays the same unless you change it on the schedule.
           {isLive ? (
@@ -239,14 +254,14 @@ export function MoveClassDialog({
         </p>
 
         {!canMove ? (
-          <p className="text-sm text-[var(--brand-red)]">This class cannot be moved.</p>
+          <p className="text-[13px] text-[var(--brand-red)]">This class cannot be moved.</p>
         ) : null}
 
         {mode === 'chips' && canMove ? (
           <div className={cn('flex flex-col gap-2', urgent && 'gap-3')}>
             <Button
               type="button"
-              size={urgent ? 'default' : 'sm'}
+              className={schedulePrimaryBtnClass}
               disabled={busy}
               onClick={handlePlus30}
             >
@@ -254,8 +269,8 @@ export function MoveClassDialog({
             </Button>
             <Button
               type="button"
-              variant="outline"
-              size={urgent ? 'default' : 'sm'}
+              variant="secondary"
+              className={scheduleQuietBtnClass}
               disabled={busy}
               onClick={handleTomorrow}
             >
@@ -264,7 +279,7 @@ export function MoveClassDialog({
             <Button
               type="button"
               variant="ghost"
-              size={urgent ? 'default' : 'sm'}
+              className={scheduleGhostBtnClass}
               disabled={busy}
               onClick={() => setMode('pick')}
             >
@@ -279,7 +294,7 @@ export function MoveClassDialog({
               <span className="text-xs font-medium text-muted-foreground">Date</span>
               <input
                 type="date"
-                className="w-full rounded-md border border-[var(--border)] bg-background px-3 py-2 text-sm"
+                className={scheduleFieldClass}
                 value={pickDateKey}
                 onChange={(e) => setPickDateKey(e.target.value)}
               />
@@ -288,7 +303,7 @@ export function MoveClassDialog({
               <label className="space-y-1">
                 <span className="text-xs font-medium text-muted-foreground">Time</span>
                 <select
-                  className="w-full rounded-md border border-[var(--border)] bg-background px-3 py-2 text-sm"
+                  className={scheduleFieldClass}
                   value={pickStartMinute}
                   onChange={(e) => setPickStartMinute(Number(e.target.value))}
                 >
@@ -302,7 +317,7 @@ export function MoveClassDialog({
               <label className="space-y-1">
                 <span className="text-xs font-medium text-muted-foreground">Length</span>
                 <select
-                  className="w-full rounded-md border border-[var(--border)] bg-background px-3 py-2 text-sm"
+                  className={scheduleFieldClass}
                   value={otherMode ? 'other' : String(pickDuration)}
                   onChange={(e) => {
                     const v = e.target.value
@@ -333,7 +348,7 @@ export function MoveClassDialog({
                     min={CLASS_DURATION_MIN}
                     max={CLASS_DURATION_MAX}
                     step={1}
-                    className="w-full rounded-md border border-[var(--border)] bg-background px-3 py-2 text-sm"
+                    className={scheduleFieldClass}
                     value={otherDraft}
                     onChange={(e) => {
                       setOtherDraft(e.target.value)
@@ -359,13 +374,13 @@ export function MoveClassDialog({
           </div>
         ) : null}
 
-        {error ? <p className="text-sm text-[var(--brand-red)]">{error}</p> : null}
+        {error ? <p className="text-[13px] text-[var(--brand-red)]">{error}</p> : null}
 
         {isLive ? (
           <div className="pt-1">
             <button
               type="button"
-              className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline disabled:opacity-50"
+              className="text-[12px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline disabled:opacity-50"
               disabled={busy}
               onClick={() => void handleCancelInstead()}
             >
@@ -377,15 +392,32 @@ export function MoveClassDialog({
         <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
           {mode === 'pick' && canMove ? (
             <>
-              <Button type="button" variant="outline" disabled={busy} onClick={() => setMode('chips')}>
+              <Button
+                type="button"
+                variant="ghost"
+                className={scheduleGhostBtnClass}
+                disabled={busy}
+                onClick={() => setMode('chips')}
+              >
                 Back
               </Button>
-              <Button type="button" disabled={busy} onClick={handleConfirmPick}>
+              <Button
+                type="button"
+                className={schedulePrimaryBtnClass}
+                disabled={busy}
+                onClick={handleConfirmPick}
+              >
                 {busy ? 'Moving…' : 'Confirm move'}
               </Button>
             </>
           ) : (
-            <Button type="button" variant="ghost" disabled={busy} onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              variant="ghost"
+              className={scheduleGhostBtnClass}
+              disabled={busy}
+              onClick={() => onOpenChange(false)}
+            >
               Close
             </Button>
           )}

@@ -1,0 +1,116 @@
+{
+  "storyId": "manual::other-g1-workshop::other-g1-workshop-pdf::smtecwt8p",
+  "bookId": "other-g1-workshop",
+  "unitId": "other-g1-workshop-pdf",
+  "status": "approved",
+  "stops": [
+    {
+      "id": "stop-6586f6d8",
+      "label": "Time to meet pals",
+      "displayPage": 238,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 238,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-80700e3a",
+          "kind": "mcq",
+          "prompt": "What time does the character need to be with pals?",
+          "choices": [
+            "8 o'clock",
+            "10 o'clock",
+            "half past ten",
+            "12 o'clock"
+          ],
+          "correctIndex": 2,
+          "correctTrue": null,
+          "evidenceSnippet": "I must be there at half past ten.\nBut I have lots of time until then.",
+          "evidenceHighlight": "half past ten"
+        }
+      ]
+    },
+    {
+      "id": "stop-213ed27e",
+      "label": "Distraction on the way",
+      "displayPage": 240,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 240,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-ef4167a3",
+          "kind": "true_false",
+          "prompt": "The character stops to play with frogs in a lake.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": true,
+          "evidenceSnippet": "I wade in this lake as frogs\nhop away.\nI do not think they wish to play!",
+          "evidenceHighlight": "I wade in this lake as frogs\nhop away."
+        }
+      ]
+    },
+    {
+      "id": "stop-4caf15a1",
+      "label": "Realizing the time",
+      "displayPage": 242,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 242,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-9521fdf8",
+          "kind": "mcq",
+          "prompt": "What makes the character realize they might be late?",
+          "choices": [
+            "They see their friends waiting.",
+            "They look at the clock after a nap.",
+            "A frog tells them the time.",
+            "They get a phone call."
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "The sun is hot, and I nap on a rock.\nThen I wake up and gaze at the clock.\nDrats! It is 10 o'clock. Can it be?",
+          "evidenceHighlight": "I nap on a rock.\nThen I wake up and gaze at the clock."
+        }
+      ]
+    },
+    {
+      "id": "stop-555e4192",
+      "label": "Friends' reaction",
+      "displayPage": 244,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 244,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-7218c5f9",
+          "kind": "true_false",
+          "prompt": "The character's friends are angry that they are late.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "My six best pals sit with Miss Tate.\nI tell them all why I am late.\nThey grin at me and then they say,\n“Now we can hear the story today!”",
+          "evidenceHighlight": "They grin at me and then they say,\n“Now we can hear the story today!”"
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-08-29T12:29:39.830Z",
+  "approvedAt": "2026-08-29T12:29:39.830Z"
+}

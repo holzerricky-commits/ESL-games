@@ -19,5 +19,5 @@ export function widthScaleToThicknessStep(scale: number): AnnotationStrokeThickn
 }
 
 export function thicknessStepToWidthScale(step: AnnotationStrokeThicknessStep): number {
-  return ANNOTATION_FINE_INK_STROKE_WIDTH_STEPS[step]!
+  return ANNOTATION_FINE_INK_STROKE_WIDTH_STEPS[step] ?? ANNOTATION_FINE_INK_STROKE_WIDTH_STEPS[3]!
 }

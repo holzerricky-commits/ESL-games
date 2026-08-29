@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { z } from 'zod'
-import { BOOK_LESSON_PART_TAGS } from '@/lib/books/types'
+import { BOOK_CONTENT_FORMATS, BOOK_LESSON_PART_TAGS } from '@/lib/books/types'
 
 const anchorConfidenceSchema = z.enum(['high', 'medium', 'low'])
 const anchorSourceSchema = z.enum(['toc', 'heading', 'fallback'])
@@ -52,6 +52,7 @@ const bookRecordSchema = z.object({
   series: z.string().optional(),
   grade: z.string().optional(),
   role: z.string().optional(),
+  contentFormat: z.enum(BOOK_CONTENT_FORMATS).optional(),
   pageAlignmentByFile: z.record(z.string().min(1), bookFilePageAlignmentSchema).optional(),
   spreadGutterPullRatio: spreadGutterPullRatioSchema.optional(),
   spreadGutterByFile: z.record(z.string().min(1), spreadGutterPullRatioSchema).optional(),

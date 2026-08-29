@@ -6,6 +6,7 @@ import {
   isDefaultReadingCheckHotspotCoords,
 } from '@/lib/books/reading-check-placement'
 import { createEmptyReadingCheckStop } from '@/lib/books/reading-check-pack'
+import type { BookRecord } from '@/lib/books/types'
 import {
   buildPlaceholderChunkForPdfPages,
   coveredPdfPagesFromStoryText,
@@ -176,5 +177,44 @@ describe('reading-check-placement', () => {
     })
     // Snippet appears on both pages → no unique hit → keep AI page
     expect(placed?.displayPage).toBe(10)
+  })
+
+  it('matches evidence across line breaks in scanned story text', () => {
+    const story = [
+      formatReadingStoryPageMarker({ displayPage: 434, pdfPage: 436 }),
+      'Gloria is an experienced\nphotographer, so she\ndecides to photograph\nwhat the team\ndiscovers underwater.',
+    ].join('\n')
+    const hit = resolvePageFromStoryEvidence(
+      story,
+      'Gloria is an experienced photographer, so she decides to photograph what the team discovers underwater.',
+    )
+    expect(hit).toEqual({ displayPage: 434, pdfPage: 436 })
+  })
+
+  it('maps Generate pins through the same page alignment the reader uses', () => {
+    const unit: BookRecord['units'][number] = {
+      id: 'unit-2',
+      title: 'How on Earth?',
+      filePath: 'book-library/wonders-g2-workshop/wonders-g2-workshop.pdf',
+    }
+    const book: BookRecord = {
+      id: 'readingwriting-workshop-g2',
+      title: 'Workshop',
+      pageAlignmentByFile: {
+        [unit.filePath]: {
+          notCountedPdfPages: [],
+          hiddenPdfPages: [1, 4, 5],
+        },
+      },
+      units: [unit],
+    }
+    const stop = createEmptyReadingCheckStop(434)
+    const placed = ensureReadingCheckStopPlacement(stop, {
+      book,
+      unit,
+      totalPdfPages: 500,
+      resetHotspot: true,
+    })
+    expect(placed.hotspot?.pdfPage).toBe(436)
   })
 })

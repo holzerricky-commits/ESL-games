@@ -3,7 +3,6 @@
 import Link from 'next/link'
 import { useState } from 'react'
 import { ChevronRight, MoreHorizontal, Trash2, Undo2 } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -12,6 +11,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { RemoveStudentDialog } from '@/components/students/remove-student-dialog'
+import {
+  teacherFocusRingClass,
+  teacherMenuContentClass,
+  teacherQuietBtnClass,
+} from '@/components/teacher-chrome'
 import { resolveStudentAvatarUrl } from '@/lib/students/student-avatar-url'
 import {
   bookPageLabelForStudent,
@@ -49,7 +53,7 @@ function StudentCardAvatar({
   const showImage = !imageFailed
 
   return (
-    <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full bg-muted ring-1 ring-border/60">
+    <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full bg-[var(--surface-3)]">
       {showImage ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -60,7 +64,7 @@ function StudentCardAvatar({
         />
       ) : (
         <div
-          className="flex h-full w-full items-center justify-center text-xs font-medium text-muted-foreground"
+          className="chrome-avatar h-full w-full text-[11px]"
           aria-hidden
         >
           {initialsFromName(name)}
@@ -68,6 +72,21 @@ function StudentCardAvatar({
       )}
       <span className="sr-only">{name} avatar</span>
     </div>
+  )
+}
+
+function StatusPill({ label, tone }: { label: string; tone: 'setup' | 'break' }) {
+  return (
+    <span
+      className={cn(
+        'inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-medium tracking-tight',
+        tone === 'break'
+          ? 'bg-[var(--surface-3)] text-muted-foreground'
+          : 'bg-[color-mix(in_srgb,var(--brand-blue)_12%,white)] text-[var(--brand-blue)]',
+      )}
+    >
+      {label}
+    </span>
   )
 }
 
@@ -83,17 +102,15 @@ function RowMoreMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button
+        <button
           type="button"
-          variant="ghost"
-          size="icon"
-          className="ui-icon-btn h-8 w-8 text-muted-foreground"
+          className={cn('chrome-icon-btn h-8 w-8', teacherFocusRingClass)}
           aria-label={`More options for ${studentName}`}
         >
-          <MoreHorizontal size={16} aria-hidden />
-        </Button>
+          <MoreHorizontal className="h-4 w-4" strokeWidth={1.75} aria-hidden />
+        </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent align="end" className={teacherMenuContentClass}>
         <DropdownMenuItem variant="destructive" onClick={onRemove}>
           <Trash2 size={14} aria-hidden />
           {deleteOnly ? 'Delete forever' : 'Remove…'}
@@ -105,7 +122,6 @@ function RowMoreMenu({
 
 export function StudentCard({ student, onRemoved, onBreak = false, onRestore }: StudentCardProps) {
   const [removeOpen, setRemoveOpen] = useState(false)
-  /** Phase 1: one door — still class prep / setup until Phase 2 shell. */
   const openHref = openHrefForStudent(student)
   const bookPageLabel = bookPageLabelForStudent(student)
   const openLabel = student.needsSetup ? `Finish setup for ${student.name}` : `Open ${student.name}`
@@ -118,14 +134,14 @@ export function StudentCard({ student, onRemoved, onBreak = false, onRestore }: 
     <>
       <article
         className={cn(
-          'ui-row group relative items-center gap-3',
-          !onBreak && 'cursor-pointer',
-          student.needsSetup && !onBreak && 'bg-accent/30',
+          'group relative flex items-center gap-3 rounded-xl px-3 py-2.5 chrome-motion',
+          !onBreak && 'cursor-pointer hover:bg-[var(--chrome-pill-hover)]',
+          student.needsSetup && !onBreak && 'bg-[color-mix(in_srgb,var(--brand-blue)_6%,transparent)]',
           onBreak && 'opacity-90',
         )}
       >
         {!onBreak ? (
-          <Link href={openHref} className="absolute inset-0 z-0 rounded-lg" aria-label={openLabel} />
+          <Link href={openHref} className="absolute inset-0 z-0 rounded-xl" aria-label={openLabel} />
         ) : null}
 
         <div className="pointer-events-none relative z-[1] flex min-w-0 flex-1 items-center gap-3">
@@ -133,33 +149,29 @@ export function StudentCard({ student, onRemoved, onBreak = false, onRestore }: 
 
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2">
-              <h2
-                className={cn(
-                  'min-w-0 truncate text-sm font-medium text-foreground',
-                  !onBreak && 'group-hover:text-primary',
-                )}
-              >
+              <h2 className="min-w-0 truncate text-[15px] font-semibold tracking-tight text-foreground">
                 {student.name}
               </h2>
               {onBreak ? (
-                <Badge variant="secondary" className="shrink-0 text-[10px] font-normal">
-                  On break
-                </Badge>
+                <StatusPill label="On break" tone="break" />
               ) : student.needsSetup ? (
-                <Badge variant="outline" className="shrink-0 text-[10px] font-normal">
-                  Set up
-                </Badge>
+                <StatusPill label="Set up" tone="setup" />
               ) : null}
             </div>
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">{metaLine}</p>
+            <p className="mt-0.5 truncate text-[13px] text-muted-foreground">{metaLine}</p>
           </div>
         </div>
 
         <div className="relative z-[1] flex shrink-0 items-center gap-1">
           {onBreak ? (
             <>
-              <Button type="button" size="sm" variant="secondary" className="gap-1.5" onClick={onRestore}>
-                <Undo2 size={14} aria-hidden />
+              <Button
+                type="button"
+                variant="secondary"
+                className={cn(teacherQuietBtnClass, teacherFocusRingClass, 'gap-1.5')}
+                onClick={onRestore}
+              >
+                <Undo2 size={14} strokeWidth={1.75} aria-hidden />
                 Restore
               </Button>
               <RowMoreMenu
@@ -169,14 +181,10 @@ export function StudentCard({ student, onRemoved, onBreak = false, onRestore }: 
               />
             </>
           ) : (
-            /*
-              One trailing slot — never two icons side by side.
-              Hover devices: chevron at rest, ⋯ on hover/focus.
-              Touch: ⋯ only (no hover), so remove stays reachable.
-            */
             <div className="relative h-8 w-8">
               <ChevronRight
                 size={16}
+                strokeWidth={1.75}
                 aria-hidden
                 className={cn(
                   'pointer-events-none absolute inset-0 m-auto text-muted-foreground/70 transition-opacity',

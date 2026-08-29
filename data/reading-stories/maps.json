@@ -107,18 +107,6 @@
     "lessonId": "lesson-db0a5a53",
     "partId": "part-ccf28034"
   },
-  "manual::literature-anthology-g2::unit-2-bee958d7::smskdxj4x": {
-    "storyId": "manual::literature-anthology-g2::unit-2-bee958d7::smskdxj4x",
-    "startPage": 136,
-    "endPage": 159,
-    "rangeConfirmed": true,
-    "updatedAt": "2026-08-08T13:03:58.510Z",
-    "title": "Wolf Wolf",
-    "bookId": "literature-anthology-g2",
-    "unitId": "unit-2-bee958d7",
-    "lessonId": null,
-    "partId": null
-  },
   "readingwriting-workshop-g2::unit-2-b7f10b10::lesson-aebce4bf::part-9e661594": {
     "storyId": "readingwriting-workshop-g2::unit-2-b7f10b10::lesson-aebce4bf::part-9e661594",
     "startPage": 118,
@@ -130,5 +118,77 @@
     "unitId": "unit-2-b7f10b10",
     "lessonId": "lesson-aebce4bf",
     "partId": "part-9e661594"
+  },
+  "other-g3-literature::unit-3-86869de5::lesson-071a9996::part-e41d2233": {
+    "storyId": "other-g3-literature::unit-3-86869de5::lesson-071a9996::part-e41d2233",
+    "startPage": 504,
+    "endPage": 505,
+    "rangeConfirmed": true,
+    "updatedAt": "2026-08-14T13:00:08.409Z",
+    "title": "The Wind and the Sun",
+    "bookId": "other-g3-literature",
+    "unitId": "unit-3-86869de5",
+    "lessonId": "lesson-071a9996",
+    "partId": "part-e41d2233"
+  },
+  "readingwriting-workshop-g2::unit-1-fb003575::lesson-30babc64::part-50d044f5": {
+    "storyId": "readingwriting-workshop-g2::unit-1-fb003575::lesson-30babc64::part-50d044f5",
+    "startPage": 182,
+    "endPage": 187,
+    "rangeConfirmed": true,
+    "updatedAt": "2026-08-17T13:09:56.143Z",
+    "title": "Shared Read Magnets Work!",
+    "bookId": "readingwriting-workshop-g2",
+    "unitId": "unit-1-fb003575",
+    "lessonId": "lesson-30babc64",
+    "partId": "part-50d044f5"
+  },
+  "manual::other-g3-workshop::unit-1-08fba035::smsyh136k": {
+    "storyId": "manual::other-g3-workshop::unit-1-08fba035::smsyh136k",
+    "startPage": 435,
+    "endPage": 437,
+    "rangeConfirmed": true,
+    "updatedAt": "2026-08-18T09:39:29.787Z",
+    "title": "Rocketing Into Space",
+    "bookId": "other-g3-workshop",
+    "unitId": "unit-1-08fba035",
+    "lessonId": null,
+    "partId": null
+  },
+  "readingwriting-workshop-g2::unit-2-2fc9e67d::lesson-41c8f0c1::part-a0d35b78": {
+    "storyId": "readingwriting-workshop-g2::unit-2-2fc9e67d::lesson-41c8f0c1::part-a0d35b78",
+    "startPage": 434,
+    "endPage": 437,
+    "rangeConfirmed": true,
+    "updatedAt": "2026-08-19T19:32:04.377Z",
+    "title": "Shared Read Dive Teams",
+    "bookId": "readingwriting-workshop-g2",
+    "unitId": "unit-2-2fc9e67d",
+    "lessonId": "lesson-41c8f0c1",
+    "partId": "part-a0d35b78"
+  },
+  "readingwriting-workshop-g2::unit-2-2fc9e67d::lesson-4d649a3c::part-ba1d3d2d": {
+    "storyId": "readingwriting-workshop-g2::unit-2-2fc9e67d::lesson-4d649a3c::part-ba1d3d2d",
+    "startPage": 448,
+    "endPage": 451,
+    "rangeConfirmed": true,
+    "updatedAt": "2026-08-20T22:22:40.246Z",
+    "title": "Shared Read The Life of a Dollar Bill",
+    "bookId": "readingwriting-workshop-g2",
+    "unitId": "unit-2-2fc9e67d",
+    "lessonId": "lesson-4d649a3c",
+    "partId": "part-ba1d3d2d"
+  },
+  "manual::other-g1-workshop::other-g1-workshop-pdf::smtecwt8p": {
+    "storyId": "manual::other-g1-workshop::other-g1-workshop-pdf::smtecwt8p",
+    "startPage": 238,
+    "endPage": 245,
+    "rangeConfirmed": true,
+    "updatedAt": "2026-08-29T12:28:30.611Z",
+    "title": "Story pp. 238–245",
+    "bookId": "other-g1-workshop",
+    "unitId": "other-g1-workshop-pdf",
+    "lessonId": null,
+    "partId": null
   }
 }

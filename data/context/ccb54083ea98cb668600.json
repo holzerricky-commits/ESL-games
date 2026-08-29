@@ -1,0 +1,89 @@
+{
+  "id": "ccb54083ea98cb668600",
+  "kind": "part",
+  "bookId": "readingwriting-workshop-g2",
+  "unitId": "unit-2-2fc9e67d",
+  "lessonId": "lesson-41c8f0c1",
+  "partId": "part-2ada6736",
+  "partTitle": "Vocabulary",
+  "partGoals": [],
+  "activityNotes": [],
+  "languageFocus": {
+    "grammarNotes": [],
+    "writingNotes": []
+  },
+  "sourcePageRange": {
+    "startPage": 432,
+    "endPage": 433
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-08-19T19:45:18.086Z",
+  "updatedAt": "2026-08-19T19:45:18.086Z",
+  "interactiveVocabulary": [
+    {
+      "id": "exploration",
+      "word": "exploration",
+      "definition": "the act of traveling through a place to learn about it.",
+      "examples": [
+        "We studied plants during our exploration of the forest."
+      ]
+    },
+    {
+      "id": "important",
+      "word": "important",
+      "definition": "having a lot of meaning or value; necessary.",
+      "examples": [
+        "It is important to get a good night's sleep."
+      ]
+    },
+    {
+      "id": "machines",
+      "word": "machines",
+      "definition": "tools or devices with moving parts that help people do work.",
+      "examples": [
+        "Machines make it easier to cook in our kitchen."
+      ]
+    },
+    {
+      "id": "prepare",
+      "word": "prepare",
+      "definition": "to get ready for something.",
+      "examples": [
+        "Hitting balls helps Ben prepare for his baseball game."
+      ]
+    },
+    {
+      "id": "repair",
+      "word": "repair",
+      "definition": "to fix something that is broken or damaged.",
+      "examples": [
+        "The plumber will repair the broken sink."
+      ]
+    },
+    {
+      "id": "result",
+      "word": "result",
+      "definition": "something that happens because of something else.",
+      "examples": [
+        "The tree fell over as a result of the storm."
+      ]
+    },
+    {
+      "id": "scientific",
+      "word": "scientific",
+      "definition": "relating to science or using the methods of science.",
+      "examples": [
+        "Our scientific study helped us learn about rocks."
+      ]
+    },
+    {
+      "id": "teamwork",
+      "word": "teamwork",
+      "definition": "when a group of people work together to achieve a goal.",
+      "examples": [
+        "It takes teamwork to win a baseball game."
+      ]
+    }
+  ]
+}

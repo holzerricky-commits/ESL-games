@@ -1,7 +1,6 @@
 'use client'
 
 import { LayoutGrid, List, Search } from 'lucide-react'
-import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -9,7 +8,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import {
+  teacherFocusRingClass,
+  teacherMenuContentClass,
+} from '@/components/teacher-chrome'
 import type {
   StudentsRosterSort,
   StudentsRosterStatusFilter,
@@ -31,6 +33,24 @@ interface StudentsRosterToolbarProps {
   className?: string
 }
 
+const STATUS_OPTIONS: Array<{
+  value: StudentsRosterStatusFilter
+  label: string
+  count?: (needsSetup: number, onBreak: number) => number | null
+}> = [
+  { value: 'active', label: 'Active' },
+  {
+    value: 'needsSetup',
+    label: 'Needs setup',
+    count: (needsSetup) => (needsSetup > 0 ? needsSetup : null),
+  },
+  {
+    value: 'onBreak',
+    label: 'On break',
+    count: (_needsSetup, onBreak) => (onBreak > 0 ? onBreak : null),
+  },
+]
+
 export function StudentsRosterToolbar({
   query,
   onQueryChange,
@@ -51,71 +71,78 @@ export function StudentsRosterToolbar({
         className,
       )}
     >
-      <div className="relative w-full sm:w-64 sm:shrink-0">
-        <Search
-          size={14}
-          className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground"
-        />
-        <Input
+      <div className="chrome-search w-full max-w-none sm:w-64 sm:shrink-0">
+        <Search size={15} strokeWidth={2} className="shrink-0 opacity-70" aria-hidden />
+        <input
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
-          placeholder="Search students..."
-          className="pl-8"
+          placeholder="Search students…"
           aria-label="Search students"
         />
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Select
-          value={statusFilter}
-          onValueChange={(value) => onStatusFilterChange(value as StudentsRosterStatusFilter)}
-        >
-          <SelectTrigger size="sm" aria-label="Filter by status" className="min-w-[9.5rem]">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="active">Active</SelectItem>
-            <SelectItem value="needsSetup">
-              Needs setup{needsSetupCount > 0 ? ` (${needsSetupCount})` : ''}
-            </SelectItem>
-            <SelectItem value="onBreak">
-              On break{onBreakCount > 0 ? ` (${onBreakCount})` : ''}
-            </SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Select value={sort} onValueChange={(value) => onSortChange(value as StudentsRosterSort)}>
-          <SelectTrigger size="sm" aria-label="Sort students" className="min-w-[11rem]">
-            <SelectValue placeholder="Sort" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="name">Name A–Z</SelectItem>
-            <SelectItem value="nextClass">Next class</SelectItem>
-            <SelectItem value="needsSetup">Needs setup first</SelectItem>
-          </SelectContent>
-        </Select>
+      <div className="flex flex-wrap items-center gap-0.5" role="radiogroup" aria-label="Filter by status">
+        {STATUS_OPTIONS.map((option) => {
+          const count = option.count?.(needsSetupCount, onBreakCount)
+          return (
+            <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={statusFilter === option.value}
+              data-active={statusFilter === option.value}
+              className={cn('chrome-nav-pill px-3.5 py-1.5 text-[13px]', teacherFocusRingClass)}
+              onClick={() => onStatusFilterChange(option.value)}
+            >
+              {option.label}
+              {count != null ? <span className="ml-1.5 text-muted-foreground">{count}</span> : null}
+            </button>
+          )
+        })}
       </div>
 
-      <ToggleGroup
-        type="single"
-        value={viewMode}
-        onValueChange={(value) => {
-          if (value === 'list' || value === 'grid') onViewModeChange(value)
-        }}
-        variant="outline"
-        size="sm"
-        className="ml-auto"
-        aria-label="Roster layout"
-      >
-        <ToggleGroupItem value="list" aria-label="List view" className="px-2.5">
-          <List className="h-4 w-4" aria-hidden />
-          <span className="sr-only sm:not-sr-only sm:ml-1.5">List</span>
-        </ToggleGroupItem>
-        <ToggleGroupItem value="grid" aria-label="Grid view" className="px-2.5">
-          <LayoutGrid className="h-4 w-4" aria-hidden />
-          <span className="sr-only sm:not-sr-only sm:ml-1.5">Grid</span>
-        </ToggleGroupItem>
-      </ToggleGroup>
+      <Select value={sort} onValueChange={(value) => onSortChange(value as StudentsRosterSort)}>
+        <SelectTrigger
+          size="sm"
+          aria-label="Sort students"
+          className={cn(
+            'h-9 min-w-[11rem] rounded-full border-0 bg-[var(--surface-3)] px-3.5 text-[13px] font-medium tracking-tight shadow-none hover:bg-[var(--surface-4)]',
+            teacherFocusRingClass,
+          )}
+        >
+          <SelectValue placeholder="Sort" />
+        </SelectTrigger>
+        <SelectContent className={teacherMenuContentClass}>
+          <SelectItem value="name">Name A–Z</SelectItem>
+          <SelectItem value="nextClass">Next class</SelectItem>
+          <SelectItem value="needsSetup">Needs setup first</SelectItem>
+        </SelectContent>
+      </Select>
+
+      <div className="ml-auto flex items-center" role="radiogroup" aria-label="Roster layout">
+        <button
+          type="button"
+          role="radio"
+          aria-checked={viewMode === 'list'}
+          data-active={viewMode === 'list'}
+          className={cn('chrome-nav-pill gap-1.5 px-3.5 py-1.5 text-[13px]', teacherFocusRingClass)}
+          onClick={() => onViewModeChange('list')}
+        >
+          <List className="h-4 w-4" strokeWidth={1.75} aria-hidden />
+          <span className="sr-only sm:not-sr-only">List</span>
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={viewMode === 'grid'}
+          data-active={viewMode === 'grid'}
+          className={cn('chrome-nav-pill gap-1.5 px-3.5 py-1.5 text-[13px]', teacherFocusRingClass)}
+          onClick={() => onViewModeChange('grid')}
+        >
+          <LayoutGrid className="h-4 w-4" strokeWidth={1.75} aria-hidden />
+          <span className="sr-only sm:not-sr-only">Grid</span>
+        </button>
+      </div>
     </div>
   )
 }

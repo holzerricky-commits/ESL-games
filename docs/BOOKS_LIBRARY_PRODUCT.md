@@ -1,6 +1,6 @@
 # Books library & prep desk — product
 
-Last updated: 2026-08-09
+Last updated: 2026-08-20
 
 **Status:** Locked for implementation. Build **phase by phase** per `docs/BOOKS_LIBRARY_PHASED_PLAN.md`.
 
@@ -38,8 +38,9 @@ You do **not** come here to run a real class. Teaching stays on **student / sche
 | Mode | Intent | Student? |
 |------|--------|----------|
 | **Library shelf** | Pick a book by cover | No |
-| **Lesson shelf** | Inside one book: lessons by unit (or outline CTA) | No |
-| **Part prep** (later) | Scan / confirm / fuel for one part | No |
+| **Lesson shelf** | Inside one book: lessons by unit (same layout before and after outline) | No |
+| **Part prep** | Confirm pages / status on the desk; **Open book** is the working surface | No |
+| **Workshop book** | Same reader as class Continue (clock off). **Place bar** for where you are. Tools later. | No |
 | **Teach** | Live lesson | Yes — **not** from Books as the primary door |
 
 ---
@@ -56,22 +57,27 @@ You do **not** come here to run a real class. Teaching stays on **student / sche
 
 ### Lesson shelf (book selected)
 
-- If **no outline** → empty state + one CTA: **Outline this book**
+- Cover click always opens that book’s **lesson shelf** (same layout with or without an outline)
+- **Open book** in the header looks through pages; **Outline this book** fills the empty shelf with lesson covers
+- If there is **no PDF yet** → empty state + add PDF / outline
 - If outlined → lesson covers in rows **by unit**, left→right in outline order
 - Presentation books without lesson trees → **unit** cards; no units → empty CTA to add PDF
 - Easy **Library** back; **Advanced tools** (materials / plan) as quiet overflow on the lesson shelf only — part prep is the main path
 
+### Workshop book (from a part)
+
+Locked in **`docs/BOOKS_WORKSHOP_PRODUCT.md`**. Open book from a part lands in the same reader (clock off, no student) with a **place bar**. Checks wizard is not the workshop UI. Class Continue stays a shortcut until that chrome is copied.
+
 ### Later (not this step)
 
-- Lesson → parts list → prep module (scan / confirm / stories / checks) — **Phase B done**; **Phase C** = real prep in the shell
-- Map + Ready merge into that part module
+- Workshop Phases 2–4 (story tools, mark section, vocab) — see `docs/BOOKS_WORKSHOP_PHASED_PLAN.md`
 - Tools (guides, advanced) as secondary overflow
 
 ---
 
 ## Success criteria
 
-- Someone who didn’t build the app can: find a book → open it → see lessons (or know to outline) — without asking you.
+- Someone who didn’t build the app can: find a book → open it → see lessons (or an empty shelf + Open book / Outline) — without asking you.
 - You never wonder “am I teaching?” on this page — no end-class ritual here.
 - Teach still starts from the student/class path.
 
@@ -81,7 +87,7 @@ You do **not** come here to run a real class. Teaching stays on **student / sche
 
 - Full Lesson Hub / carousel / streak lobby
 - Multi-book Focus/Dock teaching shell from Books
-- Replacing student home or class prepare
+- Replacing student home or **Today’s class** (Prepare)
 - Perfect extraction before shelf/prep IA is clear
 
 ---
@@ -89,5 +95,7 @@ You do **not** come here to run a real class. Teaching stays on **student / sche
 ## Decisions locked
 
 - Books = **library + outline + lesson desk + context**, not teaching HQ
-- **Cover click** = lesson shelf (or outline empty state)
+- **Cover click** = lesson shelf (empty until outlined; lesson-shelf **Open book** still looks through pages)
+- **Part Open book** = workshop reader (same overlay as class prep; clock off; no student)
+- Workshop chrome = **place bar** (`docs/BOOKS_WORKSHOP_PRODUCT.md`); Checks side wizard is retired as workshop UI
 - **Teach without student as a product path** = no

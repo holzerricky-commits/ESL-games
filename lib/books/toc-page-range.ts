@@ -1,6 +1,7 @@
 /**
  * TOC-style inclusive page span from `startPageHint` / `endPageHint` on sibling items.
  * Hints are **printed (effective)** page numbers when the book uses alignment + TOC mapping.
+ * When the current item has no start, do not invent start `1` just to compute an end.
  */
 export function pageRangeForIndex<T extends { startPageHint?: number; endPageHint?: number }>(
   items: T[],
@@ -13,12 +14,13 @@ export function pageRangeForIndex<T extends { startPageHint?: number; endPageHin
     typeof current?.startPageHint === 'number' ? Math.round(current.startPageHint) : (fallbackStart ?? null)
   const explicitEnd = typeof current?.endPageHint === 'number' ? Math.round(current.endPageHint) : null
   if (explicitEnd != null) return { start, end: explicitEnd }
+  if (start == null) return { start: null, end: null }
   const next = items
     .slice(index + 1)
     .find((item) => typeof item.startPageHint === 'number' && Number.isFinite(item.startPageHint))
   const nextStart = typeof next?.startPageHint === 'number' ? Math.round(next.startPageHint) : null
   return {
     start,
-    end: nextStart != null ? Math.max(start ?? 1, nextStart - 1) : (fallbackEnd ?? null),
+    end: nextStart != null ? Math.max(start, nextStart - 1) : (fallbackEnd ?? null),
   }
 }

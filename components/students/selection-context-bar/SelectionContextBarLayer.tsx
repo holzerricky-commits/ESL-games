@@ -43,6 +43,8 @@ export type SelectionContextBarLayerProps = {
   onDistributeVerticalSelected?: () => void
   /** Hide while the user is dragging the selection (bar reappears on release). */
   hidden?: boolean
+  /** Bumped after drags so the bar re-anchors to moved objects. */
+  positionEpoch?: number
 }
 
 export function SelectionContextBarLayer({
@@ -69,6 +71,7 @@ export function SelectionContextBarLayer({
   onArrangeSelected,
   onDistributeVerticalSelected,
   hidden = false,
+  positionEpoch = 0,
 }: SelectionContextBarLayerProps) {
   const context = useMemo(
     () =>
@@ -89,7 +92,7 @@ export function SelectionContextBarLayer({
 
   const barVisible = !hidden
   const showObjectArrange = selectedIds.length >= 2 && onArrangeSelected != null
-  const positionKey = [...context.commandIds].sort().join('\0')
+  const positionKey = [...context.commandIds].sort().join('\0') + '\0e' + positionEpoch
   const sharedBarProps = {
     positionKey,
     showObjectArrange,

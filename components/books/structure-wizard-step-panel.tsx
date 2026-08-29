@@ -13,8 +13,7 @@ type StructureWizardStepPanelProps = {
 }
 
 /**
- * Compact wizard module shell (Salt / PatternFly style):
- * header band → tight body → optional footer strip. Content hugs top; no stretch fill.
+ * Compact wizard module shell — soft Apple-like band (not nested Salt cards).
  */
 export function StructureWizardStepPanel({
   stepNumber,
@@ -28,23 +27,23 @@ export function StructureWizardStepPanel({
   return (
     <section
       className={cn(
-        'flex flex-col overflow-hidden rounded-lg border border-border/70 bg-background shadow-sm',
+        'flex flex-col overflow-hidden rounded-2xl bg-[var(--surface-3)]',
         compact && 'max-w-xl',
         className,
       )}
     >
-      <header className="shrink-0 border-b border-border/55 bg-muted/35 px-3 py-2">
+      <header className="shrink-0 px-3.5 py-2.5">
         <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
           Step {stepNumber} of 4
         </p>
-        <h3 className="mt-0.5 text-sm font-semibold leading-tight tracking-tight text-foreground">
+        <h3 className="mt-0.5 text-[14px] font-semibold leading-tight tracking-tight text-foreground">
           {title}
         </h3>
         <p className="mt-0.5 max-w-prose text-[11px] leading-snug text-muted-foreground">{description}</p>
       </header>
-      <div className="space-y-2.5 px-3 py-2.5">{children}</div>
+      <div className="space-y-2.5 px-3.5 pb-3">{children}</div>
       {footer ? (
-        <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border/55 bg-muted/20 px-3 py-1.5">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-[var(--border)]/60 px-3.5 py-2">
           {footer}
         </div>
       ) : null}

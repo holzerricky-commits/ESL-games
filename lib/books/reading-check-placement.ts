@@ -1,7 +1,9 @@
-import { getFileAlignment } from '@/lib/books/page-range'
-import { printedPageToPdfPage } from '@/lib/books/page-alignment'
+import { resolveMappedPageToPdfPage } from '@/lib/books/page-numbering'
 import {
   createReadingCheckHotspotPlacement,
+  DEFAULT_READING_CHECK_HOTSPOT_X,
+  DEFAULT_READING_CHECK_HOTSPOT_Y,
+  isDefaultReadingCheckHotspotCoords,
   primaryQuestionOfStop,
   type ReadingCheckHotspotPageSide,
   type ReadingCheckHotspotPlacement,
@@ -10,16 +12,10 @@ import {
 import { resolvePageFromStoryEvidence } from '@/lib/books/reading-story-page-markers'
 import type { BookRecord, BookUnitRecord } from '@/lib/books/types'
 
-/** Bottom-center — clears typical outer-corner page numbers. */
-export const DEFAULT_READING_CHECK_HOTSPOT_X = 0.5
-export const DEFAULT_READING_CHECK_HOTSPOT_Y = 0.9
-
-export function isDefaultReadingCheckHotspotCoords(
-  hotspot: ReadingCheckHotspotPlacement | null | undefined,
-): boolean {
-  if (!hotspot) return false
-  const near = (a: number, b: number) => Math.abs(a - b) < 0.02
-  return near(hotspot.x, DEFAULT_READING_CHECK_HOTSPOT_X) && near(hotspot.y, DEFAULT_READING_CHECK_HOTSPOT_Y)
+export {
+  DEFAULT_READING_CHECK_HOTSPOT_X,
+  DEFAULT_READING_CHECK_HOTSPOT_Y,
+  isDefaultReadingCheckHotspotCoords,
 }
 
 export function guessReadingCheckPageSide(displayPage: number | null): ReadingCheckHotspotPageSide {
@@ -57,8 +53,7 @@ function resolvePdfPageForDisplay(
   ctx: EnsureReadingCheckPlacementCtx,
 ): number | null {
   if (!ctx.book || !ctx.unit) return null
-  const { notCountedPdfPages } = getFileAlignment(ctx.book, ctx.unit.filePath)
-  return printedPageToPdfPage(displayPage, notCountedPdfPages, ctx.totalPdfPages ?? undefined)
+  return resolveMappedPageToPdfPage(displayPage, ctx.book, ctx.unit, ctx.totalPdfPages ?? null)
 }
 
 /**

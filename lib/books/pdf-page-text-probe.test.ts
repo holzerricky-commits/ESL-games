@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   clearPdfPageTextProbeCacheForTests,
+  invalidatePdfPageTextProbeCacheForFileUrl,
   pdfTextItemsHaveSelectableText,
   PDF_PAGE_SELECTABLE_TEXT_MIN_CHARS,
 } from '@/lib/books/pdf-page-text-probe'
@@ -37,5 +38,9 @@ describe('pdfTextItemsHaveSelectableText', () => {
 describe('probe cache', () => {
   it('clearPdfPageTextProbeCacheForTests does not throw', () => {
     expect(() => clearPdfPageTextProbeCacheForTests()).not.toThrow()
+  })
+
+  it('invalidatePdfPageTextProbeCacheForFileUrl does not throw', () => {
+    expect(() => invalidatePdfPageTextProbeCacheForFileUrl('/api/book-file?path=x')).not.toThrow()
   })
 })

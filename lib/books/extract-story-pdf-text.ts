@@ -1,6 +1,9 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
+import {
+  pdfTextItemsHaveSelectableText,
+} from '@/lib/books/pdf-page-text-probe'
 import { mergePdfTextItemsToLines, type PdfTextItem } from '@/lib/books/toc-import'
 
 let pdfWorkerConfigured = false
@@ -87,6 +90,53 @@ export async function extractPdfPageRangeText(
     extractedPages,
     totalPdfPages,
   }
+}
+
+/** True when this PDF page already has enough selectable text to skip OCR. */
+export async function pdfFilePageHasSelectableText(
+  absFilePath: string,
+  pageNumber: number,
+): Promise<boolean> {
+  const found = await pdfFilePagesWithSelectableText(absFilePath, pageNumber, pageNumber)
+  return found.has(Math.max(1, Math.floor(pageNumber)))
+}
+
+/** Pages in the inclusive range that already have selectable text (one PDF open). */
+export async function pdfFilePagesWithSelectableText(
+  absFilePath: string,
+  startPdfPage: number,
+  endPdfPage: number,
+): Promise<Set<number>> {
+  const start = Math.max(1, Math.floor(startPdfPage))
+  const end = Math.max(start, Math.floor(endPdfPage))
+  const found = new Set<number>()
+  const doc = await openPdfDocument(absFilePath)
+  try {
+    const hi = Math.min(end, doc.numPages)
+    for (let pageNo = start; pageNo <= hi; pageNo += 1) {
+      const page = await doc.getPage(pageNo)
+      const textContent = await page.getTextContent()
+      const items: PdfTextItem[] = []
+      for (const raw of textContent.items) {
+        if (!raw || typeof raw !== 'object') continue
+        const src = raw as { str?: unknown; transform?: unknown }
+        if (typeof src.str !== 'string' || !src.str.trim()) continue
+        if (!Array.isArray(src.transform)) continue
+        items.push({
+          str: src.str,
+          transform: src.transform as number[],
+        })
+      }
+      if (pdfTextItemsHaveSelectableText(items)) found.add(pageNo)
+    }
+  } finally {
+    try {
+      await doc.destroy()
+    } catch {
+      // ignore
+    }
+  }
+  return found
 }
 
 /** Page count only — for accurate printed→PDF mapping before extract. */

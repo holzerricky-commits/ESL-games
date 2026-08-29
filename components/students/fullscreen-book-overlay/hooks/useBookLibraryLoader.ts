@@ -3,6 +3,7 @@ import { fetchBooksLibraryCached, getBooksLibraryCached } from '@/lib/books/fetc
 import type { BookLibraryPayload } from '@/lib/books/types'
 import {
   resolveInitialBookReaderSelection,
+  shouldApplyInitialReaderSelection,
   type BookReaderCurriculumHistoryEntry,
 } from '@/lib/books/resolve-initial-book-reader-selection'
 import { getStudentOpenTargetForBook, getStudentTeachingOpenPdfPageForBookUnit } from '@/lib/students/selectors'
@@ -47,6 +48,11 @@ export function useBookLibraryLoader({
 }: UseBookLibraryLoaderArgs) {
   /** Avoid clearing `numPages` / reseeding page on every reopen when book/unit unchanged — keeps spread model + live page stable (see reopen UX). */
   const lastAppliedSelectionRef = useRef<{ bookId: string | null; unitId: string | null } | null>(null)
+  const assignedBookIdsKey = assignedBookIds.join('\u001f')
+  const assignedUnitRefsKey = assignedUnitRefs.map((ref) => `${ref.bookId}:${ref.unitId}`).join('\u001f')
+  const curriculumHistoryKey = curriculumHistory
+    .map((entry) => `${entry.id}:${entry.bookId}:${entry.unitId}:${entry.page}:${entry.openedAt}`)
+    .join('\u001f')
 
   useEffect(() => {
     if (!open) return
@@ -85,17 +91,19 @@ export function useBookLibraryLoader({
         })
         const nextBookId = selectedBookId ?? null
         const nextUnitId = selectedUnitId ?? null
-        const prev = lastAppliedSelectionRef.current
-        const selectionChanged =
-          prev == null || prev.bookId !== nextBookId || prev.unitId !== nextUnitId
+        const selectionChanged = shouldApplyInitialReaderSelection(
+          lastAppliedSelectionRef.current,
+          nextBookId,
+          nextUnitId,
+        )
+
+        lastAppliedSelectionRef.current = { bookId: nextBookId, unitId: nextUnitId }
+        if (!selectionChanged) return
 
         setSelectedBookId(selectedBookId)
         setSelectedUnitId(selectedUnitId)
-        if (selectionChanged) {
-          setPageNumber(pageNumber)
-          setNumPages(null)
-        }
-        lastAppliedSelectionRef.current = { bookId: nextBookId, unitId: nextUnitId }
+        setPageNumber(pageNumber)
+        setNumPages(null)
       } catch (e) {
         if (!active) return
         setError(e instanceof Error ? e.message : 'Could not load books.')
@@ -107,12 +115,12 @@ export function useBookLibraryLoader({
     return () => {
       active = false
     }
-    // setters from useState are stable
+    // setters from useState are stable; array keys capture content, not identity
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only refetch when curriculum/open inputs change
   }, [
-    assignedBookIds,
-    assignedUnitRefs,
-    curriculumHistory,
+    assignedBookIdsKey,
+    assignedUnitRefsKey,
+    curriculumHistoryKey,
     open,
     preferBookId,
     preferUnitId,

@@ -52,6 +52,11 @@ export function isStoryPartShelfTag(tag: BookLessonPartTag): boolean {
   return tag === 'main_story' || tag === 'paired_story'
 }
 
+/** Vocabulary parts get interactive word-list prep in the part shell. */
+export function isVocabPartShelfTag(tag: BookLessonPartTag): boolean {
+  return tag === 'vocabulary_in_context' || tag === 'vocabulary_background'
+}
+
 /** Human page range for a part list row (printed pages). */
 export function formatPartPageRangeLabel(start: number | null, end: number | null): string {
   if (start == null) return 'Pages not set'

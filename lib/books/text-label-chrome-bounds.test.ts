@@ -189,7 +189,9 @@ describe('text-label chrome ring parity', () => {
     expect(hover).toEqual(select)
   })
 
-  it('edit ring is not shown while typing (see textToolEditingOutlineFrames)', () => {
-    expect(textToolEditingOutlineFrames(commands, 't1', widthPx, heightPx, 'hello')).toEqual([])
+  it('edit ring is shown while typing', () => {
+    const frames = textToolEditingOutlineFrames(commands, 't1', widthPx, heightPx, 'hello')
+    expect(frames).toHaveLength(1)
+    expect(frames[0]!.rect.w).toBeGreaterThan(0)
   })
 })

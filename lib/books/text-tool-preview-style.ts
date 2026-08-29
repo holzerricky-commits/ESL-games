@@ -1,8 +1,10 @@
 import type { CSSProperties } from 'react'
 import type { TextAnnotationAlign, TextAnnotationVisualStyle } from '@/lib/books/annotation-command-types'
 import {
+  annotationTextCssWeight,
   annotationTextFontFamily,
   type AnnotationTextFontId,
+  type AnnotationTextFontWeight,
 } from '@/lib/books/annotation-text-fonts'
 import type { AnnotationStrokeThicknessStep } from '@/lib/books/annotation-storage'
 import { filledTextLineStridePx } from '@/lib/books/filled-text-layout'
@@ -25,6 +27,7 @@ export const TEXT_TOOL_PREVIEW_SAMPLE = 'Sample text'
 
 export type TextToolPreviewStyleInput = {
   textFontId: AnnotationTextFontId
+  textFontWeight?: AnnotationTextFontWeight
   textVisualStyle: TextAnnotationVisualStyle
   textAlign: TextAnnotationAlign
   textThicknessStep: AnnotationStrokeThicknessStep
@@ -36,6 +39,7 @@ export type TextToolPreviewStyleInput = {
 
 export type TextToolPreviewTypography = {
   fontFamily: string
+  fontWeight: CSSProperties['fontWeight']
   fontSizePx: number
   color: string
   fillColor: string
@@ -78,6 +82,7 @@ export function buildTextToolPreviewTypography(
 
   return {
     fontFamily: annotationTextFontFamily(input.textFontId),
+    fontWeight: annotationTextCssWeight(input.textFontId, input.textFontWeight),
     fontSizePx,
     color: input.textColor,
     fillColor: input.textFillColor,
@@ -94,6 +99,7 @@ export function buildTextToolPreviewTypography(
 export function buildTextToolPreviewMirrorStyle(typography: TextToolPreviewTypography): CSSProperties {
   return {
     fontFamily: typography.fontFamily,
+    fontWeight: typography.fontWeight,
     fontSize: typography.fontSizePx,
     color: typography.color,
     textAlign: typography.textAlign,

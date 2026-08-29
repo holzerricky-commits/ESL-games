@@ -1,6 +1,6 @@
 'use client'
 
-import { Check, ListChecks, ScrollText, type LucideIcon } from 'lucide-react'
+import { BookA, Check, ListChecks, ScrollText, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export type BookPartPrepChipState = 'ready' | 'todo' | 'soon'
@@ -10,6 +10,12 @@ interface BookPartPrepStatusChipsProps {
   checksState: BookPartPrepChipState
   onTextClick: () => void
   onChecksClick: () => void
+  className?: string
+}
+
+interface BookPartPrepVocabStatusChipProps {
+  wordsState: BookPartPrepChipState
+  onWordsClick: () => void
   className?: string
 }
 
@@ -99,6 +105,19 @@ export function BookPartPrepStatusChips({
     <div className={cn('flex flex-wrap items-start justify-center gap-3 lg:justify-start', className)}>
       <PrepVisualBadge label="Text" state={textState} icon={ScrollText} onClick={onTextClick} />
       <PrepVisualBadge label="Checks" state={checksState} icon={ListChecks} onClick={onChecksClick} />
+    </div>
+  )
+}
+
+/** Single Words badge for vocabulary part prep. */
+export function BookPartPrepVocabStatusChip({
+  wordsState,
+  onWordsClick,
+  className,
+}: BookPartPrepVocabStatusChipProps) {
+  return (
+    <div className={cn('flex flex-wrap items-start justify-center gap-3 lg:justify-start', className)}>
+      <PrepVisualBadge label="Words" state={wordsState} icon={BookA} onClick={onWordsClick} />
     </div>
   )
 }

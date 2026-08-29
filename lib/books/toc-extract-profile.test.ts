@@ -7,9 +7,15 @@ import {
 } from '@/lib/books/toc-extract-profile'
 
 describe('resolveTocExtractProfile', () => {
-  it('picks Journeys by default', () => {
+  it('defaults unknown books to generic (not Journeys)', () => {
+    expect(resolveTocExtractProfile({})).toBe('generic')
+    expect(resolveTocExtractProfile({ title: 'Reading Explorer 3' })).toBe('generic')
+  })
+
+  it('picks Journeys when series or name cues say so', () => {
     expect(resolveTocExtractProfile({ title: 'Journeys Grade 3' })).toBe('journeys')
-    expect(resolveTocExtractProfile({})).toBe('journeys')
+    expect(resolveTocExtractProfile({ series: 'Journeys' })).toBe('journeys')
+    expect(resolveTocExtractProfile({ id: 'journeys-g3-book-1' })).toBe('journeys')
   })
 
   it('picks Workshop from role or filename', () => {
@@ -33,10 +39,14 @@ describe('resolveTocExtractProfile', () => {
 
   it('maps label style and prompts per profile', () => {
     expect(tocChunkLabelStyleForProfile('journeys')).toBe('lesson')
+    expect(tocChunkLabelStyleForProfile('generic')).toBe('plain')
     expect(tocChunkLabelStyleForProfile('wonders_workshop')).toBe('week')
     expect(tocChunkLabelStyleForProfile('wonders_literature')).toBe('week')
     expect(tocExtractPromptForProfile('wonders_workshop')).toMatch(/Week/i)
     expect(tocExtractPromptForProfile('wonders_literature')).toMatch(/Anchor/i)
     expect(tocExtractPromptForProfile('journeys')).toMatch(/red shield/i)
+    expect(tocExtractPromptForProfile('generic')).toMatch(/NOT Journeys/i)
+    expect(tocExtractPromptForProfile('generic')).toMatch(/set startPrintedPage to null/i)
+    expect(tocExtractPromptForProfile('generic')).not.toMatch(/Ignore rows without page numbers/i)
   })
 })

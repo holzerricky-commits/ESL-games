@@ -1,0 +1,116 @@
+{
+  "storyId": "readingwriting-workshop-g2::unit-2-2fc9e67d::lesson-41c8f0c1::part-a0d35b78",
+  "bookId": "readingwriting-workshop-g2",
+  "unitId": "unit-2-2fc9e67d",
+  "status": "approved",
+  "stops": [
+    {
+      "id": "stop-9b825eaf",
+      "label": "Gloria's Job",
+      "displayPage": 434,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 436,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-1ede95b8",
+          "kind": "true_false",
+          "prompt": "Gloria's main job on the dive team is to take pictures underwater.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": true,
+          "evidenceSnippet": "Gloria is an experienced photographer, so she decides to photograph what the team discovers underwater.",
+          "evidenceHighlight": "photograph what the team discovers underwater"
+        }
+      ]
+    },
+    {
+      "id": "stop-94db0668",
+      "label": "Why Teamwork is Important",
+      "displayPage": 436,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 438,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-43c53708",
+          "kind": "mcq",
+          "prompt": "Why is teamwork important for Gloria's dive team?",
+          "choices": [
+            "So one person can do all the work.",
+            "Because team members depend on each other and divide tasks.",
+            "So they can argue about who does what.",
+            "So they can explore alone."
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "Teamwork is important for a dive team. Team members depend on one another. They divide up the tasks and each person helps to get the job done.",
+          "evidenceHighlight": "Team members depend on one another. They divide up the tasks and each person helps to get the job done."
+        }
+      ]
+    },
+    {
+      "id": "stop-224d4a97",
+      "label": "Diving Deeper",
+      "displayPage": 436,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 438,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-5ebb21a7",
+          "kind": "true_false",
+          "prompt": "As the divers swim deeper, it gets brighter.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "Now the divers jump into the water. As they swim deeper, it gets darker. A team member turns on a flashlight.",
+          "evidenceHighlight": "it gets darker"
+        }
+      ]
+    },
+    {
+      "id": "stop-5c9a2000",
+      "label": "Gloria at the Shipwreck",
+      "displayPage": 436,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 438,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-0861c35d",
+          "kind": "mcq",
+          "prompt": "What was Gloria's job when the team finally spotted the sunken ship?",
+          "choices": [
+            "She turned on the flashlight.",
+            "She measured the ship.",
+            "She took pictures.",
+            "She watched for sharks."
+          ],
+          "correctIndex": 2,
+          "correctTrue": null,
+          "evidenceSnippet": "Finally, one team member spots the ship! He uses an aquatic microphone to talk to the team. Gloria takes pictures as teammates measure the ship. Another teammate watches for sharks and other dangers.",
+          "evidenceHighlight": "Gloria takes pictures"
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-08-20T22:06:51.137Z",
+  "approvedAt": "2026-08-20T22:06:51.136Z"
+}

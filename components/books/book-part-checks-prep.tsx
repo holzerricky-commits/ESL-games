@@ -148,7 +148,6 @@ export function BookPartChecksPrep({
           </span>
           <div className="min-w-0 space-y-0.5 pt-0.5">
             <p className="text-[17px] font-semibold tracking-tight text-foreground">Reading checks</p>
-            <p className="text-[14px] text-muted-foreground">Draft, generate, and approve for class</p>
           </div>
         </div>
 

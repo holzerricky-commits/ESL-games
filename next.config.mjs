@@ -14,7 +14,12 @@ const allowedDevOrigins = process.env.ALLOWED_DEV_ORIGINS
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   allowedDevOrigins,
-  serverExternalPackages: ['@napi-rs/canvas', '@napi-rs/canvas-win32-x64-msvc'],
+  serverExternalPackages: [
+    '@napi-rs/canvas',
+    '@napi-rs/canvas-win32-x64-msvc',
+    'tesseract.js',
+    'tesseract.js-core',
+  ],
   typescript: {
     // Many overlay/session types still fail `tsc`; allow production builds to ship.
     ignoreBuildErrors: true,

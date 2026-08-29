@@ -8,7 +8,6 @@ import { CachedPageCanvas } from '@/components/students/fullscreen-book-overlay/
 import {
   READER_PAGE_PLACEHOLDER_FILTER,
   isReaderPageSharpReady,
-  readerPageHasDrawablePixelsFromLayers,
   resolveReaderPageLayerVisibility,
   resolveReaderPagePlaceholderSource,
   resolveReaderPageShowSharpCache,
@@ -163,10 +162,12 @@ export function ReaderPageSlot({
   onSlotPixelsReadyRef.current = onSlotPixelsReady
   confirmSlotPixelsReadyRef.current = confirmSlotPixelsReady
 
+  const pdfRenderWidthPx = resolveReaderPagePdfRenderWidthPx(spreadPageWidth, screenScale)
+
   useLayoutEffect(() => {
     setPdfDisplayReady(false)
     slotPixelsReportedRef.current = false
-  }, [unitId, pageNumber, spreadPageWidth, screenScale])
+  }, [unitId, pageNumber, pdfRenderWidthPx])
 
   const { bitmap: cacheBitmap, preferSharpCacheOverPdf } = useMemo(
     () =>
@@ -198,7 +199,6 @@ export function ReaderPageSlot({
     pdfDisplayReady,
     preferSharpCacheOverPdf,
   })
-  const pdfRenderWidthPx = resolveReaderPagePdfRenderWidthPx(spreadPageWidth, screenScale)
   const pdfRenderHeightPx = resolveReaderPagePdfRenderHeightPx(
     spreadPageWidth,
     pageCanvasHeightPx,
@@ -210,11 +210,6 @@ export function ReaderPageSlot({
   const showPlaceholder = shouldShowReaderPagePlaceholder({
     sharpReady,
     placeholder: placeholderSource,
-  })
-  const hasDrawablePixels = readerPageHasDrawablePixelsFromLayers({
-    showSharpCache,
-    pdfDisplayReady,
-    showPlaceholder,
   })
 
   const reportSlotPixelsReady = () => {
@@ -230,25 +225,7 @@ export function ReaderPageSlot({
     }
   }, [confirmSlotPixelsReady])
 
-  useLayoutEffect(() => {
-    if (!confirmSlotPixelsReady) return
-    if (cacheBitmap && !slotPixelsReportedRef.current) {
-      reportSlotPixelsReady()
-    }
-  }, [confirmSlotPixelsReady, cacheBitmap])
-
-  useLayoutEffect(() => {
-    if (!confirmSlotPixelsReady) return
-    if (hasDrawablePixels && !slotPixelsReportedRef.current) {
-      reportSlotPixelsReady()
-    }
-  }, [confirmSlotPixelsReady, hasDrawablePixels, pdfDisplayReady, showPlaceholder])
-
   const handleCachePainted = () => {
-    reportSlotPixelsReady()
-  }
-
-  const handlePlaceholderPainted = () => {
     reportSlotPixelsReady()
   }
 
@@ -346,7 +323,6 @@ export function ReaderPageSlot({
           spreadPageWidth={spreadPageWidth}
           pageCanvasHeightPx={pageCanvasHeightPx}
           transparentSurface={bulgeActive}
-          onPainted={handlePlaceholderPainted}
           clipStyle={bulgeActive ? pageArtClipStyle : undefined}
         />
       ) : null}

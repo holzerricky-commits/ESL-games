@@ -270,11 +270,17 @@ export const ANNOTATION_TEXT_FILL_SWATCHES = [
   ANNOTATION_NEUTRAL_BLACK,
 ] as const
 
-export const DEFAULT_TEXT_FILL_COLOR = ANNOTATION_TEXT_FILL_SWATCHES[0]
+export const DEFAULT_TEXT_FILL_COLOR = ANNOTATION_NEUTRAL_WHITE
+
+/** Previous factory fill — prefs without a rev still sitting on this become white. */
+export const LEGACY_DEFAULT_TEXT_FILL_COLOR = '#fef08a'
+
+/** Prefs written after the white factory fill. */
+export const TEXT_FILL_DEFAULT_REV = 2
 
 /** @deprecated Migration only — do not auto-apply when picking text color. */
 export const TEXT_FILL_BY_STROKE: Readonly<Record<string, string>> = {
-  '#1e293b': '#fef08a',
+  '#1e293b': ANNOTATION_NEUTRAL_WHITE,
   '#64748b': ANNOTATION_NEUTRAL_GRAY,
   '#3b82f6': '#bfdbfe',
   '#ef4444': '#fecaca',
@@ -295,6 +301,7 @@ export const LEGACY_TEXT_FILL_COLOR_MAP: Readonly<Record<string, string>> = {
   '#fef9c3': '#fef08a',
   '#fef3c7': '#fef08a',
   '#fde047': '#fef08a',
+  '#ffeb3b': '#fef08a',
   '#fcd34d': '#fde68a',
   '#dbeafe': '#bfdbfe',
   '#93c5fd': '#bfdbfe',
@@ -324,9 +331,19 @@ const TEXT_FILL_COLOR_SET = new Set(
   ANNOTATION_TEXT_FILL_SWATCHES.map((c) => c.toLowerCase()),
 )
 
+/**
+ * Product fills that are not classroom text-tool swatches.
+ * Must stay as-is on load — otherwise unknown hex falls through to white and
+ * translation chips turn pale on the next class.
+ */
+const RESERVED_TEXT_FILL_COLORS = new Set([
+  '#2a2a2e', // translate dock place-chip charcoal (TRANSLATION_CHIP_FILL)
+])
+
 export function migrateTextFillColor(hex: string): string {
   const norm = hex.toLowerCase()
   if (TEXT_FILL_COLOR_SET.has(norm)) return hex
+  if (RESERVED_TEXT_FILL_COLORS.has(norm)) return hex
   const legacy = LEGACY_TEXT_FILL_COLOR_MAP[norm]
   if (legacy) return legacy
   const paired = TEXT_FILL_BY_STROKE[norm]

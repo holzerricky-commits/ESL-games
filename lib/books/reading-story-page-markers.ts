@@ -214,6 +214,10 @@ export type EvidencePageHit = {
  * Find which tagged page contains the evidence (unique hit preferred).
  * Tries evidenceSnippet first, then evidenceHighlight.
  */
+function collapseEvidenceWhitespace(value: string): string {
+  return value.replace(/\s+/g, ' ').trim()
+}
+
 export function resolvePageFromStoryEvidence(
   storyText: string,
   evidenceSnippet: string | null | undefined,
@@ -223,17 +227,19 @@ export function resolvePageFromStoryEvidence(
   if (sections.length === 0) return null
 
   const candidates = [evidenceSnippet, evidenceHighlight]
-    .map((s) => (typeof s === 'string' ? s.trim() : ''))
+    .map((s) => (typeof s === 'string' ? collapseEvidenceWhitespace(s) : ''))
     .filter((s) => s.length >= 8)
 
   for (const needle of candidates) {
-    const hits = sections.filter((sec) => sec.text.includes(needle))
+    const hits = sections.filter((sec) => collapseEvidenceWhitespace(sec.text).includes(needle))
     if (hits.length === 1) {
       return { displayPage: hits[0]!.displayPage, pdfPage: hits[0]!.pdfPage }
     }
     if (hits.length === 0) {
       const lowerNeedle = needle.toLowerCase()
-      const soft = sections.filter((sec) => sec.text.toLowerCase().includes(lowerNeedle))
+      const soft = sections.filter((sec) =>
+        collapseEvidenceWhitespace(sec.text).toLowerCase().includes(lowerNeedle),
+      )
       if (soft.length === 1) {
         return { displayPage: soft[0]!.displayPage, pdfPage: soft[0]!.pdfPage }
       }

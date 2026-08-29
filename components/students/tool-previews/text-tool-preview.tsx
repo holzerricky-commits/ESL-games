@@ -3,10 +3,10 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { FilledTextPillLayer } from '@/components/students/filled-text-pill-layer'
 import type { TextAnnotationAlign, TextAnnotationVisualStyle } from '@/lib/books/annotation-command-types'
-import type { AnnotationTextFontId } from '@/lib/books/annotation-text-fonts'
+import type { AnnotationTextFontId, AnnotationTextFontWeight } from '@/lib/books/annotation-text-fonts'
 import { computeFilledPillLayout } from '@/lib/books/filled-text-layout'
 import type { AnnotationStrokeThicknessStep } from '@/lib/books/annotation-storage'
-import { textLabelFieldPaddingCSS } from '@/lib/books/text-label-layout'
+import { filledTextPillStackPaddingCSS } from '@/lib/books/text-label-layout'
 import {
   buildTextToolPreviewMirrorStyle,
   buildTextToolPreviewTypography,
@@ -26,6 +26,7 @@ function previewAlignClass(textAlign: TextAnnotationAlign): string {
 
 export function TextToolPreview({
   textFontId,
+  textFontWeight = 'regular',
   textVisualStyle,
   textAlign,
   textThicknessStep,
@@ -34,6 +35,7 @@ export function TextToolPreview({
   pageHeightPx,
 }: {
   textFontId: AnnotationTextFontId
+  textFontWeight?: AnnotationTextFontWeight
   textVisualStyle: TextAnnotationVisualStyle
   textAlign: TextAnnotationAlign
   textThicknessStep: AnnotationStrokeThicknessStep
@@ -46,6 +48,7 @@ export function TextToolPreview({
     () =>
       buildTextToolPreviewTypography({
         textFontId,
+        textFontWeight,
         textVisualStyle,
         textAlign,
         textThicknessStep,
@@ -53,7 +56,7 @@ export function TextToolPreview({
         textFillColor,
         pageHeightPx,
       }),
-    [textFontId, textVisualStyle, textAlign, textThicknessStep, textColor, textFillColor, pageHeightPx],
+    [textFontId, textFontWeight, textVisualStyle, textAlign, textThicknessStep, textColor, textFillColor, pageHeightPx],
   )
   const mirrorStyle = useMemo(
     () => buildTextToolPreviewMirrorStyle(typography),
@@ -78,6 +81,8 @@ export function TextToolPreview({
       typography.fontSizePx,
       0.05,
       overlayWidthPx,
+      undefined,
+      { fontWeight: typography.fontWeight },
     )
     setFilledLayout({
       segments: [...layout.segments],
@@ -88,6 +93,7 @@ export function TextToolPreview({
     typography.variant,
     typography.sampleText,
     typography.fontFamily,
+    typography.fontWeight,
     typography.fontSizePx,
     textAlign,
   ])
@@ -110,7 +116,7 @@ export function TextToolPreview({
           {filledLayout ? (
             <div
               className="pointer-events-none absolute inset-0 box-border"
-              style={textLabelFieldPaddingCSS('filled')}
+              style={filledTextPillStackPaddingCSS()}
               aria-hidden
             >
               <FilledTextPillLayer

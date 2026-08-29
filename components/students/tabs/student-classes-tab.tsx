@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/dialog'
 import { StudentCardLessonPreview } from '@/components/students/student-card-lesson-preview'
 import {
+  canOpenClassPrep,
   classEntryActionLabel,
   formatClassCountdown,
   resolveClassEntryAction,
@@ -1136,7 +1137,7 @@ export function StudentClassesTab({
             ) : null}
           </h3>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Prepare ahead · Enter in the last 20 minutes · Preview glances at pages
+            Prep anytime, including the last 20 minutes · Enter when you’re ready
           </p>
         </div>
         {error ? <p className="text-sm text-[var(--brand-red)]">{error}</p> : null}
@@ -1203,8 +1204,7 @@ export function StudentClassesTab({
                       <Eye className="h-3.5 w-3.5" aria-hidden />
                       Preview
                     </Button>
-                    {(session.status === 'planned' || session.status === 'prepared') &&
-                    entry !== 'prepare' ? (
+                    {canOpenClassPrep(session) && entry !== 'prepare' ? (
                       <Button
                         type="button"
                         size="sm"

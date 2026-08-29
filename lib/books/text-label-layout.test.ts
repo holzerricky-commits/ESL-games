@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { TEXT_LABEL_PLACEMENT_MIN_WIDTH_NORM } from './text-label-measure'
 import {
   FILLED_EDIT_CHROME_INSET_PX,
+  FILLED_TEXT_PILL_EDGE_SHADOW,
   FILLED_TEXT_MEASURE_PAD_PX,
   FILLED_TEXT_PAD_X_PX,
   FILLED_TEXT_PAD_Y_PX,
@@ -17,6 +18,7 @@ import {
   textLabelCenterGrowLeft,
   textLabelEmptyAlignBoxWidthNorm,
   textLabelFieldPaddingCSS,
+  filledTextPillStackPaddingCSS,
   textLabelLineHeightPx,
   textLabelPlacementFromClick,
   textLabelPlaceholderColor,
@@ -88,16 +90,26 @@ describe('text-label-layout', () => {
       paddingRight: '3px',
     })
     expect(textLabelFieldPaddingCSS('filled')).toEqual({
-      paddingTop: '2px',
-      paddingBottom: '2px',
-      paddingLeft: '2px',
-      paddingRight: '2px',
+      paddingTop: '4px',
+      paddingBottom: '4px',
+      paddingLeft: '8px',
+      paddingRight: '8px',
+    })
+    expect(filledTextPillStackPaddingCSS()).toEqual({
+      paddingTop: '4px',
+      paddingBottom: '4px',
+      paddingLeft: '0px',
+      paddingRight: '0px',
     })
   })
 
-  it('filled vertical pad is 2px per side', () => {
-    expect(FILLED_TEXT_PAD_Y_PX).toBe(2)
-    expect(FILLED_TEXT_PAD_X_PX).toBe(2)
+  it('filled pad is 4px top/bottom and 8px left/right', () => {
+    expect(FILLED_TEXT_PAD_Y_PX).toBe(4)
+    expect(FILLED_TEXT_PAD_X_PX).toBe(8)
+  })
+
+  it('filled pill edge is a faint inset ring', () => {
+    expect(FILLED_TEXT_PILL_EDGE_SHADOW).toContain('inset 0 0 0 1px')
   })
 
   it('filledPillRowMinPx adds row slack for pill backgrounds', () => {

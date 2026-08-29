@@ -214,8 +214,17 @@ export function drawStrokePath(
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
     ctx.fillStyle = ctx.strokeStyle
-    traceStrokePoints(ctx, 'pen', points, sx, sy, (x, y) =>
-      drawStrokeCapDot(ctx, x, y, lineWidth),
+    const dashed = Boolean(cmd.lineDashStyle && cmd.lineDashStyle !== 'solid')
+    const canTaper =
+      !dashed && alpha >= 0.99 && (!cmd.penInkStyle || cmd.penInkStyle === 'solid')
+    traceStrokePoints(
+      ctx,
+      'pen',
+      points,
+      sx,
+      sy,
+      (x, y) => drawStrokeCapDot(ctx, x, y, lineWidth),
+      canTaper ? { taperWidthPx: lineWidth } : undefined,
     )
     ctx.setLineDash([])
   }

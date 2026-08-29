@@ -180,6 +180,8 @@ export interface StudentClassSession {
   prepOutlineSummary?: string
   /** Teacher freeform notes — separate from the outline. */
   prepNotes?: string
+  /** Lesson-part ids to skip this class only (not a book change). */
+  prepSkippedPartIds?: string[]
   /** AI / saved prep: what to focus on this class. */
   prepPriorities?: string[]
   /** AI / saved prep: concrete in-class activity ideas. */
@@ -192,6 +194,13 @@ export interface StudentClassSession {
   prepDifferentiationTips?: string[]
   /** AI / saved prep: homework or next-class carry-over. */
   prepCarryOver?: string[]
+  /** Glanceable classroom-home goals (vocab / grammar / speaking / listening). */
+  classroomHomeGoals?: {
+    vocabulary?: string
+    grammar?: string
+    speaking?: string
+    listening?: string
+  }
   /** @deprecated Legacy flat prep text; use prepTimeBlocks when available. */
   aiPrepSummary?: string
   /** When the teacher tapped Start class (ISO). */

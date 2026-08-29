@@ -5,6 +5,7 @@ import { computeStructureTagsForParts } from '@/lib/books/part-structure-tag'
 import type { TocUnitDraft } from '@/lib/books/toc-import'
 import { formatTocChunkTitle } from '@/lib/books/lesson-title'
 import { normalizeNotCountedPdfPages } from '@/lib/books/page-alignment'
+import { polishTocLessonsForUnit } from '@/lib/books/polish-toc-lessons'
 import { resolveGeminiApiKey } from '@/lib/gemini'
 import {
   isTocExtractProfileId,
@@ -71,7 +72,7 @@ export type GeminiTocV2Result =
   | { ok: false; error: string; status?: number }
 
 export function normalizeTocExtractProfile(value: unknown): TocExtractProfileId {
-  return isTocExtractProfileId(value) ? value : 'journeys'
+  return isTocExtractProfileId(value) ? value : 'generic'
 }
 
 function parseJsonObject(raw: string): unknown {
@@ -223,23 +224,28 @@ function lessonFromAi(
   lesson: z.infer<typeof aiLessonSchema>,
   profile: TocExtractProfileId,
 ): BookLessonRecord {
-  const withStarts = lesson.entries.reduce<Array<{ title: string; startPageHint: number }>>(
+  const entries = lesson.entries.reduce<Array<{ title: string; startPageHint?: number }>>(
     (acc, entry) => {
+      const title = entry.title.trim()
+      if (!title) return acc
       const startPrinted = entry.startPrintedPage ?? null
-      if (startPrinted == null) return acc
-      acc.push({ title: entry.title.trim(), startPageHint: startPrinted })
+      acc.push({
+        title,
+        ...(typeof startPrinted === 'number' ? { startPageHint: startPrinted } : {}),
+      })
       return acc
     },
     [],
   )
-  const tags = computeStructureTagsForParts(withStarts, profile)
-  const parts: BookLessonPartRecord[] = withStarts.map((entry, partIndex) => ({
+  const tags = computeStructureTagsForParts(entries, profile)
+  const parts: BookLessonPartRecord[] = entries.map((entry, partIndex) => ({
     id: `part-${randomUUID().slice(0, 8)}`,
     title: entry.title,
     structureTag: tags[partIndex]!,
-    startPageHint: entry.startPageHint,
-    anchorSource: 'toc',
-    anchorConfidence: 'high',
+    ...(typeof entry.startPageHint === 'number' ? { startPageHint: entry.startPageHint } : {}),
+    ...(typeof entry.startPageHint === 'number'
+      ? { anchorSource: 'toc' as const, anchorConfidence: 'high' as const }
+      : {}),
   }))
 
   for (let i = 0; i < parts.length; i++) {
@@ -256,20 +262,20 @@ function lessonFromAi(
     titleBase,
     tocChunkLabelStyleForProfile(profile),
   )
-  const startPageHint = parts[0]?.startPageHint
+  const startPageHint = parts.find((p) => typeof p.startPageHint === 'number')?.startPageHint
   return {
     id: `lesson-${randomUUID().slice(0, 8)}`,
     title: finalTitle,
-    ...(startPageHint ? { startPageHint } : {}),
-    ...(startPageHint ? { anchorSource: 'toc' as const } : {}),
-    ...(startPageHint ? { anchorConfidence: 'high' as const } : {}),
+    ...(startPageHint != null ? { startPageHint } : {}),
+    ...(startPageHint != null ? { anchorSource: 'toc' as const } : {}),
+    ...(startPageHint != null ? { anchorConfidence: 'high' as const } : {}),
     ...(parts.length ? { parts } : {}),
   }
 }
 
 export function normalizeTocV2ToDrafts(
   parsed: z.infer<typeof aiResponseSchema>,
-  profile: TocExtractProfileId = 'journeys',
+  profile: TocExtractProfileId = 'generic',
 ): { drafts: TocUnitDraft[]; lessonsByUnit: BookLessonRecord[][] } {
   const drafts: TocUnitDraft[] = []
   const lessonsByUnit: BookLessonRecord[][] = []
@@ -278,45 +284,35 @@ export function normalizeTocV2ToDrafts(
     const lessons = unit.lessons.map((lesson) => lessonFromAi(lesson, profile))
 
     for (const special of unit.specialSections) {
+      const title = special.title.trim()
+      if (!title) continue
       const specialStartPrinted = special.startPrintedPage ?? null
-      let startPdf = specialStartPrinted
-      if (startPdf == null && /glossary/i.test(special.title)) {
-        const wrap = lessons.find((lesson) => /unit\s*wrap[\s-]*up/i.test(lesson.title))
-        if (wrap?.startPageHint) startPdf = wrap.startPageHint + 1
-      }
-      if (startPdf == null) continue
       lessons.push({
         id: `lesson-${randomUUID().slice(0, 8)}`,
-        title: special.title.trim(),
-        startPageHint: startPdf,
-        anchorSource: 'toc',
-        anchorConfidence: 'high',
+        title,
+        ...(typeof specialStartPrinted === 'number'
+          ? {
+              startPageHint: specialStartPrinted,
+              anchorSource: 'toc' as const,
+              anchorConfidence: 'high' as const,
+            }
+          : {}),
       })
     }
 
-    lessons.sort((a, b) => (a.startPageHint ?? Number.MAX_SAFE_INTEGER) - (b.startPageHint ?? Number.MAX_SAFE_INTEGER))
-    for (let i = 0; i < lessons.length; i++) {
-      const current = lessons[i]
-      const next = lessons[i + 1]
-      if (!current?.startPageHint) continue
-      if (/unit\s*wrap[\s-]*up/i.test(current.title)) {
-        current.endPageHint = current.startPageHint
-      } else if (next?.startPageHint) {
-        current.endPageHint = Math.max(current.startPageHint, next.startPageHint - 1)
-      }
-    }
+    const polished = polishTocLessonsForUnit(unit.title.trim(), lessons, profile)
 
-    const unitStart = lessons.find((lesson) => lesson.startPageHint != null)?.startPageHint
+    const unitStart = polished.find((lesson) => lesson.startPageHint != null)?.startPageHint
     const draft: TocUnitDraft = {
       id: `unit-${unitIdx + 1}-${randomUUID().slice(0, 8)}`,
       title: unit.title.trim(),
-      needsReview: false,
+      needsReview: polished.length === 0,
       ...(unitStart ? { startPageHint: unitStart } : {}),
       ...(unitStart ? { anchorSource: 'toc' as const } : {}),
       ...(unitStart ? { anchorConfidence: 'high' as const } : {}),
     }
     drafts.push(draft)
-    lessonsByUnit.push(lessons)
+    lessonsByUnit.push(polished)
   }
 
   for (let i = 0; i < drafts.length; i++) {
@@ -353,7 +349,7 @@ export async function extractTocWithGeminiV2(
   images: TocV2ImagePart[],
   totalPdfPages: number,
   notCountedPdfPagesInput: number[] = [],
-  profileInput: TocExtractProfileId | string = 'journeys',
+  profileInput: TocExtractProfileId | string = 'generic',
 ): Promise<GeminiTocV2Result> {
   try {
     const profile = normalizeTocExtractProfile(profileInput)

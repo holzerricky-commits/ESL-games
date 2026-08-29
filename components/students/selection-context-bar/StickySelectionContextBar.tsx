@@ -3,14 +3,15 @@
 import { useMemo } from 'react'
 import { DEFAULT_STICKY_FILL_COLOR } from '@/lib/books/annotation-palettes'
 import type { StickyAnnotationCommand } from '@/lib/books/annotation-command-types'
-import type { AnnotationTextFontId } from '@/lib/books/annotation-text-fonts'
-import { DEFAULT_ANNOTATION_TEXT_FONT_ID } from '@/lib/books/annotation-text-fonts'
+import type { AnnotationTextFontId, AnnotationTextFontWeight } from '@/lib/books/annotation-text-fonts'
+import { DEFAULT_ANNOTATION_TEXT_FONT_ID, DEFAULT_ANNOTATION_TEXT_FONT_WEIGHT } from '@/lib/books/annotation-text-fonts'
 import type { NormRect } from '@/lib/books/annotation-select'
 import type { AnnotationStrokeThicknessStep } from '@/lib/books/annotation-storage'
 import type { SelectionBarPlacement } from '@/lib/books/selection-context-anchor'
 import {
   commonStickyFillColor,
   commonStickyFontId,
+  commonStickyFontWeight,
   commonStickyFontSizeNorm,
 } from '@/lib/books/selection-context'
 import {
@@ -27,7 +28,7 @@ import { SelectionContextBarDivider } from '@/components/students/selection-cont
 import { SelectionContextBarGroup } from '@/components/students/selection-context-bar/SelectionContextBarGroup'
 import { SelectionContextColorSection } from '@/components/students/selection-context-bar/SelectionContextColorSection'
 import { SelectionContextSizeStepper } from '@/components/students/selection-context-bar/SelectionContextSizeStepper'
-import { TopStripTextFontChip } from '@/components/students/annotation-top-strip-controls'
+import { TopStripTextFontChip, TopStripTextWeightChip } from '@/components/students/annotation-top-strip-controls'
 
 export function StickySelectionContextBar({
   stickyCommands,
@@ -56,12 +57,18 @@ export function StickySelectionContextBar({
 } & SelectionContextObjectArrangeProps) {
   const activeFill = commonStickyFillColor(stickyCommands)
   const activeFont = commonStickyFontId(stickyCommands)
+  const activeWeight = commonStickyFontWeight(stickyCommands)
   const activeSizeNorm = commonStickyFontSizeNorm(stickyCommands)
 
   const fontChipValue: AnnotationTextFontId =
     activeFont === 'mixed' || activeFont == null
       ? DEFAULT_ANNOTATION_TEXT_FONT_ID
       : (activeFont ?? DEFAULT_ANNOTATION_TEXT_FONT_ID)
+
+  const weightChipValue: AnnotationTextFontWeight =
+    activeWeight === 'mixed' || activeWeight == null
+      ? DEFAULT_ANNOTATION_TEXT_FONT_WEIGHT
+      : activeWeight
 
   const sizeStep: AnnotationStrokeThicknessStep =
     activeSizeNorm === 'mixed' || activeSizeNorm == null
@@ -110,6 +117,11 @@ export function StickySelectionContextBar({
           onChange={(id) => onPatch({ fontId: id })}
           idPrefix="ctx-sticky"
           compact
+        />
+        <TopStripTextWeightChip
+          value={weightChipValue}
+          onChange={(weight) => onPatch({ fontWeight: weight })}
+          idPrefix="ctx-sticky"
         />
       </SelectionContextBarGroup>
 

@@ -58,7 +58,7 @@ import { useSpellMarkerSpans } from '@/lib/writing-assist/use-spell-marker-spans
 import { GHOST_MIN_PARTIAL_LENGTH } from '@/lib/writing-assist/ghost-complete'
 import {
   annotationTextFontFamily,
-  annotationTextFontWeight,
+  annotationTextCssWeight,
   type AnnotationTextFontId,
 } from '@/lib/books/annotation-text-fonts'
 import { isTranslationChipText, TRANSLATION_CHIP_PREVIEW_CLASS } from '@/lib/translate/place-translation-chip'
@@ -76,6 +76,8 @@ import {
 } from '@/lib/books/text-label-field-layout'
 import {
   annotationTextFieldNoScrollCSS,
+  filledTextPillStackPaddingCSS,
+  filledTextEmptyTrayColor,
   textLabelFieldPaddingCSS,
   textLabelLineHeightPx,
   textLabelEditableFieldChromeCSS,
@@ -264,13 +266,14 @@ function textLabelMirrorStyle(
 }
 
 const filledTextFieldPaddingCSS = textLabelFieldPaddingCSS('filled')
+const filledTextPillStackPadding = filledTextPillStackPaddingCSS()
 
 function textLabelPlaceholderMirrorTypography(
   fontFamily: string,
   fontSize: number,
   color: string,
   variant: TextLabelFieldVariant = 'plain',
-  opts?: { omitFieldPadding?: boolean },
+  opts?: { omitFieldPadding?: boolean; fontWeight?: CSSProperties['fontWeight'] },
 ): CSSProperties {
   return textLabelMirrorStyle(fontFamily, fontSize, color, '', variant, {
     ...opts,
@@ -708,7 +711,7 @@ function EditableBlock({
   const topPct = positionCmd.y * 100
   const fs = Math.max(10, Math.round(cmd.fontSizeNorm * heightPx))
   const fontFamily = annotationTextFontFamily(cmd.fontId ?? defaultTextFontId)
-  const fontWeight = annotationTextFontWeight(cmd.fontId ?? defaultTextFontId)
+  const fontWeight = annotationTextCssWeight(cmd.fontId ?? defaultTextFontId, cmd.fontWeight)
   const translationChip = cmd.kind === 'text' && isTranslationChipText(cmd)
   const glossFontSizePx = Math.max(10, Math.round(fs * 0.58))
   const showGlosses = hasGlosses
@@ -1109,7 +1112,7 @@ function EditableBlock({
       mirrorTypographyOpts,
     )
     const editableChromeOpts = {
-      hideCaret: !isFieldFocused || !canEdit,
+      hideCaret: !canEdit,
       hideInk: grammarMirrorShowsInk,
     }
     const filledInkLayerStyle: CSSProperties = {
@@ -1121,6 +1124,7 @@ function EditableBlock({
       textVariant === 'filled' && !showTextarea
         ? computeFilledPillLayout(cmd.text, fontFamily, fs, cmd.x, overlayWidthPx, undefined, {
             maxWidthNorm: cmd.maxWidthNorm,
+            fontWeight,
           })
         : null
     const committedPlainLayout =
@@ -1128,6 +1132,7 @@ function EditableBlock({
         ? resolveTextLabelFieldLayout(cmd.text, fontFamily, fs, cmd.x, overlayWidthPx, {
             variant: 'plain',
             maxWidthNorm: cmd.maxWidthNorm,
+            fontWeight,
           })
         : null
     const liveFieldLayout = textFieldLayout
@@ -1267,12 +1272,18 @@ function EditableBlock({
                   className={cn(
                     'relative box-border w-full',
                     showGlosses && 'overflow-visible',
+                    showTextarea && local.trim().length === 0 && 'rounded-sm',
                   )}
-                  style={{ minHeight: filledStackHeightPx }}
+                  style={{
+                    minHeight: filledStackHeightPx,
+                    ...(showTextarea && local.trim().length === 0
+                      ? { backgroundColor: filledTextEmptyTrayColor(fillHex) }
+                      : {}),
+                  }}
                 >
                   <div
                     className="pointer-events-none absolute inset-0 box-border"
-                    style={filledTextFieldPaddingCSS}
+                    style={filledTextPillStackPadding}
                     aria-hidden
                   >
                     <FilledTextPillLayer
@@ -1385,7 +1396,7 @@ function EditableBlock({
                         fs,
                         cmd.color,
                         'filled',
-                        { omitFieldPadding: true },
+                        { omitFieldPadding: true, fontWeight },
                       )}
                       className="inset-0"
                       absoluteStyle={filledTextFieldPaddingCSS}
@@ -1509,6 +1520,7 @@ function EditableBlock({
                         fs,
                         cmd.color,
                         textVariant,
+                        { fontWeight },
                       )}
                       absoluteStyle={{ top: 0, left: 0 }}
                     />
@@ -1550,6 +1562,7 @@ function EditableBlock({
     stickyChrome.textColor,
     writableVariant,
     bodyMinPx,
+    fontWeight,
   )
   const showStickyEditChrome = Boolean(canEdit && !textToolActive)
   const centeredSticky = isCenteredWritableStickerVariant(writableVariant)

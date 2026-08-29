@@ -1,16 +1,13 @@
 'use client'
 
-import { PdfPageThumbnail } from '@/components/students/pdf-page-thumbnail'
+import { CachedBookImage } from '@/components/books/cached-book-image'
+import { PersistedPageThumbnail } from '@/components/books/persisted-page-thumbnail'
 import {
   bookCoverImageUrl,
   getBookCoverSource,
 } from '@/lib/books/book-cover-display'
 import type { BookRecord } from '@/lib/books/types'
 import { cn } from '@/lib/utils'
-
-function makeUnitFileUrl(filePath: string): string {
-  return `/api/book-file?path=${encodeURIComponent(filePath)}`
-}
 
 export interface BookCoverThumbnailProps {
   book: BookRecord
@@ -25,9 +22,9 @@ export interface BookCoverThumbnailProps {
 
 export function BookCoverThumbnail({
   book,
-  unitId,
+  unitId: _unitId,
   width,
-  pdfReady,
+  pdfReady: _pdfReady,
   label,
   className,
   pdfPage = 1,
@@ -59,26 +56,23 @@ export function BookCoverThumbnail({
         )}
         style={fitHeight ? undefined : { width, aspectRatio: '1 / 1.414' }}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element -- served from local book-library */}
-        <img
+        <CachedBookImage
           src={bookCoverImageUrl(source.imagePath)}
-          alt=""
           className="h-full w-full object-cover"
-          draggable={false}
         />
       </div>
     )
   }
 
   return (
-    <PdfPageThumbnail
-      fileUrl={makeUnitFileUrl(source.filePath)}
-      unitId={unitId}
+    <PersistedPageThumbnail
+      filePath={source.filePath}
       pageNumber={source.pageNumber}
       width={width}
       fitHeight={fitHeight}
-      pdfReady={pdfReady}
+      objectFit="cover"
       label={label}
+      eager
       className={className}
     />
   )

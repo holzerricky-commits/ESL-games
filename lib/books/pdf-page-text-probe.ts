@@ -62,6 +62,14 @@ async function probePdfPageHasSelectableTextInner(
   }
 }
 
+/** Drop cached probes for one file URL (after a searchable sidecar is written). */
+export function invalidatePdfPageTextProbeCacheForFileUrl(fileUrl: string): void {
+  const prefix = `${fileUrl}::`
+  for (const key of [...probeCache.keys()]) {
+    if (key.startsWith(prefix)) probeCache.delete(key)
+  }
+}
+
 /** Test helper — clear in-memory probe cache. */
 export function clearPdfPageTextProbeCacheForTests(): void {
   probeCache.clear()

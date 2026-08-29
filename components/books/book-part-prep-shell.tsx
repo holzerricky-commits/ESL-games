@@ -6,18 +6,20 @@ import { BookPartChecksPrep } from '@/components/books/book-part-checks-prep'
 import { BookPartPagesConfirm } from '@/components/books/book-part-pages-confirm'
 import { BookPartPrepStatusChips } from '@/components/books/book-part-prep-status-chips'
 import { BookPartStoryTextPrep } from '@/components/books/book-part-story-text-prep'
-import { PdfPageThumbnail } from '@/components/students/pdf-page-thumbnail'
+import { BookPartOutlineSpreadPreview } from '@/components/books/book-part-outline-spread-preview'
+import { BookPartVocabPrep } from '@/components/books/book-part-vocab-prep'
 import { UnitPdfPageCountLoader } from '@/components/books/unit-pdf-page-count-loader'
 import { makeUnitFileUrl } from '@/lib/books/book-file-url'
-import { formatPartListHeadline, isStoryPartShelfTag } from '@/lib/books/book-part-shelf'
+import { formatPartListHeadline, formatPartPageRangeLabel, isStoryPartShelfTag, isVocabPartShelfTag } from '@/lib/books/book-part-shelf'
+import type { BooksWorkshopOpenRequest } from '@/lib/books/books-workshop'
 import { BOOK_LESSON_PART_TAG_LABELS, effectivePartStructureTag } from '@/lib/books/part-structure-tag'
 import { readingStoryPartKey } from '@/lib/books/reading-story-map'
 import { readingStoryTextStatus } from '@/lib/books/reading-story-text'
-import { resolveOutlinePrintedStartPdfPage } from '@/lib/books/story-thumb-pdf-page'
 import { pageRangeForIndex } from '@/lib/books/toc-page-range'
+import { resolveOutlinePrintedStartPdfPage } from '@/lib/books/story-thumb-pdf-page'
 import type { BookLessonPartRecord, BookLessonRecord, BookRecord, BookUnitRecord } from '@/lib/books/types'
 
-const NON_STORY_PREVIEW_WIDTH = 240
+const PART_PREP_THUMB_WIDTH = 260
 
 interface BookPartPrepShellProps {
   book: BookRecord
@@ -30,6 +32,7 @@ interface BookPartPrepShellProps {
   onBackToParts: () => void
   onBackToLessons: () => void
   onBackToLibrary: () => void
+  onOpenWorkshop?: (request: BooksWorkshopOpenRequest) => void
 }
 
 function scrollToPrepSection(id: string) {
@@ -49,6 +52,7 @@ export function BookPartPrepShell({
   onBackToParts,
   onBackToLessons,
   onBackToLibrary,
+  onOpenWorkshop,
 }: BookPartPrepShellProps) {
   const [pageCount, setPageCount] = useState<number | null>(null)
   const [textReady, setTextReady] = useState(false)
@@ -61,25 +65,41 @@ export function BookPartPrepShell({
   const tag = effectivePartStructureTag(part)
   const typeLabel = BOOK_LESSON_PART_TAG_LABELS[tag] ?? 'Part'
   const isStory = isStoryPartShelfTag(tag)
+  const isVocab = isVocabPartShelfTag(tag)
   const headline = formatPartListHeadline(typeLabel, part.title)
   const storyId = useMemo(
     () => readingStoryPartKey(book.id, unit.id, lesson.id, part.id),
     [book.id, unit.id, lesson.id, part.id],
   )
-
-  const previewPage = useMemo(() => {
-    return (
-      resolveOutlinePrintedStartPdfPage(range.start, book, unit, pageCount) ??
-      Math.max(1, Math.floor(range.start ?? 1))
-    )
-  }, [book, unit, range.start, pageCount])
-
+  const workshopPdfPage =
+    resolveOutlinePrintedStartPdfPage(range.start, book, unit, pageCount) ??
+    (typeof range.start === 'number' ? Math.max(1, Math.floor(range.start)) : 1)
   const outlineRangeLabel =
     range.start != null
       ? range.end != null && range.end !== range.start
         ? `${range.start}–${range.end}`
         : `${range.start}`
       : '—'
+
+  function openWorkshop() {
+    onOpenWorkshop?.({
+      bookId: book.id,
+      unitId: unit.id,
+      pdfPage: workshopPdfPage,
+      storyId: isStory ? storyId : null,
+      kind: isStory ? 'story' : isVocab ? 'vocab' : 'unmarked',
+      lessonId: isVocab || isStory ? lesson.id : null,
+      partId: isVocab || isStory ? part.id : null,
+      startPageHint: range.start,
+      endPageHint: range.end,
+      bookTitle: book.title,
+      unitTitle: unit.title,
+      lessonTitle: lesson.title,
+      partTitle: headline.name,
+      typeLabel: headline.prefix ?? typeLabel,
+      pageRangeLabel: range.start != null ? formatPartPageRangeLabel(range.start, range.end) : null,
+    })
+  }
 
   const handleTextReadyChange = useCallback((ready: boolean) => {
     setTextReady(ready)
@@ -187,6 +207,7 @@ export function BookPartPrepShell({
             pdfReady={pdfReady}
             totalPdfPages={pageCount}
             onPdfNumPages={setPageCount}
+            onOpenInBook={onOpenWorkshop ? () => openWorkshop() : undefined}
             statusSlot={
               <BookPartPrepStatusChips
                 textState={textReady ? 'ready' : 'todo'}
@@ -196,28 +217,32 @@ export function BookPartPrepShell({
               />
             }
           />
-        ) : (
-          <div className="overflow-hidden rounded-[28px] bg-[var(--surface-2)] shadow-[0_12px_40px_-24px_rgba(0,0,0,0.2)]">
+        ) : isVocab ? null : (
+          <div className="rounded-[28px] bg-[var(--surface-2)] shadow-[0_12px_40px_-24px_rgba(0,0,0,0.2)]">
             <div className="flex flex-col gap-8 p-6 sm:p-8 lg:flex-row lg:items-start lg:gap-10 lg:p-10">
-              <div
-                className="mx-auto w-full max-w-[240px] overflow-hidden rounded-2xl bg-[var(--surface-3)] shadow-[0_16px_40px_-20px_rgba(0,0,0,0.35)] lg:mx-0"
-                style={{ aspectRatio: '1 / 1.414' }}
-              >
+              <div className="mx-auto shrink-0 lg:mx-0">
                 {fileUrl ? (
-                  <PdfPageThumbnail
+                  <BookPartOutlineSpreadPreview
                     fileUrl={fileUrl}
                     unitId={`${book.id}-${unit.id}-${part.id}-part-shell`}
-                    pageNumber={previewPage}
-                    width={NON_STORY_PREVIEW_WIDTH}
-                    fitHeight
-                    objectFit="contain"
+                    book={book}
+                    unit={unit}
                     pdfReady={pdfReady}
-                    label={part.title}
-                    eager
-                    className="h-full w-full border-0"
+                    totalPdfPages={pageCount}
+                    printedStart={range.start}
+                    printedEnd={range.end}
+                    thumbWidth={PART_PREP_THUMB_WIDTH}
+                    size="lg"
+                    onPdfNumPages={setPageCount}
                   />
                 ) : (
-                  <div className="flex h-full items-center justify-center p-4 text-sm text-muted-foreground">
+                  <div
+                    className="flex items-center justify-center rounded-2xl bg-[var(--surface-3)] p-4 text-sm text-muted-foreground"
+                    style={{
+                      width: PART_PREP_THUMB_WIDTH * 2 + 8 + 44 * 2 + 24,
+                      minHeight: Math.round(PART_PREP_THUMB_WIDTH * 1.414),
+                    }}
+                  >
                     No PDF
                   </div>
                 )}
@@ -265,6 +290,22 @@ export function BookPartPrepShell({
               onChecksReadyChange={handleChecksReadyChange}
             />
           </>
+        ) : isVocab ? (
+          <BookPartVocabPrep
+            book={book}
+            unit={unit}
+            lesson={lesson}
+            part={{ ...part, structureTag: tag }}
+            partTypeLabel={headline.prefix}
+            partTitle={headline.name}
+            pageRangeLabel={outlineRangeLabel}
+            pdfReady={pdfReady}
+            totalPdfPages={pageCount}
+            startPageHint={range.start}
+            endPageHint={range.end}
+            onPdfNumPages={setPageCount}
+            onOpenWorkshop={onOpenWorkshop ? () => openWorkshop() : undefined}
+          />
         ) : (
           <div className="overflow-hidden rounded-[28px] bg-[var(--surface-2)] shadow-[0_12px_40px_-24px_rgba(0,0,0,0.2)]">
             <div className="px-6 py-5 sm:px-8">

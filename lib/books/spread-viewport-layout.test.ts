@@ -162,6 +162,12 @@ describe('computeSpreadReaderResizeScale', () => {
     expect(Math.abs(scaledWidth - targetOuter.widthPx)).toBeLessThanOrEqual(20)
     expect(Math.abs(scaledHeight - targetOuter.heightPx)).toBeLessThanOrEqual(20)
   })
+
+  it('shrinks when the fitted width is smaller than the current picture', () => {
+    const scale = computeSpreadReaderResizeScale(480, 360, 1 / 1.414)
+    expect(scale).toBeLessThan(1)
+    expect(scale).toBeGreaterThan(0.7)
+  })
 })
 
 describe('computeSpreadClusterLayoutSlot', () => {

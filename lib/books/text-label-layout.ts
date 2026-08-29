@@ -23,13 +23,16 @@ export const TEXT_LABEL_PAD_X_PX = 3
 export const TEXT_LABEL_PAD_Y_PX = 4
 
 /** Vertical inset per side for filled/pill labels. */
-export const FILLED_TEXT_PAD_Y_PX = 2
+export const FILLED_TEXT_PAD_Y_PX = 4
 
 /** Horizontal inset per side for filled/pill labels. */
-export const FILLED_TEXT_PAD_X_PX = 2
+export const FILLED_TEXT_PAD_X_PX = 8
 
 /** Gap between filled label ink/pills and the edit selection ring (px). */
 export const FILLED_EDIT_CHROME_INSET_PX = 2
+
+/** Hairline so white/pale fills still read as a box on cream pages. */
+export const FILLED_TEXT_PILL_EDGE_SHADOW = 'inset 0 0 0 1px rgba(15, 23, 42, 0.14)'
 
 /** Extra height per filled pill row for script-font descenders (not applied to textarea line-height). */
 export const FILLED_TEXT_ROW_SLACK_PX = 2
@@ -244,6 +247,24 @@ export function textLabelFieldPaddingCSS(variant: TextLabelFieldVariant = 'plain
   }
 }
 
+/**
+ * Pill-stack offset — top/bottom only so left/right inset lives inside the fill
+ * (bars are ink width plus horizontal pad).
+ */
+export function filledTextPillStackPaddingCSS(): {
+  paddingTop: string
+  paddingBottom: string
+  paddingLeft: string
+  paddingRight: string
+} {
+  return {
+    paddingTop: `${FILLED_TEXT_PAD_Y_PX}px`,
+    paddingBottom: `${FILLED_TEXT_PAD_Y_PX}px`,
+    paddingLeft: '0px',
+    paddingRight: '0px',
+  }
+}
+
 /** Horizontal padding from computed textarea styles (for live width fitting). */
 export function textLabelHorizontalPadFromComputedStyle(cs: CSSStyleDeclaration): number {
   return (
@@ -327,6 +348,7 @@ export function writableStickyBodyMirrorStyle(
   textColor: string,
   variant: WritableStickerVariant,
   minHeightPx: number,
+  fontWeight?: CSSProperties['fontWeight'],
 ): CSSProperties {
   const fontSize = writableStickyBodyFontSizePx(baseFontSizePx, variant)
   const lineHeightPx = textLabelLineHeightPx(fontSize)
@@ -335,6 +357,7 @@ export function writableStickyBodyMirrorStyle(
     fontFamily,
     fontSize,
     color: textColor,
+    ...(fontWeight != null ? { fontWeight } : {}),
     textAlign: isCenteredWritableStickerVariant(variant) ? 'center' : 'start',
     ...(isBubble ? { padding: 0 } : textLabelFieldPaddingCSS('plain')),
     ...annotationTextFieldNoScrollCSS(),

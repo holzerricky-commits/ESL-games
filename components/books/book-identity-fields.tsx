@@ -41,9 +41,9 @@ import {
 import {
   BOOK_GRADE_PRESETS,
   BOOK_ROLE_PRESETS,
-  BOOK_SERIES_PRESETS,
   DEFAULT_BOOK_SERIES,
   formatBookDisplayTitle,
+  listBookSeriesSelectOptions,
   PRESENTATION_PDF_EXPORT_TIP,
   PRESENTATIONS_SERIES,
   resolveBookCatalogIdentity,
@@ -55,6 +55,16 @@ import type { BookContentFormat, BookLibraryPayload, BookRecord } from '@/lib/bo
 
 const GRADE_NONE = '__none__'
 const ROLE_NONE = '__none__'
+/** Select sentinel — never persist as a book series. */
+const SERIES_ADD_NEW = '__add_new_series__'
+
+export type BookIdentityDraft = {
+  title: string
+  series: string
+  grade: string
+  role: string
+  contentFormat: BookContentFormat
+}
 
 interface BookIdentitySharedProps {
   book: BookRecord
@@ -77,6 +87,268 @@ function bookNeedsPersistInferred(book: BookRecord): boolean {
   )
 }
 
+export function draftFromBookIdentity(book: BookRecord): BookIdentityDraft {
+  const identity = resolveBookCatalogIdentity(book)
+  return {
+    title: identity.title,
+    series: identity.series || DEFAULT_BOOK_SERIES,
+    grade: identity.grade ?? '',
+    role: identity.role ?? '',
+    contentFormat: resolveBookContentFormat(book),
+  }
+}
+
+export function formatBookIdentityLine(draft: Pick<BookIdentityDraft, 'series' | 'grade' | 'role'>): string {
+  return [draft.series, draft.grade, draft.role].map((part) => part.trim()).filter(Boolean).join(' · ')
+}
+
+function applyIdentityDraftToBook(entry: BookRecord, draft: BookIdentityDraft): BookRecord {
+  return {
+    ...entry,
+    title: draft.title.trim(),
+    series: draft.series.trim() || DEFAULT_BOOK_SERIES,
+    grade: draft.grade.trim(),
+    role: draft.role.trim(),
+    contentFormat: draft.contentFormat,
+  }
+}
+
+export function isBookIdentityDraftDirty(book: BookRecord, draft: BookIdentityDraft): boolean {
+  const identity = resolveBookCatalogIdentity(book)
+  const persistedSeries = book.series?.trim() ?? ''
+  const persistedGrade = book.grade === undefined ? null : book.grade.trim()
+  const persistedRole = book.role === undefined ? null : book.role.trim()
+  const persistedFormat = resolveBookContentFormat(book)
+  return (
+    draft.title.trim() !== book.title.trim() ||
+    draft.series.trim() !== (persistedSeries || identity.series) ||
+    draft.grade.trim() !== (persistedGrade === null ? identity.grade ?? '' : persistedGrade) ||
+    draft.role.trim() !== (persistedRole === null ? identity.role ?? '' : persistedRole) ||
+    draft.contentFormat !== persistedFormat
+  )
+}
+
+export async function saveBookIdentity(params: {
+  bookId: string
+  library: BookLibraryPayload
+  draft: BookIdentityDraft
+}): Promise<BookLibraryPayload> {
+  const nextTitle = params.draft.title.trim()
+  if (!nextTitle) {
+    throw new Error('Title cannot be empty.')
+  }
+  const nextSeries = params.draft.series.trim()
+  if (!nextSeries || nextSeries === SERIES_ADD_NEW) {
+    throw new Error('Pick or type a series name.')
+  }
+  const nextBooks = params.library.books.map((entry) => {
+    if (entry.id !== params.bookId) return entry
+    return applyIdentityDraftToBook(entry, { ...params.draft, series: nextSeries })
+  })
+  const payload: BookLibraryPayload = { books: nextBooks }
+  const res = await fetch('/api/books/manifest', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  const body = (await res.json()) as BookLibraryPayload & { error?: string }
+  if (!res.ok) {
+    throw new Error(body.error ?? 'Could not save book details.')
+  }
+  return body
+}
+
+function withFormatSideEffects(draft: BookIdentityDraft, nextFormat: BookContentFormat): BookIdentityDraft {
+  let series = draft.series
+  let role = draft.role
+  if (
+    nextFormat === 'presentation' &&
+    (series === DEFAULT_BOOK_SERIES || series === 'Other' || !series.trim())
+  ) {
+    series = PRESENTATIONS_SERIES
+  }
+  if (
+    nextFormat === 'presentation' &&
+    !(PRESENTATION_DIFFICULTY_LEVELS as readonly string[]).includes(role)
+  ) {
+    role = 'Starter'
+  }
+  if (nextFormat === 'book' && (PRESENTATION_DIFFICULTY_LEVELS as readonly string[]).includes(role)) {
+    role = ''
+  }
+  return { ...draft, contentFormat: nextFormat, series, role }
+}
+
+export function BookIdentityFieldsForm({
+  bookId,
+  draft,
+  onChange,
+  showFormat = true,
+  knownSeries,
+}: {
+  bookId: string
+  draft: BookIdentityDraft
+  onChange: (next: BookIdentityDraft) => void
+  showFormat?: boolean
+  /** Series already used in the library (and any extras). */
+  knownSeries?: string[]
+}) {
+  const [addingSeries, setAddingSeries] = useState(false)
+
+  const seriesOptions = useMemo(
+    () =>
+      listBookSeriesSelectOptions({
+        extraSeries: [...(knownSeries ?? []), draft.series],
+      }),
+    [knownSeries, draft.series],
+  )
+
+  const selectValue = addingSeries ? SERIES_ADD_NEW : draft.series.trim() || DEFAULT_BOOK_SERIES
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {showFormat ? (
+        <div className="space-y-2 rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5 sm:col-span-2">
+          <div className="flex items-start gap-2">
+            <Checkbox
+              id={'book-presentation-' + bookId}
+              checked={draft.contentFormat === 'presentation'}
+              onCheckedChange={(value) => {
+                onChange(withFormatSideEffects(draft, value === true ? 'presentation' : 'book'))
+              }}
+              className="mt-0.5"
+            />
+            <div className="min-w-0 space-y-1">
+              <Label htmlFor={'book-presentation-' + bookId} className="text-sm font-medium leading-snug">
+                Mark as presentation (slide PDF)
+              </Label>
+              <p className="text-[11px] leading-snug text-muted-foreground">
+                Same open / assign / bookmark flow as a book. Still a PDF under the hood.
+              </p>
+              {draft.contentFormat === 'presentation' ? (
+                <p className="text-[11px] leading-snug text-muted-foreground">{PRESENTATION_PDF_EXPORT_TIP}</p>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="space-y-1.5 sm:col-span-2">
+        <Label htmlFor={'book-title-' + bookId}>Title</Label>
+        <div className="flex flex-wrap gap-2">
+          <Input
+            id={'book-title-' + bookId}
+            value={draft.title}
+            onChange={(event) => onChange({ ...draft, title: event.target.value })}
+            className="min-w-[12rem] flex-1"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              onChange({
+                ...draft,
+                title: formatBookDisplayTitle({
+                  series: draft.series,
+                  grade: draft.grade || null,
+                  role: draft.role || null,
+                }),
+              })
+            }
+          >
+            Suggest from labels
+          </Button>
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Series</Label>
+        <Select
+          value={selectValue}
+          onValueChange={(value) => {
+            if (value === SERIES_ADD_NEW) {
+              setAddingSeries(true)
+              onChange({ ...draft, series: '' })
+              return
+            }
+            setAddingSeries(false)
+            onChange({ ...draft, series: value })
+          }}
+        >
+          <SelectTrigger className="w-full" size="sm">
+            <SelectValue placeholder="Series" />
+          </SelectTrigger>
+          <SelectContent>
+            {seriesOptions.map((option) => (
+              <SelectItem key={option} value={option}>
+                {option}
+              </SelectItem>
+            ))}
+            <SelectItem value={SERIES_ADD_NEW}>Add new series…</SelectItem>
+          </SelectContent>
+        </Select>
+        {addingSeries ? (
+          <div className="space-y-1.5 pt-1">
+            <Label htmlFor={'book-series-new-' + bookId} className="text-[12px] text-muted-foreground">
+              New series name
+            </Label>
+            <Input
+              id={'book-series-new-' + bookId}
+              value={draft.series}
+              placeholder="e.g. Oxford"
+              autoFocus
+              onChange={(event) => onChange({ ...draft, series: event.target.value })}
+            />
+          </div>
+        ) : null}
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Grade</Label>
+        <Select
+          value={draft.grade || GRADE_NONE}
+          onValueChange={(value) => onChange({ ...draft, grade: value === GRADE_NONE ? '' : value })}
+        >
+          <SelectTrigger className="w-full" size="sm">
+            <SelectValue placeholder="Grade" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={GRADE_NONE}>Not set</SelectItem>
+            {BOOK_GRADE_PRESETS.map((option) => (
+              <SelectItem key={option} value={option}>
+                {option}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-1.5 sm:col-span-2">
+        <Label>{draft.contentFormat === 'presentation' ? 'Difficulty' : 'Role'}</Label>
+        <Select
+          value={draft.role || ROLE_NONE}
+          onValueChange={(value) => onChange({ ...draft, role: value === ROLE_NONE ? '' : value })}
+        >
+          <SelectTrigger className="w-full" size="sm">
+            <SelectValue placeholder={draft.contentFormat === 'presentation' ? 'Difficulty' : 'Role'} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ROLE_NONE}>Not set</SelectItem>
+            {(draft.contentFormat === 'presentation' ? PRESENTATION_DIFFICULTY_LEVELS : BOOK_ROLE_PRESETS).map(
+              (option) => (
+                <SelectItem key={option} value={option}>
+                  {option}
+                </SelectItem>
+              ),
+            )}
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  )
+}
+
 export function BookIdentityEditDialog({
   open,
   onOpenChange,
@@ -84,92 +356,36 @@ export function BookIdentityEditDialog({
   library,
   onSaved,
 }: BookIdentityEditDialogProps) {
-  const identity = useMemo(() => resolveBookCatalogIdentity(book), [book])
-  const [title, setTitle] = useState(identity.title)
-  const [series, setSeries] = useState(identity.series || DEFAULT_BOOK_SERIES)
-  const [grade, setGrade] = useState(identity.grade ?? '')
-  const [role, setRole] = useState(identity.role ?? '')
-  const [contentFormat, setContentFormat] = useState<BookContentFormat>(
-    resolveBookContentFormat(book),
-  )
+  const [draft, setDraft] = useState<BookIdentityDraft>(() => draftFromBookIdentity(book))
   const [saving, setSaving] = useState(false)
+
+  const knownSeries = useMemo(
+    () => listBookSeriesSelectOptions({ books: library.books }),
+    [library.books],
+  )
 
   useEffect(() => {
     if (!open) return
-    setTitle(identity.title)
-    setSeries(identity.series || DEFAULT_BOOK_SERIES)
-    setGrade(identity.grade ?? '')
-    setRole(identity.role ?? '')
-    setContentFormat(resolveBookContentFormat(book))
-  }, [open, book, identity.title, identity.series, identity.grade, identity.role])
+    setDraft(draftFromBookIdentity(book))
+  }, [open, book])
 
-  const seriesOptions = useMemo(() => {
-    const set = new Set<string>(BOOK_SERIES_PRESETS)
-    if (series.trim()) set.add(series.trim())
-    return Array.from(set)
-  }, [series])
-
-  const persistedSeries = book.series?.trim() ?? ''
-  const persistedGrade = book.grade === undefined ? null : book.grade.trim()
-  const persistedRole = book.role === undefined ? null : book.role.trim()
-  const persistedFormat = resolveBookContentFormat(book)
-
-  const dirty =
-    title.trim() !== book.title.trim() ||
-    series.trim() !== (persistedSeries || identity.series) ||
-    grade.trim() !== (persistedGrade === null ? identity.grade ?? '' : persistedGrade) ||
-    role.trim() !== (persistedRole === null ? identity.role ?? '' : persistedRole) ||
-    contentFormat !== persistedFormat
-
+  const dirty = isBookIdentityDraftDirty(book, draft)
   const needsPersistInferred = bookNeedsPersistInferred(book)
-
-  const canSave = title.trim().length > 0 && series.trim().length > 0 && (dirty || needsPersistInferred)
-
-  function applySuggestedTitle() {
-    setTitle(
-      formatBookDisplayTitle({
-        series,
-        grade: grade || null,
-        role: role || null,
-      }),
-    )
-  }
+  const canSave = draft.title.trim().length > 0 && draft.series.trim().length > 0 && (dirty || needsPersistInferred)
 
   async function handleSave() {
-    const nextTitle = title.trim()
-    const nextSeries = series.trim() || DEFAULT_BOOK_SERIES
-    if (!nextTitle) {
+    if (!draft.title.trim()) {
       toast.error('Title cannot be empty.')
       return
     }
-
-    const nextBooks = library.books.map((entry) => {
-      if (entry.id !== book.id) return entry
-      const next: BookRecord = {
-        ...entry,
-        title: nextTitle,
-        series: nextSeries,
-        // Empty string = explicitly cleared (do not re-infer on load).
-        grade: grade.trim(),
-        role: role.trim(),
-        contentFormat,
-      }
-      return next
-    })
-
-    const payload: BookLibraryPayload = { books: nextBooks }
+    if (!draft.series.trim()) {
+      toast.error('Pick or type a series name.')
+      return
+    }
     setSaving(true)
     try {
-      const res = await fetch('/api/books/manifest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      const body = (await res.json()) as BookLibraryPayload & { error?: string }
-      if (!res.ok) {
-        throw new Error(body.error ?? 'Could not save book details.')
-      }
-      onSaved(body)
+      const payload = await saveBookIdentity({ bookId: book.id, library, draft })
+      onSaved(payload)
       toast.success('Book details saved.')
       onOpenChange(false)
     } catch (error) {
@@ -186,132 +402,16 @@ export function BookIdentityEditDialog({
         <DialogHeader>
           <DialogTitle>Edit book details</DialogTitle>
           <DialogDescription>
-            Title anytime. Disk folder rename is under the book menu → Clean up files.
+            Title, series, grade, and role. Folder rename is under the book menu → Clean up files.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-2 rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5 sm:col-span-2">
-            <div className="flex items-start gap-2">
-              <Checkbox
-                id={'book-presentation-' + book.id}
-                checked={contentFormat === 'presentation'}
-                onCheckedChange={(value) => {
-                  const nextFormat: BookContentFormat = value === true ? 'presentation' : 'book'
-                  setContentFormat(nextFormat)
-                  if (
-                    nextFormat === 'presentation' &&
-                    (series === DEFAULT_BOOK_SERIES || series === 'Other' || !series.trim())
-                  ) {
-                    setSeries(PRESENTATIONS_SERIES)
-                  }
-                  if (
-                    nextFormat === 'presentation' &&
-                    !(PRESENTATION_DIFFICULTY_LEVELS as readonly string[]).includes(role)
-                  ) {
-                    setRole('Starter')
-                  }
-                  if (nextFormat === 'book' && (PRESENTATION_DIFFICULTY_LEVELS as readonly string[]).includes(role)) {
-                    setRole('')
-                  }
-                }}
-                className="mt-0.5"
-              />
-              <div className="min-w-0 space-y-1">
-                <Label
-                  htmlFor={'book-presentation-' + book.id}
-                  className="text-sm font-medium leading-snug"
-                >
-                  Mark as presentation (slide PDF)
-                </Label>
-                <p className="text-[11px] leading-snug text-muted-foreground">
-                  Same open / assign / bookmark flow as a book. Still a PDF under the hood.
-                </p>
-                {contentFormat === 'presentation' ? (
-                  <p className="text-[11px] leading-snug text-muted-foreground">
-                    {PRESENTATION_PDF_EXPORT_TIP}
-                  </p>
-                ) : null}
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-1.5 sm:col-span-2">
-            <Label htmlFor={'book-title-' + book.id}>Title</Label>
-            <div className="flex flex-wrap gap-2">
-              <Input
-                id={'book-title-' + book.id}
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-                className="min-w-[12rem] flex-1"
-              />
-              <Button type="button" variant="outline" size="sm" onClick={applySuggestedTitle}>
-                Suggest from labels
-              </Button>
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Series</Label>
-            <Select value={series || DEFAULT_BOOK_SERIES} onValueChange={setSeries}>
-              <SelectTrigger className="w-full" size="sm">
-                <SelectValue placeholder="Series" />
-              </SelectTrigger>
-              <SelectContent>
-                {seriesOptions.map((option) => (
-                  <SelectItem key={option} value={option}>
-                    {option}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Grade</Label>
-            <Select
-              value={grade || GRADE_NONE}
-              onValueChange={(value) => setGrade(value === GRADE_NONE ? '' : value)}
-            >
-              <SelectTrigger className="w-full" size="sm">
-                <SelectValue placeholder="Grade" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={GRADE_NONE}>Not set</SelectItem>
-                {BOOK_GRADE_PRESETS.map((option) => (
-                  <SelectItem key={option} value={option}>
-                    {option}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1.5 sm:col-span-2">
-            <Label>{contentFormat === 'presentation' ? 'Difficulty' : 'Role'}</Label>
-            <Select
-              value={role || ROLE_NONE}
-              onValueChange={(value) => setRole(value === ROLE_NONE ? '' : value)}
-            >
-              <SelectTrigger className="w-full" size="sm">
-                <SelectValue
-                  placeholder={contentFormat === 'presentation' ? 'Difficulty' : 'Role'}
-                />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ROLE_NONE}>Not set</SelectItem>
-                {(contentFormat === 'presentation'
-                  ? PRESENTATION_DIFFICULTY_LEVELS
-                  : BOOK_ROLE_PRESETS
-                ).map((option) => (
-                  <SelectItem key={option} value={option}>
-                    {option}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
+        <BookIdentityFieldsForm
+          bookId={book.id}
+          draft={draft}
+          onChange={setDraft}
+          knownSeries={knownSeries}
+        />
 
         {needsPersistInferred && !dirty ? (
           <p className="text-[11px] text-muted-foreground">Guessed labels — save to keep them.</p>

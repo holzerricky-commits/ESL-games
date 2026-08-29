@@ -11,14 +11,15 @@ import type {
   TextAnnotationAlign,
   TextAnnotationVisualStyle,
 } from '@/lib/books/annotation-command-types'
-import type { AnnotationTextFontId } from '@/lib/books/annotation-text-fonts'
-import { DEFAULT_ANNOTATION_TEXT_FONT_ID } from '@/lib/books/annotation-text-fonts'
+import type { AnnotationTextFontId, AnnotationTextFontWeight } from '@/lib/books/annotation-text-fonts'
+import { DEFAULT_ANNOTATION_TEXT_FONT_ID, DEFAULT_ANNOTATION_TEXT_FONT_WEIGHT } from '@/lib/books/annotation-text-fonts'
 import type { NormRect } from '@/lib/books/annotation-select'
 import type { AnnotationStrokeThicknessStep } from '@/lib/books/annotation-storage'
 import type { SelectionBarPlacement } from '@/lib/books/selection-context-anchor'
 import {
   commonTextFillColor,
   commonTextFontId,
+  commonTextFontWeight,
   commonTextFontSizeNorm,
   commonTextStrokeColor,
   commonTextVisualStyle,
@@ -42,6 +43,7 @@ import { SelectionContextColorSection } from '@/components/students/selection-co
 import { SelectionContextSizeStepper } from '@/components/students/selection-context-bar/SelectionContextSizeStepper'
 import {
   TopStripTextFontChip,
+  TopStripTextWeightChip,
   TopStripTextStyleChip,
   TopStripTextAlignChip,
 } from '@/components/students/annotation-top-strip-controls'
@@ -73,6 +75,7 @@ export function TextSelectionContextBar({
 } & SelectionContextObjectArrangeProps) {
   const activeColor = commonTextStrokeColor(textCommands)
   const activeFont = commonTextFontId(textCommands)
+  const activeWeight = commonTextFontWeight(textCommands)
   const activeStyle = commonTextVisualStyle(textCommands)
   const activeAlign = commonTextAlign(textCommands)
   const activeFill = commonTextFillColor(textCommands)
@@ -82,6 +85,11 @@ export function TextSelectionContextBar({
     activeFont === 'mixed' || activeFont == null
       ? DEFAULT_ANNOTATION_TEXT_FONT_ID
       : (activeFont ?? DEFAULT_ANNOTATION_TEXT_FONT_ID)
+
+  const weightChipValue: AnnotationTextFontWeight =
+    activeWeight === 'mixed' || activeWeight == null
+      ? DEFAULT_ANNOTATION_TEXT_FONT_WEIGHT
+      : activeWeight
 
   const styleChipValue: TextAnnotationVisualStyle =
     activeStyle === 'mixed' || activeStyle == null ? 'plain' : activeStyle
@@ -176,6 +184,11 @@ export function TextSelectionContextBar({
           onChange={(id) => onPatch({ fontId: id })}
           idPrefix="ctx-text"
           compact
+        />
+        <TopStripTextWeightChip
+          value={weightChipValue}
+          onChange={(weight) => onPatch({ fontWeight: weight })}
+          idPrefix="ctx-text"
         />
         <TopStripTextStyleChip
           style={styleChipValue}

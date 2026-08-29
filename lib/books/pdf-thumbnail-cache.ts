@@ -7,6 +7,7 @@ export const PDF_THUMB_WIDTH = 76
 export const PDF_HERO_THUMB_WIDTH = 240
 
 const dataUrlCache = new Map<string, string>()
+const inflightThumbs = new Map<string, Promise<string>>()
 const pdfLoadCache = new Map<string, Promise<PDFDocumentProxy>>()
 const PDFJS_WASM_URL = '/wasm/'
 
@@ -124,7 +125,16 @@ export async function getThumbnailDataUrl(
   const key = cacheKey(unitId, pageNumber, width)
   const hit = dataUrlCache.get(key)
   if (hit) return hit
-  const dataUrl = await enqueuePdfWork(() => renderPageToDataUrlInner(fileUrl, pageNumber, width))
-  dataUrlCache.set(key, dataUrl)
-  return dataUrl
+  const existing = inflightThumbs.get(key)
+  if (existing) return existing
+  const pending = enqueuePdfWork(() => renderPageToDataUrlInner(fileUrl, pageNumber, width))
+    .then((dataUrl) => {
+      dataUrlCache.set(key, dataUrl)
+      return dataUrl
+    })
+    .finally(() => {
+      inflightThumbs.delete(key)
+    })
+  inflightThumbs.set(key, pending)
+  return pending
 }

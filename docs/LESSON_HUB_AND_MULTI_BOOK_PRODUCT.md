@@ -4,7 +4,7 @@ Last updated: 2026-06-08
 
 **Status:** Agreed direction from design discussion. **Not current sprint** — build **after** Phase 2–3 lesson interactivity (vocab deep panels, reading popups) unless a minimal two-book workaround is needed to unblock live teaching.
 
-**Related:** `PROJECT_CONTEXT.md` (book-first, map timing), `MILESTONE.md` (Phase 2–3), `LESSON_BOARD_PRODUCT.md` (dock/float/minimize for lesson board in reader), `DESIGN_SYSTEM.md` (dark storybook-night tokens).
+**Related:** `PROJECT_CONTEXT.md` (book-first, map timing), `MILESTONE.md` (Phase 2–3), `LESSON_BOARD_PRODUCT.md` (dock/float/minimize for lesson board in reader), `DESIGN_SYSTEM.md` (dark storybook-night tokens), **`CLASSROOM_HOME_PRODUCT.md`** (near-term start/end screen — do not build a second welcome).
 
 **UI names (teacher-facing):** Lesson Hub (landing between teaching blocks); **Workshop** / **Literature** (Wonders track names — map to assigned books in data).
 

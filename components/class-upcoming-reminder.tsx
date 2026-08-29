@@ -3,18 +3,23 @@
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { X } from 'lucide-react'
+import { Play, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { ensureStudentRecordsHydrated } from '@/lib/local-data/student-records-client'
-import { CLASS_STARTING_SOON_MINUTES } from '@/lib/students/class-schedule-lifecycle'
+import {
+  CLASS_STARTING_SOON_MINUTES,
+  formatClassCountdown,
+} from '@/lib/students/class-schedule-lifecycle'
 import { clearMapBookOverlayOpenSession } from '@/lib/students/map-book-overlay-session'
+import { resolveStudentAvatarUrl } from '@/lib/students/student-avatar-url'
 import {
   buildPrepareLessonMapHref,
   getTodaysClassSessionsForTeacher,
   startStudentClassSession,
   type TodaysClassSessionRow,
 } from '@/lib/students/selectors'
+import { cn } from '@/lib/utils'
 
 const WINDOW_MS = CLASS_STARTING_SOON_MINUTES * 60 * 1000
 const STORAGE_PREFIX = 'class-upcoming-reminder-dismissed'
@@ -48,6 +53,108 @@ function reminderCandidates(rows: TodaysClassSessionRow[], nowMs: number): Today
   })
 }
 
+function initialsFromName(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '?'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
+}
+
+function ReminderAvatar({ studentId, name }: { studentId: string; name: string }) {
+  const [imageFailed, setImageFailed] = useState(false)
+  const src = resolveStudentAvatarUrl(studentId)
+
+  return (
+    <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full bg-muted">
+      {!imageFailed ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={src}
+          alt=""
+          className="h-full w-full object-cover"
+          onError={() => setImageFailed(true)}
+        />
+      ) : (
+        <div className="chrome-avatar h-full w-full text-[11px]" aria-hidden>
+          {initialsFromName(name)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ReminderCard({
+  row,
+  nowMs,
+  onEnter,
+  onDismiss,
+}: {
+  row: TodaysClassSessionRow
+  nowMs: number
+  onEnter: (row: TodaysClassSessionRow) => void
+  onDismiss: (sessionId: string) => void
+}) {
+  const t = new Date(row.session.scheduledFor)
+  const timeStr = Number.isFinite(t.getTime())
+    ? t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    : row.session.scheduledFor
+  const countdown = formatClassCountdown(row.session.scheduledFor, nowMs)
+
+  return (
+    <div
+      className={cn(
+        'w-[min(100vw-2rem,21rem)] overflow-hidden rounded-[22px] p-3.5',
+        'bg-[var(--chrome-frost)] ring-1 ring-[var(--chrome-frost-border)]',
+        'shadow-[0_8px_32px_rgba(0,0,0,0.12),0_2px_8px_rgba(0,0,0,0.06)]',
+        'backdrop-blur-[20px] backdrop-saturate-[1.2]',
+      )}
+      role="status"
+    >
+      <div className="flex items-start gap-3">
+        <ReminderAvatar studentId={row.studentId} name={row.studentName} />
+        <div className="min-w-0 flex-1 pt-0.5">
+          <p className="text-[13px] font-medium leading-none text-muted-foreground">Starting soon</p>
+          <p className="mt-1 truncate text-[17px] font-semibold leading-snug tracking-tight text-foreground">
+            {row.studentName}
+          </p>
+          <p className="mt-0.5 text-[13px] tabular-nums text-muted-foreground">
+            {timeStr}
+            {countdown ? ` · ${countdown}` : ''}
+          </p>
+        </div>
+        <button
+          type="button"
+          className="chrome-icon-btn -mr-1 -mt-1 h-7 w-7 shrink-0"
+          aria-label={`Hide reminder for ${row.studentName}`}
+          onClick={() => onDismiss(row.session.id)}
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      <div className="mt-3.5 flex gap-2">
+        <Button
+          asChild
+          variant="secondary"
+          size="sm"
+          className="h-8 flex-1 rounded-full bg-[var(--surface-3)] px-3 text-[13px] font-semibold tracking-tight text-foreground shadow-none hover:bg-[var(--surface-4)]"
+        >
+          <Link href={buildPrepareLessonMapHref(row.studentId, row.session.id)}>Prep</Link>
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          className="h-8 flex-1 rounded-full px-3 text-[13px] font-semibold tracking-tight shadow-none"
+          onClick={() => onEnter(row)}
+        >
+          <Play className="h-3.5 w-3.5" aria-hidden />
+          Enter
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 export function ClassUpcomingReminder() {
   const router = useRouter()
   const pathname = usePathname()
@@ -55,7 +162,7 @@ export function ClassUpcomingReminder() {
   const mapSessionId = pathname?.includes('/map') ? searchParams.get('classSession')?.trim() ?? null : null
 
   const [tick, setTick] = useState(0)
-  const [, setNow] = useState(() => Date.now())
+  const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -105,65 +212,16 @@ export function ClassUpcomingReminder() {
   if (visible.length === 0) return null
 
   return (
-    <div
-      className="pointer-events-auto fixed bottom-4 right-4 z-[100] w-[min(100vw-2rem,18rem)] rounded-lg border border-amber-500/35 bg-amber-50/95 p-2.5 text-sm shadow-md backdrop-blur-sm dark:border-amber-500/30 dark:bg-amber-950/90 dark:text-amber-50"
-      role="status"
-    >
-      <div className="mb-1.5 flex items-start justify-between gap-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-amber-950 dark:text-amber-50">
-          Starting soon
-        </p>
-        <button
-          type="button"
-          className="rounded p-0.5 text-amber-900/70 hover:bg-amber-900/10 dark:text-amber-100/80 dark:hover:bg-amber-100/10"
-          aria-label="Dismiss reminder"
-          onClick={() => {
-            for (const r of visible) dismissOne(r.session.id)
-          }}
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      </div>
-      <ul className="max-h-[32vh] space-y-1.5 overflow-y-auto">
-        {visible.map((row) => {
-          const t = new Date(row.session.scheduledFor)
-          const timeStr = Number.isFinite(t.getTime())
-            ? t.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
-            : row.session.scheduledFor
-          return (
-            <li
-              key={row.session.id}
-              className="rounded-md border border-amber-600/15 bg-white/50 px-2 py-1.5 dark:border-amber-400/15 dark:bg-amber-950/40"
-            >
-              <p className="text-[11px] font-medium text-amber-950 dark:text-amber-100">
-                {timeStr} · {row.studentName}
-              </p>
-              <div className="mt-1.5 flex flex-wrap gap-1.5">
-                <Button
-                  type="button"
-                  size="sm"
-                  className="h-7 bg-emerald-600 px-2.5 text-xs text-white hover:bg-emerald-700"
-                  onClick={() => void openClass(row)}
-                >
-                  Enter
-                </Button>
-                <Button asChild variant="outline" size="sm" className="h-7 px-2.5 text-xs">
-                  <Link href={`/students/${row.studentId}?tab=classes`}>Prep</Link>
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-xs"
-                  onClick={() => dismissOne(row.session.id)}
-                >
-                  Hide
-                </Button>
-              </div>
-            </li>
-          )
-        })}
-      </ul>
+    <div className="pointer-events-auto fixed bottom-4 right-4 z-[100] flex flex-col-reverse gap-2">
+      {visible.map((row) => (
+        <ReminderCard
+          key={row.session.id}
+          row={row}
+          nowMs={now}
+          onEnter={(next) => void openClass(next)}
+          onDismiss={dismissOne}
+        />
+      ))}
     </div>
   )
 }

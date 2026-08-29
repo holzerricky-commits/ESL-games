@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { Plus } from 'lucide-react'
 import { toast } from 'sonner'
@@ -14,8 +13,8 @@ import {
 } from '@/lib/students/selectors'
 import type { StudentProfileView } from '@/lib/students/types'
 import { StudentBookCurriculumCard } from '@/components/students/tabs/student-book-curriculum-card'
+import { StudentCurriculumBookPreview } from '@/components/students/tabs/student-curriculum-book-preview'
 import { StudentBookPickerSheet } from '@/components/students/tabs/student-book-picker-sheet'
-import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 interface OpenPreviewState {
@@ -216,82 +215,117 @@ export function StudentCurriculumTab({
   }
 
   const showAssignedGrid = assignedBooks.length > 0 || (loading && assignedBookIds.length > 0)
+  const bookCount = assignedBooks.length
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-6">
-      <header className="space-y-1">
-        <h2 className="text-xl font-semibold text-foreground">Books for {liveStudent.name}</h2>
-        <p className="text-sm text-muted-foreground">
-          Assign books and set a starting page on each one. Today’s lesson is chosen under Classes —
-          Prepare and Enter follow that plan.
-        </p>
-        {assignedBooks.length > 0 ? (
-          <p className="text-xs text-muted-foreground">
-            Go to{' '}
-            <Link href={`/students/${liveStudent.id}?tab=classes`} className="underline-offset-2 hover:underline">
-              Classes
-            </Link>{' '}
-            to see or change what you’re teaching today.
+    <div className="w-full space-y-8">
+      <header className="flex items-end justify-between gap-4 px-0.5">
+        <div>
+          <h2 className="text-[28px] font-semibold tracking-tight text-foreground">Books</h2>
+          <p className="mt-0.5 text-[13px] text-muted-foreground">
+            {loading && bookCount === 0 && assignedBookIds.length > 0
+              ? 'Loading…'
+              : `${bookCount} ${bookCount === 1 ? 'book' : 'books'}`}
           </p>
-        ) : null}
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowBookPicker(true)}
+          disabled={!!error}
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--surface-3)] text-foreground transition hover:bg-[var(--surface-4)] active:scale-95 disabled:pointer-events-none disabled:opacity-40"
+          aria-label="Add book"
+          title="Add book"
+        >
+          <Plus className="h-5 w-5" strokeWidth={1.75} aria-hidden />
+        </button>
       </header>
 
       {error ? <p className="text-sm text-[var(--brand-red)]">{error}</p> : null}
 
       {!showAssignedGrid ? (
-        <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--card)] p-10 text-center">
-          <p className="text-base font-semibold text-foreground">No books yet</p>
-          <p className="mt-2 text-sm text-muted-foreground">Add a book from your library to get started.</p>
-          <Button type="button" className="mt-5" onClick={() => setShowBookPicker(true)} disabled={!!error}>
-            Add a book
-          </Button>
-        </div>
-      ) : loading && assignedBooks.length === 0 ? (
-        <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-8 text-center">
-          <p className="text-sm text-muted-foreground">Loading assigned books…</p>
-        </div>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {assignedBooks.map((book) => {
-            const previewOpen = openPreview?.bookId === book.id
-            return (
-              <div
-                key={book.id}
-                className={cn(previewOpen && 'sm:col-span-2 lg:col-span-3')}
-              >
-                <StudentBookCurriculumCard
-                  book={book}
-                  library={library!}
-                  student={liveStudent}
-                  pdfReady={pdfReady}
-                  scheduledClasses={liveStudent.scheduledClasses ?? []}
-                  isGlobalLatestStop={book.id === globalLatestBookmarkBookId}
-                  isTodayTeachingBook={book.id === todayTeachingBookId}
-                  autoOpenPreview={singleBookNeedsStart && book.id === assignedBooks[0]?.id}
-                  previewOpen={previewOpen}
-                  previewUnitId={previewOpen ? openPreview?.unitId : undefined}
-                  previewPage={previewOpen ? openPreview?.page : undefined}
-                  onOpenPreview={(unitId, page) => openPreviewFor(book.id, unitId, page)}
-                  onClosePreview={closePreview}
-                  onRemove={() => removeBook(book.id)}
-                  onDataUpdated={() => onDataUpdated?.()}
-                />
-              </div>
-            )
-          })}
-
+        <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
           <button
             type="button"
             onClick={() => setShowBookPicker(true)}
             disabled={!!error}
-            className={cn(
-              'flex min-h-[180px] flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-[var(--border)]',
-              'bg-[var(--surface-2)]/50 p-6 text-muted-foreground transition-colors hover:border-[var(--brand-blue)]/40 hover:bg-[var(--card)] hover:text-foreground',
-            )}
+            className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--surface-3)] text-foreground transition hover:bg-[var(--surface-4)] active:scale-95 disabled:pointer-events-none disabled:opacity-40"
+            aria-label="Add book"
           >
-            <Plus className="h-8 w-8 opacity-60" />
-            <span className="text-sm font-medium">Add a book</span>
+            <Plus className="h-6 w-6" strokeWidth={1.75} aria-hidden />
           </button>
+          <p className="text-[13px] text-muted-foreground">No books yet</p>
+        </div>
+      ) : loading && assignedBooks.length === 0 ? (
+        <p className="py-12 text-center text-[13px] text-muted-foreground">Loading…</p>
+      ) : (
+        <div className="space-y-5">
+          <div className="flex flex-wrap items-start gap-x-5 gap-y-8">
+            {assignedBooks.map((book) => {
+              const previewOpen = openPreview?.bookId === book.id
+              const dimOthers = openPreview != null && !previewOpen
+              return (
+                <div key={book.id} className={cn(dimOthers && 'opacity-45 transition hover:opacity-80')}>
+                  <StudentBookCurriculumCard
+                    book={book}
+                    library={library!}
+                    student={liveStudent}
+                    pdfReady={pdfReady}
+                    scheduledClasses={liveStudent.scheduledClasses ?? []}
+                    isGlobalLatestStop={book.id === globalLatestBookmarkBookId}
+                    isTodayTeachingBook={book.id === todayTeachingBookId}
+                    autoOpenPreview={singleBookNeedsStart && book.id === assignedBooks[0]?.id}
+                    previewOpen={previewOpen}
+                    onOpenPreview={(unitId, page) => openPreviewFor(book.id, unitId, page)}
+                    onClosePreview={closePreview}
+                    onRemove={() => removeBook(book.id)}
+                  />
+                </div>
+              )
+            })}
+
+            <button
+              type="button"
+              onClick={() => setShowBookPicker(true)}
+              disabled={!!error}
+              className={cn(
+                'group flex w-full max-w-[180px] flex-col items-center gap-2.5 text-muted-foreground',
+                'transition hover:text-foreground disabled:pointer-events-none disabled:opacity-40',
+              )}
+              aria-label="Add book"
+            >
+              <span
+                className={cn(
+                  'flex aspect-[3/4] w-full items-center justify-center rounded-lg',
+                  'bg-[var(--surface-3)]/70 transition group-hover:bg-[var(--surface-3)] group-active:scale-[0.98]',
+                )}
+              >
+                <Plus className="h-7 w-7 opacity-50 transition group-hover:opacity-80" strokeWidth={1.75} />
+              </span>
+              <span className="text-[13px] font-medium tracking-tight">Add</span>
+            </button>
+          </div>
+
+          {openPreview && library
+            ? (() => {
+                const previewBook = assignedBooks.find((b) => b.id === openPreview.bookId)
+                if (!previewBook) return null
+                return (
+                  <div className="overflow-hidden rounded-2xl bg-[var(--surface-3)]/70">
+                    <StudentCurriculumBookPreview
+                      key={`${openPreview.bookId}-${openPreview.unitId ?? 'u'}-${openPreview.page ?? 'resume'}`}
+                      book={previewBook}
+                      library={library}
+                      studentId={liveStudent.id}
+                      pdfReady={pdfReady}
+                      initialUnitId={openPreview.unitId}
+                      initialPage={openPreview.page}
+                      onClose={closePreview}
+                      onStartSaved={() => onDataUpdated?.()}
+                    />
+                  </div>
+                )
+              })()
+            : null}
         </div>
       )}
 

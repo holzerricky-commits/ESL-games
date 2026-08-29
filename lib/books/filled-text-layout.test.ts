@@ -5,7 +5,6 @@ import {
   computeFilledWordWrapSegments,
   createFilledTextLayoutProbe,
   createTextLabelLayoutProbe,
-  filledContentWidthPx,
   filledInnerMaxPx,
   filledMaxWidthPx,
   filledPillStackHeightPx,
@@ -70,7 +69,7 @@ describe('filled-text-layout', () => {
  * @vitest-environment jsdom
  */
 describe('filled-text-layout (dom)', () => {
-  it('pill ink widths plus field pad never exceed fieldWidthPx', () => {
+  it('pill widths include field pad and never exceed fieldWidthPx', () => {
     const layout = resolveFilledTextFieldLayout(
       'skupo',
       fontFamily,
@@ -82,12 +81,14 @@ describe('filled-text-layout (dom)', () => {
     document.body.appendChild(probe)
     const cs = getComputedStyle(probe)
     const widths = measureFilledSegmentWidths(layout.segments, cs, layout.fieldWidthPx)
+    const ink = measureInkLineWidthPx(layout.segments[0] ?? 'skupo', cs)
     document.body.removeChild(probe)
 
-    const maxInk = Math.max(...widths, 0)
-    expect(maxInk + FILLED_TEXT_MEASURE_PAD_PX).toBeLessThanOrEqual(layout.fieldWidthPx + 1)
+    const maxW = Math.max(...widths, 0)
+    expect(maxW).toBeLessThanOrEqual(layout.fieldWidthPx + 1)
+    expect(widths[0]).toBeGreaterThanOrEqual(ink + FILLED_TEXT_MEASURE_PAD_PX - 1)
     for (const w of widths) {
-      expect(w).toBeLessThanOrEqual(filledContentWidthPx(layout.fieldWidthPx, cs) + 1)
+      expect(w).toBeLessThanOrEqual(layout.fieldWidthPx + 1)
     }
   })
 
@@ -178,12 +179,16 @@ describe('filled-text-layout (dom)', () => {
       growOnly: true,
       latchedMaxWidth: true,
     })
+    const lastSeg = layout.segments[layout.segments.length - 1] ?? ''
+    const lastInk = measureInkLineWidthPx(lastSeg, cs)
     document.body.removeChild(probe)
     expect(layout.latchedWhileEditing).toBe(true)
     expect(layout.fieldWidthPx).toBe(filledMaxWidthPx(anchorXNorm, overlayWidthPx))
     expect(layout.widths.length).toBe(layout.segments.length)
     expect(Math.max(...layout.widths)).toBeLessThanOrEqual(layout.fieldWidthPx)
-    expect(layout.widths.some((w) => w < layout.fieldWidthPx)).toBe(true)
+    expect(layout.widths.at(-1)).toBe(
+      Math.min(Math.max(lastInk + FILLED_TEXT_MEASURE_PAD_PX, 1), layout.fieldWidthPx),
+    )
   })
 
   it('editing latch auto-detects when ink exceeds inner max', () => {

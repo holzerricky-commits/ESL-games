@@ -22,7 +22,7 @@ describe('annotation-tool-cursor', () => {
     expect(Math.round(thick)).toBe(37)
   })
 
-  it('builds marker and pen cursors at full selected color', () => {
+  it('builds marker cursor at full selected color', () => {
     const marker = decodeURIComponent(
       buildAnnotationToolCursor({ tool: 'marker', widthPx: 22, color: '#ffeb3b' }),
     )
@@ -31,16 +31,32 @@ describe('annotation-tool-cursor', () => {
     expect(marker).not.toContain('fill-opacity')
     expect(marker).toContain('width="7"')
     expect(marker).toContain('height="22"')
+  })
 
+  it('builds a true-size pen disc with a thin white and black edge', () => {
     const pen = decodeURIComponent(
       buildAnnotationToolCursor({ tool: 'pen', widthPx: 8, color: '#2563eb' }),
     )
     expect(pen).toContain('fill="#2563eb"')
     expect(pen).toContain('stroke="#ffffff"')
-    expect(pen).toContain('stroke-width="1"')
+    expect(pen).toContain('stroke="#000000"')
     expect(pen).not.toContain('fill-opacity="0.35"')
+    expect(pen.match(/<circle/g)?.length).toBe(3)
     expect(pen).toContain('r="4"')
-    expect(pen.match(/<circle/g)?.length).toBe(1)
+    expect(pen).toContain('width="14"')
+  })
+
+  it('matches pen cursor fill to stroke size', () => {
+    const thin = decodeURIComponent(
+      buildAnnotationToolCursor({ tool: 'pen', widthPx: 3, color: '#171717' }),
+    )
+    const thick = decodeURIComponent(
+      buildAnnotationToolCursor({ tool: 'pen', widthPx: 40, color: '#171717' }),
+    )
+    expect(thin).toContain('r="1.5"')
+    expect(thin).toContain('width="9"')
+    expect(thick).toContain('r="20"')
+    expect(thick).toContain('width="46"')
   })
 
   it('pen cursor width follows canvas line width and brush outer pass', () => {

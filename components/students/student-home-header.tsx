@@ -10,6 +10,7 @@ import { resolveStudentAvatarUrl } from '@/lib/students/student-avatar-url'
 import { ensureStudentRecordsHydrated } from '@/lib/local-data/student-records-client'
 import type { BookLibraryPayload } from '@/lib/books/types'
 import {
+  canOpenClassPrep,
   classEntryActionLabel,
   formatClassCountdown,
   resolveClassEntryAction,
@@ -64,8 +65,19 @@ export function StudentHomeHeader({ student, bookLibrary = null, sections }: Stu
     () => getStudentDefaultBookUnitForReader(student.id, bookLibrary),
     [student.id, bookLibrary],
   )
+  const launchableAssignedBookCount = useMemo(() => {
+    if (!bookLibrary?.books?.length) return 0
+    const booksById = new Map(bookLibrary.books.map((book) => [book.id, book]))
+    let count = 0
+    for (const bookId of student.assignedBookIds ?? []) {
+      const book = booksById.get(bookId)
+      if (book?.units?.length) count += 1
+    }
+    return count
+  }, [bookLibrary, student.assignedBookIds])
   const nowMs = Date.now()
   const entry = spotlight ? resolveClassEntryAction(spotlight, nowMs) : 'none'
+  const canPrep = spotlight != null && canOpenClassPrep(spotlight)
   const canEnter =
     spotlight != null &&
     spotlight.status !== 'completed' &&
@@ -74,6 +86,12 @@ export function StudentHomeHeader({ student, bookLibrary = null, sections }: Stu
   const canOpenBook = defaultBook != null
   const countdown = spotlight ? formatClassCountdown(spotlight.scheduledFor, nowMs) : null
   const enterLabel = entry === 'continue' || entry === 'enter' ? classEntryActionLabel(entry) : 'Enter'
+
+  function handlePrepClass() {
+    if (!spotlight || !canPrep) return
+    clearMapBookOverlayOpenSession(student.id)
+    router.push(buildPrepareLessonMapHref(student.id, spotlight.id, bookLibrary))
+  }
 
   async function handleEnterClass() {
     if (!spotlight || !canEnter) {
@@ -100,11 +118,20 @@ export function StudentHomeHeader({ student, bookLibrary = null, sections }: Stu
   }
 
   function handleOpenBook() {
-    if (!defaultBook) {
+    if (launchableAssignedBookCount <= 0 || !defaultBook) {
       toast.error('Assign a book on the Books tab first.')
       return
     }
     clearMapBookOverlayOpenSession(student.id)
+    if (launchableAssignedBookCount > 1) {
+      router.push(
+        buildStudentMapReaderHref({
+          studentId: student.id,
+          openBook: false,
+        }),
+      )
+      return
+    }
     router.push(
       buildStudentMapReaderHref({
         studentId: student.id,
@@ -166,25 +193,44 @@ export function StudentHomeHeader({ student, bookLibrary = null, sections }: Stu
           className="ml-auto shrink-0"
           disabled={!canOpenBook}
           onClick={handleOpenBook}
-          title={canOpenBook ? 'Open book at last stop' : 'Assign a book on the Books tab first'}
-          aria-label={canOpenBook ? 'Open book at last stop' : 'Open book unavailable — assign a book first'}
+          title={
+            canOpenBook
+              ? launchableAssignedBookCount > 1
+                ? 'Choose a book to open'
+                : 'Open book at last stop'
+              : 'Assign a book on the Books tab first'
+          }
+          aria-label={
+            canOpenBook
+              ? launchableAssignedBookCount > 1
+                ? 'Choose which book to open'
+                : 'Open book at last stop'
+              : 'Open book unavailable — assign a book first'
+          }
         >
           <BookOpen className="h-4 w-4" aria-hidden />
         </Button>
       </div>
 
-      {canEnter ? (
+      {canPrep || canEnter ? (
         <div className="mt-4 flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            className="gap-1.5 bg-emerald-600 text-white hover:bg-emerald-700"
-            disabled={startBusy}
-            onClick={() => void handleEnterClass()}
-            title={enterLabel}
-          >
-            <Play className="h-4 w-4" aria-hidden />
-            {startBusy ? '…' : enterLabel}
-          </Button>
+          {canPrep ? (
+            <Button type="button" variant="outline" onClick={handlePrepClass}>
+              Prepare
+            </Button>
+          ) : null}
+          {canEnter ? (
+            <Button
+              type="button"
+              className="gap-1.5 bg-emerald-600 text-white hover:bg-emerald-700"
+              disabled={startBusy}
+              onClick={() => void handleEnterClass()}
+              title={enterLabel}
+            >
+              <Play className="h-4 w-4" aria-hidden />
+              {startBusy ? '…' : enterLabel}
+            </Button>
+          ) : null}
         </div>
       ) : null}
 

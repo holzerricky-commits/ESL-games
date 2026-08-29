@@ -72,10 +72,12 @@ import {
   type StickerKind,
 } from '@/lib/books/sticker-tool'
 import type { AnnotationCapabilities, BookPageAnnotationHandle } from '@/components/students/book-page-annotation-layer'
-import { ANNOTATION_TEXT_FONT_NORM_STEPS } from '@/components/students/fullscreen-book-overlay/constants'
+import { ANNOTATION_TEXT_FONT_NORM_STEPS, DEFAULT_TEXT_THICKNESS_STEP } from '@/lib/books/text-font-size-steps'
 import {
   DEFAULT_ANNOTATION_TEXT_FONT_ID,
+  DEFAULT_ANNOTATION_TEXT_FONT_WEIGHT,
   type AnnotationTextFontId,
+  type AnnotationTextFontWeight,
 } from '@/lib/books/annotation-text-fonts'
 import { useCtrlTemporarySelect } from '@/components/students/fullscreen-book-overlay/hooks/useCtrlTemporarySelect'
 import {
@@ -164,8 +166,8 @@ export function useAnnotationController({
   const [penThicknessStep, setPenThicknessStep] = useState<AnnotationStrokeThicknessStep>(3)
   const [markerThicknessStep, setMarkerThicknessStep] = useState<AnnotationStrokeThicknessStep>(3)
   const [shapeThicknessStep, setShapeThicknessStep] = useState<AnnotationStrokeThicknessStep>(3)
-  const [textThicknessStep, setTextThicknessStep] = useState<AnnotationStrokeThicknessStep>(3)
-  const [stickyThicknessStep, setStickyThicknessStep] = useState<AnnotationStrokeThicknessStep>(3)
+  const [textThicknessStep, setTextThicknessStep] = useState<AnnotationStrokeThicknessStep>(DEFAULT_TEXT_THICKNESS_STEP)
+  const [stickyThicknessStep, setStickyThicknessStep] = useState<AnnotationStrokeThicknessStep>(DEFAULT_TEXT_THICKNESS_STEP)
   const [stampThicknessStep, setStampThicknessStep] = useState<AnnotationStrokeThicknessStep>(3)
   const [eraserPixelThicknessStep, setEraserPixelThicknessStep] = useState<AnnotationStrokeThicknessStep>(3)
   const [eraserLineThicknessStep, setEraserLineThicknessStep] = useState<AnnotationStrokeThicknessStep>(3)
@@ -173,6 +175,9 @@ export function useAnnotationController({
   const [bookTextVisualStyle, setBookTextVisualStyle] = useState<TextAnnotationVisualStyle>('filled')
   const [textAlign, setTextAlign] = useState<TextAnnotationAlign>('left')
   const [textFontId, setTextFontId] = useState<AnnotationTextFontId>(DEFAULT_ANNOTATION_TEXT_FONT_ID)
+  const [textFontWeight, setTextFontWeight] = useState<AnnotationTextFontWeight>(
+    DEFAULT_ANNOTATION_TEXT_FONT_WEIGHT,
+  )
   const [textFillColor, setTextFillColor] = useState<string>(DEFAULT_TEXT_FILL_COLOR)
   const [penLineDashStyle, setPenLineDashStyle] = useState<AnnotationLineDashStyle>('solid')
   const [markerLineDashStyle, setMarkerLineDashStyle] = useState<AnnotationLineDashStyle>('solid')
@@ -319,6 +324,7 @@ export function useAnnotationController({
     setStampEffectsEnabled(prefs.stampEffectsEnabled)
     setTextColor(prefs.textColor)
     setTextFontId(prefs.textFontId)
+    setTextFontWeight(prefs.textFontWeight)
     setTextVisualStyleState(prefs.textVisualStyle)
     setBookTextVisualStyle(prefs.bookTextVisualStyle)
     setTextAlign(prefs.textAlign)
@@ -369,6 +375,7 @@ export function useAnnotationController({
         stampEffectsEnabled,
         textColor,
         textFontId,
+        textFontWeight,
         textVisualStyle,
         bookTextVisualStyle,
         textAlign,
@@ -413,6 +420,7 @@ export function useAnnotationController({
     stampEffectsEnabled,
     textColor,
     textFontId,
+    textFontWeight,
     textVisualStyle,
     bookTextVisualStyle,
     textAlign,
@@ -511,8 +519,10 @@ export function useAnnotationController({
 
   const shapeStrokeWidthScale = ANNOTATION_FINE_INK_STROKE_WIDTH_STEPS[shapeThicknessStep]
   const stampScale = ANNOTATION_STROKE_WIDTH_STEPS[stampThicknessStep]
-  const textFontSizeNorm = ANNOTATION_TEXT_FONT_NORM_STEPS[textThicknessStep]
-  const stickyFontSizeNorm = ANNOTATION_TEXT_FONT_NORM_STEPS[stickyThicknessStep]
+  const textFontSizeNorm =
+    ANNOTATION_TEXT_FONT_NORM_STEPS[textThicknessStep] ?? ANNOTATION_TEXT_FONT_NORM_STEPS[DEFAULT_TEXT_THICKNESS_STEP]!
+  const stickyFontSizeNorm =
+    ANNOTATION_TEXT_FONT_NORM_STEPS[stickyThicknessStep] ?? ANNOTATION_TEXT_FONT_NORM_STEPS[DEFAULT_TEXT_THICKNESS_STEP]!
   const strokeLineDashStyleForInk: AnnotationLineDashStyle =
     annotationMode === 'pen' ? penLineDashStyle : 'solid'
 
@@ -944,6 +954,7 @@ export function useAnnotationController({
     bookTextVisualStyle,
     textAlign, setTextAlign,
     textFontId, setTextFontId,
+    textFontWeight, setTextFontWeight,
     textFillColor,
     setTextFillColor,
     penLineDashStyle, setPenLineDashStyle,

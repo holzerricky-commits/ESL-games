@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Expand,
+  LayoutGrid,
   Maximize2,
   Minimize2,
   Minus,
@@ -80,6 +81,10 @@ interface BookBottomChromeProps {
   onResetZoom: () => void
   showBookFrame: boolean
   onToggleBookFrame: () => void
+  /** Spread teach view vs Overview multi-page grid. */
+  readerLayoutMode?: 'spread' | 'pageGrid'
+  onEnterPageGridOverview?: () => void
+  onExitPageGridOverview?: () => void
   pdfReady: boolean
   captureBusy: boolean
   captureFormat: BookCaptureFormat
@@ -105,6 +110,8 @@ interface BookBottomChromeProps {
   /** When true, controls float as separate clusters; when false, one solid bottom bar. */
   floatingChrome?: boolean
   onFloatingChromeChange?: (floating: boolean) => void
+  /** Left edge of the book desk (left strip + any open list). */
+  deskLeft?: string
 }
 
 function ChromeIconButton({
@@ -202,6 +209,9 @@ export function BookBottomChrome({
   onResetZoom,
   showBookFrame,
   onToggleBookFrame,
+  readerLayoutMode = 'spread',
+  onEnterPageGridOverview,
+  onExitPageGridOverview,
   pdfReady,
   captureBusy,
   captureFormat,
@@ -222,10 +232,11 @@ export function BookBottomChrome({
   browserFullscreenSupported = false,
   isBrowserFullscreen = false,
   onToggleBrowserFullscreen,
-  floatingChrome = false,
+  floatingChrome = true,
   onFloatingChromeChange,
+  deskLeft = BOOK_WORKSPACE_LEFT_BAR_WIDTH,
 }: BookBottomChromeProps) {
-  const [uncontrolledFloatingChrome, setUncontrolledFloatingChrome] = useState(false)
+  const [uncontrolledFloatingChrome, setUncontrolledFloatingChrome] = useState(true)
   const floating =
     onFloatingChromeChange != null ? floatingChrome : uncontrolledFloatingChrome
   const setFloating = onFloatingChromeChange ?? setUncontrolledFloatingChrome
@@ -247,27 +258,37 @@ export function BookBottomChrome({
   const boardVisible = isWhiteboardSessionOpen && !isWhiteboardMinimized
   const boardFloating = boardVisible && whiteboardLayoutMode === 'floating'
   const zoomPercent = Math.round(pinchZoomScale * 100)
-  const canZoomOut = bookPinchZoomEnabled && !focusToolActive && pinchZoomScale > BOOK_PINCH_ZOOM_MIN_SCALE + 1e-6
-  const canZoomIn = bookPinchZoomEnabled && !focusToolActive && pinchZoomScale < BOOK_PINCH_ZOOM_MAX_SCALE - 1e-6
+  const overviewActive = readerLayoutMode === 'pageGrid'
+  const canZoomOut =
+    bookPinchZoomEnabled &&
+    !overviewActive &&
+    !focusToolActive &&
+    pinchZoomScale > BOOK_PINCH_ZOOM_MIN_SCALE + 1e-6
+  const canZoomIn =
+    bookPinchZoomEnabled &&
+    !overviewActive &&
+    !focusToolActive &&
+    pinchZoomScale < BOOK_PINCH_ZOOM_MAX_SCALE - 1e-6
 
   const historyCluster = (
     <ChromeCluster label="Undo and redo" floating={floating}>
       <ChromeIconButton
         label={isWhiteboardOpen ? 'Undo whiteboard' : 'Undo annotation'}
-        disabled={!toolbarCaps.canUndo}
+        disabled={overviewActive || !toolbarCaps.canUndo}
         onClick={() => getActiveAnnotationRef().current?.undo()}
       >
         <Undo2 className="h-3.5 w-3.5" />
       </ChromeIconButton>
       <ChromeIconButton
         label={isWhiteboardOpen ? 'Redo whiteboard' : 'Redo annotation'}
-        disabled={!toolbarCaps.canRedo}
+        disabled={overviewActive || !toolbarCaps.canRedo}
         onClick={() => getActiveAnnotationRef().current?.redo()}
       >
         <Redo2 className="h-3.5 w-3.5" />
       </ChromeIconButton>
       <ChromeIconButton
         label={isWhiteboardOpen ? 'Clear whiteboard for this page' : 'Clear all ink on this page'}
+        disabled={overviewActive}
         onClick={() => getActiveAnnotationRef().current?.clear()}
       >
         <Trash2 className="h-3.5 w-3.5" />
@@ -279,7 +300,11 @@ export function BookBottomChrome({
     <ChromeCluster label="Page navigation" floating={floating}>
       <ChromeIconButton
         label="Previous spread"
-        disabled={!visiblePages.length || pageNumber === (visiblePages[0] ?? pageNumber)}
+        disabled={
+          overviewActive ||
+          !visiblePages.length ||
+          pageNumber === (visiblePages[0] ?? pageNumber)
+        }
         onClick={() => goToAdjacentPage(-1)}
       >
         <ChevronLeft className="h-3.5 w-3.5" />
@@ -323,6 +348,7 @@ export function BookBottomChrome({
       <ChromeIconButton
         label="Next spread"
         disabled={
+          overviewActive ||
           !visiblePages.length ||
           pageNumber === (visiblePages[visiblePages.length - 1] ?? pageNumber)
         }
@@ -340,6 +366,7 @@ export function BookBottomChrome({
           label="Focus zoom"
           title="Focus — drag a box to zoom in"
           active={focusToolActive}
+          disabled={overviewActive}
           onClick={onFocusZoomDraw}
         >
           <ScanSearch className="h-3.5 w-3.5" />
@@ -357,7 +384,7 @@ export function BookBottomChrome({
           <button
             type="button"
             className="min-w-[2.75rem] rounded-full px-1 text-center text-[10px] font-medium tabular-nums text-white/85 hover:bg-white/10 disabled:opacity-40"
-            disabled={!canResetZoom}
+            disabled={overviewActive || !canResetZoom}
             title="Reset zoom to fit the spread"
             aria-label={`Zoom ${zoomPercent} percent. Click to fit spread.`}
             onClick={onResetZoom}
@@ -376,12 +403,27 @@ export function BookBottomChrome({
         <ChromeIconButton
           label="Fit spread"
           title="Reset zoom to fit the spread"
-          disabled={!canResetZoom}
+          disabled={overviewActive || !canResetZoom}
           onClick={onResetZoom}
         >
           <ZoomOut className="h-3.5 w-3.5" />
         </ChromeIconButton>
       )}
+      <ChromeIconButton
+        label={overviewActive ? 'Exit overview' : 'Overview'}
+        title={
+          overviewActive
+            ? 'Back to two-page book view'
+            : 'Overview — many pages for retelling'
+        }
+        active={overviewActive}
+        onClick={() => {
+          if (overviewActive) onExitPageGridOverview?.()
+          else onEnterPageGridOverview?.()
+        }}
+      >
+        <LayoutGrid className="h-3.5 w-3.5" />
+      </ChromeIconButton>
       <ChromeIconButton
         label={showBookFrame ? 'Plain pages' : 'Book look'}
         title={
@@ -389,7 +431,8 @@ export function BookBottomChrome({
             ? 'Plain pages — hide covers, stacks, curves, and shadows'
             : 'Book look — covers, stacked edges, and page curves'
         }
-        active={showBookFrame}
+        active={showBookFrame && !overviewActive}
+        disabled={overviewActive}
         onClick={onToggleBookFrame}
       >
         <BookOpen className="h-3.5 w-3.5" />
@@ -421,7 +464,7 @@ export function BookBottomChrome({
         </>
       ) : null}
       <BookCaptureMenu
-        disabled={!pdfReady}
+        disabled={!pdfReady || overviewActive}
         busy={captureBusy}
         captureFormat={captureFormat}
         onCaptureFormatChange={setCaptureFormat}
@@ -477,7 +520,7 @@ export function BookBottomChrome({
   return (
     <div
       className={cn(
-        'pointer-events-none fixed z-[25]',
+        'pointer-events-none fixed z-[56]',
         floating
           ? 'bottom-3 left-[var(--book-workspace-left-inset)] right-3 flex items-end justify-between gap-2 px-1'
           : 'bottom-0 left-[var(--book-workspace-left-inset)] right-0',
@@ -485,7 +528,7 @@ export function BookBottomChrome({
       )}
       style={
         {
-          '--book-workspace-left-inset': BOOK_WORKSPACE_LEFT_BAR_WIDTH,
+          '--book-workspace-left-inset': deskLeft,
           '--book-bottom-chrome-height': BOOK_BOTTOM_CHROME_HEIGHT,
         } as CSSProperties
       }

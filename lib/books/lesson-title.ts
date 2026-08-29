@@ -2,8 +2,9 @@
  * Ensures TOC / AI chunk labels read as "Lesson N …" or "Week N …"
  * with a descriptive suffix when missing.
  * If the source already starts with the same label + number, it is returned unchanged (trimmed).
+ * `plain` keeps the model title as-is (generic / unknown series).
  */
-export type TocChunkLabelStyle = 'lesson' | 'week'
+export type TocChunkLabelStyle = 'lesson' | 'week' | 'plain'
 
 export function formatLessonTitleWithNumber(lessonIndexOneBased: number, titleFromSource: string): string {
   return formatTocChunkTitle(lessonIndexOneBased, titleFromSource, 'lesson')
@@ -15,8 +16,11 @@ export function formatTocChunkTitle(
   style: TocChunkLabelStyle = 'lesson',
 ): string {
   const n = Math.max(1, Math.floor(indexOneBased))
-  const label = style === 'week' ? 'Week' : 'Lesson'
   const t = titleFromSource.trim()
+  if (style === 'plain') {
+    return t || `Section ${n}`
+  }
+  const label = style === 'week' ? 'Week' : 'Lesson'
   if (!t) return `${label} ${n}`
   const alreadyLabeled = new RegExp(`^${label}\\s*\\d+`, 'i')
   if (alreadyLabeled.test(t)) return t

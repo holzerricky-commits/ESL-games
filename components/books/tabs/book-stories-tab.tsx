@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { BookBrowseCornerButton, BookBrowseSpreadPreview } from '@/components/books/book-browse-spread-preview'
 import { LessonFrameFuelPanel } from '@/components/books/lesson-frame-fuel-panel'
 import { LiteratureWorkshopLinkForm } from '@/components/books/literature-workshop-link-panel'
 import { StopCheckHarvestPanel } from '@/components/books/stop-check-harvest-panel'
 import { StoryRangeSpreadPreview } from '@/components/books/story-range-spread-preview'
 import { StoryCheckPackPanel } from '@/components/books/story-check-pack-panel'
-import { StoryTextFuelPanel } from '@/components/books/story-text-fuel-panel'
+import { StoryTextFuelPanel, type StoryTextFuelPanelProps } from '@/components/books/story-text-fuel-panel'
 import type { ScanNotice } from '@/components/books/dismissible-scan-notice'
 import { isLessonFrameReady, type LessonFrameRecord } from '@/lib/books/lesson-frame'
 import { isLiteratureReadingBook } from '@/lib/books/reading-story-workshop-peers'
@@ -53,6 +54,7 @@ import {
   type StoryTextScanMode,
 } from '@/lib/books/story-text-scan-client'
 import type { BookRecord, BookUnitRecord } from '@/lib/books/types'
+import { useSearchablePdfJob } from '@/lib/books/use-searchable-pdf-job'
 
 interface BookStoriesTabProps {
   book: BookRecord
@@ -62,7 +64,6 @@ interface BookStoriesTabProps {
   numPages: number | null
   currentPdfPage: number | null
   pdfReady: boolean
-  onOpenStoryPage: (unitId: string, pdfPage: number) => void
   onPdfNumPages?: (numPages: number) => void
   /** Deep link from Prepare glance — scroll/highlight this story row. */
   focusStoryId?: string | null
@@ -76,6 +77,41 @@ type StoryRowState = {
 
 /** `'all'` or a concrete unit id */
 type UnitFilterId = 'all' | string
+
+function StoryTextFuelWithSelectable({
+  story,
+  totalPdfPages,
+  scanDisabled,
+  ...fuelProps
+}: {
+  story: ReadingStoryMap
+  totalPdfPages?: number | null
+} & StoryTextFuelPanelProps) {
+  const job = useSearchablePdfJob(story.id)
+  return (
+    <StoryTextFuelPanel
+      {...fuelProps}
+      scanDisabled={scanDisabled}
+      onMakeSelectable={() => {
+        if (scanDisabled) {
+          toast.error('Set pages for this story first.')
+          return
+        }
+        job.startSelectable({
+          bookId: story.bookId,
+          unitId: story.unitId,
+          lessonId: story.lessonId,
+          partId: story.partId,
+          title: story.title,
+          totalPdfPages,
+        })
+      }}
+      onStopMakeSelectable={job.stopSelectable}
+      selectableProgress={job.selectableProgress}
+      selectableRunning={job.selectableRunning}
+    />
+  )
+}
 
 function kindLabel(kind: ReadingStoryMap['kind']): string | null {
   if (kind === 'main_story') return 'Main story'
@@ -101,7 +137,6 @@ export function BookStoriesTab({
   numPages,
   currentPdfPage,
   pdfReady,
-  onOpenStoryPage,
   onPdfNumPages,
   focusStoryId = null,
 }: BookStoriesTabProps) {
@@ -132,12 +167,45 @@ export function BookStoriesTab({
   const [unitFilter, setUnitFilter] = useState<UnitFilterId>('all')
   const [filterInitialized, setFilterInitialized] = useState(false)
   const [focusedStoryFlash, setFocusedStoryFlash] = useState(false)
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [browseUnitId, setBrowseUnitId] = useState<string | null>(null)
+  const [browsePage, setBrowsePage] = useState(1)
+  const [browseNumPages, setBrowseNumPages] = useState<number | null>(null)
 
   const unitById = useMemo(() => {
     const map = new Map<string, BookUnitRecord>()
     for (const u of book.units) map.set(u.id, u)
     return map
   }, [book.units])
+
+  const browsableUnits = useMemo(
+    () => book.units.filter((unit) => Boolean(unit.filePath?.trim())),
+    [book.units],
+  )
+  const browseUnit = browsableUnits.find((unit) => unit.id === browseUnitId) ?? null
+
+  useEffect(() => {
+    setPreviewOpen(false)
+    setBrowseUnitId(null)
+    setBrowsePage(1)
+    setBrowseNumPages(null)
+  }, [book.id])
+
+  const openStoryInBook = useCallback(
+    (unitId: string, pdfPage: number) => {
+      const next = unitById.get(unitId)
+      if (!next?.filePath?.trim()) return
+      setBrowseNumPages((prev) => {
+        if (!browseUnitId) return null
+        const prevUnit = unitById.get(browseUnitId)
+        return prevUnit?.filePath === next.filePath ? prev : null
+      })
+      setBrowseUnitId(unitId)
+      setBrowsePage(Math.max(1, Math.floor(pdfPage)))
+      setPreviewOpen(true)
+    },
+    [browseUnitId, unitById],
+  )
 
   const syncRowFields = useCallback(
     (nextStories: ReadingStoryMap[], byId: Record<string, ReadingStoryRangeOverride>) => {
@@ -790,7 +858,7 @@ export function BookStoriesTab({
                       <div className="space-y-4">
                         {/* Header: preview + pages setup (outside fuel box) */}
                         <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-                          <div className="relative w-[188px] shrink-0">
+                          <div className="group relative w-[188px] shrink-0">
                             {fileUrl && unit && hasDraftRange && livePdf ? (
                               <StoryRangeSpreadPreview
                                 fileUrl={fileUrl}
@@ -823,13 +891,27 @@ export function BookStoriesTab({
                                 No preview
                               </div>
                             )}
+                            {unit?.filePath?.trim() &&
+                            ((livePdf && livePdf.startPdfPage >= 1) ||
+                              (range && range.source !== 'none')) ? (
+                              <BookBrowseCornerButton
+                                label="Open book at this story"
+                                className="right-1.5 top-1.5"
+                                onClick={() =>
+                                  openStoryInBook(
+                                    story.unitId,
+                                    livePdf?.startPdfPage ?? range!.startPdfPage,
+                                  )
+                                }
+                              />
+                            ) : null}
                             {literatureMode ? (
                               <Popover modal={false}>
                                 <PopoverTrigger asChild>
                                   <button
                                     type="button"
                                     className={cn(
-                                      'absolute -right-1 -top-1 z-10 flex h-8 w-8 items-center justify-center rounded-full border-2 border-background shadow-sm transition-colors',
+                                      'absolute -left-1 -top-1 z-10 flex h-8 w-8 items-center justify-center rounded-full border-2 border-background shadow-sm transition-colors',
                                       workshopLink
                                         ? 'bg-[var(--brand-blue)] text-white hover:brightness-110'
                                         : 'bg-muted text-muted-foreground hover:bg-muted/80',
@@ -867,30 +949,18 @@ export function BookStoriesTab({
                           </div>
 
                           <div className="min-w-0 flex-1 space-y-3">
-                            <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
-                              <div className="min-w-0 space-y-0.5">
-                                <p className="font-medium text-foreground">{story.title}</p>
-                                <p className="text-xs text-muted-foreground">
-                                  {unit?.title ?? story.unitId}
-                                  {story.lessonTitle ? ` · ${story.lessonTitle}` : null}
-                                  {kind ? ` · ${kind}` : null}
-                                  {inside ? ' · on current page' : null}
+                            <div className="min-w-0 space-y-0.5">
+                              <p className="font-medium text-foreground">{story.title}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {unit?.title ?? story.unitId}
+                                {story.lessonTitle ? ` · ${story.lessonTitle}` : null}
+                                {kind ? ` · ${kind}` : null}
+                                {inside ? ' · on current page' : null}
+                              </p>
+                              {literatureMode && workshopLink?.workshopLessonTitle ? (
+                                <p className="text-[11px] text-muted-foreground">
+                                  Workshop · {workshopLink.workshopLessonTitle}
                                 </p>
-                                {literatureMode && workshopLink?.workshopLessonTitle ? (
-                                  <p className="text-[11px] text-muted-foreground">
-                                    Workshop · {workshopLink.workshopLessonTitle}
-                                  </p>
-                                ) : null}
-                              </div>
-                              {range && range.source !== 'none' ? (
-                                <button
-                                  type="button"
-                                  className="shrink-0 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-                                  disabled={!unit}
-                                  onClick={() => onOpenStoryPage(story.unitId, range.startPdfPage)}
-                                >
-                                  Open at start
-                                </button>
                               ) : null}
                             </div>
 
@@ -1020,7 +1090,9 @@ export function BookStoriesTab({
                               Text
                             </div>
                             <div className="min-w-0 flex-1">
-                              <StoryTextFuelPanel
+                              <StoryTextFuelWithSelectable
+                                story={story}
+                                totalPdfPages={numPages}
                                 storyTitle={story.title}
                                 pageRangeLabel={pageRangeLabel}
                                 textDraft={textDraftById[story.id] ?? ''}
@@ -1215,6 +1287,27 @@ export function BookStoriesTab({
           </Button>
         </div>
       </div>
+
+      {browseUnit ? (
+        <BookBrowseSpreadPreview
+          open={previewOpen}
+          onClose={() => setPreviewOpen(false)}
+          fileUrl={makeUnitFileUrl(browseUnit.filePath)}
+          pdfReady={pdfReady}
+          book={book}
+          unit={browseUnit}
+          units={browsableUnits}
+          onSelectUnit={(unitId) => {
+            setBrowseUnitId(unitId)
+            setBrowsePage(1)
+            setBrowseNumPages(null)
+          }}
+          pageNumber={browsePage}
+          totalPdfPages={browseNumPages}
+          onDocumentLoad={setBrowseNumPages}
+          onPageChange={setBrowsePage}
+        />
+      ) : null}
     </div>
   )
 }

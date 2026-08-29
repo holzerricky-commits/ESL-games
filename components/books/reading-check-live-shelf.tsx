@@ -1,19 +1,16 @@
 'use client'
 
-import { createPortal } from 'react-dom'
-import { useEffect, useLayoutEffect, useMemo, useState, type CSSProperties, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, CircleHelp, ListChecks, X } from 'lucide-react'
 import { ReadingCheckGamePopup } from '@/components/books/reading-check-game-popup'
-import { ReadingCheckQuestionPin } from '@/components/books/reading-check-question-pin'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import {
+  listReadingCheckLivePinsOnSpread,
   primaryQuestionOfStop,
-  readingCheckHotspotOnSpread,
-  stopHasReadingCheckHotspot,
+  readingCheckStopLinkLabel,
   type ReadingCheckPack,
-  type ReadingCheckStop,
 } from '@/lib/books/reading-check-pack'
 import {
   latestReadingCheckLiveMarkForStop,
@@ -37,19 +34,9 @@ interface ReadingCheckLiveShelfProps {
   totalPdfPages?: number | null
   leftPdfPage?: number | null
   rightPdfPage?: number | null
-  leftPageCaptureRef?: RefObject<HTMLDivElement | null>
-  rightPageCaptureRef?: RefObject<HTMLDivElement | null>
-}
-
-type PageRects = {
-  left: DOMRect | null
-  right: DOMRect | null
-}
-
-function stopLinkLabel(stop: ReadingCheckStop, index: number): string {
-  const label = stop.label.trim()
-  if (label) return label
-  return `Check ${index + 1}`
+  activeStopId?: string | null
+  onActiveStopIdChange?: (stopId: string | null) => void
+  onLiveMarked?: (stopId: string, result: ReadingCheckLiveMarkResult) => void
 }
 
 function markTone(result: ReadingCheckLiveMarkResult | null): string {
@@ -67,14 +54,9 @@ function parseDisplayPage(label: string | null | undefined): number | null {
   return Number.isFinite(n) && n >= 1 ? n : null
 }
 
-/** Live ? pins: size matches ReadingCheckQuestionPin (h-11 w-11). */
-const LIVE_PIN_SIZE_PX = 44
-const LIVE_PIN_PAGE_PAD_PX = 16
-const LIVE_PIN_GAP_PX = 8
-
 /**
- * In-class reading checks: side list + page-corner pins + answer-review popup.
- * Never changes the book page. Live pins sit bottom-right so they don’t cover text.
+ * In-class reading checks: side list + answer-review popup.
+ * On-page pins live on the book spread (same layer as listening / board icons).
  */
 export function ReadingCheckLiveShelf({
   pack,
@@ -90,26 +72,28 @@ export function ReadingCheckLiveShelf({
   totalPdfPages = null,
   leftPdfPage = null,
   rightPdfPage = null,
-  leftPageCaptureRef,
-  rightPageCaptureRef,
+  activeStopId: activeStopIdProp,
+  onActiveStopIdChange,
+  onLiveMarked,
 }: ReadingCheckLiveShelfProps) {
-  const [mounted, setMounted] = useState(false)
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
-  const [activeStopId, setActiveStopId] = useState<string | null>(null)
+  const [uncontrolledActiveStopId, setUncontrolledActiveStopId] = useState<string | null>(null)
   const [markByStopId, setMarkByStopId] = useState<Record<string, ReadingCheckLiveMarkResult>>({})
-  const [pageRects, setPageRects] = useState<PageRects>({ left: null, right: null })
 
-  const isControlled = openProp !== undefined
-  const open = isControlled ? openProp : uncontrolledOpen
+  const isOpenControlled = openProp !== undefined
+  const open = isOpenControlled ? openProp : uncontrolledOpen
+  const isActiveControlled = activeStopIdProp !== undefined
+  const activeStopId = isActiveControlled ? activeStopIdProp : uncontrolledActiveStopId
 
   function setOpen(next: boolean) {
-    if (!isControlled) setUncontrolledOpen(next)
+    if (!isOpenControlled) setUncontrolledOpen(next)
     onOpenChange?.(next)
   }
 
-  useEffect(() => {
-    setMounted(true)
-  }, [])
+  function setActiveStopId(next: string | null) {
+    if (!isActiveControlled) setUncontrolledActiveStopId(next)
+    onActiveStopIdChange?.(next)
+  }
 
   const usableStops = useMemo(
     () =>
@@ -130,24 +114,20 @@ export function ReadingCheckLiveShelf({
     return parseDisplayPage(mapPdfPageToDisplayLabel(rightPdfPage, selectedBook, selectedUnit, totalPdfPages))
   }, [rightPdfPage, selectedBook, selectedUnit, totalPdfPages])
 
-  const hotspotStops = useMemo(
-    () =>
-      usableStops.filter((stop) => {
-        if (!stopHasReadingCheckHotspot(stop) || !stop.hotspot) return false
-        return (
-          readingCheckHotspotOnSpread(stop, {
-            leftPdfPage,
-            rightPdfPage,
-            leftDisplayPage,
-            rightDisplayPage,
-          }) != null
-        )
-      }),
-    [usableStops, leftDisplayPage, rightDisplayPage, leftPdfPage, rightPdfPage],
-  )
+  const hotspotStopIds = useMemo(() => {
+    const pins = listReadingCheckLivePinsOnSpread(usableStops, {
+      leftPdfPage,
+      rightPdfPage,
+      leftDisplayPage,
+      rightDisplayPage,
+    })
+    return new Set(pins.map((pin) => pin.stop.id))
+  }, [usableStops, leftDisplayPage, rightDisplayPage, leftPdfPage, rightPdfPage])
 
+  const wasSheetOpenRef = useRef(open)
   useEffect(() => {
-    if (!open) setActiveStopId(null)
+    if (wasSheetOpenRef.current && !open) setActiveStopId(null)
+    wasSheetOpenRef.current = open
   }, [open])
 
   useEffect(() => {
@@ -159,29 +139,6 @@ export function ReadingCheckLiveShelf({
     setMarkByStopId(next)
   }, [pack.storyId, usableStops])
 
-  useLayoutEffect(() => {
-    const updateRects = () => {
-      setPageRects({
-        left: leftPageCaptureRef?.current?.getBoundingClientRect() ?? null,
-        right: rightPageCaptureRef?.current?.getBoundingClientRect() ?? null,
-      })
-    }
-
-    updateRects()
-    const leftEl = leftPageCaptureRef?.current ?? null
-    const rightEl = rightPageCaptureRef?.current ?? null
-    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateRects) : null
-    if (leftEl) observer?.observe(leftEl)
-    if (rightEl) observer?.observe(rightEl)
-    window.addEventListener('resize', updateRects)
-    window.addEventListener('scroll', updateRects, true)
-    return () => {
-      observer?.disconnect()
-      window.removeEventListener('resize', updateRects)
-      window.removeEventListener('scroll', updateRects, true)
-    }
-  }, [leftPageCaptureRef, rightPageCaptureRef, leftPdfPage, rightPdfPage])
-
   const activeStop = usableStops.find((s) => s.id === activeStopId) ?? null
   const activeQuestion = activeStop ? primaryQuestionOfStop(activeStop) : null
   const activeIndex = activeStop ? usableStops.findIndex((s) => s.id === activeStop.id) : -1
@@ -189,53 +146,6 @@ export function ReadingCheckLiveShelf({
   function openStop(stopId: string) {
     setActiveStopId(stopId)
   }
-
-  const livePinLayouts = useMemo(() => {
-    const indexOnPage: Record<'left' | 'right', number> = { left: 0, right: 0 }
-    const layouts: Array<{
-      stop: ReadingCheckStop
-      index: number
-      style: CSSProperties
-    }> = []
-
-    hotspotStops.forEach((stop, index) => {
-      const side = readingCheckHotspotOnSpread(stop, {
-        leftPdfPage,
-        rightPdfPage,
-        leftDisplayPage,
-        rightDisplayPage,
-      })
-      if (side !== 'left' && side !== 'right') return
-      const rect = side === 'left' ? pageRects.left : pageRects.right
-      if (!rect) return
-      const stackIndex = indexOnPage[side]
-      indexOnPage[side] += 1
-      layouts.push({
-        stop,
-        index,
-        style: {
-          position: 'fixed',
-          left:
-            rect.right -
-            LIVE_PIN_PAGE_PAD_PX -
-            LIVE_PIN_SIZE_PX -
-            stackIndex * (LIVE_PIN_SIZE_PX + LIVE_PIN_GAP_PX),
-          top: rect.bottom - LIVE_PIN_PAGE_PAD_PX - LIVE_PIN_SIZE_PX,
-          zIndex: 76,
-        },
-      })
-    })
-
-    return layouts
-  }, [
-    hotspotStops,
-    leftDisplayPage,
-    leftPdfPage,
-    pageRects.left,
-    pageRects.right,
-    rightDisplayPage,
-    rightPdfPage,
-  ])
 
   if (usableStops.length === 0) return null
 
@@ -268,7 +178,7 @@ export function ReadingCheckLiveShelf({
               <ul className="space-y-1">
                 {usableStops.map((stop, index) => {
                   const marked = markByStopId[stop.id] ?? null
-                  const hasHotspot = hotspotStops.some((item) => item.id === stop.id)
+                  const hasHotspot = hotspotStopIds.has(stop.id)
                   return (
                     <li key={stop.id}>
                       <button
@@ -283,7 +193,9 @@ export function ReadingCheckLiveShelf({
                           {index + 1}
                         </span>
                         <span className="min-w-0 flex-1">
-                          <span className="block font-medium leading-snug">{stopLinkLabel(stop, index)}</span>
+                          <span className="block font-medium leading-snug">
+                            {readingCheckStopLinkLabel(stop, index)}
+                          </span>
                           <span className="mt-1 block text-[11px] text-muted-foreground">
                             {stop.displayPage != null ? `p${stop.displayPage}` : 'story beat'}
                             {hasHotspot ? ' · on page' : ''}
@@ -305,34 +217,6 @@ export function ReadingCheckLiveShelf({
           </SheetContent>
         </Sheet>
 
-        {mounted && livePinLayouts.length > 0
-          ? createPortal(
-              <>
-                {livePinLayouts.map(({ stop, index, style }) => {
-                  const marked = markByStopId[stop.id] ?? null
-                  return (
-                    <ReadingCheckQuestionPin
-                      key={stop.id}
-                      tone={
-                        marked === 'correct'
-                          ? 'correct'
-                          : marked === 'incorrect'
-                            ? 'incorrect'
-                            : marked === 'skip'
-                              ? 'skip'
-                              : 'default'
-                      }
-                      style={style}
-                      onClick={() => openStop(stop.id)}
-                      label={stopLinkLabel(stop, index)}
-                    />
-                  )
-                })}
-              </>,
-              document.body,
-            )
-          : null}
-
         {activeStop != null && activeQuestion != null ? (
           <ReadingCheckGamePopup
             open
@@ -341,7 +225,7 @@ export function ReadingCheckLiveShelf({
             }}
             stop={activeStop}
             question={activeQuestion}
-            title={activeIndex >= 0 ? stopLinkLabel(activeStop, activeIndex) : 'Check'}
+            title={activeIndex >= 0 ? readingCheckStopLinkLabel(activeStop, activeIndex) : 'Check'}
             mode="live"
             storyId={pack.storyId}
             bookId={pack.bookId}
@@ -349,6 +233,7 @@ export function ReadingCheckLiveShelf({
             classSessionId={classSessionId}
             onLiveMarked={(result) => {
               setMarkByStopId((prev) => ({ ...prev, [activeStop.id]: result }))
+              onLiveMarked?.(activeStop.id, result)
             }}
           />
         ) : null}

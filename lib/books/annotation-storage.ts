@@ -3,6 +3,7 @@ import {
   migrateTextFillColor,
   stampColorForVariant,
 } from '@/lib/books/annotation-palettes'
+import { restoreTranslationChipFill } from '@/lib/translate/place-translation-chip'
 import type {
   AnnotationCommand,
   AnnotationLineDashStyle,
@@ -21,8 +22,9 @@ import type {
   StrokeTool,
   TextAnnotationCommand,
 } from '@/lib/books/annotation-command-types'
-import { isAnnotationTextFontId } from '@/lib/books/annotation-text-fonts'
+import { isAnnotationTextFontId, isAnnotationTextFontWeight } from '@/lib/books/annotation-text-fonts'
 import { STAMP_DRAW_RADIUS_FACTOR } from '@/lib/books/stamp-symbol-bounds'
+import { TEXT_FONT_SIZE_NORM_MIN } from '@/lib/books/text-font-size-min'
 import { TEXT_TOOL_PREVIEW_REFERENCE_HEIGHT_PX } from '@/lib/books/text-tool-preview-style'
 import { isPenInkStyle, PEN_INK_TILE_PX, type PenInkStyle } from '@/lib/books/pen-ink'
 import { normalizeDeg } from '@/lib/books/annotation-rotation'
@@ -55,6 +57,11 @@ export type BookAnnotationInteractionMode =
 
 /** Seven thickness steps (multiplier on marker / eraser / stamp base widths). */
 export const ANNOTATION_STROKE_WIDTH_STEPS = [0.5, 0.66, 0.8, 1, 1.2, 1.42, 1.68] as const
+
+export { TEXT_FONT_SIZE_NORM_MIN }
+
+/** Ink / stamp sliders stay on seven steps (0–6). Text / sticky add an 8th (0–7). */
+export const ANNOTATION_INK_THICKNESS_STEP_MAX = 6 as const
 
 /** Max persisted data URL length for pasted board images. */
 export const ANNOTATION_IMAGE_SRC_MAX_CHARS = 2_000_000
@@ -123,7 +130,7 @@ export const ANNOTATION_STAMP_THICKNESS_PREVIEW_DOTS = ANNOTATION_STROKE_WIDTH_S
   (m) => TEXT_TOOL_PREVIEW_REFERENCE_HEIGHT_PX * STAMP_DRAW_RADIUS_FACTOR * 2 * m,
 ) as readonly number[]
 
-export type AnnotationStrokeThicknessStep = 0 | 1 | 2 | 3 | 4 | 5 | 6
+export type AnnotationStrokeThicknessStep = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7
 
 /** @deprecated use ANNOTATION_STROKE_WIDTH_STEPS */
 export const ANNOTATION_STROKE_WIDTH_SCALES = ANNOTATION_STROKE_WIDTH_STEPS
@@ -500,7 +507,7 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
         continue
       let fontSizeNorm: number = 0.028
       if (typeof rec.fontSizeNorm === 'number' && Number.isFinite(rec.fontSizeNorm)) {
-        fontSizeNorm = Math.max(0.008, Math.min(0.12, rec.fontSizeNorm))
+        fontSizeNorm = Math.max(TEXT_FONT_SIZE_NORM_MIN, Math.min(0.12, rec.fontSizeNorm))
       }
       let maxWidthNorm: number | undefined
       if (typeof rec.maxWidthNorm === 'number' && Number.isFinite(rec.maxWidthNorm)) {
@@ -524,6 +531,15 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
       }
       let fontId: TextAnnotationCommand['fontId']
       if (isAnnotationTextFontId(rec.fontId)) fontId = rec.fontId
+      let fontWeight: TextAnnotationCommand['fontWeight']
+      if (isAnnotationTextFontWeight(rec.fontWeight)) fontWeight = rec.fontWeight
+      const restoredChipFill = restoreTranslationChipFill({
+        visualStyle,
+        fontId,
+        color: col,
+        fillColor,
+      })
+      if (restoredChipFill) fillColor = restoredChipFill
       const glosses = sanitizeTextGlosses(rec.glosses)
       out.push({
         kind: 'text',
@@ -539,6 +555,7 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
         ...(yAnchor != null ? { yAnchor } : {}),
         ...(textAlign != null ? { textAlign } : {}),
         ...(fontId != null ? { fontId } : {}),
+        ...(fontWeight != null ? { fontWeight } : {}),
         ...(glosses != null ? { glosses } : {}),
       } satisfies TextAnnotationCommand)
       continue
@@ -562,7 +579,7 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
       if (!ok) continue
       let fontSizeNorm: number = 0.024
       if (typeof rec.fontSizeNorm === 'number' && Number.isFinite(rec.fontSizeNorm)) {
-        fontSizeNorm = Math.max(0.008, Math.min(0.1, rec.fontSizeNorm))
+        fontSizeNorm = Math.max(TEXT_FONT_SIZE_NORM_MIN, Math.min(0.1, rec.fontSizeNorm))
       }
       let fillColor: string | undefined
       if (typeof rec.fillColor === 'string' && isHexColor(rec.fillColor)) {
@@ -570,6 +587,8 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
       }
       let stickyFontId: StickyAnnotationCommand['fontId']
       if (isAnnotationTextFontId(rec.fontId)) stickyFontId = rec.fontId
+      let stickyFontWeight: StickyAnnotationCommand['fontWeight']
+      if (isAnnotationTextFontWeight(rec.fontWeight)) stickyFontWeight = rec.fontWeight
       const stickyGlosses = sanitizeTextGlosses(rec.glosses)
       out.push({
         kind: 'sticky',
@@ -582,6 +601,7 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
         fontSizeNorm,
         ...(fillColor != null ? { fillColor } : {}),
         ...(stickyFontId != null ? { fontId: stickyFontId } : {}),
+        ...(stickyFontWeight != null ? { fontWeight: stickyFontWeight } : {}),
         ...(parseWritableStickerVariant(rec.writableVariant)
           ? { writableVariant: parseWritableStickerVariant(rec.writableVariant)! }
           : {}),

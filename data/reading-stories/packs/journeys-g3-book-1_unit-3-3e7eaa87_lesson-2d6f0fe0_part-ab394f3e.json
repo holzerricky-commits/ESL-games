@@ -1,0 +1,116 @@
+{
+  "storyId": "journeys-g3-book-1::unit-3-3e7eaa87::lesson-2d6f0fe0::part-ab394f3e",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-3-3e7eaa87",
+  "status": "approved",
+  "stops": [
+    {
+      "id": "stop-6e5aed4d",
+      "label": "Michael's energy",
+      "displayPage": 367,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 375,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-77e1e455",
+          "kind": "true_false",
+          "prompt": "Michael had the same kind of energy as his brothers and sisters.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "But Michael? He just had a different kind of energy, and curiosity, too.",
+          "evidenceHighlight": "He just had a different kind of energy"
+        }
+      ]
+    },
+    {
+      "id": "stop-c2ee96ad",
+      "label": "Author's Craft: Alliteration",
+      "displayPage": 367,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 375,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-ff5eb6fa",
+          "kind": "true_false",
+          "prompt": "The author used many words that start with the same sound to describe the Jordan kids' energy.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": true,
+          "evidenceSnippet": "But there just weren't enough rules or chores to match the boundless bustle of those Jordan kids. They bounced off the walls of their bungalow home. And young Michael was the bounciest.",
+          "evidenceHighlight": "boundless bustle"
+        }
+      ]
+    },
+    {
+      "id": "stop-e7f5b430",
+      "label": "Michael's nickname",
+      "displayPage": 369,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 377,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-1daed38f",
+          "kind": "mcq",
+          "prompt": "What did Michael's family call him when he was growing up?",
+          "choices": [
+            "A. Jumper",
+            "B. Rabbit",
+            "C. Speedy",
+            "D. Champ"
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "In fact, growing up, his family called Michael \"Rabbit.\"",
+          "evidenceHighlight": "called Michael \"Rabbit.\""
+        }
+      ]
+    },
+    {
+      "id": "stop-324f33d8",
+      "label": "Trying to grow taller",
+      "displayPage": 372,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 380,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-2c9c05ef",
+          "kind": "mcq",
+          "prompt": "Why was it no use for Michael to hang from a swing set, hoping to stretch himself taller?",
+          "choices": [
+            "A. He got too tired.",
+            "B. He was already tall enough.",
+            "C. It did not make him grow taller.",
+            "D. His father told him to stop."
+          ],
+          "correctIndex": 2,
+          "correctTrue": null,
+          "evidenceSnippet": "Michael wasn't growing much, either! So he started hanging by his arms from a swing set for hours each day, hoping to stretch himself taller. But it was no use. For all too many years, Michael was still only \"Rabbit.\"",
+          "evidenceHighlight": "But it was no use."
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-08-28T14:14:18.116Z",
+  "approvedAt": "2026-08-28T14:14:18.115Z"
+}

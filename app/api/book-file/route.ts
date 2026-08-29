@@ -3,6 +3,8 @@ import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { NextRequest, NextResponse } from 'next/server'
 import { getBookLibraryRoot } from '@/lib/books/server'
+import { fileEtag, ifNoneMatchHits, IMAGE_REVALIDATE_CACHE_CONTROL } from '@/lib/books/file-http-cache'
+import { isSearchableSidecarAbsPath, searchablePdfAbsolutePath } from '@/lib/books/searchable-pdf-path'
 
 export const runtime = 'nodejs'
 
@@ -34,11 +36,17 @@ function getContentType(absPath: string): string {
   if (lower.endsWith('.png')) return 'image/png'
   if (lower.endsWith('.webp')) return 'image/webp'
   if (lower.endsWith('.gif')) return 'image/gif'
+  if (lower.endsWith('.mp3')) return 'audio/mpeg'
+  if (lower.endsWith('.m4a')) return 'audio/mp4'
+  if (lower.endsWith('.wav')) return 'audio/wav'
+  if (lower.endsWith('.ogg')) return 'audio/ogg'
+  if (lower.endsWith('.aac')) return 'audio/aac'
   return 'application/octet-stream'
 }
 
 function cacheControlForContentType(contentType: string): string {
-  if (contentType.startsWith('image/')) return 'public, max-age=604800'
+  if (contentType.startsWith('image/')) return IMAGE_REVALIDATE_CACHE_CONTROL
+  if (contentType.startsWith('audio/')) return 'public, max-age=604800'
   return 'public, max-age=300'
 }
 
@@ -108,9 +116,20 @@ export async function GET(req: NextRequest) {
 
   const libraryRoot = getBookLibraryRoot()
   const normalizedRelative = rawPath.replaceAll('\\', '/').replace(/^\/+/, '')
-  const absTarget = path.resolve(/* turbopackIgnore: true */ process.cwd(), normalizedRelative)
-  if (!absTarget.startsWith(libraryRoot)) {
+  const absOriginal = path.resolve(/* turbopackIgnore: true */ process.cwd(), normalizedRelative)
+  if (!absOriginal.startsWith(libraryRoot)) {
     return NextResponse.json({ error: 'Path must be inside book-library.' }, { status: 400 })
+  }
+
+  let absTarget = absOriginal
+  if (absOriginal.toLowerCase().endsWith('.pdf') && !isSearchableSidecarAbsPath(absOriginal)) {
+    const sidecar = searchablePdfAbsolutePath(absOriginal)
+    try {
+      const sidecarStat = await stat(sidecar)
+      if (sidecarStat.isFile()) absTarget = sidecar
+    } catch {
+      // No searchable copy yet — serve the original scan.
+    }
   }
 
   let fileStat
@@ -127,6 +146,19 @@ export async function GET(req: NextRequest) {
   const totalSize = fileStat.size
   const rangeHeader = req.headers.get('range')
   const contentType = getContentType(absTarget)
+  const cacheControl = cacheControlForContentType(contentType)
+  const etag = fileEtag(fileStat)
+
+  if (!rangeHeader && ifNoneMatchHits(req.headers.get('if-none-match'), etag)) {
+    return new NextResponse(null, {
+      status: 304,
+      headers: {
+        'Accept-Ranges': 'bytes',
+        'Cache-Control': cacheControl,
+        ETag: etag,
+      },
+    })
+  }
 
   if (rangeHeader) {
     const parsed = parseRangeHeader(rangeHeader, totalSize)
@@ -145,10 +177,11 @@ export async function GET(req: NextRequest) {
       status: 206,
       headers: {
         'Accept-Ranges': 'bytes',
-        'Cache-Control': cacheControlForContentType(contentType),
+        'Cache-Control': cacheControl,
         'Content-Length': String(chunkSize),
         'Content-Range': `bytes ${start}-${end}/${totalSize}`,
         'Content-Type': contentType,
+        ETag: etag,
       },
     })
   }
@@ -158,9 +191,10 @@ export async function GET(req: NextRequest) {
     status: 200,
     headers: {
       'Accept-Ranges': 'bytes',
-      'Cache-Control': cacheControlForContentType(contentType),
+      'Cache-Control': cacheControl,
       'Content-Length': String(totalSize),
       'Content-Type': contentType,
+      ETag: etag,
     },
   })
 }

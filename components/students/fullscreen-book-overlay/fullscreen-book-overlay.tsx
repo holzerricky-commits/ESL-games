@@ -11,5 +11,15 @@ export function FullscreenBookOverlay(props: FullscreenBookOverlayProps) {
   const vm = useFullscreenBookOverlayController(props)
   // Before first open: render nothing. After first open: keep the view mounted while closed (B1) so state stays warm.
   if (!vm.isMounted && !props.open) return null
-  return <FullscreenBookOverlayView vm={vm} onClose={props.onClose} />
+  return (
+    <FullscreenBookOverlayView
+      vm={vm}
+      onClose={props.onClose}
+      topChrome={props.topChrome}
+      deskRail={props.deskRail}
+      deskRailOpen={props.deskRailOpen}
+      onDeskRailOpenChange={props.onDeskRailOpenChange}
+      preferOpenExercises={props.preferOpenExercises}
+    />
+  )
 }

@@ -25,6 +25,7 @@ import {
   subscribeStoryTextScan,
 } from '@/lib/books/story-text-scan-manager'
 import type { StoryScanProgress, StoryTextScanMode } from '@/lib/books/story-text-scan-client'
+import { useSearchablePdfJob } from '@/lib/books/use-searchable-pdf-job'
 import type { BookLessonPartRecord, BookLessonRecord, BookRecord, BookUnitRecord } from '@/lib/books/types'
 
 interface BookPartStoryTextPrepProps {
@@ -58,6 +59,9 @@ export function BookPartStoryTextPrep({
       lessonTitle: lesson.title,
     }
   }, [book.id, unit.id, lesson.id, lesson.title, part])
+
+  const { selectableRunning, selectableProgress, startSelectable, stopSelectable } =
+    useSearchablePdfJob(story.id)
 
   const [override, setOverride] = useState<ReadingStoryRangeOverride | null>(null)
   const [textRecord, setTextRecord] = useState<ReadingStoryTextRecord | null>(null)
@@ -255,6 +259,23 @@ export function BookPartStoryTextPrep({
             onSave={() => saveTextPaste()}
             scanDisabled={!pagesReady}
             canContinueScan={canContinueScan}
+            onMakeSelectable={() => {
+              if (!pagesReady) {
+                toast.error('Set pages for this story first.')
+                return
+              }
+              startSelectable({
+                bookId: story.bookId,
+                unitId: story.unitId,
+                lessonId: story.lessonId,
+                partId: story.partId,
+                title: story.title,
+                totalPdfPages,
+              })
+            }}
+            onStopMakeSelectable={stopSelectable}
+            selectableProgress={selectableProgress}
+            selectableRunning={selectableRunning}
             dialogOpen={textDialogOpen}
             onDialogOpenChange={setTextDialogOpen}
             hideRowLabel

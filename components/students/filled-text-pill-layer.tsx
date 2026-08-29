@@ -2,7 +2,7 @@
 
 import type { TextAnnotationAlign } from '@/lib/books/annotation-command-types'
 import { FILLED_LINE_GAP_PX } from '@/lib/books/filled-text-layout'
-import { textLabelAlignOrDefault } from '@/lib/books/text-label-layout'
+import { FILLED_TEXT_PILL_EDGE_SHADOW, textLabelAlignOrDefault } from '@/lib/books/text-label-layout'
 import { cn } from '@/lib/utils'
 
 export type FilledTextPillLayerProps = {
@@ -40,6 +40,12 @@ export function FilledTextPillLayer({
         const rowWidthPx = widths[i] ?? 8
         const isLastRow = i === segments.length - 1
         const rowHeightPx = rowMinPx + (isLastRow ? FILLED_LINE_GAP_PX : 0)
+        const showRow = showBg && seg.length > 0
+        const edgeShadow = showRow
+          ? boxShadow
+            ? `${FILLED_TEXT_PILL_EDGE_SHADOW}, ${boxShadow}`
+            : FILLED_TEXT_PILL_EDGE_SHADOW
+          : undefined
         return (
           <div key={i} className="box-border w-full" style={{ textAlign: align }}>
             <div
@@ -48,8 +54,8 @@ export function FilledTextPillLayer({
                 width: `${rowWidthPx}px`,
                 maxWidth: '100%',
                 minHeight: rowHeightPx,
-                backgroundColor: showBg && seg.length > 0 ? fillHex : 'transparent',
-                ...(boxShadow && showBg && seg.length > 0 ? { boxShadow } : {}),
+                backgroundColor: showRow ? fillHex : 'transparent',
+                ...(edgeShadow ? { boxShadow: edgeShadow } : {}),
               }}
             />
           </div>

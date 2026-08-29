@@ -17,9 +17,9 @@ import {
 } from '@/lib/books/book-spread-desk-shadow'
 
 describe('desk shadow viewport reserve', () => {
-  it('reserves symmetric room for centered spread shadows', () => {
+  it('reserves mostly bottom room for desk shadows under a centered spread', () => {
     expect(BOOK_SPREAD_DESK_SHADOW_VIEWPORT_RESERVE_Y_PX).toBe(
-      BOOK_SPREAD_DESK_SHADOW_BOTTOM_BLEED_PX * 2 + 8,
+      BOOK_SPREAD_DESK_SHADOW_BOTTOM_BLEED_PX + 28,
     )
     expect(BOOK_SPREAD_DESK_SHADOW_VIEWPORT_RESERVE_X_PX).toBeGreaterThan(0)
   })

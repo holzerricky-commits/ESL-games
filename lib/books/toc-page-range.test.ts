@@ -12,4 +12,13 @@ describe('pageRangeForIndex', () => {
     const items = [{ startPageHint: 5, endPageHint: 12 }]
     expect(pageRangeForIndex(items, 0)).toEqual({ start: 5, end: 12 })
   })
+
+  it('does not invent start or end when the current item has no start page', () => {
+    const items = [{}, { startPageHint: 20 }]
+    expect(pageRangeForIndex(items, 0)).toEqual({ start: null, end: null })
+  })
+
+  it('keeps explicit end even when start is missing', () => {
+    expect(pageRangeForIndex([{ endPageHint: 12 }], 0)).toEqual({ start: null, end: 12 })
+  })
 })

@@ -1,4 +1,7 @@
-import type { AnnotationTextFontId } from '@/lib/books/annotation-text-fonts'
+import type {
+  AnnotationTextFontId,
+  AnnotationTextFontWeight,
+} from '@/lib/books/annotation-text-fonts'
 import type { PenInkStyle } from '@/lib/books/pen-ink'
 import type { PenStrokeProfile } from '@/lib/books/pen-stroke-profile'
 
@@ -209,6 +212,8 @@ export interface TextAnnotationCommand {
   fontSizeNorm: number
   /** Handwriting font preset; omitted on legacy annotations. */
   fontId?: AnnotationTextFontId
+  /** Regular or Bold; omitted on legacy annotations (treated as Regular). */
+  fontWeight?: AnnotationTextFontWeight
   color: string
   maxWidthNorm?: number
   visualStyle?: TextAnnotationVisualStyle
@@ -229,6 +234,8 @@ export interface StickyAnnotationCommand {
   fontSizeNorm: number
   /** Handwriting font preset; omitted on legacy annotations. */
   fontId?: AnnotationTextFontId
+  /** Regular or Bold; omitted on legacy annotations (treated as Regular). */
+  fontWeight?: AnnotationTextFontWeight
   /** Note background (#RRGGBB). */
   fillColor?: string
   /** Writable sticker shape; legacy stickies default to `note`. */

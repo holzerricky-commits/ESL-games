@@ -70,8 +70,8 @@ export const spreadCrossfadeEnabled = false
 export const spreadSlideEnabled = false
 
 /**
- * CSS scale on window resize without re-raster — off while open-book frame uses direct width sizing.
- * Re-enable only after a dedicated upscale-only path exists.
+ * Legacy “never rebuild PDF size except on book/unit change.” Off — the reader uses
+ * upscale-only commit instead (shrink with CSS; rebuild once if the book later grows).
  */
 export const spreadResizeScaleEnabled = false
 

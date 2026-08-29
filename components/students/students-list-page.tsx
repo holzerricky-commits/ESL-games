@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Plus } from 'lucide-react'
 import { PageHeader } from '@/components/page-header'
 import { Button } from '@/components/ui/button'
+import { teacherFocusRingClass, teacherPrimaryBtnClass } from '@/components/teacher-chrome'
 import { AddStudentDialog } from '@/components/students/add-student-dialog'
 import { StudentCard } from '@/components/students/student-card'
 import { StudentGridCard } from '@/components/students/student-grid-card'
@@ -22,8 +23,9 @@ import {
 } from '@/lib/students/selectors'
 import {
   DEFAULT_STUDENTS_ROSTER_PREFS,
+  hasStoredStudentsRosterPrefs,
+  persistStudentsRosterPrefs,
   readStudentsRosterPrefs,
-  writeStudentsRosterPrefs,
   type StudentsRosterPrefs,
   type StudentsRosterSort,
   type StudentsRosterStatusFilter,
@@ -36,29 +38,29 @@ import {
 import type { StudentListItemView } from '@/lib/students/types'
 import { useToast } from '@/hooks/use-toast'
 
-export function StudentsListPage() {
+export function StudentsListPage({
+  initialPrefs = DEFAULT_STUDENTS_ROSTER_PREFS,
+}: {
+  initialPrefs?: StudentsRosterPrefs
+}) {
   const { toast } = useToast()
   const [recordsReady, setRecordsReady] = useState(false)
   const [query, setQuery] = useState('')
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [reloadTick, setReloadTick] = useState(0)
   const [bookLibrary, setBookLibrary] = useState<BookLibraryPayload | null>(() => getBooksLibraryCached())
-  const [prefs, setPrefs] = useState<StudentsRosterPrefs>(DEFAULT_STUDENTS_ROSTER_PREFS)
-  const [prefsReady, setPrefsReady] = useState(false)
+  const [prefs, setPrefs] = useState<StudentsRosterPrefs>(initialPrefs)
+  const prefsRef = useRef(prefs)
+  prefsRef.current = prefs
 
   const handleStudentsAdded = () => {
     setReloadTick((tick) => tick + 1)
   }
 
   useEffect(() => {
+    if (!hasStoredStudentsRosterPrefs()) return
     setPrefs(readStudentsRosterPrefs())
-    setPrefsReady(true)
   }, [])
-
-  useEffect(() => {
-    if (!prefsReady) return
-    writeStudentsRosterPrefs(prefs)
-  }, [prefs, prefsReady])
 
   useEffect(() => {
     let cancelled = false
@@ -128,7 +130,10 @@ export function StudentsListPage() {
   }
 
   const updatePrefs = (patch: Partial<StudentsRosterPrefs>) => {
-    setPrefs((prev) => ({ ...prev, ...patch }))
+    const next = { ...prefsRef.current, ...patch }
+    prefsRef.current = next
+    persistStudentsRosterPrefs(next)
+    setPrefs(next)
   }
 
   const headerCounts = (() => {
@@ -145,14 +150,15 @@ export function StudentsListPage() {
       <PageHeader
         title="Students"
         titleClassName="text-3xl sm:text-4xl"
-        description={
-          recordsReady
-            ? `Your class roster · ${headerCounts}`
-            : 'Your class roster'
-        }
+        description={recordsReady ? headerCounts : undefined}
+        showDivider={false}
         actions={
-          <Button onClick={() => setShowAddDialog(true)}>
-            <Plus size={16} />
+          <Button
+            type="button"
+            className={`${teacherPrimaryBtnClass} ${teacherFocusRingClass}`}
+            onClick={() => setShowAddDialog(true)}
+          >
+            <Plus size={16} strokeWidth={1.75} />
             Add student
           </Button>
         }
@@ -171,43 +177,50 @@ export function StudentsListPage() {
         needsSetupCount={needsSetupCount}
       />
 
-      {!prefsReady || !recordsReady ? (
-        <p className="text-sm text-muted-foreground">Loading students…</p>
+      {!recordsReady ? (
+        <p className="text-[13px] text-muted-foreground">Loading…</p>
       ) : displayedStudents.length === 0 ? (
         <StudentsEmptyState
           hasSearch={query.trim().length > 0}
           rosterEmpty={allStudents.length === 0}
           statusFilter={prefs.statusFilter}
         />
-      ) : prefs.viewMode === 'grid' ? (
-        <ul
-          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
-          aria-label={showingOnBreak ? 'Students on break' : 'Students'}
-        >
-          {displayedStudents.map((student) => (
-            <li key={student.id}>
-              <StudentGridCard
-                student={student}
-                onBreak={student.isOnBreak}
-                onRestore={student.isOnBreak ? () => handleRestore(student) : undefined}
-                onRemoved={() => setReloadTick((tick) => tick + 1)}
-              />
-            </li>
-          ))}
-        </ul>
       ) : (
-        <ul className="space-y-0.5" aria-label={showingOnBreak ? 'Students on break' : 'Students'}>
-          {displayedStudents.map((student) => (
-            <li key={student.id}>
-              <StudentCard
-                student={student}
-                onBreak={student.isOnBreak}
-                onRestore={student.isOnBreak ? () => handleRestore(student) : undefined}
-                onRemoved={() => setReloadTick((tick) => tick + 1)}
-              />
-            </li>
-          ))}
-        </ul>
+        <div
+          key={prefs.viewMode}
+          className="animate-in fade-in duration-200 motion-reduce:animate-none"
+        >
+          {prefs.viewMode === 'grid' ? (
+            <ul
+              className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+              aria-label={showingOnBreak ? 'Students on break' : 'Students'}
+            >
+              {displayedStudents.map((student) => (
+                <li key={student.id}>
+                  <StudentGridCard
+                    student={student}
+                    onBreak={student.isOnBreak}
+                    onRestore={student.isOnBreak ? () => handleRestore(student) : undefined}
+                    onRemoved={() => setReloadTick((tick) => tick + 1)}
+                  />
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <ul className="space-y-0.5" aria-label={showingOnBreak ? 'Students on break' : 'Students'}>
+              {displayedStudents.map((student) => (
+                <li key={student.id}>
+                  <StudentCard
+                    student={student}
+                    onBreak={student.isOnBreak}
+                    onRestore={student.isOnBreak ? () => handleRestore(student) : undefined}
+                    onRemoved={() => setReloadTick((tick) => tick + 1)}
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
 
       <AddStudentDialog

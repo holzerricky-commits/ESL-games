@@ -35,6 +35,9 @@ book-library/**
 !book-library/README.md
 !book-library/books.example.json
 
+# Tesseract language data downloaded on first searchable-PDF run
+.tesseract-cache/
+
 # Brush-pattern build artifacts (keep rainbow.png / galaxy.png)
 public/brush-patterns/_*
 public/brush-patterns/*.zip

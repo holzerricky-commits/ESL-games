@@ -1,8 +1,10 @@
 import type { TextAnnotationCommand } from '@/lib/books/annotation-command-types'
 import {
+  annotationTextCssWeight,
   annotationTextFontFamily,
   getAnnotationTextFont,
   type AnnotationTextFontId,
+  type AnnotationTextFontWeight,
 } from '@/lib/books/annotation-text-fonts'
 import {
   resolveTextLabelFieldLayout,
@@ -51,6 +53,7 @@ export type TextLabelMeasureInput = Pick<
   | 'text'
   | 'fontSizeNorm'
   | 'fontId'
+  | 'fontWeight'
   | 'maxWidthNorm'
   | 'visualStyle'
 >
@@ -94,12 +97,14 @@ export function measurePlainTextLineWidthPx(
   line: string,
   fontId: AnnotationTextFontId | undefined,
   fontSizePx: number,
+  fontWeight?: AnnotationTextFontWeight,
 ): number {
   const sample = line.length > 0 ? line : ' '
   const fontFamily = annotationTextFontFamily(fontId)
+  const cssWeight = annotationTextCssWeight(fontId, fontWeight)
   const ctx = getMeasureCanvasContext()
   if (ctx) {
-    ctx.font = `${fontSizePx}px ${fontFamily}`
+    ctx.font = `${cssWeight} ${fontSizePx}px ${fontFamily}`
     return ctx.measureText(sample).width
   }
   const ratio = avgCharWidthRatioForFont(fontId)
@@ -130,6 +135,7 @@ export function measureFilledTextLabelBounds(
   const hasContent = text.trim().length > 0
   const fontSizePx = textLabelFontSizePx(input.fontSizeNorm, heightPx)
   const fontFamily = annotationTextFontFamily(input.fontId)
+  const cssWeight = annotationTextCssWeight(input.fontId, input.fontWeight)
   const rowMinPx = filledPillRowMinPx(fontSizePx)
   const maxWidthNorm = input.maxWidthNorm ?? 0.88
   const minWidthNorm =
@@ -151,6 +157,7 @@ export function measureFilledTextLabelBounds(
         emptyPlaceholder: hasContent ? undefined : text || opts?.textOverride,
         growOnly: opts?.growOnly,
         latchedMaxWidth: opts?.latchedMaxWidth,
+        fontWeight: cssWeight,
       },
     )
     fieldWidthPx = layout.fieldWidthPx
@@ -161,7 +168,8 @@ export function measureFilledTextLabelBounds(
     for (const line of lines) {
       fieldWidthPx = Math.max(
         fieldWidthPx,
-        measurePlainTextLineWidthPx(line, input.fontId, fontSizePx) + FILLED_TEXT_MEASURE_PAD_PX,
+        measurePlainTextLineWidthPx(line, input.fontId, fontSizePx, input.fontWeight) +
+          FILLED_TEXT_MEASURE_PAD_PX,
       )
     }
     const maxWidthPx = plainTextMaxWidthPx(input.x, input.maxWidthNorm, widthPx)
@@ -201,6 +209,7 @@ export function measurePlainTextLabelBounds(
   const hasContent = text.trim().length > 0
   const fontSizePx = textLabelFontSizePx(input.fontSizeNorm, heightPx)
   const fontFamily = annotationTextFontFamily(input.fontId)
+  const cssWeight = annotationTextCssWeight(input.fontId, input.fontWeight)
   const lineRowMinPx = textLabelLineHeightPx(fontSizePx)
   const maxWidthNorm = input.maxWidthNorm ?? 0.88
   const minWidthNorm =
@@ -222,6 +231,7 @@ export function measurePlainTextLabelBounds(
         emptyPlaceholder: hasContent ? undefined : text || opts?.textOverride,
         growOnly: opts?.growOnly,
         latchedMaxWidth: opts?.latchedMaxWidth,
+        fontWeight: cssWeight,
       },
     )
     fieldWidthPx = layout.fieldWidthPx
@@ -232,7 +242,8 @@ export function measurePlainTextLabelBounds(
     for (const line of lines) {
       fieldWidthPx = Math.max(
         fieldWidthPx,
-        measurePlainTextLineWidthPx(line, input.fontId, fontSizePx) + PLAIN_TEXT_MEASURE_PAD_PX,
+        measurePlainTextLineWidthPx(line, input.fontId, fontSizePx, input.fontWeight) +
+          PLAIN_TEXT_MEASURE_PAD_PX,
       )
     }
     const maxWidthPx = plainTextMaxWidthPx(input.x, input.maxWidthNorm, widthPx)

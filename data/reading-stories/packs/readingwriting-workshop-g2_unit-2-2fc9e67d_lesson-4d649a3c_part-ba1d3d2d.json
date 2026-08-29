@@ -1,0 +1,116 @@
+{
+  "storyId": "readingwriting-workshop-g2::unit-2-2fc9e67d::lesson-4d649a3c::part-ba1d3d2d",
+  "bookId": "readingwriting-workshop-g2",
+  "unitId": "unit-2-2fc9e67d",
+  "status": "approved",
+  "stops": [
+    {
+      "id": "stop-4d03e3a5",
+      "label": "Dollar bill is printed",
+      "displayPage": 448,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 449,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-65cbaaab",
+          "kind": "true_false",
+          "prompt": "The dollar bill is printed at a local bank.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "One day, a dollar bill is printed at the United States Bureau of Engraving and Printing.",
+          "evidenceHighlight": "United States Bureau of Engraving and Printing"
+        }
+      ]
+    },
+    {
+      "id": "stop-12e522ee",
+      "label": "Boy buys a book",
+      "displayPage": 448,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 449,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-f655ae57",
+          "kind": "mcq",
+          "prompt": "What does the boy do with the dollar bill first?",
+          "choices": [
+            "A. Buys a movie ticket",
+            "B. Saves it in a piggy bank",
+            "C. Buys a book",
+            "D. Trades it for a new bill"
+          ],
+          "correctIndex": 2,
+          "correctTrue": null,
+          "evidenceSnippet": "The boy brings the dollar bill to the bookstore. He checks prices to see how much the books cost. Then he decides what he can purchase. He finds a book to buy, but is it worth the price? He's not sure. The boy reads the back of the book and thinks about the price. The boy decides the book is a good value, so he exchanges his money for the book.",
+          "evidenceHighlight": "exchanges his money for the book"
+        }
+      ]
+    },
+    {
+      "id": "stop-70e1690c",
+      "label": "Bill gets worn out",
+      "displayPage": 450,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 452,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-b794284e",
+          "kind": "true_false",
+          "prompt": "The dollar bill stays new and clean its whole life.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "Almost two years pass and now a man gets the dollar bill. It is worn out and torn.",
+          "evidenceHighlight": "worn out and torn"
+        }
+      ]
+    },
+    {
+      "id": "stop-a08ff12c",
+      "label": "Old bill is replaced",
+      "displayPage": 450,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 451,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-f0aee3c3",
+          "kind": "mcq",
+          "prompt": "What happens to the old, torn dollar bill?",
+          "choices": [
+            "A. It is given to another person",
+            "B. It is saved in a piggy bank",
+            "C. It is shredded and replaced",
+            "D. It is used to buy a movie ticket"
+          ],
+          "correctIndex": 2,
+          "correctTrue": null,
+          "evidenceSnippet": "The old dollar bill is returned to the big bank where workers decide that it can't be used again. They destroy the bill by shredding it. They cut it into tiny pieces. Back at the U.S. Bureau of Engraving and Printing, a new dollar bill is printed to replace the old one.",
+          "evidenceHighlight": null
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-08-20T23:02:23.632Z",
+  "approvedAt": "2026-08-20T23:02:23.631Z"
+}

@@ -1,4 +1,5 @@
 import type { AnnotationCommand } from '@/lib/books/annotation-command-types'
+import { TEXT_FONT_SIZE_NORM_MIN } from '@/lib/books/text-font-size-min'
 
 /**
  * When a lesson-board page grows taller, Y norms are fractions of total height.
@@ -53,14 +54,14 @@ export function remapAnnotationCommandForContentHeightChange(
       return {
         ...cmd,
         y: sy(cmd.y),
-        fontSizeNorm: Math.max(0.008, cmd.fontSizeNorm * fy),
+        fontSizeNorm: Math.max(TEXT_FONT_SIZE_NORM_MIN, cmd.fontSizeNorm * fy),
       }
     case 'sticky':
       return {
         ...cmd,
         y: sy(cmd.y),
         h: sh(cmd.h),
-        fontSizeNorm: Math.max(0.008, cmd.fontSizeNorm * fy),
+        fontSizeNorm: Math.max(TEXT_FONT_SIZE_NORM_MIN, cmd.fontSizeNorm * fy),
       }
     case 'image':
     case 'flashcard':

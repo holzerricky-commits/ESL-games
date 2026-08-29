@@ -1,6 +1,6 @@
 # Student home — product decisions (locked)
 
-Last updated: 2026-07-26
+Last updated: 2026-08-19
 
 **Status:** Agreed direction. Rebuild the Students area as **roster → one teacher home per student**. Implementation phases live in **`STUDENT_HOME_PHASED_PLAN.md`**.
 
@@ -26,7 +26,7 @@ Today a student had two doors: **Plan / class prep** and a game-y **Preview**. T
 | Mental model | Roster → **one student home** → teach |
 | Default section on open | **Classes** |
 | **Enter** (within ~20 min / live) | Goes to the **map** route (current teach path) |
-| **Prepare** (further out) | Prep panel + **Save prep** — does not start the live clock |
+| **Prepare** (further out) | **Today’s class** — does not start the live clock |
 | First ship | **Demo-ready shell** (Phases 1–3), not a rewrite of every prep panel |
 
 ---
@@ -82,7 +82,7 @@ Today a student had two doors: **Plan / class prep** and a game-y **Preview**. T
 - Farther than ~20 minutes → **Prepare** (+ countdown if within 24h)
 - Within ~20 minutes (or live) → **Enter**
 - **Preview** → page-preview module (not a permanent hero spread)
-- **Prepare** → open the prep room (book + board for this class; does **not** start the live clock)
+- **Prepare** → **Today’s class** for this class; does **not** start the live clock
 - Ended lessons below (recap / notes)
 
 **Go** stays on the student-home header as Prepare or Enter for the soonest class.

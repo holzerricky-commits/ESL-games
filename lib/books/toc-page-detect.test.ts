@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  isFrontMatterCompanionPage,
   proposeTocPdfRange,
   scoreTocCandidatePage,
   shouldEarlyStopTocScan,
@@ -39,7 +40,31 @@ Adventure Vacations: Extreme Edition
 A: The Truth about Dinosaurs
 B: Mystery of the Terrible Hand
 Dinosaurs: A Brief History
+12 Vanished!
+A: Mystery on the Mountain
+B: The Missing Pilot
+Earhart Mystery
+4 Scope and Sequence
 `
+
+const ACADEMIC_SKILLS = `
+ACADEMIC SKILLS
+READING SKILL VOCABULARY BUILDING CRITICAL THINKING
+A: Skimming for Gist
+B: Identifying Main Ideas in Paragraphs
+A: Suffixes -ance and -ence
+B: Word forms of survive
+A: Identifying Ideas
+B: Comparing; Reflecting
+A: Understanding Maps
+B: Scanning for Key Details
+A: Words acting as nouns and verbs
+B: Collocations with original
+Scope and Sequence 5
+`
+
+/** Scope page with almost no extractable text (image-heavy). */
+const WEAK_SCOPE_PAGE = '4'
 
 const STORY_PAGE = `
 The Incredible Dolphin
@@ -63,28 +88,53 @@ describe('scoreTocCandidatePage', () => {
     expect(reasons).toContain('scope_and_sequence')
   })
 
+  it('scores academic skills grid as companion-strength', () => {
+    const { score, reasons } = scoreTocCandidatePage(ACADEMIC_SKILLS)
+    expect(score).toBeGreaterThanOrEqual(28)
+    expect(reasons).toContain('academic_skills')
+  })
+
   it('scores story prose low', () => {
     const { score } = scoreTocCandidatePage(STORY_PAGE)
     expect(score).toBeLessThan(22)
   })
 })
 
+describe('isFrontMatterCompanionPage', () => {
+  it('recognizes scope table and academic skills', () => {
+    expect(isFrontMatterCompanionPage(SCOPE_AND_SEQUENCE)).toBe(true)
+    expect(isFrontMatterCompanionPage(ACADEMIC_SKILLS)).toBe(true)
+    expect(isFrontMatterCompanionPage(STORY_PAGE)).toBe(false)
+  })
+})
+
 describe('proposeTocPdfRange', () => {
-  it('proposes contiguous front-matter pages and ignores later story', () => {
+  it('proposes Contents + Scope + Academic Skills for Reading Explorer', () => {
     const proposal = proposeTocPdfRange([
       { pdfPage: 1, text: 'Cover Reading Explorer' },
       { pdfPage: 2, text: 'Title page' },
       { pdfPage: 3, text: READING_EXPLORER_CONTENTS },
       { pdfPage: 4, text: SCOPE_AND_SEQUENCE },
-      { pdfPage: 5, text: 'ACADEMIC SKILLS\nREADING SKILL VOCABULARY BUILDING\nUnit rows A: Skimming B: Main Ideas' },
+      { pdfPage: 5, text: ACADEMIC_SKILLS },
       { pdfPage: 6, text: STORY_PAGE },
       { pdfPage: 7, text: STORY_PAGE },
     ])
     expect(proposal).not.toBeNull()
     expect(proposal!.from).toBe(3)
-    expect(proposal!.to).toBeGreaterThanOrEqual(4)
-    expect(proposal!.to).toBeLessThanOrEqual(5)
+    expect(proposal!.to).toBe(5)
     expect(['high', 'medium']).toContain(proposal!.confidence)
+  })
+
+  it('extends after Contents even when Scope text is nearly empty', () => {
+    const proposal = proposeTocPdfRange([
+      { pdfPage: 3, text: READING_EXPLORER_CONTENTS },
+      { pdfPage: 4, text: WEAK_SCOPE_PAGE },
+      { pdfPage: 5, text: ACADEMIC_SKILLS },
+      { pdfPage: 6, text: STORY_PAGE },
+    ])
+    expect(proposal).not.toBeNull()
+    expect(proposal!.from).toBe(3)
+    expect(proposal!.to).toBe(5)
   })
 
   it('returns null when no page clears the bar', () => {
@@ -98,7 +148,7 @@ describe('proposeTocPdfRange', () => {
 })
 
 describe('shouldEarlyStopTocScan', () => {
-  it('stops after TOC block when the next page is low', () => {
+  it('does not stop after only one low page (needs two)', () => {
     expect(
       shouldEarlyStopTocScan({
         pdfPage: 6,
@@ -106,7 +156,31 @@ describe('shouldEarlyStopTocScan', () => {
         tocStartPage: 3,
         tocEndPage: 5,
       }),
+    ).toBe(false)
+  })
+
+  it('stops after two low pages past the TOC block', () => {
+    expect(
+      shouldEarlyStopTocScan({
+        pdfPage: 7,
+        pageScore: 8,
+        tocStartPage: 3,
+        tocEndPage: 5,
+      }),
     ).toBe(true)
+  })
+
+  it('keeps peeking after Contents within look-ahead window', () => {
+    expect(
+      shouldEarlyStopTocScan({
+        pdfPage: 5,
+        pageScore: 0,
+        tocStartPage: 3,
+        tocEndPage: 3,
+        forcePeekAfterContents: true,
+        contentsEndedAtPage: 3,
+      }),
+    ).toBe(false)
   })
 
   it('does not stop before a TOC run exists', () => {

@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -95,8 +96,10 @@ export function StudentRewardBurstProvider({ children }: { children: ReactNode }
     )
   }, [clearTimers])
 
+  const contextValue = useMemo(() => ({ triggerReward }), [triggerReward])
+
   return (
-    <StudentRewardBurstContext.Provider value={{ triggerReward }}>
+    <StudentRewardBurstContext.Provider value={contextValue}>
       {children}
       {burst ? (
         <StudentRewardBurst

@@ -30,6 +30,7 @@ describe('resolveLauncherBookCovers', () => {
     })
     expect(covers.map((c) => c.bookId)).toEqual(['literature', 'workshop'])
     expect(covers[0]?.unitId).toBe('l-u1')
+    expect(covers[0]?.unitTitle).toBe('U1')
     expect(covers[0]?.imagePath).toBe('literature/cover.png')
     expect(covers[1]?.bookTitle).toBe('Workshop')
   })
@@ -42,6 +43,7 @@ describe('resolveLauncherBookCovers', () => {
     })
     expect(covers).toHaveLength(1)
     expect(covers[0]?.unitId).toBe('l-u2')
+    expect(covers[0]?.unitTitle).toBe('U2')
     // Cover art still uses the first unit PDF when no imagePath on that path — imagePath present here
     expect(covers[0]?.imagePath).toBe('literature/cover.png')
   })

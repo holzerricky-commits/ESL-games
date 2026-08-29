@@ -24,7 +24,21 @@ import { Input } from '@/components/ui/input'
 const PdfDocument = dynamic(() => import('react-pdf').then((mod) => mod.Document), { ssr: false })
 const PdfPage = dynamic(() => import('react-pdf').then((mod) => mod.Page), { ssr: false })
 const PDF_DOCUMENT_OPTIONS = { wasmUrl: '/wasm/' } as const
-const SPREAD_PAGE_WIDTH = 320
+/** Fallback before measure; live width comes from the stage container. */
+const SPREAD_PAGE_WIDTH_FALLBACK = 360
+const SPREAD_GAP_PX = 8
+const SPREAD_PAD_PX = 16
+const SPREAD_PAGE_MIN = 220
+const SPREAD_PAGE_MAX = 520
+
+function pageWidthForStage(stageWidth: number): number {
+  if (!Number.isFinite(stageWidth) || stageWidth <= 0) return SPREAD_PAGE_WIDTH_FALLBACK
+  const usable = Math.max(0, stageWidth - SPREAD_PAD_PX * 2 - SPREAD_GAP_PX)
+  // Two pages side-by-side when there's room; one page stacked on narrow.
+  const dual = usable >= SPREAD_PAGE_MIN * 2
+  const raw = dual ? usable / 2 : usable
+  return Math.round(Math.min(SPREAD_PAGE_MAX, Math.max(SPREAD_PAGE_MIN, raw)))
+}
 
 function makeUnitFileUrl(filePath: string): string {
   return `/api/book-file?path=${encodeURIComponent(filePath)}`
@@ -87,6 +101,23 @@ export function StudentCurriculumBookPreview({
   const initialMappedPageRef = useRef(initialPage)
   const pendingMappedPageRef = useRef<number | undefined>(initialPage)
   const pendingBoundaryNavRef = useRef<'first' | 'last' | null>(null)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const stageRef = useRef<HTMLDivElement | null>(null)
+  const [pageWidth, setPageWidth] = useState(SPREAD_PAGE_WIDTH_FALLBACK)
+
+  useLayoutEffect(() => {
+    const el = stageRef.current
+    if (!el) return
+    const measure = () => setPageWidth(pageWidthForStage(el.clientWidth))
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  useEffect(() => {
+    rootRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [])
 
   useEffect(() => {
     initialMappedPageRef.current = initialPage
@@ -446,13 +477,18 @@ export function StudentCurriculumBookPreview({
   const pageTotalLabel = String(bookPageTotal)
 
   return (
-    <div className="border-t border-[var(--border)] bg-[var(--surface-2)]/40">
-      <div className="sticky top-0 z-10 space-y-2 border-b border-[var(--border)] bg-[var(--surface-2)] px-4 py-2.5">
+    <div ref={rootRef}>
+      <div className="sticky top-0 z-10 space-y-2 bg-[var(--surface-3)]/90 px-3 py-2.5 backdrop-blur-md sm:px-4">
         <div className="flex flex-wrap items-center gap-2">
+          <p className="mr-1 min-w-0 max-w-[min(100%,18rem)] truncate text-[13px] font-semibold tracking-tight text-foreground sm:max-w-[24rem]">
+            {book.title}
+          </p>
+
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             size="icon-sm"
+            className="rounded-full bg-[var(--surface-2)]/80"
             disabled={atFirst}
             onMouseDown={preventNavFocusScroll}
             onClick={() => goToNeighbor(-1)}
@@ -462,8 +498,9 @@ export function StudentCurriculumBookPreview({
           </Button>
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             size="icon-sm"
+            className="rounded-full bg-[var(--surface-2)]/80"
             disabled={atLast}
             onMouseDown={preventNavFocusScroll}
             onClick={() => goToNeighbor(1)}
@@ -486,7 +523,7 @@ export function StudentCurriculumBookPreview({
                 }
               }}
               onBlur={commitPageInput}
-              className="h-8 w-14 px-1.5 text-center text-xs tabular-nums text-foreground"
+              className="h-8 w-14 rounded-full border-0 bg-[var(--surface-2)]/80 px-1.5 text-center text-xs tabular-nums text-foreground shadow-none"
               aria-label="Book page number"
             />
             <span aria-hidden>/</span>
@@ -504,22 +541,28 @@ export function StudentCurriculumBookPreview({
               type="button"
               variant="ghost"
               size="sm"
-              className="h-8 px-2 text-xs"
+              className="h-8 rounded-full px-3 text-xs"
               onClick={() => setShowBrowseList((v) => !v)}
             >
-              {showBrowseList ? 'Hide list' : 'List'}
+              {showBrowseList ? 'Hide' : 'List'}
             </Button>
             <Button
               type="button"
-              variant="secondary"
               size="sm"
-              className="h-8 text-xs"
+              className="h-8 rounded-full px-3 text-xs"
               disabled={isSavingStart || !unit}
               onClick={() => void saveAsStart()}
             >
               {isSavingStart ? 'Saving…' : 'Save start'}
             </Button>
-            <Button type="button" variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close preview">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="rounded-full"
+              onClick={onClose}
+              aria-label="Close preview"
+            >
               <X className="h-4 w-4" />
             </Button>
           </div>
@@ -528,7 +571,7 @@ export function StudentCurriculumBookPreview({
         {showBrowseList ? (
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <select
-              className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm text-foreground"
+              className="min-w-0 flex-1 rounded-full border-0 bg-[var(--surface-2)]/90 px-3 py-2 text-sm text-foreground"
               value={browsePick}
               onChange={(e) => setBrowsePick(e.target.value)}
             >
@@ -559,6 +602,7 @@ export function StudentCurriculumBookPreview({
             <Button
               type="button"
               size="sm"
+              className="rounded-full"
               onClick={() => void saveBrowsePick()}
               disabled={!browsePick.trim() || isSavingStart}
             >
@@ -568,40 +612,47 @@ export function StudentCurriculumBookPreview({
         ) : null}
       </div>
 
-      <div className="flex justify-center p-4">
+      <div ref={stageRef} className="w-full px-2 py-3 sm:px-3 sm:py-4">
         {!pdfReady ? (
-          <p className="py-12 text-sm text-muted-foreground">Loading…</p>
+          <p className="py-16 text-center text-[13px] text-muted-foreground">Loading…</p>
         ) : !unit || !fileUrl ? (
-          <p className="py-12 text-sm text-muted-foreground">No pages for this book.</p>
+          <p className="py-16 text-center text-[13px] text-muted-foreground">No pages for this book.</p>
         ) : (
           <div
-            className="w-full max-w-[680px] rounded-lg border border-[var(--border)] bg-background p-2 shadow-sm"
-            style={{ minHeight: Math.round(SPREAD_PAGE_WIDTH * 1.414) + 16 }}
+            className="mx-auto w-fit max-w-full overflow-hidden rounded-xl bg-[var(--surface-2)] p-2 shadow-[0_1px_2px_rgba(0,0,0,0.04)]"
+            style={{ minHeight: Math.round(pageWidth * 1.414) + 16 }}
           >
             <PdfDocument
               key={`${book.id}-${unit.id}`}
               file={fileUrl}
               options={PDF_DOCUMENT_OPTIONS}
               onLoadSuccess={onDocumentLoadSuccess}
-              loading={<p className="p-8 text-sm text-muted-foreground">Opening…</p>}
-              error={<p className="p-8 text-sm text-[var(--brand-red)]">Could not open this PDF.</p>}
+              loading={<p className="p-8 text-[13px] text-muted-foreground">Opening…</p>}
+              error={<p className="p-8 text-[13px] text-[var(--brand-red)]">Could not open this PDF.</p>}
             >
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div
+                className="grid grid-cols-1 gap-2 sm:grid-cols-2"
+                style={{ gap: SPREAD_GAP_PX }}
+              >
                 <PdfPage
                   pageNumber={currentSpreadLeftPage}
-                  width={SPREAD_PAGE_WIDTH}
+                  width={pageWidth}
                   renderTextLayer={false}
                   renderAnnotationLayer={false}
                 />
                 {currentSpreadRightPage != null ? (
                   <PdfPage
                     pageNumber={currentSpreadRightPage}
-                    width={SPREAD_PAGE_WIDTH}
+                    width={pageWidth}
                     renderTextLayer={false}
                     renderAnnotationLayer={false}
                   />
                 ) : (
-                  <div className="hidden min-h-[452px] sm:block" aria-hidden />
+                  <div
+                    className="hidden sm:block"
+                    style={{ minHeight: Math.round(pageWidth * 1.414) }}
+                    aria-hidden
+                  />
                 )}
               </div>
             </PdfDocument>

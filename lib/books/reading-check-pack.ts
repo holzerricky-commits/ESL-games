@@ -309,18 +309,47 @@ export function stopHasReadingCheckHotspot(stop: ReadingCheckStop | null | undef
   return !!stop?.hotspot
 }
 
-/** Prefer pdfPage match; fall back to legacy pageSide + displayPage. */
+/** Bottom-center default used when Generate places a pin without a teacher click. */
+export const DEFAULT_READING_CHECK_HOTSPOT_X = 0.5
+export const DEFAULT_READING_CHECK_HOTSPOT_Y = 0.9
+
+export function isDefaultReadingCheckHotspotCoords(
+  hotspot: ReadingCheckHotspotPlacement | null | undefined,
+): boolean {
+  if (!hotspot) return false
+  const near = (a: number, b: number) => Math.abs(a - b) < 0.02
+  return near(hotspot.x, DEFAULT_READING_CHECK_HOTSPOT_X) && near(hotspot.y, DEFAULT_READING_CHECK_HOTSPOT_Y)
+}
+
+export function readingCheckStopLinkLabel(stop: ReadingCheckStop, index: number): string {
+  const label = stop.label.trim()
+  if (label) return label
+  return `Check ${index + 1}`
+}
+
+export type ReadingCheckSpreadPages = {
+  leftPdfPage: number | null
+  rightPdfPage: number | null
+  leftDisplayPage: number | null
+  rightDisplayPage: number | null
+}
+
+/**
+ * Prefer the printed page for Generate’s default bottom pins (those pdf pages
+ * can be one off). Teacher-placed pins still follow stored pdfPage.
+ */
 export function readingCheckHotspotOnSpread(
   stop: ReadingCheckStop,
-  args: {
-    leftPdfPage: number | null
-    rightPdfPage: number | null
-    leftDisplayPage: number | null
-    rightDisplayPage: number | null
-  },
+  args: ReadingCheckSpreadPages,
 ): ReadingCheckHotspotPageSide | null {
   const hotspot = stop.hotspot
   if (!hotspot) return null
+  const hasDisplaySpread = args.leftDisplayPage != null || args.rightDisplayPage != null
+  if (isDefaultReadingCheckHotspotCoords(hotspot) && stop.displayPage != null && hasDisplaySpread) {
+    if (args.leftDisplayPage === stop.displayPage) return 'left'
+    if (args.rightDisplayPage === stop.displayPage) return 'right'
+    return null
+  }
   if (hotspot.pdfPage != null) {
     if (args.leftPdfPage != null && hotspot.pdfPage === args.leftPdfPage) return 'left'
     if (args.rightPdfPage != null && hotspot.pdfPage === args.rightPdfPage) return 'right'
@@ -331,6 +360,76 @@ export function readingCheckHotspotOnSpread(
     return args.leftDisplayPage === stop.displayPage ? 'left' : null
   }
   return args.rightDisplayPage === stop.displayPage ? 'right' : null
+}
+
+export type ReadingCheckLivePinOnSpread = {
+  stop: ReadingCheckStop
+  index: number
+  side: ReadingCheckHotspotPageSide
+  pdfPage: number
+  x: number
+  y: number
+}
+
+const LIVE_PIN_STAGGER_Y = 0.08
+
+function staggerOverlappingLivePins(
+  pins: ReadingCheckLivePinOnSpread[],
+): ReadingCheckLivePinOnSpread[] {
+  const byPage = new Map<number, ReadingCheckLivePinOnSpread[]>()
+  for (const pin of pins) {
+    const list = byPage.get(pin.pdfPage) ?? []
+    list.push(pin)
+    byPage.set(pin.pdfPage, list)
+  }
+  const moved = new Map<string, ReadingCheckLivePinOnSpread>()
+  for (const group of byPage.values()) {
+    if (group.length < 2) continue
+    const clusters: ReadingCheckLivePinOnSpread[][] = []
+    for (const pin of group) {
+      const cluster = clusters.find(
+        (c) => Math.abs(c[0]!.x - pin.x) < 0.03 && Math.abs(c[0]!.y - pin.y) < 0.03,
+      )
+      if (cluster) cluster.push(pin)
+      else clusters.push([pin])
+    }
+    for (const cluster of clusters) {
+      if (cluster.length < 2) continue
+      cluster.sort((a, b) => a.index - b.index)
+      const startY = Math.max(0.12, cluster[0]!.y - LIVE_PIN_STAGGER_Y * (cluster.length - 1))
+      cluster.forEach((pin, i) => {
+        moved.set(pin.stop.id, { ...pin, y: Math.min(0.92, startY + i * LIVE_PIN_STAGGER_Y) })
+      })
+    }
+  }
+  if (moved.size === 0) return pins
+  return pins.map((pin) => moved.get(pin.stop.id) ?? pin)
+}
+
+/** Live ? pins for the visible spread, using stored page-normalized hotspot coords. */
+export function listReadingCheckLivePinsOnSpread(
+  stops: readonly ReadingCheckStop[],
+  spread: ReadingCheckSpreadPages,
+): ReadingCheckLivePinOnSpread[] {
+  const pins: ReadingCheckLivePinOnSpread[] = []
+  stops.forEach((stop, index) => {
+    if (!stopHasReadingCheckHotspot(stop) || !stop.hotspot) return
+    const question = primaryQuestionOfStop(stop)
+    if (!question?.prompt.trim()) return
+    const side = readingCheckHotspotOnSpread(stop, spread)
+    if (side !== 'left' && side !== 'right') return
+    const pdfPage = side === 'left' ? spread.leftPdfPage : spread.rightPdfPage
+    if (pdfPage == null) return
+    pins.push({
+      stop,
+      index,
+      side,
+      pdfPage,
+      x: stop.hotspot.x,
+      y: stop.hotspot.y,
+    })
+  })
+  return staggerOverlappingLivePins(pins)
 }
 
 export function getReadingCheckCorrectAnswerLabel(

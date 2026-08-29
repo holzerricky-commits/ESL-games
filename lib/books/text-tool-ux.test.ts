@@ -3,7 +3,15 @@ import {
   isBookAnnotationTextCommitShortcut,
   shouldBookAnnotationLabelCapturePointer,
   shouldShowBookAnnotationTextarea,
+  TEXT_TOOL_RAIL_HINT,
 } from './text-tool-ux'
+
+describe('TEXT_TOOL_RAIL_HINT', () => {
+  it('tells teachers to drag existing text and double-click to type', () => {
+    expect(TEXT_TOOL_RAIL_HINT).toMatch(/drag to move/i)
+    expect(TEXT_TOOL_RAIL_HINT).toMatch(/double-click to edit/i)
+  })
+})
 
 describe('shouldBookAnnotationLabelCapturePointer', () => {
   it('lets committed plain text click through while the text tool is active', () => {

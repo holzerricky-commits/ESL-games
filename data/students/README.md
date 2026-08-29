@@ -12,6 +12,7 @@ When you run the app locally (`npm run dev` or `npm run start` on your machine),
 | `saved-words.json` | Words saved from the book (per student) |
 | `lesson-board-links.json` | Pins from book pages to lesson-board pages |
 | `reader-progress.json` | Last-read PDF page per book/unit |
+| `roster-prefs.json` | Students page list/grid, sort, and status filter |
 
 On first load after an update, data is **copied out of** browser storage when those keys still hold data and these files are empty — that frees browser quota.
 

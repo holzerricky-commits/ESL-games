@@ -13,6 +13,15 @@ import { fmtScheduleMinute } from '@/lib/schedule/schedule-time-labels'
 import { DAY_LABELS } from '@/lib/schedule/schedule-time-labels'
 import type { PendingRecurringScheduleChange } from '@/lib/schedule/recurring-change-types'
 import type { RecurringChangeScope } from '@/lib/schedule/recurring-change-types'
+import {
+  scheduleDialogContentClass,
+  scheduleDialogDescriptionClass,
+  scheduleDialogOverlayClass,
+  scheduleDialogTitleClass,
+  scheduleGhostBtnClass,
+  schedulePrimaryBtnClass,
+  scheduleQuietBtnClass,
+} from '@/components/schedule/schedule-sheet-chrome'
 
 interface RecurringChangeDialogProps {
   open: boolean
@@ -34,26 +43,39 @@ export function RecurringChangeDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent
+        overlayClassName={scheduleDialogOverlayClass}
+        className={scheduleDialogContentClass}
+      >
         <DialogHeader>
-          <DialogTitle>Change recurring class?</DialogTitle>
-          <DialogDescription>
+          <DialogTitle className={scheduleDialogTitleClass}>Change recurring class?</DialogTitle>
+          <DialogDescription className={scheduleDialogDescriptionClass}>
             {change.studentName} · {dayLabel} {timeLabel} · {change.durationMinutes} min
           </DialogDescription>
         </DialogHeader>
 
-        <p className="text-sm text-muted-foreground">
-          Choose whether this change applies to just this class or every week going forward.
+        <p className="text-[13px] text-muted-foreground">
+          Apply this to just this class, or every week going forward.
         </p>
 
         <DialogFooter className="flex-col gap-2 sm:flex-col sm:items-stretch">
-          <Button type="button" onClick={() => onChoose('occurrence')}>
+          <Button type="button" className={schedulePrimaryBtnClass} onClick={() => onChoose('occurrence')}>
             Only this class
           </Button>
-          <Button type="button" variant="outline" onClick={() => onChoose('series')}>
+          <Button
+            type="button"
+            variant="secondary"
+            className={scheduleQuietBtnClass}
+            onClick={() => onChoose('series')}
+          >
             Every week
           </Button>
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+          <Button
+            type="button"
+            variant="ghost"
+            className={scheduleGhostBtnClass}
+            onClick={() => onOpenChange(false)}
+          >
             Cancel
           </Button>
         </DialogFooter>

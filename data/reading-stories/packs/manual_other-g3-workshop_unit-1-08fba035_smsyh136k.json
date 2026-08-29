@@ -1,0 +1,92 @@
+{
+  "storyId": "manual::other-g3-workshop::unit-1-08fba035::smsyh136k",
+  "bookId": "other-g3-workshop",
+  "unitId": "unit-1-08fba035",
+  "status": "approved",
+  "stops": [
+    {
+      "id": "stop-2feb47ab",
+      "label": "Young Lovell's Dream",
+      "displayPage": 435,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 436,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-bf59cd73",
+          "kind": "true_false",
+          "prompt": "True or False: James Lovell always had enough money to go to the special college he wanted.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "Unfortunately, he didn't have enough money to attend. Lovell had to figure out another way to reach his goal.",
+          "evidenceHighlight": "didn't have enough money"
+        }
+      ]
+    },
+    {
+      "id": "stop-7e4d2269",
+      "label": "Apollo 13 Problem",
+      "displayPage": 436,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 437,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-5a917cce",
+          "kind": "mcq",
+          "prompt": "What was the main problem with the Apollo 13 spacecraft?",
+          "choices": [
+            "It ran out of fuel.",
+            "Its oxygen tanks exploded.",
+            "It hit an asteroid.",
+            "The crew got sick."
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "Two days after leaving Earth, however, the spacecraft had a serious problem. One of its oxygen tanks exploded. The crew did not have enough power or air to breathe.",
+          "evidenceHighlight": "One of its oxygen tanks exploded."
+        }
+      ]
+    },
+    {
+      "id": "stop-f465cc3e",
+      "label": "Apollo 13 Returns",
+      "displayPage": 437,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 438,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-74711ca1",
+          "kind": "mcq",
+          "prompt": "How did the Apollo 13 crew get back to Earth safely?",
+          "choices": [
+            "They built a new spaceship.",
+            "They used the lunar module as a lifeboat.",
+            "Another spaceship rescued them.",
+            "They fixed the oxygen tanks."
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "The NASA team decided the astronauts would use the lunar, or moon, module as a lifeboat. James and the other two astronauts climbed into the smaller spacecraft and shut the hatch tight.",
+          "evidenceHighlight": "use the lunar, or moon, module as a lifeboat"
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-08-18T09:40:40.768Z",
+  "approvedAt": "2026-08-18T09:40:40.767Z"
+}

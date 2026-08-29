@@ -65,6 +65,8 @@ export interface BookUnitRecord {
   id: string
   title: string
   filePath: string
+  /** When the book has `volumes`, which volume this unit belongs to. */
+  volumeId?: string
   pdfPageRange?: BookPdfPageRange
   pdfContentStart?: number
   /** Optional start-page anchor for preview jump/navigation. */
@@ -75,6 +77,13 @@ export interface BookUnitRecord {
   anchorSource?: BookAnchorSource
   /** Optional lesson outline for this unit. */
   lessons?: BookLessonRecord[]
+}
+
+/** One physical/digital PDF under a teaching book (optional multi-volume products). */
+export interface BookVolumeRecord {
+  id: string
+  title: string
+  filePath: string
 }
 
 export interface BookFilePageAlignment {
@@ -118,6 +127,11 @@ export interface BookRecord {
   spreadGutterByFile?: Record<string, number>
   /** Relative path under book-library, e.g. book-library/journeys/cover.jpg */
   coverImagePath?: string
+  /**
+   * Optional physical/digital volumes (PDFs) under this teaching book.
+   * Omit for classic single-PDF books. Multi-file books get volumes on load.
+   */
+  volumes?: BookVolumeRecord[]
   units: BookUnitRecord[]
 }
 

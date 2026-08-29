@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { PageNumberingMode } from '@/lib/books/page-numbering'
 import type { PasteImageOutcome } from '@/lib/books/clipboard-image'
 
@@ -53,4 +54,14 @@ export interface FullscreenBookOverlayProps {
   preferBookId?: string | null
   /** Map URL `unit` — explicit unit when paired with `preferBookId`. */
   preferUnitId?: string | null
+  /** Open on this PDF page (Books workshop / jump-to-part). Wins over student resume. */
+  preferOpenPdfPage?: number | null
+  /** When true, open the Exercises rail once the book is open (workshop mark → Exercise). */
+  preferOpenExercises?: boolean
+  /** Docked top chrome (place bar). Reserves space so it does not cover the book. */
+  topChrome?: ReactNode
+  /** Left desk rail (e.g. workshop story tools). Pushes the book like Listening. */
+  deskRail?: ReactNode
+  deskRailOpen?: boolean
+  onDeskRailOpenChange?: (open: boolean) => void
 }

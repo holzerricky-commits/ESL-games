@@ -40,22 +40,33 @@ export type UploadBookPdfOptions = {
   targetBookId?: string | null
   /** When uploading many files, skip per-file success toasts. */
   quiet?: boolean
+  /** 0–100 while bytes upload (XHR). */
+  onProgress?: (percent: number) => void
 }
 
-/** Upload one PDF into the book library. Shared by the drop panel and library-wide drop. */
-export async function uploadBookPdfFile(
-  file: File,
-  options?: UploadBookPdfOptions,
-): Promise<{ bookId?: string; unitCount?: number | null; title?: string }> {
-  if (file.type && file.type !== ACCEPTED_PDF_MIME && !file.name.toLowerCase().endsWith('.pdf')) {
-    toast.error('Only PDF files are supported.')
-    throw new Error('Only PDF files are supported.')
-  }
-  if (!file.name.toLowerCase().endsWith('.pdf')) {
-    toast.error('Please drop a .pdf file.')
-    throw new Error('Please drop a .pdf file.')
-  }
+export type UploadBookPdfResult = {
+  bookId?: string
+  unitCount?: number | null
+  title?: string
+  filePath?: string
+}
 
+type UploadApiBody = {
+  error?: string
+  warning?: string
+  filePath?: string
+  title?: string
+  series?: string
+  grade?: string | null
+  role?: string | null
+  contentFormat?: string
+  bookFolder?: string
+  bookId?: string
+  unitTitle?: string
+  unitCount?: number | null
+}
+
+function buildUploadFormData(file: File, options?: UploadBookPdfOptions): FormData {
   const form = new FormData()
   form.set('file', file)
   if (options?.asPresentation || options?.presentationLevel || options?.targetBookId) {
@@ -67,28 +78,10 @@ export async function uploadBookPdfFile(
   if (options?.targetBookId) {
     form.set('targetBookId', options.targetBookId)
   }
-  const res = await fetch('/api/books/upload', {
-    method: 'POST',
-    body: form,
-  })
-  const body = (await res.json()) as {
-    error?: string
-    warning?: string
-    filePath?: string
-    title?: string
-    series?: string
-    grade?: string | null
-    role?: string | null
-    contentFormat?: string
-    bookFolder?: string
-    bookId?: string
-    unitTitle?: string
-    unitCount?: number | null
-  }
-  if (!res.ok) {
-    throw new Error(body.error ?? 'Upload failed.')
-  }
+  return form
+}
 
+function finishUploadToast(body: UploadApiBody, options?: UploadBookPdfOptions) {
   if (!options?.quiet) {
     const bits = [body.series, body.grade, body.role].filter(Boolean)
     if (body.contentFormat === 'presentation') bits.unshift('Presentation')
@@ -103,11 +96,87 @@ export async function uploadBookPdfFile(
   if (body.warning) {
     toast.message(body.warning)
   }
+}
+
+function assertPdfFile(file: File) {
+  if (file.type && file.type !== ACCEPTED_PDF_MIME && !file.name.toLowerCase().endsWith('.pdf')) {
+    toast.error('Only PDF files are supported.')
+    throw new Error('Only PDF files are supported.')
+  }
+  if (!file.name.toLowerCase().endsWith('.pdf')) {
+    toast.error('Please drop a .pdf file.')
+    throw new Error('Please drop a .pdf file.')
+  }
+}
+
+/** Upload one PDF with optional progress (XHR). Shared by Add Book sheet and drop helpers. */
+export function uploadBookPdfFileWithProgress(
+  file: File,
+  options?: UploadBookPdfOptions,
+): Promise<UploadBookPdfResult> {
+  assertPdfFile(file)
+  const form = buildUploadFormData(file, options)
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', '/api/books/upload')
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable || !options?.onProgress) return
+      const percent = Math.max(0, Math.min(100, Math.round((event.loaded / event.total) * 100)))
+      options.onProgress(percent)
+    }
+    xhr.onload = () => {
+      let body: UploadApiBody = {}
+      try {
+        body = JSON.parse(xhr.responseText) as UploadApiBody
+      } catch {
+        body = {}
+      }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new Error(body.error ?? 'Upload failed.'))
+        return
+      }
+      options?.onProgress?.(100)
+      finishUploadToast(body, options)
+      resolve({
+        bookId: body.bookId,
+        unitCount: body.unitCount,
+        title: body.title,
+        filePath: body.filePath,
+      })
+    }
+    xhr.onerror = () => reject(new Error('Upload failed.'))
+    xhr.send(form)
+  })
+}
+
+/** Upload one PDF into the book library. Shared by the drop panel and library-wide drop. */
+export async function uploadBookPdfFile(
+  file: File,
+  options?: UploadBookPdfOptions,
+): Promise<UploadBookPdfResult> {
+  if (options?.onProgress) {
+    return uploadBookPdfFileWithProgress(file, options)
+  }
+  assertPdfFile(file)
+
+  const form = buildUploadFormData(file, options)
+  const res = await fetch('/api/books/upload', {
+    method: 'POST',
+    body: form,
+  })
+  const body = (await res.json()) as UploadApiBody
+  if (!res.ok) {
+    throw new Error(body.error ?? 'Upload failed.')
+  }
+
+  finishUploadToast(body, options)
 
   return {
     bookId: body.bookId,
     unitCount: body.unitCount,
     title: body.title,
+    filePath: body.filePath,
   }
 }
 

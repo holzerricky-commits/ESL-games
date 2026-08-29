@@ -73,20 +73,24 @@ describe('text-tool-hover', () => {
     expect(stickyFrames[0]!.rect).toEqual(getAnnotationBounds(sticky, widthPx, heightPx))
   })
 
-  it('editing frames are hidden while typing (WYSIWYG — no solid edit ring)', () => {
+  it('shows an edit ring while typing, including empty click-to-place', () => {
     const empty: AnnotationCommand = { ...text, id: 'new', text: '' }
-    expect(textToolEditingOutlineFrames([empty], 'new', widthPx, heightPx)).toEqual([])
-    expect(textToolEditingOutlineFrames(commands, 't1', widthPx, heightPx, 'hello')).toEqual([])
+    const emptyFrames = textToolEditingOutlineFrames([empty], 'new', widthPx, heightPx, '')
+    expect(emptyFrames).toHaveLength(1)
+    expect(emptyFrames[0]!.rect.w).toBeGreaterThan(0)
+    expect(emptyFrames[0]!.rect.h).toBeGreaterThan(0)
+    const typed = textToolEditingOutlineFrames(commands, 't1', widthPx, heightPx, 'hello')
+    expect(typed).toHaveLength(1)
+    expect(typed[0]!.rect.w).toBeGreaterThan(0)
   })
 
-  it('text tool uses I-beam by default and grab over selected label', () => {
-    expect(textToolPlacementCursor('t1', true, false)).toBe('text')
+  it('text tool uses move cursor over any label and I-beam on empty page', () => {
+    expect(textToolPlacementCursor('t1', true, false)).toBe('move')
     expect(textToolPlacementCursor(null, true, false)).toBe('text')
     expect(textToolPlacementCursor(null, false, true)).toBe('crosshair')
     expect(textToolPlacementCursor('n1', false, true)).toBe('text')
     expect(textToolPlacementCursor(null, true, false, 't1')).toBe('text')
-    expect(textToolPlacementCursor('t1', true, false, null, 't1')).toBe('grab')
-    expect(textToolPlacementCursor('t1', true, false, null, 't1', true)).toBe('grabbing')
-    expect(textToolPlacementCursor('t2', true, false, null, 't1')).toBe('text')
+    expect(textToolPlacementCursor('t1', true, false, null, true)).toBe('grabbing')
+    expect(textToolPlacementCursor('t2', true, false)).toBe('move')
   })
 })

@@ -2,7 +2,6 @@
 
 import Link from 'next/link'
 import { ChevronLeft, ChevronRight, MoreHorizontal, Settings2 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,6 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { formatMonthLabel } from '@/lib/schedule/month-view-layout'
 import { formatWeekRangeLabel, SESSION_STATUS_LEGEND } from '@/lib/schedule/week-view-layout'
+import { scheduleMenuContentClass } from '@/components/schedule/schedule-sheet-chrome'
 import { cn } from '@/lib/utils'
 
 export type ScheduleViewMode = 'week' | 'month'
@@ -53,38 +53,45 @@ export function ScheduleWeekHeader({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={onToday}>
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
+          <button
+            type="button"
+            onClick={onToday}
+            className="chrome-nav-pill px-3.5 py-1.5 text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)]/35"
+          >
             Today
-          </Button>
-          <div className="flex items-center gap-1">
-            <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={onPrev}>
-              <ChevronLeft className="h-4 w-4" aria-hidden />
+          </button>
+          <div className="flex items-center">
+            <button
+              type="button"
+              className="chrome-icon-btn h-9 w-9 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)]/35"
+              onClick={onPrev}
+            >
+              <ChevronLeft className="h-4 w-4" strokeWidth={1.75} aria-hidden />
               <span className="sr-only">{prevLabel}</span>
-            </Button>
-            <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={onNext}>
-              <ChevronRight className="h-4 w-4" aria-hidden />
+            </button>
+            <button
+              type="button"
+              className="chrome-icon-btn h-9 w-9 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)]/35"
+              onClick={onNext}
+            >
+              <ChevronRight className="h-4 w-4" strokeWidth={1.75} aria-hidden />
               <span className="sr-only">{nextLabel}</span>
-            </Button>
+            </button>
           </div>
-          <h3 className="text-sm font-semibold text-foreground sm:text-base">{periodLabel}</h3>
+          <h2 className="truncate text-[17px] font-semibold tracking-tight text-foreground sm:text-[22px]">
+            {periodLabel}
+          </h2>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <div
-            className="flex rounded-lg border border-[var(--border)] p-0.5"
-            role="radiogroup"
-            aria-label="Calendar view"
-          >
+        <div className="flex flex-wrap items-center gap-1">
+          <div className="flex items-center" role="radiogroup" aria-label="Calendar view">
             <button
               type="button"
               role="radio"
               aria-checked={viewMode === 'week'}
-              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors sm:text-sm ${
-                viewMode === 'week'
-                  ? 'bg-[var(--surface-2)] text-foreground'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
+              data-active={viewMode === 'week'}
+              className="chrome-nav-pill px-3.5 py-1.5 text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)]/35"
               onClick={() => onViewModeChange('week')}
             >
               Week
@@ -93,11 +100,8 @@ export function ScheduleWeekHeader({
               type="button"
               role="radio"
               aria-checked={viewMode === 'month'}
-              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors sm:text-sm ${
-                viewMode === 'month'
-                  ? 'bg-[var(--surface-2)] text-foreground'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
+              data-active={viewMode === 'month'}
+              className="chrome-nav-pill px-3.5 py-1.5 text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)]/35"
               onClick={() => onViewModeChange('month')}
             >
               Month
@@ -107,12 +111,15 @@ export function ScheduleWeekHeader({
           {showToolsMenu ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button type="button" variant="outline" size="sm" aria-label="Calendar tools">
-                  <MoreHorizontal className="h-4 w-4" aria-hidden />
-                  <span className="ml-1.5 hidden sm:inline">Tools</span>
-                </Button>
+                <button
+                  type="button"
+                  className="chrome-icon-btn h-9 w-9 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)]/35"
+                  aria-label="Calendar tools"
+                >
+                  <MoreHorizontal className="h-4 w-4" strokeWidth={1.75} aria-hidden />
+                </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="min-w-[12rem]">
+              <DropdownMenuContent align="end" className={cn('min-w-[12rem]', scheduleMenuContentClass)}>
                 <DropdownMenuItem onSelect={() => onOpenHours()}>
                   <Settings2 className="mr-2 h-4 w-4" aria-hidden />
                   Working hours
@@ -135,43 +142,32 @@ export function ScheduleWeekHeader({
       </div>
 
       {highlightStudentId ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-400/50 bg-amber-100/60 px-3 py-2 text-sm text-foreground dark:border-amber-500/40 dark:bg-amber-500/15">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-[18px] bg-[color-mix(in_srgb,var(--brand-yellow)_16%,var(--surface-2))] px-3.5 py-2.5 text-[13px] text-foreground">
           <span>
             Booking for{' '}
-            <span className="font-semibold">{highlightStudentName ?? 'this student'}</span>
-            <span className="text-muted-foreground">
-              {' '}
-              — click an empty time to schedule them. Their other classes stay highlighted.
-            </span>
+            <span className="font-semibold tracking-tight">{highlightStudentName ?? 'this student'}</span>
+            <span className="text-muted-foreground"> · click an empty time to add them</span>
           </span>
-          <Link href="/schedule" className="text-xs font-semibold text-[var(--brand-blue)] hover:underline">
-            Show all students
+          <Link
+            href="/schedule"
+            className="chrome-nav-pill px-3 py-1 text-[12px] font-medium"
+          >
+            Show all
           </Link>
         </div>
       ) : null}
 
       <div
-        className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px] text-muted-foreground"
+        className="flex flex-wrap items-center gap-x-3.5 gap-y-1 text-[12px] text-muted-foreground"
         aria-label="Class status colors"
       >
         {SESSION_STATUS_LEGEND.map((item) => (
           <span key={item.key} className="inline-flex items-center gap-1.5">
-            <span
-              className={cn(
-                'inline-block h-2.5 w-2.5 shrink-0 rounded-sm border',
-                item.colors.bg,
-                item.colors.border,
-              )}
-              aria-hidden
-            />
+            <span className={cn('inline-block h-1.5 w-1.5 shrink-0 rounded-full', item.colors.accent)} aria-hidden />
             {item.label}
           </span>
         ))}
       </div>
-
-      <p className="text-xs text-muted-foreground">
-        Keyboard: T today · W week · M month · ← → navigate · Tab to classes · arrows move · Enter save
-      </p>
     </div>
   )
 }

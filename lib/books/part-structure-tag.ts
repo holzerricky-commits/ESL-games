@@ -60,6 +60,8 @@ export function partOrderTemplateForProfile(
       return WONDERS_WORKSHOP_PART_ORDER_TEMPLATE
     case 'wonders_literature':
       return WONDERS_LITERATURE_PART_ORDER_TEMPLATE
+    case 'generic':
+      return []
     case 'journeys':
     default:
       return JOURNEYS_LESSON_PART_ORDER_TEMPLATE

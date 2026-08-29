@@ -1,12 +1,18 @@
 /**
- * Phase 1a — score early PDF pages for “table of contents / scope” likeness
+ * Phase 1a/1b — score early PDF pages for contents / scope likeness
  * and propose an inclusive PDF page range for the structure wizard.
+ *
+ * 1b: Contents + Scope/Academic Skills packs, softer early-stop, A:/B: tables.
  */
 
 export const TOC_DETECT_DEFAULT_MAX_SCAN = 20
 /** Stop scanning after this many low-scoring pages past a found TOC block. */
-export const TOC_DETECT_EARLY_STOP_LOW_PAGES = 1
+export const TOC_DETECT_EARLY_STOP_LOW_PAGES = 2
 export const TOC_DETECT_MIN_PAGE_SCORE = 22
+/** Soft floor for companion front-matter pages (Scope / skills grids). */
+export const TOC_DETECT_COMPANION_MIN_SCORE = 14
+/** After a Contents hit, peek this many following PDF pages for Scope/skills. */
+export const TOC_DETECT_FRONT_MATTER_LOOKAHEAD = 3
 
 export type TocPageScore = {
   pdfPage: number
@@ -32,6 +38,52 @@ function countMatches(text: string, re: RegExp): number {
   const flags = re.flags.includes('g') ? re.flags : `${re.flags}g`
   const copy = new RegExp(re.source, flags)
   return [...text.matchAll(copy)].length
+}
+
+function hasScopeAndSequenceCue(text: string): boolean {
+  if (/\bscope\s+and\s+sequence\b/i.test(text)) return true
+  // Split title lines: "SCOPE AND" … "SEQUENCE"
+  return /\bscope\s+and\b/i.test(text) && /\bsequence\b/i.test(text)
+}
+
+/**
+ * Explorer-style Scope / Academic Skills grids (may lack classic page-number TOC lines).
+ */
+export function isFrontMatterCompanionPage(rawText: string): boolean {
+  const text = normalizeText(rawText)
+  if (text.length < 8) return false
+
+  if (hasScopeAndSequenceCue(text)) return true
+  if (/\bacademic\s+skills\b/i.test(text)) return true
+  if (/\breading\s+skill\b/i.test(text) && /\bvocabulary\s+building\b/i.test(text)) return true
+  if (/\bunit\b/i.test(text) && /\btheme\b/i.test(text) && /\breading\b/i.test(text)) return true
+
+  const abColon = countMatches(text, /\b[AB]\s*:\s*\S/g)
+  if (abColon >= 6) return true
+
+  const { score } = scoreTocCandidatePage(rawText)
+  return (
+    score >= TOC_DETECT_COMPANION_MIN_SCORE &&
+    (abColon >= 4 || /\bvideo\b/i.test(text) || /\btheme\b/i.test(text))
+  )
+}
+
+/** Body / intro prose — do not pull into the TOC pack via look-ahead. */
+export function isLikelyBodyAfterToc(rawText: string): boolean {
+  const text = normalizeText(rawText)
+  if (text.length < 40) return false
+  if (isFrontMatterCompanionPage(rawText)) return false
+  const { score, reasons } = scoreTocCandidatePage(rawText)
+  if (score >= TOC_DETECT_MIN_PAGE_SCORE) return false
+  if (reasons.includes('long_prose_penalty')) return true
+  const lines = rawText
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+  const avgLineLen =
+    lines.length > 0 ? lines.reduce((sum, line) => sum + line.length, 0) / lines.length : 0
+  const unitHits = countMatches(text, /\bunit\s*\d+/gi)
+  return avgLineLen > 60 && unitHits < 2 && !hasScopeAndSequenceCue(text) && !/\bcontents\b/i.test(text)
 }
 
 /**
@@ -61,14 +113,29 @@ export function scoreTocCandidatePage(rawText: string): { score: number; reasons
     reasons.push('contents')
   }
 
-  if (/\bscope and sequence\b/i.test(text)) {
+  if (hasScopeAndSequenceCue(text)) {
     score += 40
     reasons.push('scope_and_sequence')
   }
 
-  if (/\bacademic skills\b/i.test(text)) {
-    score += 22
+  if (/\bacademic\s+skills\b/i.test(text)) {
+    score += 28
     reasons.push('academic_skills')
+  }
+
+  if (/\breading\s+skill\b/i.test(text) && /\bvocabulary\s+building\b/i.test(text)) {
+    score += 18
+    reasons.push('skills_grid_headers')
+  }
+
+  if (/\bcritical\s+thinking\b/i.test(text) && /\b(reading\s+skill|vocabulary)\b/i.test(text)) {
+    score += 10
+    reasons.push('critical_thinking_grid')
+  }
+
+  if (/\bunit\b/i.test(text) && /\btheme\b/i.test(text) && /\breading\b/i.test(text)) {
+    score += 16
+    reasons.push('scope_table_headers')
   }
 
   const unitHits = countMatches(text, /\bunit\s*\d+/gi)
@@ -93,6 +160,13 @@ export function scoreTocCandidatePage(rawText: string): { score: number; reasons
     reasons.push(`reading_ab_${readingAb}`)
   }
 
+  // Reading Explorer Scope rows: "A: Title" / "B: Title"
+  const abColon = countMatches(text, /\b[AB]\s*:\s*\S/g)
+  if (abColon >= 4) {
+    score += Math.min(24, abColon * 2)
+    reasons.push(`ab_colon_${abColon}`)
+  }
+
   const pageNumLines = lines.filter((line) => /\d{1,3}\s*$/.test(line) && /[A-Za-z]/.test(line)).length
   if (pageNumLines >= 4) {
     score += Math.min(28, pageNumLines * 2)
@@ -108,7 +182,13 @@ export function scoreTocCandidatePage(rawText: string): { score: number; reasons
   // Long prose without TOC cues → likely story / intro body.
   const avgLineLen =
     lines.length > 0 ? lines.reduce((sum, line) => sum + line.length, 0) / lines.length : 0
-  if (avgLineLen > 72 && unitHits < 2 && !/\bcontents\b/i.test(text) && !/\bscope and sequence\b/i.test(text)) {
+  if (
+    avgLineLen > 72 &&
+    unitHits < 2 &&
+    !/\bcontents\b/i.test(text) &&
+    !hasScopeAndSequenceCue(text) &&
+    !/\bacademic\s+skills\b/i.test(text)
+  ) {
     score -= 18
     reasons.push('long_prose_penalty')
   }
@@ -132,15 +212,73 @@ export function scoreTocPages(
 
 function confidenceForRun(runScores: TocPageScore[], peak: number): 'high' | 'medium' | 'low' {
   const hasStrongCue = runScores.some((s) =>
-    s.reasons.some((r) =>
-      r === 'contents' ||
-      r === 'table_of_contents' ||
-      r === 'scope_and_sequence',
+    s.reasons.some(
+      (r) =>
+        r === 'contents' ||
+        r === 'table_of_contents' ||
+        r === 'scope_and_sequence' ||
+        r === 'academic_skills',
     ),
   )
   if (peak >= 55 && hasStrongCue) return 'high'
   if (peak >= 35 || hasStrongCue) return 'medium'
   return 'low'
+}
+
+function runHasContentsCue(runScores: TocPageScore[]): boolean {
+  return runScores.some((s) =>
+    s.reasons.some((r) => r === 'contents' || r === 'table_of_contents'),
+  )
+}
+
+/**
+ * After a Contents page, pull in Scope / Academic Skills (and weak text pages
+ * that are not clearly body), up to LOOKAHEAD pages.
+ */
+export function extendRangeWithFrontMatterPack(
+  pages: Array<{ pdfPage: number; text: string }>,
+  scores: TocPageScore[],
+  endIdx: number,
+  options?: { lookahead?: number; minScore?: number },
+): number {
+  const lookahead = options?.lookahead ?? TOC_DETECT_FRONT_MATTER_LOOKAHEAD
+  const minScore = options?.minScore ?? TOC_DETECT_MIN_PAGE_SCORE
+  let toIdx = endIdx
+
+  for (let k = 1; k <= lookahead; k++) {
+    const idx = endIdx + k
+    if (idx >= scores.length || idx >= pages.length) break
+    const text = pages[idx]!.text
+    const pageScore = scores[idx]!.score
+
+    if (isLikelyBodyAfterToc(text)) break
+
+    if (
+      pageScore >= minScore ||
+      pageScore >= TOC_DETECT_COMPANION_MIN_SCORE ||
+      isFrontMatterCompanionPage(text) ||
+      normalizeText(text).length < 40
+    ) {
+      // Include companions, soft-scoring grids, or nearly empty pages (image-heavy Scope).
+      toIdx = idx
+      continue
+    }
+
+    // Bridge one soft miss if the following page is clearly front matter.
+    const nextIdx = idx + 1
+    if (
+      nextIdx < scores.length &&
+      nextIdx <= endIdx + lookahead &&
+      (isFrontMatterCompanionPage(pages[nextIdx]!.text) ||
+        scores[nextIdx]!.score >= TOC_DETECT_COMPANION_MIN_SCORE)
+    ) {
+      toIdx = nextIdx
+      break
+    }
+    break
+  }
+
+  return toIdx
 }
 
 /**
@@ -152,10 +290,12 @@ export function proposeTocPdfRange(
   options?: {
     maxScanPages?: number
     minScore?: number
+    frontMatterLookahead?: number
   },
 ): TocRangeProposal | null {
   const maxScan = options?.maxScanPages ?? TOC_DETECT_DEFAULT_MAX_SCAN
   const minScore = options?.minScore ?? TOC_DETECT_MIN_PAGE_SCORE
+  const lookahead = options?.frontMatterLookahead ?? TOC_DETECT_FRONT_MATTER_LOOKAHEAD
 
   const limited = [...pages]
     .filter((p) => Number.isFinite(p.pdfPage) && p.pdfPage >= 1)
@@ -188,7 +328,9 @@ export function proposeTocPdfRange(
       !best ||
       run.sum > best.sum ||
       (run.sum === best.sum && run.peak > best.peak) ||
-      (run.sum === best.sum && run.peak === best.peak && run.endIdx - run.startIdx > best.endIdx - best.startIdx)
+      (run.sum === best.sum &&
+        run.peak === best.peak &&
+        run.endIdx - run.startIdx > best.endIdx - best.startIdx)
     ) {
       best = run
     }
@@ -197,10 +339,19 @@ export function proposeTocPdfRange(
 
   if (!best) return null
 
-  const runScores = scores.slice(best.startIdx, best.endIdx + 1)
+  let endIdx = best.endIdx
+  const runScoresInitial = scores.slice(best.startIdx, best.endIdx + 1)
+  if (runHasContentsCue(runScoresInitial)) {
+    endIdx = extendRangeWithFrontMatterPack(limited, scores, best.endIdx, {
+      lookahead,
+      minScore,
+    })
+  }
+
+  const runScores = scores.slice(best.startIdx, endIdx + 1)
   return {
     from: scores[best.startIdx]!.pdfPage,
-    to: scores[best.endIdx]!.pdfPage,
+    to: scores[endIdx]!.pdfPage,
     confidence: confidenceForRun(runScores, best.peak),
     scores,
     scannedThroughPage,
@@ -219,12 +370,25 @@ export function shouldEarlyStopTocScan(input: {
   tocEndPage: number | null
   minScore?: number
   lowPagesAfterToc?: number
+  /** When true, require peeking further after Contents before stopping. */
+  forcePeekAfterContents?: boolean
+  contentsEndedAtPage?: number | null
 }): boolean {
   const minScore = input.minScore ?? TOC_DETECT_MIN_PAGE_SCORE
   const lowNeeded = input.lowPagesAfterToc ?? TOC_DETECT_EARLY_STOP_LOW_PAGES
   if (input.tocStartPage == null || input.tocEndPage == null) return false
   if (input.pdfPage <= input.tocEndPage) return false
   if (input.pageScore >= minScore) return false
+
+  // Always read at least Contents + LOOKAHEAD pages before early-stop.
+  if (
+    input.forcePeekAfterContents &&
+    input.contentsEndedAtPage != null &&
+    input.pdfPage <= input.contentsEndedAtPage + TOC_DETECT_FRONT_MATTER_LOOKAHEAD
+  ) {
+    return false
+  }
+
   const gap = input.pdfPage - input.tocEndPage
   return gap >= lowNeeded
 }

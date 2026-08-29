@@ -35,6 +35,8 @@ interface BookPartPagesConfirmProps {
   onPdfNumPages?: (numPages: number) => void
   /** Status chips / actions under Pages (Text, Checks, …). */
   statusSlot?: ReactNode
+  /** Open the workshop reader on these pages. */
+  onOpenInBook?: () => void
 }
 
 export function BookPartPagesConfirm({
@@ -48,6 +50,7 @@ export function BookPartPagesConfirm({
   totalPdfPages,
   onPdfNumPages,
   statusSlot,
+  onOpenInBook,
 }: BookPartPagesConfirmProps) {
   const story = useMemo<ReadingStoryMap>(() => {
     const tag = effectivePartStructureTag(part)
@@ -275,7 +278,7 @@ export function BookPartPagesConfirm({
   }
 
   return (
-    <div className="overflow-hidden rounded-[28px] bg-[var(--surface-2)] shadow-[0_12px_40px_-24px_rgba(0,0,0,0.2)]">
+    <div className="rounded-[28px] bg-[var(--surface-2)] shadow-[0_12px_40px_-24px_rgba(0,0,0,0.2)]">
       <div className="flex flex-col gap-8 p-6 sm:p-8 lg:flex-row lg:items-stretch lg:gap-10 lg:p-10">
         <div className="mx-auto shrink-0 lg:mx-0">
           {fileUrl && hasDraftRange && livePdf ? (
@@ -292,7 +295,7 @@ export function BookPartPagesConfirm({
               rangeEndDisplay={draftEnd}
               thumbWidth={CONFIRM_THUMB_WIDTH}
               size="lg"
-              showCounterLabel={false}
+              showCounterLabel
               onPdfNumPages={onPdfNumPages}
               onRangeChange={(startDisplay, endDisplay) => {
                 setStartPage(String(startDisplay))
@@ -340,6 +343,17 @@ export function BookPartPagesConfirm({
                 >
                   Edit
                 </Button>
+                {onOpenInBook ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-9 rounded-full px-4"
+                    disabled={!hasDraftRange || !fileUrl}
+                    onClick={onOpenInBook}
+                  >
+                    Open book
+                  </Button>
+                ) : null}
               </div>
             ) : (
               <div className="mx-auto w-full max-w-sm space-y-4 lg:mx-0">

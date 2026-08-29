@@ -16,6 +16,7 @@ import {
   type OrientedSelectionFrame,
 } from '@/lib/books/annotation-select'
 import { selectionHasRotatableShapes } from '@/lib/books/annotation-rotation'
+import { selectionBoundsTooSmallForScaleHandles } from '@/lib/books/annotation-selection-chrome'
 
 export type InkSessionSelectionLivePreviewRefs = {
   selectRotationLiveDelta: number | null
@@ -200,7 +201,11 @@ export function computeInkSessionSelectionChrome(
       : null
 
   const showScaleHandles =
-    enabled && hasTransformableSelection && !marqueeRect && selectionUnionBounds != null
+    enabled &&
+    hasTransformableSelection &&
+    !marqueeRect &&
+    selectionUnionBounds != null &&
+    !selectionBoundsTooSmallForScaleHandles(selectionUnionBounds, widthPx, heightPx)
 
   const showRotationHandle =
     showScaleHandles &&

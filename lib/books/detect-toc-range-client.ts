@@ -3,9 +3,11 @@
 import { loadCachedPdfDocument } from '@/lib/books/pdf-thumbnail-cache'
 import { mergePdfTextItemsToLines, type PdfTextItem } from '@/lib/books/toc-import'
 import {
+  isFrontMatterCompanionPage,
   proposeTocPdfRange,
   scoreTocCandidatePage,
   shouldEarlyStopTocScan,
+  TOC_DETECT_COMPANION_MIN_SCORE,
   TOC_DETECT_DEFAULT_MAX_SCAN,
   TOC_DETECT_MIN_PAGE_SCORE,
   type TocRangeProposal,
@@ -40,9 +42,16 @@ export type DetectTocRangeResult =
   | { ok: true; proposal: TocRangeProposal; numPages: number; pagesWithText: number }
   | { ok: false; reason: 'no_text' | 'no_toc_signal' | 'no_file'; numPages: number; pagesWithText: number }
 
+function pageContinuesTocBlock(text: string, score: number, minScore: number): boolean {
+  if (score >= minScore) return true
+  if (score >= TOC_DETECT_COMPANION_MIN_SCORE) return true
+  return isFrontMatterCompanionPage(text)
+}
+
 /**
  * Scan early PDF pages (selectable text only), score TOC-likeness, propose a range.
- * Stops early once a TOC block ends and the next page looks like body content.
+ * Stops early once a TOC block ends and the next pages look like body content.
+ * After Contents, peeks further so Scope / Academic Skills pages are not skipped.
  */
 export async function detectTocPdfRangeFromFileUrl(
   fileUrl: string,
@@ -66,6 +75,7 @@ export async function detectTocPdfRangeFromFileUrl(
   let pagesWithText = 0
   let tocStartPage: number | null = null
   let tocEndPage: number | null = null
+  let contentsEndedAtPage: number | null = null
   let earlyStopped = false
 
   for (let p = 1; p <= limit; p++) {
@@ -74,10 +84,13 @@ export async function detectTocPdfRangeFromFileUrl(
     if (text.replace(/\s+/g, ' ').trim().length >= 12) pagesWithText += 1
     pages.push({ pdfPage: p, text })
 
-    const { score } = scoreTocCandidatePage(text)
-    if (score >= minScore) {
+    const { score, reasons } = scoreTocCandidatePage(text)
+    if (pageContinuesTocBlock(text, score, minScore)) {
       if (tocStartPage == null) tocStartPage = p
       tocEndPage = p
+      if (reasons.includes('contents') || reasons.includes('table_of_contents')) {
+        contentsEndedAtPage = p
+      }
     } else if (
       shouldEarlyStopTocScan({
         pdfPage: p,
@@ -85,6 +98,8 @@ export async function detectTocPdfRangeFromFileUrl(
         tocStartPage,
         tocEndPage,
         minScore,
+        forcePeekAfterContents: true,
+        contentsEndedAtPage,
       })
     ) {
       earlyStopped = true

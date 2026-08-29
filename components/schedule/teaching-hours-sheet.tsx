@@ -11,6 +11,11 @@ import {
 import { DAY_LABELS, scheduleMinuteOptions } from '@/lib/schedule/schedule-time-labels'
 import { cn } from '@/lib/utils'
 import type { TeacherWeeklyScheduleConfig } from '@/lib/types'
+import {
+  scheduleDialogOverlayClass,
+  scheduleFieldClass,
+  schedulePrimaryBtnClass,
+} from '@/components/schedule/schedule-sheet-chrome'
 
 interface TeachingHoursSheetProps {
   open: boolean
@@ -31,10 +36,14 @@ export function TeachingHoursSheet({ open, onOpenChange, config, onSave }: Teach
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full sm:max-w-md">
+      <SheetContent
+        side="right"
+        overlayClassName={scheduleDialogOverlayClass}
+        className="w-full rounded-l-[22px] border-l-0 bg-[var(--card)] sm:max-w-md"
+      >
         <SheetHeader>
-          <SheetTitle>Working hours</SheetTitle>
-          <SheetDescription>Days and times you take classes.</SheetDescription>
+          <SheetTitle className="text-[17px] font-semibold tracking-tight">Working hours</SheetTitle>
+          <SheetDescription className="text-[13px]">Days and times you take classes.</SheetDescription>
         </SheetHeader>
 
         <div className="space-y-5 px-4 pb-4">
@@ -49,10 +58,10 @@ export function TeachingHoursSheet({ open, onOpenChange, config, onSave }: Teach
                   aria-label={label}
                   onClick={() => toggleWorkingDay(day)}
                   className={cn(
-                    'h-9 min-w-9 rounded-full px-3 text-sm font-semibold transition-colors',
+                    'chrome-motion h-9 min-w-9 rounded-full px-3 text-[13px] font-semibold tracking-tight',
                     active
                       ? 'bg-[var(--brand-blue)] text-white'
-                      : 'bg-muted/50 text-muted-foreground',
+                      : 'bg-[var(--surface-3)] text-muted-foreground hover:bg-[var(--surface-4)]',
                   )}
                 >
                   {label}
@@ -65,7 +74,7 @@ export function TeachingHoursSheet({ open, onOpenChange, config, onSave }: Teach
             <label className="space-y-1">
               <span className="text-xs font-semibold text-muted-foreground">Start</span>
               <select
-                className="w-full rounded-md border border-[var(--border)] bg-background px-3 py-2 text-sm"
+                className={scheduleFieldClass}
                 value={config.startMinute}
                 onChange={(e) => onSave({ startMinute: Number(e.target.value) })}
               >
@@ -79,7 +88,7 @@ export function TeachingHoursSheet({ open, onOpenChange, config, onSave }: Teach
             <label className="space-y-1">
               <span className="text-xs font-semibold text-muted-foreground">End</span>
               <select
-                className="w-full rounded-md border border-[var(--border)] bg-background px-3 py-2 text-sm"
+                className={scheduleFieldClass}
                 value={config.endMinute}
                 onChange={(e) => onSave({ endMinute: Number(e.target.value) })}
               >
@@ -93,7 +102,7 @@ export function TeachingHoursSheet({ open, onOpenChange, config, onSave }: Teach
           </div>
 
           <div className="flex justify-end">
-            <Button type="button" onClick={() => onOpenChange(false)}>
+            <Button type="button" className={schedulePrimaryBtnClass} onClick={() => onOpenChange(false)}>
               Done
             </Button>
           </div>

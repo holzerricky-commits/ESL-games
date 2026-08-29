@@ -13,7 +13,7 @@ import { dateInWeekForDayOfWeek, recurringLabel } from '@/lib/schedule/week-view
 import type { TeacherWeeklyScheduleConfig } from '@/lib/types'
 
 const selectClass =
-  'w-full rounded-md border border-[var(--border)] bg-background px-3 py-2 text-sm'
+  'w-full rounded-xl border-0 bg-[var(--surface-3)] px-3 py-2 text-sm tracking-tight outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)]/25'
 
 export interface SlotFormValues {
   dayOfWeek: number

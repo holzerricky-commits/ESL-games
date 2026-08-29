@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { Camera, ChevronDown, ChevronLeft, ChevronRight, Eye, FileText, FileType2, Library, Pencil, Plus, X } from 'lucide-react'
@@ -47,12 +47,19 @@ import {
 import { BookLibraryShelf } from '@/components/books/book-library-shelf'
 import { BookLessonShelf } from '@/components/books/book-lesson-shelf'
 import { BookPartPrepShell } from '@/components/books/book-part-prep-shell'
+import { BooksWorkshopReader } from '@/components/books/books-workshop-reader'
+import type { BooksWorkshopOpenRequest } from '@/lib/books/books-workshop'
 import { BookPartShelf } from '@/components/books/book-part-shelf'
-import { BookDropUpload } from '@/components/books/book-drop-upload'
+import { AddBookSheet, type AddBookSheetMode } from '@/components/books/add-book-sheet'
+import { BookCutUnitsWorkspace } from '@/components/books/book-cut-units-panel'
+import {
+  BookStructureWizard,
+  type BookStructureManifestSaveMeta,
+} from '@/components/books/book-structure-wizard'
 import { BookSetupHub } from '@/components/books/book-setup-hub'
-import { BookStructureWizard } from '@/components/books/book-structure-wizard'
 import { BookAdvancedTab } from '@/components/books/tabs/book-advanced-tab'
 import { BookMaterialsTab } from '@/components/books/tabs/book-materials-tab'
+import { BookAudioTab } from '@/components/books/tabs/book-audio-tab'
 import { BookOutlineTab } from '@/components/books/tabs/book-outline-tab'
 import { BookPlanTab } from '@/components/books/tabs/book-plan-tab'
 import { BookStoriesTab } from '@/components/books/tabs/book-stories-tab'
@@ -74,6 +81,13 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import { bookHasTocMapping } from '@/lib/books/strip-book-toc-mapping'
+import {
+  ensureVolumesForFilePaths,
+  findBookVolume,
+  firstVolumeNeedingOutline,
+  listBookVolumes,
+  migrateBookVolumes,
+} from '@/lib/books/book-volumes'
 
 const PDF_DOCUMENT_OPTIONS = { wasmUrl: '/wasm/' } as const
 const BOOK_MATERIAL_TYPE_OPTIONS: Array<{ value: BookContextMaterialRecord['type']; label: string }> = [
@@ -470,12 +484,26 @@ export function BooksPageClient() {
   const [numPages, setNumPages] = useState<number | null>(null)
   const [sessionStartedAt, setSessionStartedAt] = useState<string | null>(null)
   const [pdfReady, setPdfReady] = useState(false)
-  const [structureWizardOpen, setStructureWizardOpen] = useState(false)
   const [structureWizardTarget, setStructureWizardTarget] = useState<{ bookId: string; filePath: string | null } | null>(null)
-  const [uploadPanelOpen, setUploadPanelOpen] = useState(false)
+  const [addBookSheetOpen, setAddBookSheetOpen] = useState(false)
+  const [addBookSheetMode, setAddBookSheetMode] = useState<AddBookSheetMode>('add')
+  const [addBookTargetBookId, setAddBookTargetBookId] = useState<string | null>(null)
+  const [cutUnitsOpen, setCutUnitsOpen] = useState<{
+    bookId: string
+    filePath: string
+    title?: string
+  } | null>(null)
+  const [outlineOpen, setOutlineOpen] = useState<{
+    bookId: string
+    filePath: string | null
+    volumeId?: string | null
+    initialTocRange?: { from: number; to: number } | null
+    skipAutoTocDetect?: boolean
+  } | null>(null)
   const [isSavingStudentStart, setIsSavingStudentStart] = useState(false)
   const [readerLessonId, setReaderLessonId] = useState<string | null>(null)
   const [readerPartId, setReaderPartId] = useState<string | null>(null)
+  const [workshopOpen, setWorkshopOpen] = useState<BooksWorkshopOpenRequest | null>(null)
   const [unitContext, setUnitContext] = useState<UnitContextRecord | null>(null)
   const [lessonContext, setLessonContext] = useState<LessonContextRecord | null>(null)
   const [bookContext, setBookContext] = useState<BookContextSummaryRecord | null>(null)
@@ -583,9 +611,13 @@ export function BooksPageClient() {
   const selectedRowsCaptureFileInputRef = useRef<HTMLInputElement | null>(null)
 
   const loadLibrary = useCallback(async (options?: { preserveSelection?: boolean }) => {
-    setLoading(true)
-    setLoadError(null)
     const preserveSelection = options?.preserveSelection ?? false
+    // Quiet refresh keeps the page (and open Add Book sheet) mounted — full-page
+    // loading would unmount the dialog and close it after upload.
+    if (!preserveSelection) {
+      setLoading(true)
+    }
+    setLoadError(null)
     try {
       const response = await fetch('/api/books')
       const payload = (await response.json()) as BookLibraryPayload | { error: string }
@@ -678,7 +710,9 @@ export function BooksPageClient() {
       const message = error instanceof Error ? error.message : 'Failed to load books.'
       setLoadError(message)
     } finally {
-      setLoading(false)
+      if (!preserveSelection) {
+        setLoading(false)
+      }
     }
     // Intentionally omit requestedUnitId: lesson/part desk navigation must not
     // re-fetch the library (that flashed "Loading…" and raced click → URL updates).
@@ -1153,8 +1187,7 @@ export function BooksPageClient() {
     syncBooksUrl({ book: book.id, unit: focusUnit.id, tab: 'outline' })
   }
 
-  function handleBookRemoved(payload: BookLibraryPayload, removedBookId: string) {
-    setLibrary(payload)
+  function clearBookAssignmentsAfterRemove(payload: BookLibraryPayload, removedBookId: string) {
     for (const student of getStudents()) {
       const assigned = student.assignedBookIds ?? []
       if (!assigned.includes(removedBookId)) continue
@@ -1167,6 +1200,11 @@ export function BooksPageClient() {
         payload,
       )
     }
+  }
+
+  function handleBookRemoved(payload: BookLibraryPayload, removedBookId: string) {
+    setLibrary(payload)
+    clearBookAssignmentsAfterRemove(payload, removedBookId)
 
     const nextBook = payload.books[0]
     if (nextBook) {
@@ -1194,9 +1232,59 @@ export function BooksPageClient() {
     )
   }
 
-  function openStructureWizardForBook(book: BookRecord) {
-    setStructureWizardTarget({ bookId: book.id, filePath: book.units[0]?.filePath ?? null })
-    setStructureWizardOpen(true)
+  /** From the open-book shelf: always return to the library after remove. */
+  function handleBookRemovedFromLessonShelf(payload: BookLibraryPayload, removedBookId: string) {
+    setLibrary(payload)
+    clearBookAssignmentsAfterRemove(payload, removedBookId)
+    setSelected(null)
+    router.replace(
+      buildBooksPageHref({
+        book: null,
+        unit: null,
+        tab: null,
+        student: selectedStudentId,
+      }),
+    )
+  }
+
+  function openStructureWizardForBook(book: BookRecord, volumeId?: string | null) {
+    setAddBookSheetOpen(false)
+    const migrated = migrateBookVolumes(book)
+    const volume =
+      findBookVolume(migrated, volumeId) ??
+      firstVolumeNeedingOutline(migrated) ??
+      listBookVolumes(migrated)[0] ??
+      null
+    setOutlineOpen({
+      bookId: migrated.id,
+      filePath: volume?.filePath ?? migrated.units[0]?.filePath ?? null,
+      volumeId: volume?.id ?? null,
+      initialTocRange: null,
+      skipAutoTocDetect: false,
+    })
+  }
+
+  function openCutUnitsForBook(book: BookRecord) {
+    const filePath = book.units[0]?.filePath?.trim() || null
+    if (!filePath) {
+      toast.error('This book has no PDF to cut.')
+      return
+    }
+    if (bookHasTocMapping(book)) {
+      const ok = window.confirm(
+        'This book already has an outline. Cutting will replace the units with new files and you’ll outline again. Continue?',
+      )
+      if (!ok) return
+    }
+    setAddBookSheetOpen(false)
+    setCutUnitsOpen({ bookId: book.id, filePath, title: book.title })
+  }
+
+  function openAddBookSheet(options?: { targetBookId?: string | null }) {
+    setAddBookSheetMode('add')
+    setAddBookTargetBookId(options?.targetBookId ?? null)
+    setStructureWizardTarget(null)
+    setAddBookSheetOpen(true)
   }
 
   function syncBooksUrl(updates: {
@@ -1249,7 +1337,7 @@ export function BooksPageClient() {
   /** Library cover → lesson shelf (or outline empty state). */
   function handleOpenBook(bookId: string) {
     selectBook(bookId)
-    router.replace(
+    router.push(
       buildBooksPageHref({
         book: bookId,
         unit: null,
@@ -1265,7 +1353,7 @@ export function BooksPageClient() {
   /** Quiet overflow to materials / plan / advanced (part prep is the main path now). */
   function handleOpenAdvancedTools() {
     if (!selectedBook) return
-    router.replace(
+    router.push(
       buildBooksPageHref({
         book: selectedBook.id,
         unit: null,
@@ -1281,7 +1369,7 @@ export function BooksPageClient() {
   function handleOpenLesson(unitId: string, lessonId: string) {
     if (!selectedBook) return
     setSelected({ bookId: selectedBook.id, unitId })
-    router.replace(
+    router.push(
       buildBooksPageHref({
         book: selectedBook.id,
         unit: unitId,
@@ -1296,7 +1384,7 @@ export function BooksPageClient() {
 
   function handleOpenPart(partId: string) {
     if (!selectedBook || !requestedUnitId?.trim() || !requestedLessonId?.trim()) return
-    router.replace(
+    router.push(
       buildBooksPageHref({
         book: selectedBook.id,
         unit: requestedUnitId,
@@ -1307,6 +1395,14 @@ export function BooksPageClient() {
         part: partId,
       }),
     )
+  }
+
+  function handleOpenWorkshop(request: BooksWorkshopOpenRequest) {
+    if (!request.bookId || !request.unitId) return
+    setWorkshopOpen({
+      ...request,
+      pdfPage: Math.max(1, Math.floor(request.pdfPage || 1)),
+    })
   }
 
   function handleBackToLessons() {
@@ -2443,69 +2539,67 @@ export function BooksPageClient() {
     }
   }, [])
 
-  if (loading) {
-    return (
-      <div className="py-6">
-        <p className="text-sm text-muted-foreground">Loading local books...</p>
-      </div>
-    )
-  }
-
-  if (loadError) {
-    return (
-      <div className="py-6">
-        <p className="text-base font-semibold text-foreground">Could not load books</p>
-        <p className="mt-2 text-sm text-muted-foreground">{loadError}</p>
-      </div>
-    )
-  }
+  const addBookSheet = (
+    <AddBookSheet
+      open={addBookSheetOpen}
+      onOpenChange={(next) => {
+        setAddBookSheetOpen(next)
+        if (!next) {
+          setAddBookTargetBookId(null)
+          setStructureWizardTarget(null)
+        }
+      }}
+      mode={addBookSheetMode}
+      library={library}
+      targetBookId={addBookTargetBookId}
+      targetFilePath={structureWizardTarget?.filePath ?? selectedUnit?.filePath ?? null}
+      onLibraryRefresh={async () => {
+        await loadLibrary({ preserveSelection: true })
+      }}
+      onLibraryUpdated={setLibrary}
+      onManifestSaved={handleManifestSaved}
+      onRequestCutUnits={({ bookId, filePath }) => {
+        const title = library?.books.find((b) => b.id === bookId)?.title
+        setCutUnitsOpen({ bookId, filePath, title })
+      }}
+      onRequestOutline={({ bookId, filePath, initialTocRange, skipAutoTocDetect }) => {
+        const book = library?.books.find((b) => b.id === bookId)
+        const migrated = book ? migrateBookVolumes(book) : null
+        const withVolumes =
+          migrated && filePath
+            ? ensureVolumesForFilePaths(migrated, [
+                ...migrated.units.map((u) => u.filePath),
+                filePath,
+              ])
+            : migrated
+        const volume =
+          (withVolumes && filePath
+            ? listBookVolumes(withVolumes).find((v) => v.filePath === filePath)
+            : null) ??
+          (withVolumes ? firstVolumeNeedingOutline(withVolumes) : null) ??
+          null
+        if (withVolumes && withVolumes !== book) {
+          setLibrary((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  books: prev.books.map((b) => (b.id === withVolumes.id ? withVolumes : b)),
+                }
+              : prev,
+          )
+        }
+        setOutlineOpen({
+          bookId,
+          filePath: volume?.filePath ?? filePath,
+          volumeId: volume?.id ?? null,
+          initialTocRange: initialTocRange ?? null,
+          skipAutoTocDetect: skipAutoTocDetect ?? true,
+        })
+      }}
+    />
+  )
 
   const books = library?.books ?? []
-
-  if (books.length === 0) {
-    return (
-      <div className="space-y-8 py-6">
-        <header className="flex items-end justify-between gap-4">
-          <div>
-            <h3 className="text-[28px] font-semibold tracking-tight text-foreground">Library</h3>
-            <p className="mt-0.5 text-[13px] text-muted-foreground">No books yet</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setUploadPanelOpen(true)}
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--surface-3)] text-foreground transition hover:bg-[var(--surface-4)] active:scale-95"
-            aria-label="Add book"
-          >
-            <Plus className="h-5 w-5" strokeWidth={1.75} aria-hidden />
-          </button>
-        </header>
-        <button
-          type="button"
-          onClick={() => setUploadPanelOpen(true)}
-          className="mx-auto flex w-full max-w-[160px] flex-col items-center gap-3"
-        >
-          <div
-            className="flex w-full items-center justify-center rounded-lg bg-[var(--surface-3)] transition hover:bg-[var(--surface-4)]"
-            style={{ aspectRatio: '1 / 1.414' }}
-          >
-            <Plus className="h-8 w-8 text-muted-foreground" strokeWidth={1.5} aria-hidden />
-          </div>
-          <span className="text-[13px] font-medium text-muted-foreground">Add Book</span>
-        </button>
-        {uploadPanelOpen ? (
-          <div className="mx-auto max-w-xl rounded-2xl bg-[var(--surface-2)] p-5 shadow-[0_8px_30px_-12px_rgba(0,0,0,0.12)]">
-            <BookDropUpload
-              onUploadComplete={async () => {
-                await loadLibrary({ preserveSelection: true })
-                setUploadPanelOpen(false)
-              }}
-            />
-          </div>
-        ) : null}
-      </div>
-    )
-  }
-
   const shelfView = !selectedBook
   const wantsPrepDesk = parseBookSetupTab(requestedTab) != null
   const lessonDeskView = Boolean(selectedBook) && !wantsPrepDesk
@@ -2518,7 +2612,22 @@ export function BooksPageClient() {
       ? findPartInLesson(deskLesson.lesson, requestedPartId.trim())
       : null
 
-  return (
+  let mainContent: ReactNode
+  if (loading) {
+    mainContent = (
+      <div className="py-6">
+        <p className="text-sm text-muted-foreground">Loading local books...</p>
+      </div>
+    )
+  } else if (loadError) {
+    mainContent = (
+      <div className="py-6">
+        <p className="text-base font-semibold text-foreground">Could not load books</p>
+        <p className="mt-2 text-sm text-muted-foreground">{loadError}</p>
+      </div>
+    )
+  } else {
+    mainContent = (
     <div className="space-y-4">
       <UnitPdfPageCountLoader
         fileUrl={selectedUnit?.filePath ? makeUnitFileUrl(selectedUnit.filePath) : null}
@@ -2526,38 +2635,45 @@ export function BooksPageClient() {
         enabled={Boolean(selectedUnit) && numPages == null}
         onNumPages={setNumPages}
       />
-      {library ? (
-        <BookStructureWizard
-          library={library}
-          preferredBookId={structureWizardTarget?.bookId ?? selected?.bookId ?? null}
-          preferredFilePath={structureWizardTarget?.filePath ?? selectedUnit?.filePath ?? null}
-          onManifestSaved={handleManifestSaved}
-          open={structureWizardOpen}
-          onOpenChange={(nextOpen) => {
-            setStructureWizardOpen(nextOpen)
-            if (!nextOpen) setStructureWizardTarget(null)
-          }}
-        />
-      ) : null}
 
-      {shelfView ? (
+      {books.length === 0 ? (
+        <div className="space-y-8 py-6">
+          <header className="flex items-end justify-between gap-4">
+            <div>
+              <h3 className="text-[28px] font-semibold tracking-tight text-foreground">Library</h3>
+              <p className="mt-0.5 text-[13px] text-muted-foreground">No books yet</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => openAddBookSheet()}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--surface-3)] text-foreground transition hover:bg-[var(--surface-4)] active:scale-95"
+              aria-label="Add book"
+            >
+              <Plus className="h-5 w-5" strokeWidth={1.75} aria-hidden />
+            </button>
+          </header>
+          <button
+            type="button"
+            onClick={() => openAddBookSheet()}
+            className="mx-auto flex w-full max-w-[160px] flex-col items-center gap-3"
+          >
+            <div
+              className="flex w-full items-center justify-center rounded-lg bg-[var(--surface-3)] transition hover:bg-[var(--surface-4)]"
+              style={{ aspectRatio: '1 / 1.414' }}
+            >
+              <Plus className="h-8 w-8 text-muted-foreground" strokeWidth={1.5} aria-hidden />
+            </div>
+            <span className="text-[13px] font-medium text-muted-foreground">Add Book</span>
+          </button>
+        </div>
+      ) : shelfView ? (
         <div className="space-y-6">
           <BookLibraryShelf
             books={books}
             pdfReady={pdfReady}
             onOpenBook={handleOpenBook}
-            onAddBook={() => setUploadPanelOpen((prev) => !prev)}
+            onAddBook={() => openAddBookSheet()}
           />
-          {uploadPanelOpen ? (
-            <div className="mx-auto max-w-xl rounded-2xl bg-[var(--surface-2)] p-5 shadow-[0_8px_30px_-12px_rgba(0,0,0,0.12)]">
-              <BookDropUpload
-                onUploadComplete={async () => {
-                  await loadLibrary({ preserveSelection: true })
-                  setUploadPanelOpen(false)
-                }}
-              />
-            </div>
-          ) : null}
         </div>
       ) : lessonDeskView && selectedBook && deskLesson && deskPart ? (
         <BookPartPrepShell
@@ -2571,6 +2687,7 @@ export function BooksPageClient() {
           onBackToParts={handleBackToParts}
           onBackToLessons={handleBackToLessons}
           onBackToLibrary={handleBackToShelf}
+          onOpenWorkshop={handleOpenWorkshop}
         />
       ) : lessonDeskView && selectedBook && deskLesson ? (
         <BookPartShelf
@@ -2583,28 +2700,25 @@ export function BooksPageClient() {
           onBackToLibrary={handleBackToShelf}
           onOutlineBook={() => openStructureWizardForBook(selectedBook)}
           onOpenPart={handleOpenPart}
+          onOpenWorkshop={handleOpenWorkshop}
         />
-      ) : lessonDeskView && selectedBook ? (
+      ) : lessonDeskView && selectedBook && library ? (
         <div className="space-y-6">
           <BookLessonShelf
             book={selectedBook}
+            library={library}
             pdfReady={pdfReady}
             onBackToLibrary={handleBackToShelf}
             onOutlineBook={() => openStructureWizardForBook(selectedBook)}
+            onOutlineVolume={(volumeId) => openStructureWizardForBook(selectedBook, volumeId)}
+            onCutIntoUnits={() => openCutUnitsForBook(selectedBook)}
             onOpenAdvancedTools={handleOpenAdvancedTools}
-            onAddPdf={() => setUploadPanelOpen(true)}
+            onAddPdf={() => openAddBookSheet({ targetBookId: selectedBook.id })}
             onOpenLesson={handleOpenLesson}
+            onBookSaved={(payload) => setLibrary(payload)}
+            onBookRemoved={handleBookRemovedFromLessonShelf}
+            onOpenWorkshop={handleOpenWorkshop}
           />
-          {uploadPanelOpen ? (
-            <div className="mx-auto max-w-xl rounded-2xl bg-[var(--surface-2)] p-5 shadow-[0_8px_30px_-12px_rgba(0,0,0,0.12)]">
-              <BookDropUpload
-                onUploadComplete={async () => {
-                  await loadLibrary({ preserveSelection: true })
-                  setUploadPanelOpen(false)
-                }}
-              />
-            </div>
-          ) : null}
         </div>
       ) : (
       <Card>
@@ -2723,6 +2837,16 @@ export function BooksPageClient() {
                     onOpenScanGuides={() => setMappingWorkspaceOpen(true)}
                   />
                 }
+                audioTab={
+                  <BookAudioTab
+                    bookId={selectedBook.id}
+                    units={selectedBook.units.map((u) => ({
+                      id: u.id,
+                      title: u.title,
+                      filePath: u.filePath,
+                    }))}
+                  />
+                }
                 storiesTab={
                   <BookStoriesTab
                     book={selectedBook}
@@ -2732,9 +2856,6 @@ export function BooksPageClient() {
                     currentPdfPage={pageNumber}
                     pdfReady={pdfReady}
                     focusStoryId={requestedStoryId}
-                    onOpenStoryPage={(unitId, pdfPage) => {
-                      openUnit(selectedBook.id, unitId, pdfPage)
-                    }}
                     onPdfNumPages={(pages) => {
                       setNumPages(pages)
                     }}
@@ -4076,5 +4197,78 @@ export function BooksPageClient() {
       </Card>
       )}
     </div>
+    )
+  }
+
+  return (
+    <>
+      {addBookSheet}
+      {mainContent}
+      {workshopOpen ? (
+        <BooksWorkshopReader
+          key={`${workshopOpen.bookId}:${workshopOpen.unitId}:${workshopOpen.pdfPage}:${workshopOpen.storyId ?? ''}`}
+          request={workshopOpen}
+          onClose={() => setWorkshopOpen(null)}
+        />
+      ) : null}
+      {cutUnitsOpen ? (
+        <BookCutUnitsWorkspace
+          key={`${cutUnitsOpen.bookId}:${cutUnitsOpen.filePath}`}
+          bookId={cutUnitsOpen.bookId}
+          sourceFilePath={cutUnitsOpen.filePath}
+          bookTitle={cutUnitsOpen.title}
+          onClose={() => setCutUnitsOpen(null)}
+          onSplitComplete={({ library: nextLibrary, bookId, units }) => {
+            const book = nextLibrary.books.find((b) => b.id === bookId)
+            const withVolumes = book
+              ? ensureVolumesForFilePaths(book, units.map((u) => u.filePath))
+              : null
+            const libraryToUse =
+              withVolumes && book
+                ? {
+                    ...nextLibrary,
+                    books: nextLibrary.books.map((b) => (b.id === bookId ? withVolumes : b)),
+                  }
+                : nextLibrary
+            setLibrary(libraryToUse)
+            setCutUnitsOpen(null)
+            const targetBook = libraryToUse.books.find((b) => b.id === bookId) ?? null
+            const volume = targetBook
+              ? firstVolumeNeedingOutline(targetBook) ?? listBookVolumes(targetBook)[0] ?? null
+              : null
+            void (async () => {
+              await loadLibrary({ preserveSelection: true })
+              setOutlineOpen({
+                bookId,
+                filePath: volume?.filePath ?? units[0]?.filePath ?? null,
+                volumeId: volume?.id ?? null,
+                initialTocRange: null,
+                skipAutoTocDetect: false,
+              })
+            })()
+          }}
+        />
+      ) : null}
+      {outlineOpen && library ? (
+        <BookStructureWizard
+          key={`${outlineOpen.bookId}:${outlineOpen.volumeId ?? ''}:${outlineOpen.filePath ?? ''}`}
+          variant="workspace"
+          library={library}
+          preferredBookId={outlineOpen.bookId}
+          preferredFilePath={outlineOpen.filePath}
+          preferredVolumeId={outlineOpen.volumeId ?? null}
+          initialTocRange={outlineOpen.initialTocRange ?? null}
+          skipAutoTocDetect={outlineOpen.skipAutoTocDetect ?? false}
+          open
+          onOpenChange={(next) => {
+            if (!next) setOutlineOpen(null)
+          }}
+          onManifestSaved={(payload, meta) => {
+            handleManifestSaved(payload, meta)
+            setOutlineOpen(null)
+          }}
+        />
+      ) : null}
+    </>
   )
 }

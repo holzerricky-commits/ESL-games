@@ -110,6 +110,24 @@ describe('student-annotation-tool-prefs', () => {
     expect(resolveStickyToolPrefsFromStorage('stu-a').stickyFillColor).toBe('#fce7f3')
   })
 
+  it('defaults type-tool font to Lexend and Regular', () => {
+    mockLocalStorage()
+    expect(resolveTextToolPrefsFromStorage('stu-a').textFontId).toBe('lexend')
+    expect(resolveTextToolPrefsFromStorage('stu-a').textFontWeight).toBe('regular')
+    expect(resolveTextToolPrefsFromStorage('stu-a').textThicknessStep).toBe(4)
+  })
+
+  it('maps leftover handwriting prefs to Lexend and remembers Bold', () => {
+    mockLocalStorage()
+    patchStudentAnnotationToolPrefs('stu-a', {
+      textFontId: 'sweetkiss-light',
+      textFontWeight: 'bold',
+    })
+    expect(readStudentAnnotationToolPrefs('stu-a').textFontId).toBe('sweetkiss-light')
+    expect(resolveTextToolPrefsFromStorage('stu-a').textFontId).toBe('lexend')
+    expect(resolveTextToolPrefsFromStorage('stu-a').textFontWeight).toBe('bold')
+  })
+
   it('migrates text color from legacy text swatch id', () => {
     mockLocalStorage()
 
@@ -204,6 +222,21 @@ describe('student-annotation-tool-prefs', () => {
     expect(prefs.shapeStrokeEnabled).toBe(false)
     expect(prefs.shapeFillMode).toBe('solid')
     expect(prefs.shapeFillColor).toBe('#ff9800')
+  })
+
+  it('promotes leftover factory yellow fill to white', () => {
+    mockLocalStorage()
+    localStorage.setItem(
+      'esl_student_annotation_tool_prefs_v1',
+      JSON.stringify({ 'stu-a': { textFillColor: '#fef08a' } }),
+    )
+    expect(resolveTextToolPrefsFromStorage('stu-a').textFillColor).toBe('#ffffff')
+  })
+
+  it('keeps an explicit yellow fill after the white-default rev is saved', () => {
+    mockLocalStorage()
+    patchStudentAnnotationToolPrefs('stu-a', { textFillColor: '#fef08a' })
+    expect(resolveTextToolPrefsFromStorage('stu-a').textFillColor).toBe('#fef08a')
   })
 
   it('detects when default toolbar state would clobber stored prefs', () => {

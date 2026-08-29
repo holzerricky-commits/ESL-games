@@ -74,26 +74,30 @@ export function StoryRangeSpreadPreview({
   const endDisplay = Math.max(rangeStartDisplay, rangeEndDisplay)
   const startPdf = Math.max(1, Math.floor(startPdfPage))
   const endPdf = Math.max(startPdf, Math.floor(endPdfPage))
+  /** Prefer real PDF length; never trap the teacher on a 2-page story span. */
   const maxPdf =
-    totalPdfPages != null && totalPdfPages >= 1 ? Math.floor(totalPdfPages) : Math.max(endPdf, startPdf + 40)
+    totalPdfPages != null && totalPdfPages >= 1
+      ? Math.floor(totalPdfPages)
+      : Math.max(endPdf, startPdf + 40)
+  const lastLeft = Math.max(1, maxPdf - 1)
 
   const mappingReady = totalPdfPages != null && totalPdfPages >= 1
   const isLg = size === 'lg'
   const gap = isLg ? 8 : 4
-  const sideNav = isLg
   const navBtnClass = cn('shrink-0 rounded-full', isLg ? 'h-11 w-11' : 'h-8 w-8')
   const navIconClass = isLg ? 'h-5 w-5' : 'h-4 w-4'
   const spreadWidth = thumbWidth * 2 + gap
-  const navButtonPx = isLg ? 44 : 32
-  const sideGapPx = 12
-  /** Side arrows sit outside the spread; account for button + gap on each side. */
-  const outerWidth = sideNav ? spreadWidth + navButtonPx * 2 + sideGapPx * 2 : spreadWidth
 
-  const [leftPdf, setLeftPdf] = useState(() => startPdf)
+  const [leftPdf, setLeftPdf] = useState(() => Math.min(startPdf, lastLeft))
+
+  // Only re-anchor when the story file or range start changes.
+  useEffect(() => {
+    setLeftPdf(Math.min(Math.max(1, startPdf), Math.max(1, maxPdf - 1)))
+  }, [startPdf, unitId, fileUrl]) // eslint-disable-line react-hooks/exhaustive-deps -- maxPdf clamp is separate
 
   useEffect(() => {
-    setLeftPdf(Math.max(1, Math.min(startPdf, maxPdf)))
-  }, [startPdf, maxPdf, unitId, fileUrl])
+    setLeftPdf((p) => Math.min(Math.max(1, p), lastLeft))
+  }, [lastLeft])
 
   const rightPdf = leftPdf < maxPdf ? leftPdf + 1 : null
 
@@ -123,15 +127,16 @@ export function StoryRangeSpreadPreview({
   }
 
   function goNext() {
-    setLeftPdf((p) => Math.min(Math.max(1, maxPdf - 1), p + 2))
+    setLeftPdf((p) => Math.min(lastLeft, p + 2))
   }
 
   const canPrev = leftPdf > 1
-  const canNext = rightPdf != null ? rightPdf < maxPdf : leftPdf < maxPdf
+  const canNext = leftPdf < lastLeft
 
   const spreadPages = (
     <div className="flex items-stretch" style={{ width: spreadWidth, gap }}>
       <SpreadPageSlot
+        key={`L-${leftPdf}`}
         fileUrl={fileUrl}
         unitId={unitId}
         pdfPage={leftPdf}
@@ -143,6 +148,7 @@ export function StoryRangeSpreadPreview({
       />
       {rightPdf != null ? (
         <SpreadPageSlot
+          key={`R-${rightPdf}`}
           fileUrl={fileUrl}
           unitId={unitId}
           pdfPage={rightPdf}
@@ -166,9 +172,57 @@ export function StoryRangeSpreadPreview({
     </div>
   )
 
+  const navRow = (
+    <div className={cn('flex items-center gap-2', showCounterLabel ? 'justify-between' : 'justify-center')}>
+      <Button
+        type="button"
+        size="icon"
+        variant="secondary"
+        className={navBtnClass}
+        disabled={!canPrev || !mappingReady}
+        onClick={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          goPrev()
+        }}
+        aria-label="Previous spread"
+      >
+        <ChevronLeft className={navIconClass} />
+      </Button>
+      {showCounterLabel ? (
+        <span
+          className={cn(
+            'min-w-0 truncate text-center font-medium tabular-nums text-muted-foreground',
+            isLg ? 'text-[15px]' : 'text-[12px]',
+          )}
+        >
+          {counterLabel}
+        </span>
+      ) : (
+        <span className="min-w-[4rem] text-center text-[12px] font-medium tabular-nums text-muted-foreground">
+          {counterLabel}
+        </span>
+      )}
+      <Button
+        type="button"
+        size="icon"
+        variant="secondary"
+        className={navBtnClass}
+        disabled={!canNext || !mappingReady}
+        onClick={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          goNext()
+        }}
+        aria-label="Next spread"
+      >
+        <ChevronRight className={navIconClass} />
+      </Button>
+    </div>
+  )
+
   return (
-    <div className={cn(!sideNav && (isLg ? 'space-y-4' : 'space-y-2'), className)} style={{ width: outerWidth }}>
-      {/* Hidden load so Stories can set numPages without visiting Outline */}
+    <div className={cn('space-y-3', className)} style={{ width: spreadWidth }}>
       {pdfReady && onPdfNumPages && totalPdfPages == null ? (
         <div className="pointer-events-none absolute h-0 w-0 overflow-hidden opacity-0" aria-hidden>
           <PdfDocument
@@ -192,77 +246,10 @@ export function StoryRangeSpreadPreview({
         >
           Loading page map…
         </div>
-      ) : sideNav ? (
-        <div className="flex items-center gap-3">
-          <Button
-            type="button"
-            size="icon"
-            variant="secondary"
-            className={navBtnClass}
-            disabled={!canPrev}
-            onClick={goPrev}
-            aria-label="Previous spread"
-          >
-            <ChevronLeft className={navIconClass} />
-          </Button>
-          {spreadPages}
-          <Button
-            type="button"
-            size="icon"
-            variant="secondary"
-            className={navBtnClass}
-            disabled={!canNext}
-            onClick={goNext}
-            aria-label="Next spread"
-          >
-            <ChevronRight className={navIconClass} />
-          </Button>
-          {!showCounterLabel ? <span className="sr-only">{counterLabel}</span> : null}
-        </div>
       ) : (
         <>
           {spreadPages}
-          <div
-            className={cn(
-              'flex items-center gap-2',
-              showCounterLabel ? 'justify-between' : 'justify-center',
-            )}
-          >
-            <Button
-              type="button"
-              size="icon"
-              variant="secondary"
-              className={navBtnClass}
-              disabled={!canPrev}
-              onClick={goPrev}
-              aria-label="Previous spread"
-            >
-              <ChevronLeft className={navIconClass} />
-            </Button>
-            {showCounterLabel ? (
-              <span
-                className={cn(
-                  'min-w-0 truncate text-center font-medium tabular-nums text-muted-foreground',
-                  isLg ? 'text-[15px]' : 'text-[12px]',
-                )}
-              >
-                {counterLabel}
-              </span>
-            ) : (
-              <span className="sr-only">{counterLabel}</span>
-            )}
-            <Button
-              type="button"
-              size="icon"
-              variant="secondary"
-              className={navBtnClass}
-              disabled={!canNext}
-              onClick={goNext}
-              aria-label="Next spread"
-            >
-              <ChevronRight className={navIconClass} />
-            </Button>
-          </div>
+          {navRow}
         </>
       )}
     </div>

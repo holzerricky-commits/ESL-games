@@ -11,11 +11,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
+import {
+  teacherDialogContentClass,
+  teacherDialogDescriptionClass,
+  teacherDialogOverlayClass,
+  teacherDialogTitleClass,
+  teacherFieldClass,
+  teacherFocusRingClass,
+  teacherGhostBtnClass,
+  teacherPrimaryBtnClass,
+} from '@/components/teacher-chrome'
 import { ensureStudentAvatarOnServer, ensureStudentAvatarsForAdded } from '@/lib/students/student-avatar-client'
 import { addStudentRecord, addStudentRecords } from '@/lib/students/selectors'
+import { cn } from '@/lib/utils'
 
 type AddStudentMode = 'single' | 'batch' | 'batch-result'
 
@@ -104,18 +113,23 @@ export function AddStudentDialog({ open, onOpenChange, onStudentsAdded }: AddStu
     handleOpenChange(false)
   }
 
+  const isBatch = mode === 'batch'
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent>
+      <DialogContent
+        overlayClassName={teacherDialogOverlayClass}
+        className={teacherDialogContentClass}
+      >
         {mode === 'batch-result' && batchResult ? (
           <>
             <DialogHeader>
-              <DialogTitle>
+              <DialogTitle className={teacherDialogTitleClass}>
                 {batchResult.added.length === 1
                   ? 'Added 1 student'
                   : `Added ${batchResult.added.length} students`}
               </DialogTitle>
-              <DialogDescription>
+              <DialogDescription className={teacherDialogDescriptionClass}>
                 {batchResult.failed.length > 0
                   ? 'Some names could not be added.'
                   : 'All names were added successfully.'}
@@ -123,7 +137,7 @@ export function AddStudentDialog({ open, onOpenChange, onStudentsAdded }: AddStu
             </DialogHeader>
 
             {batchResult.failed.length > 0 ? (
-              <ul className="space-y-2 text-sm">
+              <ul className="space-y-2 text-[13px]">
                 {batchResult.failed.map((item) => (
                   <li key={`${item.name}-${item.error}`} className="text-[var(--brand-red)]">
                     <span className="font-medium">{item.name}</span>
@@ -134,147 +148,120 @@ export function AddStudentDialog({ open, onOpenChange, onStudentsAdded }: AddStu
             ) : null}
 
             <DialogFooter>
-              <Button
-                className="bg-[var(--brand-blue)] text-white hover:bg-[var(--brand-blue-bright)]"
-                onClick={handleBatchDone}
-              >
+              <Button className={cn(teacherPrimaryBtnClass, teacherFocusRingClass)} onClick={handleBatchDone}>
                 Done
               </Button>
             </DialogFooter>
           </>
-        ) : mode === 'batch' ? (
+        ) : (
           <>
             <DialogHeader>
-              <DialogTitle>Add several students</DialogTitle>
-              <DialogDescription>One name per line. Empty lines are ignored.</DialogDescription>
+              <DialogTitle className={teacherDialogTitleClass}>
+                {isBatch ? 'Add several students' : 'Add student'}
+              </DialogTitle>
+              <DialogDescription className={teacherDialogDescriptionClass}>
+                {isBatch
+                  ? 'One name per line. Empty lines are ignored.'
+                  : 'You can assign a book and class time after they’re added.'}
+              </DialogDescription>
             </DialogHeader>
 
-            <form
-              className="space-y-3"
-              onSubmit={(event) => {
-                event.preventDefault()
-                void handleAddBatch()
-              }}
-            >
-              <div className="space-y-1">
-                <label htmlFor="add-students-batch" className="text-sm font-medium text-foreground">
-                  Names
-                </label>
-                <Textarea
-                  id="add-students-batch"
-                  value={batchNames}
-                  onChange={(event) => setBatchNames(event.target.value)}
-                  placeholder={'Ella\nParker'}
-                  className="min-h-[140px]"
-                  autoFocus
-                />
-              </div>
-
-              <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-3">
-                <Checkbox
-                  checked={firstClassWelcome}
-                  onCheckedChange={(checked) => setFirstClassWelcome(checked === true)}
-                  className="mt-0.5"
-                />
-                <span className="space-y-1">
-                  <span className="block text-sm font-medium text-foreground">Brand-new students</span>
-                  <span className="block text-sm text-muted-foreground">
-                    First class with you — the lesson screen will say &ldquo;Welcome&rdquo; instead of &ldquo;Welcome back.&rdquo;
-                  </span>
-                </span>
-              </label>
-
-              {formError ? <p className="text-sm text-[var(--brand-red)]">{formError}</p> : null}
-
+            <div className="flex gap-1" role="radiogroup" aria-label="How many to add">
               <button
                 type="button"
-                className="text-sm font-medium text-[var(--brand-blue)] hover:underline"
+                role="radio"
+                aria-checked={!isBatch}
+                data-active={!isBatch}
+                className={cn('chrome-nav-pill flex-1 justify-center px-3.5 py-2 text-[13px]', teacherFocusRingClass)}
                 onClick={() => {
                   setMode('single')
                   setFormError('')
                 }}
               >
-                Add one student
+                One
               </button>
-
-              <DialogFooter className="gap-2 sm:gap-0">
-                <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={saving}
-                  className="bg-[var(--brand-blue)] text-white hover:bg-[var(--brand-blue-bright)]"
-                >
-                  {saving ? 'Adding…' : 'Add students'}
-                </Button>
-              </DialogFooter>
-            </form>
-          </>
-        ) : (
-          <>
-            <DialogHeader>
-              <DialogTitle>Add student</DialogTitle>
-              <DialogDescription>Assign books and plan classes from each student’s Plan screen.</DialogDescription>
-            </DialogHeader>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={isBatch}
+                data-active={isBatch}
+                className={cn('chrome-nav-pill flex-1 justify-center px-3.5 py-2 text-[13px]', teacherFocusRingClass)}
+                onClick={() => {
+                  setMode('batch')
+                  setFormError('')
+                }}
+              >
+                Several
+              </button>
+            </div>
 
             <form
               className="space-y-3"
               onSubmit={(event) => {
                 event.preventDefault()
-                void handleAddStudent()
+                if (isBatch) void handleAddBatch()
+                else void handleAddStudent()
               }}
             >
-              <div className="space-y-1">
-                <label htmlFor="add-student-name" className="text-sm font-medium text-foreground">
-                  Name
-                </label>
-                <Input
-                  id="add-student-name"
-                  value={studentName}
-                  onChange={(event) => setStudentName(event.target.value)}
-                  placeholder="Student name"
-                  autoFocus
-                />
-              </div>
+              {isBatch ? (
+                <div className="space-y-1">
+                  <label htmlFor="add-students-batch" className="text-[13px] font-medium text-muted-foreground">
+                    Names
+                  </label>
+                  <textarea
+                    id="add-students-batch"
+                    value={batchNames}
+                    onChange={(event) => setBatchNames(event.target.value)}
+                    placeholder={'Ella\nParker'}
+                    className={cn(teacherFieldClass, 'min-h-[140px] resize-y')}
+                    autoFocus
+                  />
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <label htmlFor="add-student-name" className="text-[13px] font-medium text-muted-foreground">
+                    Name
+                  </label>
+                  <input
+                    id="add-student-name"
+                    value={studentName}
+                    onChange={(event) => setStudentName(event.target.value)}
+                    placeholder="Student name"
+                    className={teacherFieldClass}
+                    autoFocus
+                  />
+                </div>
+              )}
 
-              <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-3">
+              <label className="flex cursor-pointer items-start gap-3 rounded-xl bg-[var(--surface-3)] px-3 py-3">
                 <Checkbox
                   checked={firstClassWelcome}
                   onCheckedChange={(checked) => setFirstClassWelcome(checked === true)}
                   className="mt-0.5"
                 />
                 <span className="space-y-1">
-                  <span className="block text-sm font-medium text-foreground">Brand-new student</span>
-                  <span className="block text-sm text-muted-foreground">
-                    First class with you — the lesson screen will say &ldquo;Welcome&rdquo; instead of &ldquo;Welcome back.&rdquo;
+                  <span className="block text-[13px] font-medium tracking-tight text-foreground">
+                    {isBatch ? 'Brand-new students' : 'Brand-new student'}
+                  </span>
+                  <span className="block text-[13px] text-muted-foreground">
+                    First class with you — the lesson screen will say “Welcome” instead of “Welcome back.”
                   </span>
                 </span>
               </label>
 
-              {formError ? <p className="text-sm text-[var(--brand-red)]">{formError}</p> : null}
+              {formError ? <p className="text-[13px] text-[var(--brand-red)]">{formError}</p> : null}
 
-              <button
-                type="button"
-                className="text-sm font-medium text-[var(--brand-blue)] hover:underline"
-                onClick={() => {
-                  setMode('batch')
-                  setFormError('')
-                }}
-              >
-                Add several students…
-              </button>
-
-              <DialogFooter className="gap-2 sm:gap-0">
-                <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
+              <DialogFooter className="gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className={cn(teacherGhostBtnClass, teacherFocusRingClass)}
+                  onClick={() => handleOpenChange(false)}
+                >
                   Cancel
                 </Button>
-                <Button
-                  type="submit"
-                  disabled={saving}
-                  className="bg-[var(--brand-blue)] text-white hover:bg-[var(--brand-blue-bright)]"
-                >
-                  {saving ? 'Adding…' : 'Add student'}
+                <Button type="submit" disabled={saving} className={cn(teacherPrimaryBtnClass, teacherFocusRingClass)}>
+                  {saving ? 'Adding…' : isBatch ? 'Add students' : 'Add student'}
                 </Button>
               </DialogFooter>
             </form>

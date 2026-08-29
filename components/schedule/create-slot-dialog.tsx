@@ -20,6 +20,14 @@ import { DAY_LABELS } from '@/lib/schedule/schedule-time-labels'
 import { dateInWeekForDayOfWeek } from '@/lib/schedule/week-view-layout'
 import { createOneOffClassSession, upsertWeeklySlotAssignment } from '@/lib/students/selectors'
 import type { TeacherWeeklyScheduleConfig } from '@/lib/types'
+import {
+  scheduleDialogContentClass,
+  scheduleDialogDescriptionClass,
+  scheduleDialogOverlayClass,
+  scheduleDialogTitleClass,
+  scheduleGhostBtnClass,
+  schedulePrimaryBtnClass,
+} from '@/components/schedule/schedule-sheet-chrome'
 
 type ScheduleKind = 'once' | 'weekly'
 
@@ -111,34 +119,35 @@ export function CreateSlotDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent
+        overlayClassName={scheduleDialogOverlayClass}
+        className={scheduleDialogContentClass}
+      >
         <DialogHeader>
-          <DialogTitle>Add class</DialogTitle>
-          <DialogDescription>
+          <DialogTitle className={scheduleDialogTitleClass}>Add class</DialogTitle>
+          <DialogDescription className={scheduleDialogDescriptionClass}>
             {titleDay} at {titleTime}
-            {isWeekly ? ' — choose whether this repeats every week or happens once.' : ' — one-time class.'}
+            {isWeekly ? ' — repeats every week, or just once.' : ' — one-time class.'}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex rounded-lg border border-[var(--border)] p-1">
+        <div className="flex gap-1" role="radiogroup" aria-label="Repeat">
           <button
             type="button"
-            className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-              isWeekly
-                ? 'bg-[var(--surface-2)] text-foreground'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
+            role="radio"
+            aria-checked={isWeekly}
+            data-active={isWeekly}
+            className="chrome-nav-pill flex-1 justify-center px-3.5 py-2 text-[13px]"
             onClick={() => setScheduleKind('weekly')}
           >
             Every week
           </button>
           <button
             type="button"
-            className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-              !isWeekly
-                ? 'bg-[var(--surface-2)] text-foreground'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
+            role="radio"
+            aria-checked={!isWeekly}
+            data-active={!isWeekly}
+            className="chrome-nav-pill flex-1 justify-center px-3.5 py-2 text-[13px]"
             onClick={() => setScheduleKind('once')}
           >
             Once
@@ -155,13 +164,23 @@ export function CreateSlotDialog({
           anchorDate={isWeekly ? null : date}
         />
 
-        {error ? <p className="text-sm text-[var(--brand-red)]">{error}</p> : null}
+        {error ? <p className="text-[13px] text-[var(--brand-red)]">{error}</p> : null}
 
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          <Button
+            type="button"
+            variant="ghost"
+            className={scheduleGhostBtnClass}
+            onClick={() => onOpenChange(false)}
+          >
             Cancel
           </Button>
-          <Button type="button" onClick={handleSave} disabled={saving || !values.studentId}>
+          <Button
+            type="button"
+            className={schedulePrimaryBtnClass}
+            onClick={handleSave}
+            disabled={saving || !values.studentId}
+          >
             {saving ? 'Saving…' : isWeekly ? 'Save weekly slot' : 'Save one-time class'}
           </Button>
         </DialogFooter>

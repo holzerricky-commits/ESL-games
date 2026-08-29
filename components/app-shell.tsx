@@ -12,8 +12,8 @@ interface AppShellProps {
 }
 
 export function AppShell({ children }: AppShellProps) {
-  // Start open with labels — Apple-style; collapse from the header button
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  // Start collapsed (icons only); expand from the header button
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true)
 
   return (
     <div className="min-h-screen w-full bg-background">
@@ -24,7 +24,7 @@ export function AppShell({ children }: AppShellProps) {
       <div className="flex w-full">
         <AppSidebar collapsed={sidebarCollapsed} />
         <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
-          <div className="mx-auto w-full max-w-7xl">{children}</div>
+          <div className="w-full">{children}</div>
         </main>
       </div>
       <LocalStudentDataHydrator />

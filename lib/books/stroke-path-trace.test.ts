@@ -1,6 +1,20 @@
 import { describe, expect, it, vi } from 'vitest'
 import { strokeToolUsesSmoothCurves, traceStrokePoints } from '@/lib/books/stroke-path-trace'
 
+function mockCtx() {
+  return {
+    beginPath: vi.fn(),
+    moveTo: vi.fn(),
+    quadraticCurveTo: vi.fn(),
+    bezierCurveTo: vi.fn(),
+    lineTo: vi.fn(),
+    stroke: vi.fn(),
+    lineWidth: 2.5,
+    lineCap: 'round' as CanvasLineCap,
+    lineJoin: 'round' as CanvasLineJoin,
+  }
+}
+
 describe('stroke-path-trace', () => {
   it('uses smooth curves for pen only (not wide marker bands)', () => {
     expect(strokeToolUsesSmoothCurves('pen')).toBe(true)
@@ -9,13 +23,7 @@ describe('stroke-path-trace', () => {
   })
 
   it('traces marker with line segments', () => {
-    const ctx = {
-      beginPath: vi.fn(),
-      moveTo: vi.fn(),
-      quadraticCurveTo: vi.fn(),
-      lineTo: vi.fn(),
-      stroke: vi.fn(),
-    } as unknown as CanvasRenderingContext2D
+    const ctx = mockCtx() as unknown as CanvasRenderingContext2D
 
     traceStrokePoints(
       ctx,
@@ -29,18 +37,13 @@ describe('stroke-path-trace', () => {
       (ny) => ny * 100,
     )
 
+    expect(ctx.bezierCurveTo).not.toHaveBeenCalled()
     expect(ctx.quadraticCurveTo).not.toHaveBeenCalled()
     expect(ctx.lineTo).toHaveBeenCalled()
   })
 
-  it('traces pen with quadratics when n ≥ 3', () => {
-    const ctx = {
-      beginPath: vi.fn(),
-      moveTo: vi.fn(),
-      quadraticCurveTo: vi.fn(),
-      lineTo: vi.fn(),
-      stroke: vi.fn(),
-    } as unknown as CanvasRenderingContext2D
+  it('traces pen with cubics', () => {
+    const ctx = mockCtx() as unknown as CanvasRenderingContext2D
 
     traceStrokePoints(
       ctx,
@@ -55,19 +58,47 @@ describe('stroke-path-trace', () => {
       (ny) => ny * 100,
     )
 
-    expect(ctx.quadraticCurveTo).toHaveBeenCalled()
+    expect(ctx.bezierCurveTo).toHaveBeenCalled()
+    expect(ctx.quadraticCurveTo).not.toHaveBeenCalled()
     expect(ctx.lineTo).not.toHaveBeenCalled()
     expect(ctx.stroke).toHaveBeenCalledTimes(1)
   })
 
+  it('tapers solid pen with one stroke per span', () => {
+    const widths: number[] = []
+    const ctx = mockCtx() as unknown as CanvasRenderingContext2D
+    Object.defineProperty(ctx, 'lineWidth', {
+      set(v: number) {
+        widths.push(v)
+      },
+      get() {
+        return widths[widths.length - 1] ?? 2.5
+      },
+    })
+
+    traceStrokePoints(
+      ctx,
+      'pen',
+      [
+        [0.05, 0.5],
+        [0.2, 0.5],
+        [0.5, 0.5],
+        [0.95, 0.5],
+      ],
+      (nx) => nx * 400,
+      (ny) => ny * 400,
+      undefined,
+      { taperWidthPx: 3 },
+    )
+
+    expect(ctx.bezierCurveTo).toHaveBeenCalledTimes(3)
+    expect(ctx.stroke).toHaveBeenCalledTimes(3)
+    expect(Math.min(...widths)).toBeLessThan(3)
+    expect(Math.max(...widths)).toBeLessThanOrEqual(3)
+  })
+
   it('uses line segments for eraser-line', () => {
-    const ctx = {
-      beginPath: vi.fn(),
-      moveTo: vi.fn(),
-      quadraticCurveTo: vi.fn(),
-      lineTo: vi.fn(),
-      stroke: vi.fn(),
-    } as unknown as CanvasRenderingContext2D
+    const ctx = mockCtx() as unknown as CanvasRenderingContext2D
 
     traceStrokePoints(
       ctx,
@@ -81,7 +112,7 @@ describe('stroke-path-trace', () => {
       (ny) => ny * 100,
     )
 
-    expect(ctx.quadraticCurveTo).not.toHaveBeenCalled()
+    expect(ctx.bezierCurveTo).not.toHaveBeenCalled()
     expect(ctx.lineTo).toHaveBeenCalled()
   })
 })

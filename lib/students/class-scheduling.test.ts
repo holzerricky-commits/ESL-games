@@ -69,6 +69,7 @@ import {
   resolveStudentSectionAtMappedBookPage,
   updateStudentCurriculumBookStart,
   getStudentCurriculumBookStart,
+  resolveClassEndBookmark,
   getSpotlightClassSessionId,
   updateStudentClassSelectedSection,
   updateStudentClassPrep,
@@ -83,6 +84,7 @@ import {
   deleteStudentPermanently,
 } from '@/lib/students/selectors'
 import type { BookLibraryPayload } from '@/lib/books/types'
+import { saveUnitPage } from '@/lib/books/progress'
 import type { StudentClassSession, StudentRecord } from '@/lib/types'
 class LocalStorageMock {
   private map = new Map<string, string>()
@@ -1203,6 +1205,64 @@ describe('weekly schedule slots and rolling generation', () => {
     expect(getStudentScheduledClasses('student-1').find((s) => s.id === created.session.id)?.status).toBe(
       'prepared',
     )
+  })
+
+  it('updateStudentClassPrep saves classroom-home goals and marks prepared', () => {
+    saveStudents([seedStudent({ id: 'student-1' })])
+    saveTeacherWeeklyScheduleConfig({
+      workingDays: [1, 2, 3, 4, 5],
+      startMinute: 9 * 60,
+      endMinute: 17 * 60,
+      slotMinutes: 30,
+    })
+    const day = new Date()
+    day.setHours(0, 0, 0, 0)
+    while (day.getDay() === 0 || day.getDay() === 6) {
+      day.setDate(day.getDate() + 1)
+    }
+    const created = createOneOffClassSession('student-1', day, 15 * 60, 30)
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+
+    expect(
+      updateStudentClassPrep('student-1', created.session.id, {
+        classroomHomeGoals: { vocabulary: 'food words', grammar: '  ', speaking: 'favourite food' },
+      }).ok,
+    ).toBe(true)
+
+    const row = getStudentScheduledClasses('student-1').find((s) => s.id === created.session.id)
+    expect(row?.status).toBe('prepared')
+    expect(row?.classroomHomeGoals).toEqual({ vocabulary: 'food words', speaking: 'favourite food' })
+  })
+
+  it('updateStudentClassPrep saves skip parts and starred words for this class', () => {
+    saveStudents([seedStudent({ id: 'student-1' })])
+    saveTeacherWeeklyScheduleConfig({
+      workingDays: [1, 2, 3, 4, 5],
+      startMinute: 9 * 60,
+      endMinute: 17 * 60,
+      slotMinutes: 30,
+    })
+    const day = new Date()
+    day.setHours(0, 0, 0, 0)
+    while (day.getDay() === 0 || day.getDay() === 6) {
+      day.setDate(day.getDate() + 1)
+    }
+    const created = createOneOffClassSession('student-1', day, 15 * 60, 30)
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+
+    expect(
+      updateStudentClassPrep('student-1', created.session.id, {
+        prepSkippedPartIds: ['part-grammar'],
+        plannedVocabulary: ['athlete', 'athlete', 'soar'],
+      }).ok,
+    ).toBe(true)
+
+    const row = getStudentScheduledClasses('student-1').find((s) => s.id === created.session.id)
+    expect(row?.status).toBe('prepared')
+    expect(row?.prepSkippedPartIds).toEqual(['part-grammar'])
+    expect(row?.plannedVocabulary).toEqual(['athlete', 'soar'])
   })
 
   it('extendStudentClassSession adds overtime up to +15 and persists across reload', () => {
@@ -2895,6 +2955,121 @@ describe('class sessions and outcomes', () => {
       bookId: 'book-a',
       unitId: 'unit-2',
     })
+  })
+
+  it('getStudentTeachingOpenPdfPageForBookUnit ignores weak page-1 last stop when plan pin is deeper', () => {
+    const library: BookLibraryPayload = {
+      books: [
+        {
+          id: 'book-a',
+          title: 'Test Book',
+          units: [
+            {
+              id: 'unit-1',
+              title: 'Unit 1',
+              filePath: '/u1.pdf',
+              lessons: [{ id: 'lesson-1', title: 'Lesson 1', parts: [{ id: 'part-a', title: 'Part A' }] }],
+            },
+          ],
+        },
+      ],
+    }
+    const optionsSeed = (() => {
+      saveStudents([
+        seedStudent({
+          assignedBookIds: ['book-a'],
+          assignedUnitRefs: [{ bookId: 'book-a', unitId: 'unit-1' }],
+        }),
+      ])
+      return getStudentSectionOptions('student-1', library)
+    })()
+    const part = optionsSeed.find((o) => o.partId === 'part-a')
+    expect(part).toBeTruthy()
+    saveStudents([
+      seedStudent({
+        assignedBookIds: ['book-a'],
+        assignedUnitRefs: [{ bookId: 'book-a', unitId: 'unit-1' }],
+        curriculumBookStarts: {
+          'book-a': {
+            sectionId: part!.id,
+            unitId: 'unit-1',
+            mappedPage: 120,
+            updatedAt: '2026-04-01T10:00:00.000Z',
+          },
+        },
+        scheduledClasses: [
+          sessionBase({
+            id: 'class-done',
+            title: 'Done',
+            scheduledFor: '2026-05-10T10:00:00.000Z',
+            status: 'completed',
+            classEndedAt: '2026-05-10T11:00:00.000Z',
+            bookmarkAtEnd: { bookId: 'book-a', pdfPage: 1 },
+          }),
+        ],
+      }),
+    ])
+    expect(getStudentTeachingOpenPdfPageForBookUnit('student-1', 'book-a', 'unit-1', library)).toBe(120)
+    expect(isStudentCurriculumBookStartFresherThanLastStop('student-1', 'book-a', library)).toBe(true)
+    expect(getStudentOpenTargetForBook('student-1', 'book-a', library)).toEqual({
+      unitId: 'unit-1',
+      pdfPage: 120,
+    })
+  })
+
+  it('resolveClassEndBookmark prefers last viewed reader page over section hints', () => {
+    saveStudents([
+      seedStudent({
+        assignedBookIds: ['book-a'],
+        assignedUnitRefs: [{ bookId: 'book-a', unitId: 'unit-1' }],
+      }),
+    ])
+    saveUnitPage('book-a', 'unit-1', 88)
+    const bookmark = resolveClassEndBookmark(
+      'student-1',
+      {
+        selectedSection: {
+          id: 'sec-1',
+          type: 'lesson',
+          bookId: 'book-a',
+          bookTitle: 'Book A',
+          unitId: 'unit-1',
+          unitTitle: 'Unit 1',
+          title: 'Lesson',
+          startPageHint: 12,
+          endPageHint: 14,
+        },
+      },
+      ['book-a'],
+    )
+    expect(bookmark).toEqual({ bookId: 'book-a', pdfPage: 88, unitId: 'unit-1' })
+  })
+
+  it('resolveClassEndBookmark falls back to section end hint when no reader page was saved', () => {
+    saveStudents([
+      seedStudent({
+        assignedBookIds: ['book-a'],
+        assignedUnitRefs: [{ bookId: 'book-a', unitId: 'unit-1' }],
+      }),
+    ])
+    const bookmark = resolveClassEndBookmark(
+      'student-1',
+      {
+        selectedSection: {
+          id: 'sec-1',
+          type: 'lesson',
+          bookId: 'book-a',
+          bookTitle: 'Book A',
+          unitId: 'unit-1',
+          unitTitle: 'Unit 1',
+          title: 'Lesson',
+          startPageHint: 12,
+          endPageHint: 14,
+        },
+      },
+      ['book-a'],
+    )
+    expect(bookmark).toEqual({ bookId: 'book-a', pdfPage: 14, unitId: 'unit-1' })
   })
 
   it('resolveClassTeachingBookUnit uses saved selectedSection book and unit', () => {

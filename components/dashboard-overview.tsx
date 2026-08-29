@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CalendarClock, Check, ChevronDown, Clock3, MoreHorizontal, Play, RefreshCw } from 'lucide-react'
+import { Check, ChevronDown, Clock3, MoreHorizontal, Play, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
@@ -17,6 +17,7 @@ import { ReadingCheckPrepareGlanceLink } from '@/components/books/reading-check-
 import { ensureStudentRecordsHydrated } from '@/lib/local-data/student-records-client'
 import { canMoveClassSessionStatus } from '@/lib/schedule/move-class-targets'
 import {
+  canOpenClassPrep,
   classEntryActionLabel,
   formatClassCountdown,
   resolveClassEntryAction,
@@ -466,11 +467,11 @@ export function DashboardOverview() {
     if (entry === 'enter' || entry === 'continue') {
       return (
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-          <Button asChild variant="ghost" size="icon" className="ui-icon-btn" title="Prepare">
-            <Link href={buildPrepareLessonMapHref(row.studentId, row.session.id)}>
-              <CalendarClock className="h-4 w-4" />
-            </Link>
-          </Button>
+          {canOpenClassPrep(row.session) ? (
+            <Button asChild variant="secondary" size="sm">
+              <Link href={buildPrepareLessonMapHref(row.studentId, row.session.id)}>Prepare</Link>
+            </Button>
+          ) : null}
           {isLiveBand || options?.spotlight ? (
             canMoveClassSessionStatus(row.session.status) ? (
               <Button type="button" variant="ghost" size="sm" onClick={() => setMoveRow(row)}>

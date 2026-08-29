@@ -6,7 +6,8 @@ import { toast } from 'sonner'
 import { BookCoverThumbnail } from '@/components/books/book-cover-thumbnail'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { bookHasCustomCover } from '@/lib/books/book-cover-display'
+import { bookCoverImageUrl, bookHasCustomCover } from '@/lib/books/book-cover-display'
+import { forgetCachedBookImage } from '@/lib/books/local-image-cache'
 import type { BookLibraryPayload, BookRecord } from '@/lib/books/types'
 import { cn } from '@/lib/utils'
 
@@ -40,6 +41,10 @@ export function BookCoverUploadControl({
 
     setUploading(true)
     try {
+      const previousCover = book.coverImagePath?.trim()
+      if (previousCover) {
+        void forgetCachedBookImage(bookCoverImageUrl(previousCover))
+      }
       const form = new FormData()
       form.set('bookId', book.id)
       form.set('file', file)
@@ -61,6 +66,10 @@ export function BookCoverUploadControl({
   async function handleReset() {
     setResetting(true)
     try {
+      const previousCover = book.coverImagePath?.trim()
+      if (previousCover) {
+        void forgetCachedBookImage(bookCoverImageUrl(previousCover))
+      }
       const res = await fetch(`/api/books/cover?bookId=${encodeURIComponent(book.id)}`, {
         method: 'DELETE',
       })

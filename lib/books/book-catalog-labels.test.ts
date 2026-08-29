@@ -8,6 +8,7 @@ import {
   inferBookCatalogLabels,
   isPresentationBook,
   listBookPickerFacets,
+  listBookSeriesSelectOptions,
   looksLikePresentationCatalogName,
   resolveBookContentFormat,
   resolveBookPickInitialState,
@@ -101,6 +102,29 @@ describe('applyBookCatalogDefaults', () => {
     expect(next.title).toBe('journeys g4')
     expect(next.series).toBe('Journeys')
     expect(next.grade).toBe('G4')
+  })
+})
+
+describe('listBookSeriesSelectOptions', () => {
+  it('keeps presets, inserts custom before Other, and includes extras', () => {
+    const books: BookRecord[] = [
+      {
+        id: 'ox',
+        title: 'Oxford G3',
+        series: 'Oxford',
+        grade: 'G3',
+        units: [{ id: 'u1', title: 'U1', filePath: 'a.pdf' }],
+      },
+    ]
+    expect(listBookSeriesSelectOptions({ books, extraSeries: ['Reading A-Z'] })).toEqual([
+      'Journeys',
+      'Wonders',
+      'HKMKC',
+      'Presentations',
+      'Oxford',
+      'Reading A-Z',
+      'Other',
+    ])
   })
 })
 

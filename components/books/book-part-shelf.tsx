@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState, type ComponentType } from 'react'
+import { BookBrowseCornerButton } from '@/components/books/book-browse-spread-preview'
 import {
   BookA,
   BookOpen,
@@ -19,7 +20,7 @@ import {
   type LucideProps,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { PdfPageThumbnail } from '@/components/students/pdf-page-thumbnail'
+import { PersistedPageThumbnail } from '@/components/books/persisted-page-thumbnail'
 import { UnitPdfPageCountLoader } from '@/components/books/unit-pdf-page-count-loader'
 import { makeUnitFileUrl } from '@/lib/books/book-file-url'
 import {
@@ -27,9 +28,12 @@ import {
   formatPartListHeadline,
   formatPartPageRangeLabel,
   isStoryPartShelfTag,
+  isVocabPartShelfTag,
   type BookPartShelfCard,
 } from '@/lib/books/book-part-shelf'
 import { resolveOutlinePrintedStartPdfPage } from '@/lib/books/story-thumb-pdf-page'
+import { readingStoryPartKey } from '@/lib/books/reading-story-map'
+import type { BooksWorkshopOpenRequest } from '@/lib/books/books-workshop'
 import type { BookLessonPartTag, BookLessonRecord, BookRecord, BookUnitRecord } from '@/lib/books/types'
 import { cn } from '@/lib/utils'
 
@@ -64,6 +68,7 @@ interface BookPartShelfProps {
   onBackToLibrary: () => void
   onOutlineBook: () => void
   onOpenPart: (partId: string) => void
+  onOpenWorkshop?: (request: BooksWorkshopOpenRequest) => void
 }
 
 export function BookPartShelf({
@@ -76,6 +81,7 @@ export function BookPartShelf({
   onBackToLibrary,
   onOutlineBook,
   onOpenPart,
+  onOpenWorkshop,
 }: BookPartShelfProps) {
   const cards = useMemo(
     () => buildBookPartShelfCards(unit, lesson, lessonIndex),
@@ -157,10 +163,49 @@ export function BookPartShelf({
                 book={book}
                 unit={unit}
                 card={card}
-                fileUrl={fileUrl}
-                pdfReady={pdfReady}
                 totalPdfPages={pageCount}
                 onOpen={() => onOpenPart(card.id)}
+                onOpenInBook={
+                  unit.filePath?.trim() && onOpenWorkshop && isStoryPartShelfTag(card.structureTag)
+                    ? (pdfPage) =>
+                        onOpenWorkshop({
+                          bookId: book.id,
+                          unitId: unit.id,
+                          pdfPage,
+                          storyId: readingStoryPartKey(book.id, unit.id, lesson.id, card.id),
+                          kind: 'story',
+                          lessonId: lesson.id,
+                          partId: card.id,
+                          startPageHint: card.printedStart,
+                          endPageHint: card.printedEnd,
+                          bookTitle: book.title,
+                          unitTitle: unit.title,
+                          lessonTitle: lesson.title,
+                          partTitle: card.title,
+                          typeLabel: card.typeLabel,
+                          pageRangeLabel: formatPartPageRangeLabel(card.printedStart, card.printedEnd),
+                        })
+                    : unit.filePath?.trim() && onOpenWorkshop && isVocabPartShelfTag(card.structureTag)
+                      ? (pdfPage) =>
+                          onOpenWorkshop({
+                            bookId: book.id,
+                            unitId: unit.id,
+                            pdfPage,
+                            storyId: null,
+                            kind: 'vocab',
+                            lessonId: lesson.id,
+                            partId: card.id,
+                            startPageHint: card.printedStart,
+                            endPageHint: card.printedEnd,
+                            bookTitle: book.title,
+                            unitTitle: unit.title,
+                            lessonTitle: lesson.title,
+                            partTitle: card.title,
+                            typeLabel: card.typeLabel,
+                            pageRangeLabel: formatPartPageRangeLabel(card.printedStart, card.printedEnd),
+                          })
+                      : undefined
+                }
               />
             </li>
           ))}
@@ -174,18 +219,16 @@ function PartListRow({
   book,
   unit,
   card,
-  fileUrl,
-  pdfReady,
   totalPdfPages,
   onOpen,
+  onOpenInBook,
 }: {
   book: BookRecord
   unit: BookUnitRecord
   card: BookPartShelfCard
-  fileUrl: string | null
-  pdfReady: boolean
   totalPdfPages: number | null
   onOpen: () => void
+  onOpenInBook?: (pdfPage: number) => void
 }) {
   const pageLabel = formatPartPageRangeLabel(card.printedStart, card.printedEnd)
   const Icon = PART_TYPE_ICONS[card.structureTag] ?? FileText
@@ -195,33 +238,32 @@ function PartListRow({
   const storyThumbPage = isStory
     ? resolveOutlinePrintedStartPdfPage(card.printedStart, book, unit, totalPdfPages)
     : null
-  const showStoryThumb = Boolean(isStory && fileUrl && pdfReady && storyThumbPage != null)
+  const showStoryThumb = Boolean(isStory && unit.filePath?.trim() && storyThumbPage != null)
 
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className={cn(
-        'group flex w-full items-center gap-3 px-0.5 text-left outline-none transition hover:bg-[var(--surface-2)] focus-visible:bg-[var(--surface-2)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--ring)] sm:gap-4',
-        isStory
-          ? 'border-l-2 border-[var(--brand-blue)]/45 bg-[var(--brand-blue)]/[0.03] py-3 pl-2 sm:py-3.5'
-          : 'py-3.5',
-      )}
-      aria-label={`Open ${ariaName}`}
-    >
+    <div className="group relative">
+      <button
+        type="button"
+        onClick={onOpen}
+        className={cn(
+          'flex w-full items-center gap-3 px-0.5 text-left outline-none transition hover:bg-[var(--surface-2)] focus-visible:bg-[var(--surface-2)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--ring)] sm:gap-4',
+          isStory
+            ? 'border-l-2 border-[var(--brand-blue)]/45 bg-[var(--brand-blue)]/[0.03] py-3 pl-2 sm:py-3.5'
+            : 'py-3.5',
+        )}
+        aria-label={`Open ${ariaName}`}
+      >
       {showStoryThumb ? (
         <span
           className="relative shrink-0 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--surface-2)] shadow-[0_1px_2px_rgba(0,0,0,0.04)]"
           style={{ width: STORY_THUMB_WIDTH, aspectRatio: '1 / 1.414' }}
         >
-          <PdfPageThumbnail
-            fileUrl={fileUrl!}
-            unitId={`${book.id}-${unit.id}-${card.id}-part-story`}
+          <PersistedPageThumbnail
+            filePath={unit.filePath}
             pageNumber={storyThumbPage!}
             width={STORY_THUMB_WIDTH}
             fitHeight
             objectFit="cover"
-            pdfReady={pdfReady}
             label={card.title}
             eager
             className="h-full w-full"
@@ -265,6 +307,14 @@ function PartListRow({
         className="h-4 w-4 shrink-0 text-muted-foreground/60 transition group-hover:text-foreground"
         aria-hidden
       />
-    </button>
+      </button>
+      {showStoryThumb && storyThumbPage != null && onOpenInBook ? (
+        <BookBrowseCornerButton
+          label="Open book at this story"
+          className="right-auto left-[58px] top-[18px] sm:top-[20px]"
+          onClick={() => onOpenInBook(storyThumbPage)}
+        />
+      ) : null}
+    </div>
   )
 }

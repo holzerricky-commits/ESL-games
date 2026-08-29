@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  bookHasBrowsablePdf,
   bookNeedsLessonShelfOutline,
   buildBookLessonShelfRows,
   resolveLessonShelfCardPdfPage,
@@ -17,7 +18,26 @@ function baseBook(overrides: Partial<BookRecord> = {}): BookRecord {
 }
 
 describe('book-lesson-shelf', () => {
-  it('bookNeedsLessonShelfOutline is true when no lessons', () => {
+  it('bookHasBrowsablePdf is true when a unit has a file', () => {
+    expect(bookHasBrowsablePdf(baseBook())).toBe(false)
+    expect(
+      bookHasBrowsablePdf(
+        baseBook({
+          units: [{ id: 'u1', title: 'Unit 1', filePath: 'a.pdf' }],
+        }),
+      ),
+    ).toBe(true)
+    expect(
+      bookHasBrowsablePdf(
+        baseBook({
+          units: [{ id: 'u1', title: 'Unit 1', filePath: '  ' }],
+        }),
+      ),
+    ).toBe(false)
+  })
+
+  it('bookNeedsLessonShelfOutline is true when a regular book has no lessons', () => {
+    expect(bookNeedsLessonShelfOutline(baseBook())).toBe(true)
     expect(
       bookNeedsLessonShelfOutline(
         baseBook({
@@ -38,6 +58,19 @@ describe('book-lesson-shelf', () => {
               filePath: 'a.pdf',
               lessons: [{ id: 'l1', title: 'Lesson 1', startPageHint: 10 }],
             },
+          ],
+        }),
+      ),
+    ).toBe(false)
+  })
+
+  it('bookNeedsLessonShelfOutline is false when distinct unit files exist without lessons', () => {
+    expect(
+      bookNeedsLessonShelfOutline(
+        baseBook({
+          units: [
+            { id: 'u1', title: 'Unit 1', filePath: 'book-library/a/unit-01.pdf' },
+            { id: 'u2', title: 'Unit 2', filePath: 'book-library/a/unit-02.pdf' },
           ],
         }),
       ),
@@ -91,7 +124,7 @@ describe('book-lesson-shelf', () => {
     expect(rows[1]!.cards[0]!.id).toBe('l3')
   })
 
-  it('buildBookLessonShelfRows returns empty when outline needed', () => {
+  it('buildBookLessonShelfRows returns empty when there is no outline', () => {
     expect(
       buildBookLessonShelfRows(
         baseBook({
@@ -99,6 +132,26 @@ describe('book-lesson-shelf', () => {
         }),
       ),
     ).toEqual([])
+  })
+
+  it('buildBookLessonShelfRows shows unit cards for multi-file books without lessons', () => {
+    const rows = buildBookLessonShelfRows(
+      baseBook({
+        units: [
+          { id: 'u1', title: 'Unit 1', filePath: 'book-library/a/unit-01.pdf' },
+          { id: 'u2', title: 'Unit 2', filePath: 'book-library/a/unit-02.pdf' },
+        ],
+      }),
+    )
+    expect(rows).toHaveLength(2)
+    expect(rows[0]!.cards).toEqual([
+      expect.objectContaining({ kind: 'unit', id: 'u1', indexLabel: 'U1' }),
+    ])
+    expect(rows[1]!.cards[0]!.id).toBe('u2')
+  })
+
+  it('buildBookLessonShelfRows returns empty when there is nothing to open', () => {
+    expect(buildBookLessonShelfRows(baseBook())).toEqual([])
   })
 
   it('presentation books get unit cards', () => {

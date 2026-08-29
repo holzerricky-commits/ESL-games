@@ -83,6 +83,8 @@ import { TextToolPreview } from '@/components/students/tool-previews/text-tool-p
 import { ANNOTATION_TOOL_SETTINGS_PANEL } from '@/components/students/annotation-chrome-styles'
 import type { MarqueeSelectRule } from '@/lib/books/annotation-select'
 import { ThicknessSliderRow } from '@/components/students/annotation-thickness-slider-row'
+import { textFontSizeThicknessPreviewDots } from '@/lib/books/text-font-size-pixel'
+import { TEXT_TOOL_PREVIEW_REFERENCE_HEIGHT_PX } from '@/lib/books/text-tool-preview-style'
 import { SpectrumColorPicker } from '@/components/students/annotation-spectrum-picker'
 import { ColorSwatchRow, PenSwatchRow } from '@/components/students/annotation-swatch-picker'
 import type { AnnotationColorSource } from '@/lib/books/annotation-custom-color'
@@ -102,8 +104,9 @@ import type {
   TextAnnotationVisualStyle,
   WritableStickerVariant,
 } from '@/lib/books/annotation-command-types'
-import type { AnnotationTextFontId } from '@/lib/books/annotation-text-fonts'
+import type { AnnotationTextFontId, AnnotationTextFontWeight } from '@/lib/books/annotation-text-fonts'
 import { TextFontPicker } from '@/components/students/text-font-picker'
+import { TextFontWeightPicker } from '@/components/students/text-font-weight-picker'
 import { TextStyleCirclePicker } from '@/components/students/text-style-circle-picker'
 import { ShapeKindCirclePicker } from '@/components/students/shape-kind-circle-picker'
 import { StickerKindCirclePicker } from '@/components/students/sticker-kind-circle-picker'
@@ -338,6 +341,8 @@ export interface BookAnnotationToolbarProps {
   setTextAlign: (v: TextAnnotationAlign) => void
   textFontId: AnnotationTextFontId
   setTextFontId: (id: AnnotationTextFontId) => void
+  textFontWeight: AnnotationTextFontWeight
+  setTextFontWeight: (weight: AnnotationTextFontWeight) => void
   textFillColor: string
   setTextFillColor: (c: string) => void
   /** Page/spread canvas height for accurate text size preview (matches on-book rendering). */
@@ -364,7 +369,6 @@ export interface BookAnnotationToolbarProps {
   setPenAutoGroupConnected?: (v: boolean) => void
   marqueeSelectRule?: MarqueeSelectRule
   setMarqueeSelectRule?: (r: MarqueeSelectRule) => void
-  textSelectionActive?: boolean
   stickySelectionActive?: boolean
   shapeSelectionActive?: boolean
   penStrokeSelectionActive?: boolean
@@ -404,8 +408,8 @@ const EYEDROPPER_LONG_PRESS_MS = 450
 const railSettingsTitleSuffix = ' · click again for settings'
 
 /**
- * Rail: ignore Radix auto-close (picks / nested menus must not dismiss).
- * Close only via explicit setOpen(false) — tool toggle, click-away, or start drawing.
+ * Rail: ignore Radix auto-close so sliders and nested menus stay usable.
+ * Close via explicit setOpen(false) — after a one-tap pick, tool toggle, click-away, or start drawing.
  */
 function handleRailToolSettingsOpenChange(
   isRailMode: boolean,
@@ -554,6 +558,8 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
     setTextAlign,
     textFontId,
     setTextFontId,
+    textFontWeight,
+    setTextFontWeight,
     textFillColor,
     setTextFillColor,
     textPageHeightPx,
@@ -577,7 +583,6 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
     setPenAutoGroupConnected,
     marqueeSelectRule = 'follow-drag',
     setMarqueeSelectRule,
-    textSelectionActive = false,
     stickySelectionActive = false,
     shapeSelectionActive = false,
     penStrokeSelectionActive = false,
@@ -668,6 +673,14 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
     setCalloutOpen(false)
   }
 
+  /** Apply a discrete pick (type, color, font, dash) then close the settings panel. */
+  function pickAndClose<T>(apply: (value: T) => void) {
+    return (value: T) => {
+      apply(value)
+      closeAllPopovers()
+    }
+  }
+
   useEffect(() => {
     if (!registerToolSettingsCloseRef) return
     registerToolSettingsCloseRef.current = closeAllPopovers
@@ -680,7 +693,6 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
   const showPenCreationOptions = !penStrokeSelectionActive
   const showMarkerCreationOptions = !markerStrokeSelectionActive
   const showShapeCreationOptions = !shapeSelectionActive
-  const showTextCreationOptions = !textSelectionActive
   const showStickyCreationOptions = !stickySelectionActive
   const isFilledShape =
     annotationMode === 'rect' || annotationMode === 'ellipse' || annotationMode === 'triangle'
@@ -761,15 +773,17 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
     () => buildFineInkThicknessPreviewDots(penProfileWidthScaleMultiplier(penStrokeProfile)),
     [penStrokeProfile],
   )
+  const textThicknessPreviewDots = useMemo(
+    () => textFontSizeThicknessPreviewDots(textPageHeightPx ?? TEXT_TOOL_PREVIEW_REFERENCE_HEIGHT_PX),
+    [textPageHeightPx],
+  )
   const shapeStrokeSwatch = useMemo(() => getPenSwatch(shapeStrokeSwatchId), [shapeStrokeSwatchId])
   const eraserModeLabel = eraserSubMode === 'rubber' ? 'Rub eraser' : 'Stroke eraser'
 
   function pickShape(m: ShapeToolbarMode) {
     setShapeToolbarIcon(m)
     setAnnotationMode(m)
-    // Rail: keep settings open so you can still tweak size/color after changing type.
-    // Compact horizontal popovers still close on pick (quick single-choice menus).
-    if (!isRailMode) setShapesOpen(false)
+    closeAllPopovers()
   }
 
   function activateShapeTool() {
@@ -991,7 +1005,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
               <ToolSettingsSection label="Pen type">
                 <PenProfileCirclePicker
                   value={penStrokeProfile}
-                  onChange={setPenStrokeProfile}
+                  onChange={pickAndClose(setPenStrokeProfile)}
                   idPrefix="pen-profile"
                 />
               </ToolSettingsSection>
@@ -999,7 +1013,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
               <PopoverIconSegmentRow
                 label="Pen type"
                 value={penStrokeProfile}
-                onChange={(v) => setPenStrokeProfile(v as PenStrokeProfile)}
+                onChange={pickAndClose((v) => setPenStrokeProfile(v as PenStrokeProfile))}
                 idPrefix="pen-profile"
                 options={PEN_PROFILE_OPTIONS}
               />
@@ -1012,7 +1026,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                       swatchId={penSwatchId}
                       colorSource={penColorSource}
                       customHex={penCustomHex}
-                      onPick={pickPenPresetSwatch}
+                      onPick={pickAndClose(pickPenPresetSwatch)}
                       idPrefix="pen"
                       swatches={penSwatchesForProfile}
                       customPickerOpen={penSpectrumOpen}
@@ -1025,7 +1039,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                     swatchId={penSwatchId}
                     colorSource={penColorSource}
                     customHex={penCustomHex}
-                    onPick={pickPenPresetSwatch}
+                    onPick={pickAndClose(pickPenPresetSwatch)}
                     idPrefix="pen"
                     swatches={penSwatchesForProfile}
                     customPickerOpen={penSpectrumOpen}
@@ -1035,7 +1049,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                 {penSpectrumOpen ? (
                   <SpectrumColorPicker
                     customHex={penCustomHex}
-                    onPickCustom={pickPenCustomColor}
+                    onPickCustom={pickAndClose(pickPenCustomColor)}
                     label="Spectrum"
                   />
                 ) : null}
@@ -1049,7 +1063,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                 />
                 <LineDashStyleIconRow
                   value={penLineDashStyle}
-                  onChange={setPenLineDashStyle}
+                  onChange={pickAndClose(setPenLineDashStyle)}
                   idPrefix="pen"
                   surface={isRailMode ? 'rail' : 'default'}
                 />
@@ -1161,10 +1175,10 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
               <ToolSettingsSection label="Type">
                 <EyedropperVariantCirclePicker
                   value={eyedropperVariant}
-                  onChange={(v) => {
+                  onChange={pickAndClose((v) => {
                     setEyedropperVariant(v)
                     setAnnotationMode('eyedropper')
-                  }}
+                  })}
                   sampleIcon={<Pipette className={iconCls} strokeWidth={1.75} aria-hidden />}
                   smartIcon={<SmartEyedropperIcon />}
                   idPrefix="eyedropper-variant"
@@ -1176,11 +1190,10 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
               <PopoverIconSegmentRow
                 label="Eyedropper"
                 value={eyedropperVariant}
-                onChange={(v) => {
+                onChange={pickAndClose((v) => {
                   setEyedropperVariant(v as EyedropperVariant)
-                  setEyedropperOpen(false)
                   setAnnotationMode('eyedropper')
-                }}
+                })}
                 idPrefix="eyedropper-variant"
                 options={[
                   {
@@ -1266,7 +1279,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                     <ColorSwatchRow
                       colors={ANNOTATION_MARKER_SWATCHES}
                       current={markerColor}
-                      onPick={pickMarkerSwatchColor}
+                      onPick={pickAndClose(pickMarkerSwatchColor)}
                       idPrefix="marker"
                       labelHidden
                     />
@@ -1275,7 +1288,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                   <ColorSwatchRow
                     colors={ANNOTATION_MARKER_SWATCHES}
                     current={markerColor}
-                    onPick={pickMarkerSwatchColor}
+                    onPick={pickAndClose(pickMarkerSwatchColor)}
                     idPrefix="marker"
                   />
                 )}
@@ -1422,7 +1435,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                   <ToolSettingsSection label="Stroke color">
                     <PenSwatchRow
                       swatchId={shapeStrokeSwatchId}
-                      onPick={pickShapeStrokeSwatch}
+                      onPick={pickAndClose(pickShapeStrokeSwatch)}
                       idPrefix="shape-stroke"
                       labelHidden
                       swatches={ANNOTATION_SOLID_PEN_SWATCHES}
@@ -1432,17 +1445,17 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                     <ShapeLineStyleIconRow
                       strokeEnabled={shapeStrokeEnabled}
                       lineDashStyle={shapeLineDashStyle}
-                      onStrokeEnabledChange={setShapeStrokeEnabled}
-                      onLineDashStyleChange={setShapeLineDashStyle}
+                      onStrokeEnabledChange={pickAndClose(setShapeStrokeEnabled)}
+                      onLineDashStyleChange={pickAndClose(setShapeLineDashStyle)}
                       fillMode={shapeFillMode}
-                      onFillModeChange={setShapeFillMode}
+                      onFillModeChange={pickAndClose(setShapeFillMode)}
                       idPrefix="shape"
                       surface="rail"
                     />
                   ) : (
                     <LineDashStyleIconRow
                       value={shapeLineDashStyle}
-                      onChange={setShapeLineDashStyle}
+                      onChange={pickAndClose(setShapeLineDashStyle)}
                       idPrefix="shape"
                       surface="rail"
                       label="Outline"
@@ -1452,9 +1465,9 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                     <>
                       <ShapeFillIconRow
                         fillMode={shapeFillMode}
-                        onFillModeChange={setShapeFillMode}
+                        onFillModeChange={pickAndClose(setShapeFillMode)}
                         strokeEnabled={shapeStrokeEnabled}
-                        onStrokeEnabledChange={setShapeStrokeEnabled}
+                        onStrokeEnabledChange={pickAndClose(setShapeStrokeEnabled)}
                         idPrefix="shape"
                         surface="rail"
                       />
@@ -1463,7 +1476,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                           <ColorSwatchRow
                             colors={ANNOTATION_SHAPE_FILL_SWATCHES}
                             current={shapeFillColor}
-                            onPick={setShapeFillColor}
+                            onPick={pickAndClose(setShapeFillColor)}
                             idPrefix="shape-fill"
                             labelHidden
                           />
@@ -1507,7 +1520,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                   <>
                     <PenSwatchRow
                       swatchId={shapeStrokeSwatchId}
-                      onPick={pickShapeStrokeSwatch}
+                      onPick={pickAndClose(pickShapeStrokeSwatch)}
                       idPrefix="shape-stroke"
                       label="Stroke color"
                       swatches={ANNOTATION_SOLID_PEN_SWATCHES}
@@ -1516,17 +1529,17 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                       <ShapeLineStyleIconRow
                         strokeEnabled={shapeStrokeEnabled}
                         lineDashStyle={shapeLineDashStyle}
-                        onStrokeEnabledChange={setShapeStrokeEnabled}
-                        onLineDashStyleChange={setShapeLineDashStyle}
+                        onStrokeEnabledChange={pickAndClose(setShapeStrokeEnabled)}
+                        onLineDashStyleChange={pickAndClose(setShapeLineDashStyle)}
                         fillMode={shapeFillMode}
-                        onFillModeChange={setShapeFillMode}
+                        onFillModeChange={pickAndClose(setShapeFillMode)}
                         idPrefix="shape"
                         surface="default"
                       />
                     ) : (
                       <LineDashStyleIconRow
                         value={shapeLineDashStyle}
-                        onChange={setShapeLineDashStyle}
+                        onChange={pickAndClose(setShapeLineDashStyle)}
                         idPrefix="shape"
                         surface="default"
                         label="Line style"
@@ -1536,9 +1549,9 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                       <>
                         <ShapeFillIconRow
                           fillMode={shapeFillMode}
-                          onFillModeChange={setShapeFillMode}
+                          onFillModeChange={pickAndClose(setShapeFillMode)}
                           strokeEnabled={shapeStrokeEnabled}
-                          onStrokeEnabledChange={setShapeStrokeEnabled}
+                          onStrokeEnabledChange={pickAndClose(setShapeStrokeEnabled)}
                           idPrefix="shape"
                           surface="default"
                         />
@@ -1546,7 +1559,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                           <ColorSwatchRow
                             colors={ANNOTATION_SHAPE_FILL_SWATCHES}
                             current={shapeFillColor}
-                            onPick={setShapeFillColor}
+                            onPick={pickAndClose(setShapeFillColor)}
                             idPrefix="shape-fill"
                             label="Fill color"
                           />
@@ -1644,10 +1657,10 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                 <ToolSettingsSection label="Kind">
                   <StickerKindCirclePicker
                     value={stickerKind}
-                    onChange={(kind) => {
+                    onChange={pickAndClose((kind) => {
                       setStickerKind(kind)
                       setAnnotationMode('sticker')
-                    }}
+                    })}
                     quickIcon={stampIconForVariant(stampVariant, stampQuestionColor)}
                     writableIcon={writableStickerIcon(writableStickerVariant)}
                     idPrefix="sticker-kind"
@@ -1658,11 +1671,11 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                     <ToolSettingsSection label="Sticker">
                       <StampVariantCirclePicker
                         value={stampVariant}
-                        onChange={(v) => {
+                        onChange={pickAndClose((v) => {
                           setStampVariant(v)
                           setStickerKind('quick')
                           setAnnotationMode('sticker')
-                        }}
+                        })}
                         iconForVariant={(v) =>
                           stampIconForVariant(v, v === 'question' ? stampQuestionColor : '')
                         }
@@ -1674,7 +1687,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                         <ColorSwatchRow
                           colors={ANNOTATION_STAMP_QUESTION_SWATCHES}
                           current={stampQuestionColor}
-                          onPick={setStampQuestionColor}
+                          onPick={pickAndClose(setStampQuestionColor)}
                           idPrefix="stamp-question"
                           labelHidden
                         />
@@ -1703,11 +1716,11 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                     <ToolSettingsSection label="Type">
                       <WritableStickerCirclePicker
                         value={writableStickerVariant}
-                        onChange={(v) => {
+                        onChange={pickAndClose((v) => {
                           setWritableStickerVariant(v)
                           setStickerKind('writable')
                           setAnnotationMode('sticker')
-                        }}
+                        })}
                         iconForVariant={writableStickerIcon}
                         idPrefix="sticker-writable-variant"
                       />
@@ -1716,7 +1729,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                       <ColorSwatchRow
                         colors={ANNOTATION_STICKY_FILL_SWATCHES}
                         current={stickyFillColor}
-                        onPick={setStickyFillColor}
+                        onPick={pickAndClose(setStickyFillColor)}
                         idPrefix="sticky"
                         labelHidden
                       />
@@ -1725,6 +1738,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                       value={stickyThicknessStep}
                       onChange={setStickyThicknessStep}
                       idPrefix="sticky"
+                      previewDots={textThicknessPreviewDots}
                       ariaLabel="Text size"
                       surface="rail"
                     />
@@ -1738,12 +1752,12 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
             <PopoverIconSegmentRow
                 label="Kind"
                 value={stickerKind}
-                onChange={(v) => {
+                onChange={pickAndClose((v) => {
                   if (v === 'quick' || v === 'writable') {
                     setStickerKind(v)
                     setAnnotationMode('sticker')
                   }
-                }}
+                })}
                 idPrefix="sticker-kind"
                 options={[
                   { value: 'quick', ariaLabel: 'Quick', icon: stampIconForVariant(stampVariant, stampQuestionColor) },
@@ -1756,11 +1770,11 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                     label="Quick sticker"
                     labelHidden
                     value={stampVariant}
-                    onChange={(v) => {
+                    onChange={pickAndClose((v) => {
                       setStampVariant(v as StampVariant)
                       setStickerKind('quick')
                       setAnnotationMode('sticker')
-                    }}
+                    })}
                     idPrefix="sticker-quick-variant"
                     options={STAMP_ICON_OPTIONS}
                   />
@@ -1768,7 +1782,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                     <ColorSwatchRow
                       colors={ANNOTATION_STAMP_QUESTION_SWATCHES}
                       current={stampQuestionColor}
-                      onPick={setStampQuestionColor}
+                      onPick={pickAndClose(setStampQuestionColor)}
                       idPrefix="stamp-question"
                       label="Question color"
                     />
@@ -1812,18 +1826,18 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                       label="Writable sticker"
                       labelHidden
                       value={writableStickerVariant}
-                      onChange={(v) => {
+                      onChange={pickAndClose((v) => {
                         setWritableStickerVariant(v as WritableStickerVariant)
                         setStickerKind('writable')
                         setAnnotationMode('sticker')
-                      }}
+                      })}
                       idPrefix="sticker-writable-variant"
                       options={WRITABLE_STICKER_ICON_OPTIONS}
                     />
                     <ColorSwatchRow
                       colors={ANNOTATION_STICKY_FILL_SWATCHES}
                       current={stickyFillColor}
-                      onPick={setStickyFillColor}
+                      onPick={pickAndClose(setStickyFillColor)}
                       idPrefix="sticky"
                       label="Fill color"
                     />
@@ -1831,6 +1845,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                       value={stickyThicknessStep}
                       onChange={setStickyThicknessStep}
                       idPrefix="sticky"
+                      previewDots={textThicknessPreviewDots}
                       ariaLabel="Text size"
                     />
               </>
@@ -1914,25 +1929,24 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
           className={toolSettingsPanelClass(useContextStrip, layout)}
         >
           <div className={settingsPanelStackClass(isRailMode)}>
-            {showTextCreationOptions ? (
-              <ToolSettingsPreviewBox label="Preview" ariaLabel="Text preview">
-                <TextToolPreview
-                  textFontId={textFontId}
-                  textVisualStyle={textVisualStyle}
-                  textAlign={textAlign}
-                  textThicknessStep={textThicknessStep}
-                  textColor={textColor}
-                  textFillColor={textFillColor}
-                  pageHeightPx={textPageHeightPx}
-                />
-              </ToolSettingsPreviewBox>
-            ) : null}
+            <ToolSettingsPreviewBox label="Preview" ariaLabel="Text preview">
+              <TextToolPreview
+                textFontId={textFontId}
+                textFontWeight={textFontWeight}
+                textVisualStyle={textVisualStyle}
+                textAlign={textAlign}
+                textThicknessStep={textThicknessStep}
+                textColor={textColor}
+                textFillColor={textFillColor}
+                pageHeightPx={textPageHeightPx}
+              />
+            </ToolSettingsPreviewBox>
             {isRailMode ? (
               <>
                 <ToolSettingsSection label="Style">
                   <TextStyleCirclePicker
                     value={textVisualStyle}
-                    onChange={setTextVisualStyle}
+                    onChange={pickAndClose(setTextVisualStyle)}
                     idPrefix="text-style"
                   />
                 </ToolSettingsSection>
@@ -1942,9 +1956,9 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                     labelHidden
                     surface="rail"
                     value={textAlign}
-                    onChange={(v) => {
+                    onChange={pickAndClose((v) => {
                       if (v === 'left' || v === 'center' || v === 'right') setTextAlign(v)
-                    }}
+                    })}
                     idPrefix="text-align"
                     options={[
                       {
@@ -1968,7 +1982,15 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                 <ToolSettingsSection label="Font">
                   <TextFontPicker
                     value={textFontId}
-                    onChange={setTextFontId}
+                    onChange={pickAndClose(setTextFontId)}
+                    idPrefix="rail-text"
+                    surface="rail"
+                  />
+                </ToolSettingsSection>
+                <ToolSettingsSection label="Weight">
+                  <TextFontWeightPicker
+                    value={textFontWeight}
+                    onChange={pickAndClose(setTextFontWeight)}
                     idPrefix="rail-text"
                     surface="rail"
                   />
@@ -1979,9 +2001,9 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                 <PopoverIconSegmentRow
                   label="Style"
                   value={textVisualStyle}
-                  onChange={(v) => {
+                  onChange={pickAndClose((v) => {
                     if (v === 'plain' || v === 'filled') setTextVisualStyle(v)
-                  }}
+                  })}
                   idPrefix="text-style"
                   options={[
                     {
@@ -1999,9 +2021,9 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                 <PopoverIconSegmentRow
                   label="Alignment"
                   value={textAlign}
-                  onChange={(v) => {
+                  onChange={pickAndClose((v) => {
                     if (v === 'left' || v === 'center' || v === 'right') setTextAlign(v)
-                  }}
+                  })}
                   idPrefix="text-align"
                   options={[
                     {
@@ -2023,80 +2045,82 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                 />
                 <TextFontPicker
                   value={textFontId}
-                  onChange={setTextFontId}
+                  onChange={pickAndClose(setTextFontId)}
+                  idPrefix="text"
+                  surface="default"
+                />
+                <TextFontWeightPicker
+                  value={textFontWeight}
+                  onChange={pickAndClose(setTextFontWeight)}
                   idPrefix="text"
                   surface="default"
                 />
               </>
             )}
-            {showTextCreationOptions ? (
+            {isRailMode ? (
               <>
-                {isRailMode ? (
-                  <>
-                    <ToolSettingsSection label="Text color">
-                      <ColorSwatchRow
-                        colors={ANNOTATION_TEXT_STROKE_SWATCHES}
-                        current={textColor}
-                        onPick={setTextColor}
-                        idPrefix="text"
-                        labelHidden
-                      />
-                    </ToolSettingsSection>
-                    {textVisualStyle === 'filled' ? (
-                      <ToolSettingsSection label="Background">
-                        <ColorSwatchRow
-                          colors={ANNOTATION_TEXT_FILL_SWATCHES}
-                          current={textFillColor}
-                          onPick={setTextFillColor}
-                          idPrefix="text-fill"
-                          labelHidden
-                        />
-                      </ToolSettingsSection>
-                    ) : null}
-                    <ThicknessSliderRow
-                      value={textThicknessStep}
-                      onChange={setTextThicknessStep}
-                      idPrefix="text"
-                      ariaLabel="Text size"
-                      surface="rail"
-                    />
-                    <ToolSettingsAdvancedSection
-                      hint="Tap the page to place one text box. Plain is text only; Background adds a fill per line. Enter for a new line, Ctrl+Enter to finish, Ctrl+A to select all, Escape or click away when done."
-                    />
-                  </>
-                ) : (
-                  <>
-                    <PopoverHint>
-                      Tap the page to place one text box. Plain is text only; Background adds a fill per line. Enter for a new
-                      line, Ctrl+Enter to finish, Ctrl+A to select all, Escape or click away when done.
-                    </PopoverHint>
+                <ToolSettingsSection label="Text color">
+                  <ColorSwatchRow
+                    colors={ANNOTATION_TEXT_STROKE_SWATCHES}
+                    current={textColor}
+                    onPick={pickAndClose(setTextColor)}
+                    idPrefix="text"
+                    labelHidden
+                  />
+                </ToolSettingsSection>
+                {textVisualStyle === 'filled' ? (
+                  <ToolSettingsSection label="Background">
                     <ColorSwatchRow
-                      colors={ANNOTATION_TEXT_STROKE_SWATCHES}
-                      current={textColor}
-                      onPick={setTextColor}
-                      idPrefix="text"
-                      label="Text color"
+                      colors={ANNOTATION_TEXT_FILL_SWATCHES}
+                      current={textFillColor}
+                      onPick={pickAndClose(setTextFillColor)}
+                      idPrefix="text-fill"
+                      labelHidden
                     />
-                    {textVisualStyle === 'filled' ? (
-                      <ColorSwatchRow
-                        colors={ANNOTATION_TEXT_FILL_SWATCHES}
-                        current={textFillColor}
-                        onPick={setTextFillColor}
-                        idPrefix="text-fill"
-                        label="Background"
-                      />
-                    ) : null}
-                    <ThicknessSliderRow
-                      value={textThicknessStep}
-                      onChange={setTextThicknessStep}
-                      idPrefix="text"
-                      ariaLabel="Text size"
-                    />
-                  </>
-                )}
+                  </ToolSettingsSection>
+                ) : null}
+                <ThicknessSliderRow
+                  value={textThicknessStep}
+                  onChange={setTextThicknessStep}
+                  idPrefix="text"
+                  previewDots={textThicknessPreviewDots}
+                  ariaLabel="Text size"
+                  surface="rail"
+                />
+                <ToolSettingsAdvancedSection
+                  hint="Tap the page to place one text box. Plain is text only; Background adds a fill per line. Enter for a new line, Ctrl+Enter to finish, Ctrl+A to select all, Escape or click away when done."
+                />
               </>
             ) : (
-              <PopoverHint>Use the selection bar to adjust the selected text.</PopoverHint>
+              <>
+                <PopoverHint>
+                  Tap the page to place one text box. Plain is text only; Background adds a fill per line. Enter for a new
+                  line, Ctrl+Enter to finish, Ctrl+A to select all, Escape or click away when done.
+                </PopoverHint>
+                <ColorSwatchRow
+                  colors={ANNOTATION_TEXT_STROKE_SWATCHES}
+                  current={textColor}
+                  onPick={pickAndClose(setTextColor)}
+                  idPrefix="text"
+                  label="Text color"
+                />
+                {textVisualStyle === 'filled' ? (
+                  <ColorSwatchRow
+                    colors={ANNOTATION_TEXT_FILL_SWATCHES}
+                    current={textFillColor}
+                    onPick={pickAndClose(setTextFillColor)}
+                    idPrefix="text-fill"
+                    label="Background"
+                  />
+                ) : null}
+                <ThicknessSliderRow
+                  value={textThicknessStep}
+                  onChange={setTextThicknessStep}
+                  idPrefix="text"
+                  previewDots={textThicknessPreviewDots}
+                  ariaLabel="Text size"
+                />
+              </>
             )}
           </div>
         </PopoverContent>
@@ -2134,7 +2158,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
               <ToolSettingsSection label="Stroke color">
                 <PenSwatchRow
                   swatchId={shapeStrokeSwatchId}
-                  onPick={pickShapeStrokeSwatch}
+                  onPick={pickAndClose(pickShapeStrokeSwatch)}
                   idPrefix="callout-stroke"
                   labelHidden
                   swatches={ANNOTATION_SOLID_PEN_SWATCHES}
@@ -2222,7 +2246,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
               <ToolSettingsSection label="Mode">
                 <EraserModeCirclePicker
                   value={eraserSubMode === 'line' ? 'line' : 'rubber'}
-                  onChange={(v) => {
+                  onChange={pickAndClose((v) => {
                     if (v === 'line') {
                       setEraserSubMode('line')
                       setAnnotationMode('eraser-line')
@@ -2230,7 +2254,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                       setEraserSubMode('rubber')
                       setAnnotationMode('eraser')
                     }
-                  }}
+                  })}
                   rubberIcon={<PenEraserIcon />}
                   lineIcon={<Eraser className={iconCls} strokeWidth={1.75} aria-hidden />}
                   idPrefix="eraser-mode"
@@ -2240,7 +2264,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
               <PopoverIconSegmentRow
                 label="Mode"
                 value={eraserSubMode === 'line' ? 'line' : 'rubber'}
-                onChange={(v) => {
+                onChange={pickAndClose((v) => {
                   if (v === 'line') {
                     setEraserSubMode('line')
                     setAnnotationMode('eraser-line')
@@ -2248,7 +2272,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                     setEraserSubMode('rubber')
                     setAnnotationMode('eraser')
                   }
-                }}
+                })}
                 idPrefix="eraser-mode"
                 options={[
                   {
@@ -2334,7 +2358,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                 <ToolSettingsSection label="Marquee rule">
                   <MarqueeRuleCirclePicker
                     value={marqueeSelectRule}
-                    onChange={setMarqueeSelectRule}
+                    onChange={pickAndClose(setMarqueeSelectRule)}
                     idPrefix="select-panel"
                   />
                 </ToolSettingsSection>

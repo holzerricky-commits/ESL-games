@@ -24,7 +24,7 @@ describe('isSpreadDrawableReady', () => {
     ).toBe(true)
   })
 
-  it('after present, cache primed satisfies without slot callback', () => {
+  it('does not uncover on cache-in-memory without slot paint, even after present', () => {
     expect(
       isSpreadDrawableReady({
         spreadLayoutStable: true,
@@ -32,7 +32,7 @@ describe('isSpreadDrawableReady', () => {
         userPresented: true,
         spreadCachePrimed: true,
       }),
-    ).toBe(true)
+    ).toBe(false)
   })
 
   it('silent warm before present does not use cache fast-path', () => {
@@ -58,7 +58,7 @@ describe('isSpreadDrawableReady', () => {
     ).toBe(true)
   })
 
-  it('timeout and bypass unblock', () => {
+  it('timeout does not uncover empty paper; bypass still unblocks', () => {
     expect(
       isSpreadDrawableReady({
         spreadLayoutStable: false,
@@ -67,7 +67,7 @@ describe('isSpreadDrawableReady', () => {
         spreadCachePrimed: false,
         spreadDrawableTimedOut: true,
       }),
-    ).toBe(true)
+    ).toBe(false)
     expect(
       isSpreadDrawableReady({
         spreadLayoutStable: false,

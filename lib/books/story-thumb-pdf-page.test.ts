@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { buildPageAlignmentRuntime } from '@/lib/books/page-alignment-runtime'
 import {
+  isOutlineSinglePageRange,
+  resolveOutlinePrintedPdfRange,
   resolveStoryTitleThumbPdfPage,
   resolveUnitCoverThumbPdfPage,
 } from '@/lib/books/story-thumb-pdf-page'
@@ -75,5 +77,18 @@ describe('story-thumb-pdf-page', () => {
         totalPdfPages: 50,
       }),
     ).toBe(20)
+  })
+
+  it('isOutlineSinglePageRange is true only for one printed page', () => {
+    expect(isOutlineSinglePageRange(10, 10)).toBe(true)
+    expect(isOutlineSinglePageRange(10, 11)).toBe(false)
+    expect(isOutlineSinglePageRange(null, null)).toBe(true)
+  })
+
+  it('resolveOutlinePrintedPdfRange maps inclusive printed span to PDF', () => {
+    expect(resolveOutlinePrintedPdfRange(10, 11, book, unit, 50)).toEqual({
+      startPdf: 11,
+      endPdf: 12,
+    })
   })
 })

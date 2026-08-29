@@ -2,10 +2,14 @@
 
 import { useEffect, useMemo } from 'react'
 import { MoreHorizontal } from 'lucide-react'
-import { BookCoverThumbnail } from '@/components/books/book-cover-thumbnail'
-import { BookContentFormatBadge } from '@/components/books/book-content-format-badge'
-import { bookHasCustomCover } from '@/lib/books/book-cover-display'
-import { formatEffectivePageSpan, mapPdfPageToDisplayLabel } from '@/lib/books/page-numbering'
+import { BookCoverMockup } from '@/components/books/book-cover-mockup'
+import { BookCoverMockupArt } from '@/components/books/book-cover-mockup-art'
+import { CachedBookImage } from '@/components/books/cached-book-image'
+import {
+  bookCoverImageUrl,
+  getBookCoverSource,
+} from '@/lib/books/book-cover-display'
+import { mapPdfPageToDisplayLabel } from '@/lib/books/page-numbering'
 import { isPresentationBook } from '@/lib/books/book-catalog-labels'
 import type { BookLibraryPayload, BookRecord } from '@/lib/books/types'
 import {
@@ -13,11 +17,8 @@ import {
   isStudentCurriculumBookStartFresherThanLastStop,
   resolveCurriculumBookStarts,
   type StudentCurriculumBookStart,
-  type StudentSectionOption,
 } from '@/lib/students/selectors'
 import type { StudentClassSessionView, StudentProfileView } from '@/lib/students/types'
-import { StudentCurriculumBookPreview } from '@/components/students/tabs/student-curriculum-book-preview'
-import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,9 +27,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 
-function sectionDisplayTitle(option: StudentSectionOption): string {
-  return (option.partTitle ?? option.lessonTitle ?? option.title ?? option.pathLabel).trim()
-}
+const SHELF_COVER_WIDTH = 180
 
 interface StudentBookCurriculumCardProps {
   book: BookRecord
@@ -41,33 +40,27 @@ interface StudentBookCurriculumCardProps {
   isTodayTeachingBook?: boolean
   autoOpenPreview?: boolean
   previewOpen?: boolean
-  previewUnitId?: string
-  previewPage?: number
   onOpenPreview: (unitId?: string, page?: number) => void
   onClosePreview: () => void
   onRemove: () => void
-  onDataUpdated: () => void
 }
 
 export function StudentBookCurriculumCard({
   book,
   library,
   student,
-  pdfReady,
+  pdfReady: _pdfReady,
   scheduledClasses,
   isGlobalLatestStop = false,
   isTodayTeachingBook = false,
   autoOpenPreview = false,
   previewOpen = false,
-  previewUnitId,
-  previewPage,
   onOpenPreview,
   onClosePreview,
   onRemove,
-  onDataUpdated,
 }: StudentBookCurriculumCardProps) {
   const firstUnit = book.units[0] ?? null
-  const showCover = firstUnit && (bookHasCustomCover(book) || pdfReady)
+  const coverSource = getBookCoverSource(book, 1)
 
   const sectionOptions = useMemo(
     () => getStudentSectionOptions(student.id, library),
@@ -86,11 +79,6 @@ export function StudentBookCurriculumCard({
     )
     return starts[book.id] ?? null
   }, [student.curriculumBookStarts, student.curriculumAnchorSectionId, library, sectionOptions, book.id])
-
-  const anchorOption = useMemo(() => {
-    if (!bookStart) return null
-    return sectionOptions.find((o) => o.id === bookStart.sectionId) ?? null
-  }, [bookStart, sectionOptions])
 
   const latestBookmarkSession = useMemo(() => {
     const withBm = scheduledClasses.filter(
@@ -128,13 +116,6 @@ export function StudentBookCurriculumCard({
     return mapPdfPageToDisplayLabel(latestBookmark.pdfPage, book, bookmarkUnit, null, 'mapped')
   }, [latestBookmark, bookmarkUnit, book])
 
-  const openMappedPage = useMemo(() => {
-    if (previewPage != null) return previewPage
-    if (startFresherThanStop) return bookStart?.mappedPage
-    if (latestBookmark) return undefined
-    return bookStart?.mappedPage
-  }, [previewPage, startFresherThanStop, latestBookmark, bookStart?.mappedPage])
-
   useEffect(() => {
     if (autoOpenPreview && !previewOpen) {
       onOpenPreview(defaultOpenUnitId, startFresherThanStop ? bookStart?.mappedPage : undefined)
@@ -148,95 +129,52 @@ export function StudentBookCurriculumCard({
     onOpenPreview,
   ])
 
-  const statusChip = useMemo(() => {
-    if (startFresherThanStop && bookStart && anchorOption) {
-      const unit = book.units.find((u) => u.id === bookStart.unitId)
-      const pageLabel =
-        unit != null
-          ? String(bookStart.mappedPage)
-          : typeof anchorOption.startPageHint === 'number'
-            ? String(anchorOption.startPageHint)
-            : null
-      const span =
-        unit && typeof anchorOption.startPageHint === 'number'
-          ? formatEffectivePageSpan(
-              anchorOption.startPageHint,
-              anchorOption.endPageHint ?? null,
-              book,
-              unit,
-              null,
-              'mapped',
-            )
-          : ''
-      const spanBit =
-        pageLabel != null
-          ? ` · p. ${pageLabel}`
-          : span && span !== 'pages —' && !span.startsWith('pages —')
-            ? ` · ${span}`
-            : ''
-      return {
-        tone: 'set' as const,
-        label: `Starts: ${sectionDisplayTitle(anchorOption)}${spanBit}`,
-      }
+  /** One short status line under the cover. */
+  const statusLine = useMemo(() => {
+    const todayPrefix = isTodayTeachingBook ? 'Today' : null
+    const lastPrefix = isGlobalLatestStop && !isTodayTeachingBook ? 'Last' : null
+
+    if (startFresherThanStop && bookStart) {
+      const page = `p. ${bookStart.mappedPage}`
+      return todayPrefix ? `${todayPrefix} · ${page}` : `Start · ${page}`
     }
-    if (latestBookmark && bookmarkUnit && continuePageLabel) {
-      const prefix = isGlobalLatestStop ? 'Latest stop' : 'Last class'
-      return {
-        tone: 'progress' as const,
-        label: `${prefix}: p. ${continuePageLabel}`,
-      }
+    if (latestBookmark && continuePageLabel) {
+      const page = `p. ${continuePageLabel}`
+      if (todayPrefix) return `${todayPrefix} · ${page}`
+      if (lastPrefix) return `${lastPrefix} · ${page}`
+      return page
     }
-    if (bookStart && anchorOption) {
-      const unit = book.units.find((u) => u.id === bookStart.unitId)
-      const pageLabel =
-        unit != null
-          ? String(bookStart.mappedPage)
-          : typeof anchorOption.startPageHint === 'number'
-            ? String(anchorOption.startPageHint)
-            : null
-      const span =
-        unit && typeof anchorOption.startPageHint === 'number'
-          ? formatEffectivePageSpan(
-              anchorOption.startPageHint,
-              anchorOption.endPageHint ?? null,
-              book,
-              unit,
-              null,
-              'mapped',
-            )
-          : ''
-      const spanBit =
-        pageLabel != null
-          ? ` · p. ${pageLabel}`
-          : span && span !== 'pages —' && !span.startsWith('pages —')
-            ? ` · ${span}`
-            : ''
-      return {
-        tone: 'set' as const,
-        label: `Starts: ${sectionDisplayTitle(anchorOption)}${spanBit}`,
-      }
+    if (bookStart) {
+      const page = `p. ${bookStart.mappedPage}`
+      return todayPrefix ? `${todayPrefix} · ${page}` : `Start · ${page}`
     }
-    return {
-      tone: 'unset' as const,
-      label: 'Set starting place',
-    }
+    if (todayPrefix) return `${todayPrefix} · Set start`
+    return 'Set start'
   }, [
-    startFresherThanStop,
-    latestBookmark,
-    bookmarkUnit,
-    continuePageLabel,
+    isTodayTeachingBook,
     isGlobalLatestStop,
+    startFresherThanStop,
     bookStart,
-    anchorOption,
-    book,
+    latestBookmark,
+    continuePageLabel,
   ])
 
-  const primaryLabel = useMemo(() => {
+  const statusTone = needsStartSetup
+    ? 'unset'
+    : startFresherThanStop
+      ? 'set'
+      : latestBookmark
+        ? 'progress'
+        : bookStart
+          ? 'set'
+          : 'unset'
+
+  const ariaAction = useMemo(() => {
     if (previewOpen) return 'Close preview'
-    if (needsStartSetup) return 'Set starting place'
-    if (startFresherThanStop && bookStart) return `Open at p. ${bookStart.mappedPage}`
-    if (continuePageLabel) return `Continue at p. ${continuePageLabel}`
-    if (bookStart) return `Open at p. ${bookStart.mappedPage}`
+    if (needsStartSetup) return 'Set start'
+    if (startFresherThanStop && bookStart) return `Open at page ${bookStart.mappedPage}`
+    if (continuePageLabel) return `Continue at page ${continuePageLabel}`
+    if (bookStart) return `Open at page ${bookStart.mappedPage}`
     return isPresentationBook(book) ? 'Open presentation' : 'Open book'
   }, [previewOpen, needsStartSetup, startFresherThanStop, continuePageLabel, bookStart, book])
 
@@ -257,109 +195,95 @@ export function StudentBookCurriculumCard({
   }
 
   return (
-    <article className="flex flex-col overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
-      <div className="flex gap-4 p-4">
+    <article
+      className={cn(
+        'group relative flex w-full max-w-[180px] flex-col gap-2.5 transition',
+        previewOpen ? 'opacity-100' : undefined,
+      )}
+    >
+      <div className="relative">
         <button
           type="button"
           onClick={openPreview}
-          className="shrink-0 rounded-md text-left transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)]"
-          aria-label={`${primaryLabel}: ${book.title}`}
-        >
-          {showCover && firstUnit ? (
-            <BookCoverThumbnail
-              book={book}
-              unitId={firstUnit.id}
-              width={88}
-              pdfReady={pdfReady}
-              label={`${book.title} cover`}
-            />
-          ) : (
-            <div className="flex h-[124px] w-[88px] items-center justify-center rounded-md border border-[var(--border)] bg-[var(--surface-2)] text-xs text-muted-foreground">
-              No cover
-            </div>
+          className={cn(
+            'relative flex w-full justify-center text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2',
+            previewOpen && 'rounded-md ring-2 ring-[var(--brand-blue)] ring-offset-2 ring-offset-[var(--background)]',
           )}
+          aria-label={`${ariaAction}: ${book.title}`}
+          aria-expanded={previewOpen}
+        >
+          <span className="relative inline-block shrink-0">
+            <BookCoverMockup widthPx={SHELF_COVER_WIDTH} interactive={!previewOpen}>
+              {coverSource?.kind === 'image' ? (
+                <CachedBookImage
+                  src={bookCoverImageUrl(coverSource.imagePath)}
+                  className="book-cover-mockup__art"
+                />
+              ) : coverSource?.kind === 'pdf' ? (
+                <BookCoverMockupArt
+                  filePath={coverSource.filePath}
+                  pageNumber={coverSource.pageNumber}
+                  label={book.title}
+                />
+              ) : (
+                <div className="book-cover-mockup__fallback">
+                  <span className="book-cover-mockup__fallback-label">{book.title}</span>
+                </div>
+              )}
+            </BookCoverMockup>
+            <span
+              className={cn(
+                'pointer-events-none absolute left-2 top-2 z-10 h-2 w-2 rounded-full shadow-[0_0_0_2px_rgba(255,255,255,0.85)]',
+                statusTone === 'unset' && 'bg-[var(--brand-yellow)]',
+                statusTone === 'set' && 'bg-[var(--brand-blue)]',
+                statusTone === 'progress' && 'bg-[var(--brand-green)]',
+              )}
+              title={statusLine}
+              aria-hidden
+            />
+          </span>
         </button>
 
-        <div className="min-w-0 flex-1 space-y-2">
-          <div className="flex items-start justify-between gap-2">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
             <button
               type="button"
-              onClick={openPreview}
-              className="min-w-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)] rounded-sm"
+              className={cn(
+                'absolute right-1 top-1 z-20 flex h-7 w-7 items-center justify-center rounded-full',
+                'bg-[var(--surface-2)]/90 text-muted-foreground shadow-sm backdrop-blur-sm transition',
+                'opacity-80 hover:bg-[var(--surface-2)] hover:text-foreground sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100',
+                'active:scale-95',
+              )}
+              aria-label="Book options"
             >
-              <h4 className="text-base font-semibold leading-tight text-foreground hover:underline underline-offset-2">
-                {book.title}
-              </h4>
-          <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                <BookContentFormatBadge book={book} />
-                {isTodayTeachingBook ? (
-                  <span className="rounded-full bg-[var(--brand-blue)]/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--brand-blue)]">
-                    Today
-                  </span>
-                ) : null}
-                {isGlobalLatestStop && !isTodayTeachingBook ? (
-                  <span className="rounded-full bg-[var(--brand-green)]/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--brand-green)]">
-                    Last class
-                  </span>
-                ) : null}
-                <p className="text-xs text-muted-foreground">
-                  {book.units.length} unit{book.units.length === 1 ? '' : 's'}
-                </p>
-              </div>
+              <MoreHorizontal className="h-4 w-4" />
             </button>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button type="button" variant="ghost" size="icon-sm" className="shrink-0 text-muted-foreground">
-                  <MoreHorizontal className="h-4 w-4" />
-                  <span className="sr-only">Book options</span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem variant="destructive" onClick={onRemove}>
-                  {isPresentationBook(book) ? 'Remove presentation' : 'Remove book'}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-
-          <span
-            className={cn(
-              'inline-flex max-w-full rounded-full px-2.5 py-0.5 text-xs font-medium',
-              statusChip.tone === 'unset' && 'bg-amber-500/15 text-amber-800 dark:text-amber-200',
-              statusChip.tone === 'set' && 'bg-[var(--brand-blue)]/10 text-[var(--brand-blue)]',
-              statusChip.tone === 'progress' && 'bg-[var(--brand-green)]/10 text-[var(--brand-green)]',
-            )}
-          >
-            <span className="truncate">{statusChip.label}</span>
-          </span>
-
-          <div className="pt-1">
-            <Button
-              type="button"
-              size="sm"
-              variant={previewOpen ? 'secondary' : needsStartSetup ? 'default' : 'outline'}
-              onClick={openPreview}
-            >
-              {primaryLabel}
-            </Button>
-          </div>
-        </div>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem variant="destructive" onClick={onRemove}>
+              {isPresentationBook(book) ? 'Remove presentation' : 'Remove book'}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
-      {previewOpen ? (
-        <StudentCurriculumBookPreview
-          key={`${book.id}-${previewUnitId ?? defaultOpenUnitId}-${openMappedPage ?? 'resume'}`}
-          book={book}
-          library={library}
-          studentId={student.id}
-          pdfReady={pdfReady}
-          initialUnitId={previewUnitId ?? defaultOpenUnitId}
-          initialPage={openMappedPage}
-          onClose={onClosePreview}
-          onStartSaved={onDataUpdated}
-        />
-      ) : null}
+      <div className="min-w-0 space-y-0.5 px-0.5">
+        <button
+          type="button"
+          onClick={openPreview}
+          className="line-clamp-2 w-full text-left text-[13px] font-medium leading-snug tracking-tight text-foreground transition hover:opacity-80"
+        >
+          {book.title}
+        </button>
+        <p
+          className={cn(
+            'truncate text-[12px] leading-snug',
+            statusTone === 'unset' ? 'text-amber-700 dark:text-amber-300' : 'text-muted-foreground',
+          )}
+        >
+          {statusLine}
+        </p>
+      </div>
     </article>
   )
 }

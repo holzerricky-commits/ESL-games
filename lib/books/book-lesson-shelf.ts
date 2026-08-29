@@ -1,5 +1,12 @@
 import { isPresentationBook } from '@/lib/books/book-catalog-labels'
 import { effectivePartStructureTag } from '@/lib/books/part-structure-tag'
+import {
+  bookHasMultipleVolumes,
+  listBookVolumes,
+  unitsForVolume,
+  volumeNeedsOutline,
+} from '@/lib/books/book-volumes'
+import { bookHasDistinctUnitFiles } from '@/lib/books/split-stacked-pdf-ranges'
 import { bookHasTocMapping } from '@/lib/books/strip-book-toc-mapping'
 import {
   resolveOutlinePrintedStartPdfPage,
@@ -30,18 +37,66 @@ export interface BookLessonShelfRow {
   cards: BookLessonShelfCard[]
 }
 
+/** Shelf group: one volume (or the whole book when volumes are unused). */
+export interface BookLessonShelfVolumeSection {
+  volumeId: string | null
+  volumeTitle: string | null
+  needsOutline: boolean
+  rows: BookLessonShelfRow[]
+}
+
+/** True when at least one unit has a PDF file to open. */
+export function bookHasBrowsablePdf(book: BookRecord): boolean {
+  return book.units.some((unit) => Boolean(unit.filePath?.trim()))
+}
+
+function unitShelfCard(unit: BookUnitRecord, unitIndex: number): BookLessonShelfCard {
+  return {
+    kind: 'unit',
+    id: unit.id,
+    title: unit.title,
+    indexLabel: `U${unitIndex + 1}`,
+    unitId: unit.id,
+    printedStart:
+      typeof unit.startPageHint === 'number'
+        ? Math.round(unit.startPageHint)
+        : unit.pdfPageRange?.start ?? 1,
+  }
+}
+
 /**
  * True when this book should show the empty outline (or add-PDF) CTA
- * instead of lesson/unit cards.
+ * instead of lesson/unit cards. Multi-volume books use per-volume sections instead.
  */
 export function bookNeedsLessonShelfOutline(book: BookRecord): boolean {
   if (isPresentationBook(book)) return book.units.length === 0
+  if (bookHasMultipleVolumes(book)) return false
+  if (bookHasDistinctUnitFiles(book)) return false
   return !bookHasTocMapping(book)
+}
+
+function rowsForUnits(book: BookRecord, units: BookUnitRecord[]): BookLessonShelfRow[] {
+  const rows: BookLessonShelfRow[] = []
+  for (const unit of units) {
+    const unitIndex = book.units.findIndex((u) => u.id === unit.id)
+    const lessons = unit.lessons ?? []
+    if (lessons.length === 0) {
+      if (unit.filePath?.trim()) {
+        rows.push({ unit, cards: [unitShelfCard(unit, unitIndex >= 0 ? unitIndex : 0)] })
+      }
+      continue
+    }
+    const cards: BookLessonShelfCard[] = lessons.map((lesson, lessonIndex) =>
+      lessonToShelfCard(unit, lesson, lessonIndex),
+    )
+    rows.push({ unit, cards })
+  }
+  return rows
 }
 
 /**
  * Rows for the lesson shelf: one row per unit with lessons (normal books),
- * or unit cards for presentation books.
+ * or unit cards for presentation books / multi-file books awaiting outline.
  */
 export function buildBookLessonShelfRows(book: BookRecord): BookLessonShelfRow[] {
   if (bookNeedsLessonShelfOutline(book)) return []
@@ -49,32 +104,59 @@ export function buildBookLessonShelfRows(book: BookRecord): BookLessonShelfRow[]
   if (isPresentationBook(book)) {
     return book.units.map((unit, unitIndex) => ({
       unit,
-      cards: [
-        {
-          kind: 'unit' as const,
-          id: unit.id,
-          title: unit.title,
-          indexLabel: `U${unitIndex + 1}`,
-          unitId: unit.id,
-          printedStart:
-            typeof unit.startPageHint === 'number'
-              ? Math.round(unit.startPageHint)
-              : unit.pdfPageRange?.start ?? 1,
-        },
-      ],
+      cards: [unitShelfCard(unit, unitIndex)],
     }))
   }
 
-  const rows: BookLessonShelfRow[] = []
-  for (const unit of book.units) {
-    const lessons = unit.lessons ?? []
-    if (lessons.length === 0) continue
-    const cards: BookLessonShelfCard[] = lessons.map((lesson, lessonIndex) =>
-      lessonToShelfCard(unit, lesson, lessonIndex),
-    )
-    rows.push({ unit, cards })
+  return rowsForUnits(book, book.units)
+}
+
+/** Volume-aware shelf sections (multi-PDF books) or a single untitled section. */
+export function buildBookLessonShelfSections(book: BookRecord): BookLessonShelfVolumeSection[] {
+  if (isPresentationBook(book)) {
+    return [
+      {
+        volumeId: null,
+        volumeTitle: null,
+        needsOutline: book.units.length === 0,
+        rows: buildBookLessonShelfRows(book),
+      },
+    ]
   }
-  return rows
+
+  const volumes = listBookVolumes(book)
+  if (volumes.length >= 2) {
+    return volumes.map((vol) => {
+      const units = unitsForVolume(book, vol.id)
+      const needs = volumeNeedsOutline(book, vol.id)
+      return {
+        volumeId: vol.id,
+        volumeTitle: vol.title,
+        needsOutline: needs,
+        rows: needs ? [] : rowsForUnits(book, units),
+      }
+    })
+  }
+
+  if (bookNeedsLessonShelfOutline(book)) {
+    return [
+      {
+        volumeId: null,
+        volumeTitle: null,
+        needsOutline: true,
+        rows: [],
+      },
+    ]
+  }
+
+  return [
+    {
+      volumeId: null,
+      volumeTitle: null,
+      needsOutline: false,
+      rows: buildBookLessonShelfRows(book),
+    },
+  ]
 }
 
 /**

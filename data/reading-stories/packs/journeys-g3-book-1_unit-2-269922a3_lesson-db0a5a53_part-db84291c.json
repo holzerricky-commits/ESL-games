@@ -1,0 +1,116 @@
+{
+  "storyId": "journeys-g3-book-1::unit-2-269922a3::lesson-db0a5a53::part-db84291c",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-2-269922a3",
+  "status": "approved",
+  "stops": [
+    {
+      "id": "stop-17afeaf3",
+      "label": "Edison and Kinetoscope",
+      "displayPage": 350,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 356,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-0febceb6",
+          "kind": "true_false",
+          "prompt": "Thomas Edison helped invent the kinetoscope, which led to movies.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": true,
+          "evidenceSnippet": "You can thank the genius Thomas Edison every time you watch a movie. His laboratory conducted one moving picture experiment after another. Workers took just an occasional break. One invention of theirs led to the development of movies. That gadget was the kinetoscope.",
+          "evidenceHighlight": null
+        }
+      ]
+    },
+    {
+      "id": "stop-75c20e29",
+      "label": "How Kinetoscope Worked",
+      "displayPage": 350,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 356,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-4dce0682",
+          "kind": "mcq",
+          "prompt": "What was inside the kinetoscope that made pictures move?",
+          "choices": [
+            "A small TV screen",
+            "A strip of film with photos",
+            "A mirror and lights",
+            "A spinning disc"
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "The kinetoscope was a wooden box with a peephole on top. Inside the box was a strip of film. It had photos of someone moving. Spools pulled the film along quickly. An electric lamp flashed on and off. The lamp lit up each photo so the person peering in could see it.",
+          "evidenceHighlight": "Inside the box was a strip of film. It had photos of someone moving."
+        }
+      ]
+    },
+    {
+      "id": "stop-0713ca5b",
+      "label": "Early Movies",
+      "displayPage": 350,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 356,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-3ecf2615",
+          "kind": "true_false",
+          "prompt": "Many popular western movies were filmed in Hollywood studios, not always on real Texas plains.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": true,
+          "evidenceSnippet": "By the early 1900s, Hollywood was becoming the world's movie capital. At the same time, westerns were becoming the most popular movies. Westerns often told stories about cowboys, horses, and the wide-open Texas plains. But in fact, many westerns were filmed in Hollywood studios!",
+          "evidenceHighlight": "But in fact, many westerns were filmed in Hollywood studios!"
+        }
+      ]
+    },
+    {
+      "id": "stop-e95223f0",
+      "label": "Modern Special Effects",
+      "displayPage": 352,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 359,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-a23ef44b",
+          "kind": "mcq",
+          "prompt": "What is one special effect filmmakers use today to make people look like they are flying?",
+          "choices": [
+            "A green screen",
+            "A blue screen",
+            "A red screen",
+            "A black screen"
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "Filmmakers today use special effects, just as Edison did. Some special effects make events seem real. A blue screen is one way to make people look like they are flying!",
+          "evidenceHighlight": "A blue screen is one way to make people look like they are flying!"
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-08-14T14:05:06.174Z",
+  "approvedAt": "2026-08-14T14:05:06.174Z"
+}

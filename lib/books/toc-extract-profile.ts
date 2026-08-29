@@ -3,6 +3,7 @@ import type { BookRecord } from '@/lib/books/types'
 
 /** Which TOC extraction recipe to use (prompt + week/lesson labeling). */
 export const TOC_EXTRACT_PROFILE_IDS = [
+  'generic',
   'journeys',
   'wonders_workshop',
   'wonders_literature',
@@ -17,6 +18,7 @@ export function isTocExtractProfileId(value: unknown): value is TocExtractProfil
 /**
  * Pick TOC extract profile from catalog identity / filename cues.
  * Workshop & Literature roles use Wonders recipes even when series is unset.
+ * Unknown / bring-your-own books default to generic (not Journeys).
  */
 export function resolveTocExtractProfile(input: {
   series?: string | null
@@ -45,7 +47,11 @@ export function resolveTocExtractProfile(input: {
     return 'wonders_workshop'
   }
 
-  return 'journeys'
+  if (/^journeys$/i.test(series) || /\bjourneys?\b/.test(haystack)) {
+    return 'journeys'
+  }
+
+  return 'generic'
 }
 
 export function resolveTocExtractProfileForBook(book: BookRecord): TocExtractProfileId {
@@ -105,8 +111,7 @@ Return only valid JSON with this shape:
 Rules:
 - Unit heading appears near top and each unit spans a 2-page TOC spread.
 - Lessons are indicated by red shield lesson markers.
-- Include only section rows that have dotted leaders to a page number, plus story/title rows with a page number.
-- Ignore rows without usable page numbers.
+- Include visible section rows and story/title rows in order. When a row has a printed page number (dotted leaders or a clear page column), set startPrintedPage to that number. When it has no usable page number, set startPrintedPage to null — still include the title.
 - Keep exact visible order.
 - Include unit special sections outside lessons: READING POWER and Unit Wrap-Up.
 - If final unit has Glossary without number, set startPrintedPage null and include it anyway.
@@ -147,7 +152,7 @@ Rules:
 - This is Wonders Workshop (NOT Journeys). There are no red lesson shields.
 - Units are labeled Unit 1–6 (often with a Big Idea / essential question). Use the unit theme as title when visible.
 - Chunks under a unit are WEEKS (Week 1, Week 2, …), not "Lesson N". Put the week number in lessonNumber and the weekly concept / week theme in title (e.g. "Pedal Power", "Friends Help Friends").
-- Inside each week, include rows that have a page number, in visible order. Typical week parts:
+- Inside each week, include visible rows in order. Typical week parts:
   1) Vocabulary (or Words to Know)
   2) Shared Read story title (short main selection — use the story title as the entry title)
   3) Comprehension Strategy: …
@@ -155,8 +160,8 @@ Rules:
   5) Genre: …
   6) Vocabulary Strategy: … (or Literary Element: … on poetry weeks)
   7) Writing: …
+- When a row has a printed page number, set startPrintedPage to that number. When it has no usable page number, set startPrintedPage to null — still include the title.
 - Keep exact visible wording for strategy/skill/genre/writing lines when possible.
-- Ignore rows without usable page numbers.
 - Unit special sections outside weeks: Grammar Handbook (and similar end-matter). Put them in specialSections.
 - Never invent printed page numbers.
 - Do not invent Journeys labels (Vocabulary in Context, Your Turn, Making Connections, READING POWER, Unit Wrap-Up) unless those exact words appear on the page.
@@ -189,17 +194,55 @@ Rules:
 - This is Wonders Literature Anthology (NOT Journeys, NOT Workshop). There are no red lesson shields and almost no skill/grammar rows.
 - Units are labeled Unit 1–6. Use the unit theme as title when visible.
 - Chunks under a unit are WEEKS (Week 1, Week 2, …). Put the week number in lessonNumber and the weekly concept / week theme in title when shown; if only story titles appear under a week, use the first (anchor) story title as the week title.
-- Each week usually has TWO reading selections with page numbers:
+- Each week usually has TWO reading selections:
   1) Anchor / main selection (longer) — first story title
   2) Paired selection (shorter) — second story title
-- Prefer emitting numbered post-read rows as their own entries when they appear with a usable page number, in visible order between or after selections:
+- Prefer emitting post-read rows as their own entries when they appear on the TOC, in visible order between or after selections:
   - "Respond to the Text" / "Respond" / "Connect" / "Connect to …"
   - "About the Author" / "About the Illustrator" (or Author and Illustrator)
-- Include only rows that have a usable page number (story/selection and the post-read rows above). Do not invent post-read entries or page numbers when those rows are absent from the TOC.
+- When a row has a printed page number, set startPrintedPage to that number. When it has no usable page number, set startPrintedPage to null — still include the title. Do not invent post-read entries or page numbers when those rows are absent from the TOC.
 - Keep exact visible order. Prefer the printed story titles as entry titles (not "Main Selection"/"Paired Selection" unless that is the only label).
-- Ignore rows without usable page numbers.
 - Never invent printed page numbers.
-- Do not invent Workshop skill rows (Comprehension Strategy, Genre, Vocabulary Strategy, Writing) or Journeys labels unless those exact words appear with page numbers.
+- Do not invent Workshop skill rows (Comprehension Strategy, Genre, Vocabulary Strategy, Writing) or Journeys labels unless those exact words appear on the TOC.
+`
+
+export const GENERIC_TOC_EXTRACT_PROMPT = `You extract textbook table-of-contents structure from images for an unknown ESL / reading series.
+
+Return only valid JSON with this shape:
+{
+  "units": [
+    {
+      "unitNumber": 1,
+      "title": "Amazing Animals",
+      "lessons": [
+        {
+          "lessonNumber": 1,
+          "title": "The Incredible Dolphin",
+          "entries": [
+            { "title": "Before You Read", "startPrintedPage": 7 },
+            { "title": "The Incredible Dolphin", "startPrintedPage": 8 },
+            { "title": "Reading Skill", "startPrintedPage": 14 }
+          ]
+        }
+      ],
+      "specialSections": [
+        { "title": "Credits", "startPrintedPage": 173 }
+      ]
+    }
+  ]
+}
+
+Rules:
+- This is NOT Journeys and NOT Wonders. Do not invent red lesson shields, Week recipes, Vocabulary in Context, READING POWER, Shared Read skill rows, or other series-specific labels unless those exact words appear with a page number.
+- Prefer real unit / chapter / module headings from the TOC as unit titles (Unit 1, Chapter 1, Theme 1, etc.).
+- Mid-level groups (Lesson, Week, Reading A/B, Part) are OPTIONAL:
+  - If the TOC clearly groups rows under lessons/weeks/readings, put each group in "lessons" with a sensible lessonNumber and title.
+  - If the TOC is a flat list under a unit, use ONE lesson per unit (lessonNumber 1, title matching the unit or "Contents") and put all visible entry rows in that lesson's entries.
+- Include visible entry rows in order. When a row has a usable printed page number (dotted leaders or a clear page column), set startPrintedPage to that number. When it has no page number, set startPrintedPage to null — still include the title.
+- Keep exact visible order and wording for entry titles when possible.
+- Put end-matter outside units (glossary, credits, index) in specialSections when visible; null page is OK when there is no number.
+- Never invent printed page numbers.
+- Never invent structure that is not visible on the TOC pages.
 `
 
 export function tocExtractPromptForProfile(profile: TocExtractProfileId): string {
@@ -209,14 +252,18 @@ export function tocExtractPromptForProfile(profile: TocExtractProfileId): string
     case 'wonders_literature':
       return WONDERS_LITERATURE_TOC_EXTRACT_PROMPT
     case 'journeys':
-    default:
       return JOURNEYS_TOC_EXTRACT_PROMPT
+    case 'generic':
+    default:
+      return GENERIC_TOC_EXTRACT_PROMPT
   }
 }
 
-/** How AI "lessons" are labeled after extract (Week vs Lesson). */
+/** How AI "lessons" are labeled after extract (Week vs Lesson vs plain). */
 export function tocChunkLabelStyleForProfile(
   profile: TocExtractProfileId,
-): 'lesson' | 'week' {
-  return profile === 'journeys' ? 'lesson' : 'week'
+): 'lesson' | 'week' | 'plain' {
+  if (profile === 'journeys') return 'lesson'
+  if (profile === 'generic') return 'plain'
+  return 'week'
 }

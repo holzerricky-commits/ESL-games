@@ -64,3 +64,24 @@ export function isTranslationChipText(cmd: {
   const fill = typeof cmd.fillColor === 'string' ? cmd.fillColor.trim().toLowerCase() : ''
   return fill === TRANSLATION_CHIP_FILL
 }
+
+/**
+ * Chips saved before charcoal was allowlisted were remapped to white on load.
+ * Detect that signature and restore the dark fill so they look the same next class.
+ */
+export function restoreTranslationChipFill(cmd: {
+  visualStyle?: string
+  fontId?: string
+  color?: string
+  fillColor?: string
+}): string | undefined {
+  if (cmd.visualStyle !== 'filled') return undefined
+  if (cmd.fontId !== TRANSLATION_CHIP_FONT_ID) return undefined
+  const ink = typeof cmd.color === 'string' ? cmd.color.trim().toLowerCase() : ''
+  if (ink !== TRANSLATION_CHIP_TEXT) return undefined
+  const fill = typeof cmd.fillColor === 'string' ? cmd.fillColor.trim().toLowerCase() : ''
+  if (fill === TRANSLATION_CHIP_FILL) return TRANSLATION_CHIP_FILL
+  // Default / white after migrateTextFillColor ate the charcoal
+  if (fill === '#ffffff' || fill === '') return TRANSLATION_CHIP_FILL
+  return undefined
+}

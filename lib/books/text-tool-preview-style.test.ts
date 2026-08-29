@@ -62,7 +62,7 @@ describe('buildTextToolPreviewTypography', () => {
 
   it('scales font size with thickness step', () => {
     const small = buildTextToolPreviewFontSizePx(0)
-    const large = buildTextToolPreviewFontSizePx(6)
+    const large = buildTextToolPreviewFontSizePx(7)
     expect(large).toBeGreaterThan(small)
   })
 
@@ -90,5 +90,19 @@ describe('buildTextToolPreviewTypography', () => {
     expect(mirror.fontSize).toBe(typo.fontSizePx)
     expect(mirror.textAlign).toBe('right')
     expect(mirror.color).toBe('#3b82f6')
+  })
+
+  it('applies bold weight for picker fonts', () => {
+    const typo = buildTextToolPreviewTypography({
+      textFontId: 'lexend',
+      textFontWeight: 'bold',
+      textVisualStyle: 'plain',
+      textAlign: 'left',
+      textThicknessStep: 3,
+      textColor: '#1e293b',
+      textFillColor: '#ffffff',
+    })
+    expect(typo.fontWeight).toBe(700)
+    expect(buildTextToolPreviewMirrorStyle(typo).fontWeight).toBe(700)
   })
 })

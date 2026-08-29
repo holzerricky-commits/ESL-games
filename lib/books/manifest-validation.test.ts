@@ -95,6 +95,30 @@ describe('bookLibraryPayloadSchema', () => {
     expect(bookLibraryPayloadSchema.safeParse(payload).success).toBe(true)
   })
 
+  it('accepts contentFormat on a book (identity save after upload)', () => {
+    const payload = {
+      books: [
+        {
+          id: 'b1',
+          title: 'Oxford G3',
+          series: 'Oxford',
+          grade: 'G3',
+          contentFormat: 'book',
+          units: [{ id: 'u1', title: 'Unit 1', filePath: 'book-library/oxford-g3/oxford-g3.pdf' }],
+        },
+        {
+          id: 'p1',
+          title: 'Starter decks',
+          series: 'Presentations',
+          role: 'Starter',
+          contentFormat: 'presentation',
+          units: [{ id: 'd1', title: 'Deck 1', filePath: 'book-library/presentations-starter/deck.pdf' }],
+        },
+      ],
+    }
+    expect(bookLibraryPayloadSchema.safeParse(payload).success).toBe(true)
+  })
+
   it('rejects duplicate book ids', () => {
     const unit = { id: 'u1', title: 'Unit 1', filePath: 'book-library/b/unit1.pdf' }
     const payload = {

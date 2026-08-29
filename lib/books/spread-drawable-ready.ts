@@ -1,9 +1,9 @@
 /**
  * Phase 3 — single “ready to show” contract for fullscreen book open.
  *
- * Layout must be measured, then either active spread slots reported drawable pixels
- * (cache bitmap painted or pdf composited) or — after present — both spread pages
- * are already in PageRenderCache at the layout width bucket.
+ * Layout must be measured, then active spread slots must report painted pixels
+ * (cache canvas `onPainted` or live PDF after paint). Cache-in-memory and max-wait
+ * timeouts must not uncover empty paper on first open.
  *
  * @see `docs/FULLSCREEN_BOOK_STABLE_PAGES_PLAN.md` — Phase 3
  */
@@ -13,24 +13,23 @@ export type SpreadDrawableReadyInput = {
   spreadLayoutStable: boolean
   /** Controller received onSpreadSlotsPixelsReady for the current anchor. */
   spreadSlotsPixelsReady: boolean
-  /** Map / overlay presented — cache fast-path allowed. */
+  /** Map / overlay presented — unused for first-open uncover (slots must paint). */
   userPresented: boolean
-  /** Prefetched bitmaps for left (+ right if two-up) at layout width. */
+  /** Prefetched bitmaps — not enough to uncover pages on first open. */
   spreadCachePrimed: boolean
   /** Terminal skip (closed overlay, missing unit, load error handled elsewhere). */
   bypassGate?: boolean
-  /** Max-wait fallback so UI never blocks forever. */
+  /** Max-wait fallback — must not uncover empty paper on first open. */
   spreadDrawableTimedOut?: boolean
   /** Phase 5 — keep showing scaled pixels while the render bucket catches up. */
   spreadResizeScaleHold?: boolean
 }
 
 export function isSpreadDrawableReady(input: SpreadDrawableReadyInput): boolean {
-  if (input.bypassGate || input.spreadDrawableTimedOut) return true
+  if (input.bypassGate) return true
   if (!input.spreadLayoutStable) return false
   if (input.spreadResizeScaleHold && input.spreadSlotsPixelsReady) return true
   if (input.spreadSlotsPixelsReady) return true
-  if (input.userPresented && input.spreadCachePrimed) return true
   return false
 }
 

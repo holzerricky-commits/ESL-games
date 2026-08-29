@@ -237,6 +237,7 @@ export type TextLabelFieldLayoutOpts = {
   growOnly?: boolean
   /** Width source for latch/grow (e.g. typed text + ghost assist suffix). */
   measureTextForWidth?: string
+  fontWeight?: string | number
 }
 
 /** @deprecated Use {@link TextLabelFieldLayoutOpts} */
@@ -667,6 +668,7 @@ export function createTextLabelLayoutProbe(
   fontFamily: string,
   fontSizePx: number,
   variant: TextLabelFieldVariant = 'filled',
+  fontWeight?: string | number,
 ): HTMLTextAreaElement {
   const probe = document.createElement('textarea')
   probe.setAttribute('aria-hidden', 'true')
@@ -684,6 +686,7 @@ export function createTextLabelLayoutProbe(
     boxSizing: 'border-box',
     fontFamily,
     fontSize: `${fontSizePx}px`,
+    ...(fontWeight != null ? { fontWeight: String(fontWeight) } : {}),
     lineHeight: `${lineHeightPx}px`,
     paddingTop: pad.paddingTop,
     paddingBottom: pad.paddingBottom,
@@ -736,7 +739,7 @@ export function resolveTextLabelFieldLayout(
     return { segments: [''], widths: [], fieldWidthPx: 8 }
   }
   const variant = opts?.variant ?? 'filled'
-  const probe = createTextLabelLayoutProbe(fontFamily, fontSizePx, variant)
+  const probe = createTextLabelLayoutProbe(fontFamily, fontSizePx, variant, opts?.fontWeight)
   document.body.appendChild(probe)
   const cs = getComputedStyle(probe)
   const sourceText = opts?.emptyPlaceholder && !text.length ? '' : text
@@ -773,15 +776,15 @@ export function measureFilledSegmentWidths(
   fieldWidthPx: number,
   emptyPlaceholder?: string,
 ): number[] {
-  const contentMax = filledContentWidthPx(fieldWidthPx, cs)
+  const pad = FILLED_TEXT_MEASURE_PAD_PX
   return segments.map((seg, i) => {
     if (seg.length > 0) {
       const ink = measureInkLineWidthPx(seg, cs)
-      return Math.min(Math.max(ink, 1), contentMax)
+      return Math.min(Math.max(ink + pad, 1), fieldWidthPx)
     }
     if (emptyPlaceholder && i === 0) {
       const ink = measureInkLineWidthPx(emptyPlaceholder, cs)
-      return Math.min(Math.max(ink, 1), contentMax)
+      return Math.min(Math.max(ink + pad, 1), fieldWidthPx)
     }
     // Explicit empty row (e.g. after Enter) — no phantom space ink.
     return 1

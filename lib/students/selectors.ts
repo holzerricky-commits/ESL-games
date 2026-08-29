@@ -30,6 +30,7 @@ import { createInitialProgressRecord, reconcileProgressWithCatalog } from '@/lib
 import { generateStudentId, normalizeStudentKey } from '@/lib/students/identity'
 import { sanitizePrepTimeBlocks, type ClassPrepTimeBlock } from '@/lib/students/class-prep-outline'
 import { hasPrepExtras, sanitizeClassPrepExtras, type ClassPrepExtrasPayload } from '@/lib/students/class-prep-extras'
+import { sanitizeClassroomHomeGoals, type ClassroomHomeGoals } from '@/lib/students/classroom-home-goals'
 import {
   collectClassPrepSignals,
   dueReviewWordsForSession,
@@ -71,6 +72,11 @@ import { buildSectionPathLabel, getPartPrimaryLabel } from '@/lib/books/part-sec
 import { isBookLessonPartTag, resolvePartStructureTag } from '@/lib/books/part-structure-tag'
 import type { BookLibraryPayload, BookRecord, BookUnitRecord } from '@/lib/books/types'
 import { resolveMappedPageToPdfPage } from '@/lib/books/page-numbering'
+import {
+  getLatestSavedUnitPageForBook,
+  peekSavedUnitPage,
+  flushPendingUnitPageSave,
+} from '@/lib/books/progress'
 import type { StudentListItemView, StudentProfileTab, StudentProfileView } from '@/lib/students/types'
 import type { BookContextRecord } from '@/lib/context/types'
 import type {
@@ -735,6 +741,10 @@ function sanitizeClassSession(raw: Partial<StudentClassSession> | null | undefin
         ? raw.prepOutlineSummary.trim()
         : undefined,
     prepNotes: typeof raw.prepNotes === 'string' && raw.prepNotes.trim() ? raw.prepNotes.trim() : undefined,
+    prepSkippedPartIds: (() => {
+      const ids = dedupeTrimmed(Array.isArray(raw.prepSkippedPartIds) ? raw.prepSkippedPartIds : []).slice(0, 40)
+      return ids.length ? ids : undefined
+    })(),
     ...sanitizeClassPrepExtras({
       prepPriorities: raw.prepPriorities,
       prepSuggestedActivities: raw.prepSuggestedActivities,
@@ -743,6 +753,7 @@ function sanitizeClassSession(raw: Partial<StudentClassSession> | null | undefin
       prepDifferentiationTips: raw.prepDifferentiationTips,
       prepCarryOver: raw.prepCarryOver,
     }),
+    classroomHomeGoals: sanitizeClassroomHomeGoals(raw.classroomHomeGoals),
     aiPrepSummary:
       typeof raw.aiPrepSummary === 'string' && raw.aiPrepSummary.trim() ? raw.aiPrepSummary.trim() : undefined,
     classStartedAt: optionalIsoString(raw.classStartedAt),
@@ -3163,6 +3174,17 @@ function pdfPageFromCurriculumBookStart(
   return null
 }
 
+/**
+ * End-class used to default missing page hints to PDF page 1. Treat that as a weak stop when a
+ * real planned start exists, so reopen does not jump to the cover.
+ */
+function isWeakDefaultPageOneStop(
+  pdfPage: number,
+  bookStart: StudentCurriculumBookStart | null,
+): boolean {
+  return pdfPage === 1 && bookStart != null && bookStart.mappedPage > 1
+}
+
 /** True when this book’s plan pin was saved more recently than its last class stop. */
 export function isStudentCurriculumBookStartFresherThanLastStop(
   studentId: string,
@@ -3175,6 +3197,7 @@ export function isStudentCurriculumBookStartFresherThanLastStop(
   if (!Number.isFinite(startMs)) return false
   const last = getStudentLastClassBookmarkForBook(studentId, bookId)
   if (!last) return true
+  if (isWeakDefaultPageOneStop(last.pdfPage, bookStart)) return true
   return startMs > last.atMs
 }
 
@@ -3206,7 +3229,8 @@ export function getStudentTeachingOpenPdfPageForBookUnit(
   if (lastStop != null) {
     const startBeatsStop =
       startOnThisUnit && startPdf != null && Number.isFinite(startMs) && startMs > lastStop.atMs
-    if (!startBeatsStop) return lastStop.pdfPage
+    const weakPageOne = isWeakDefaultPageOneStop(lastStop.pdfPage, bookStart)
+    if (!startBeatsStop && !weakPageOne) return lastStop.pdfPage
   }
 
   if (startPdf != null) return startPdf
@@ -4377,27 +4401,76 @@ export function reconcileSoftClassAutoStart(
   return { started: startedRow, blocked }
 }
 
-/** Best-effort bookmark for hard auto-end (no blocking recap). */
+/**
+ * Bookmark for end class / hard auto-end: prefer the last page actually viewed in the reader,
+ * then the planned start, then section page hints. Avoid inventing page 1 when a better signal exists.
+ */
+export function resolveClassEndBookmark(
+  studentId: string,
+  session: {
+    selectedSection?: StudentBookSectionRef | null
+  },
+  assignedBookIds?: string[],
+): { bookId: string; pdfPage: number; unitId?: string } | undefined {
+  const student = getStudents().find((row) => row.id === studentId)
+  const books =
+    assignedBookIds && assignedBookIds.length > 0
+      ? assignedBookIds
+      : (student?.assignedBookIds ?? [])
+  const section = session.selectedSection ?? undefined
+  const bookId = (section?.bookId ?? books[0] ?? '').trim()
+  if (!bookId) return undefined
+
+  let unitId = section?.unitId?.trim() || undefined
+  if (!unitId) {
+    const start = getStudentCurriculumBookStart(studentId, bookId, null)
+    unitId = start?.unitId?.trim() || undefined
+  }
+  if (!unitId) {
+    const ref = student?.assignedUnitRefs?.find((r) => r.bookId === bookId)
+    unitId = ref?.unitId?.trim() || undefined
+  }
+
+  if (unitId) {
+    const saved = peekSavedUnitPage(bookId, unitId)
+    if (saved != null) {
+      return { bookId, pdfPage: saved, unitId }
+    }
+  }
+
+  const latestForBook = getLatestSavedUnitPageForBook(bookId)
+  if (latestForBook) {
+    return {
+      bookId,
+      pdfPage: latestForBook.page,
+      unitId: latestForBook.unitId,
+    }
+  }
+
+  const bookStart = getStudentCurriculumBookStart(studentId, bookId, null)
+  if (bookStart && bookStart.mappedPage >= 1) {
+    return {
+      bookId,
+      pdfPage: Math.max(1, Math.floor(bookStart.mappedPage)),
+      unitId: unitId ?? bookStart.unitId,
+    }
+  }
+
+  const hint = section?.endPageHint ?? section?.startPageHint
+  if (typeof hint === 'number' && Number.isFinite(hint) && hint >= 1) {
+    const pdfPage = Math.floor(hint)
+    return unitId ? { bookId, pdfPage, unitId } : { bookId, pdfPage }
+  }
+
+  return unitId ? { bookId, pdfPage: 1, unitId } : { bookId, pdfPage: 1 }
+}
+
+/** @deprecated Prefer {@link resolveClassEndBookmark}. */
 export function resolveHardAutoEndBookmark(
   studentId: string,
   session: StudentClassSession,
 ): { bookId: string; pdfPage: number; unitId?: string } | undefined {
-  const student = getStudents().find((row) => row.id === studentId)
-  const assignedBookIds = student?.assignedBookIds ?? []
-  const bookId = (session.selectedSection?.bookId ?? assignedBookIds[0] ?? '').trim()
-  if (!bookId) return undefined
-
-  const unitId = session.selectedSection?.unitId?.trim() || undefined
-  const hint = session.selectedSection?.endPageHint ?? session.selectedSection?.startPageHint
-  let pdfPage =
-    typeof hint === 'number' && Number.isFinite(hint) && hint >= 1 ? Math.floor(hint) : 1
-
-  if (unitId) {
-    const teachingPage = getStudentTeachingOpenPdfPageForBookUnit(studentId, bookId, unitId)
-    if (teachingPage != null && teachingPage >= 1) pdfPage = teachingPage
-  }
-
-  return unitId ? { bookId, pdfPage, unitId } : { bookId, pdfPage }
+  return resolveClassEndBookmark(studentId, session)
 }
 
 /**
@@ -4422,7 +4495,8 @@ export function hardAutoEndStudentClassSession(
     return { ok: false, error: 'This class is not in progress.' }
   }
 
-  const bookmark = resolveHardAutoEndBookmark(studentId, session)
+  flushPendingUnitPageSave()
+  const bookmark = resolveClassEndBookmark(studentId, session)
   const ended = endStudentClassSession(studentId, classId, {
     ...(bookmark ? { bookmarkAtEnd: bookmark } : {}),
     ...(input?.readingCheckWrapLine ? { readingCheckWrapLine: input.readingCheckWrapLine } : {}),
@@ -4759,6 +4833,9 @@ export interface StudentClassPrepUpdate extends ClassPrepExtrasPayload {
   prepNotes?: string
   /** When set, replaces planned vocabulary (e.g. seed from words to revisit). */
   plannedVocabulary?: string[]
+  /** When set, replaces this-class skipped lesson parts. */
+  prepSkippedPartIds?: string[]
+  classroomHomeGoals?: ClassroomHomeGoals | null
 }
 
 export function updateStudentClassPrep(
@@ -4782,6 +4859,10 @@ export function updateStudentClassPrep(
         ? payload.prepOutlineSummary.trim() || undefined
         : session.prepOutlineSummary
     const prepNotes = payload.prepNotes !== undefined ? payload.prepNotes.trim() || undefined : session.prepNotes
+    const prepSkippedPartIds =
+      payload.prepSkippedPartIds !== undefined
+        ? dedupeTrimmed(payload.prepSkippedPartIds).slice(0, 40)
+        : session.prepSkippedPartIds
     const extras = sanitizeClassPrepExtras({
       prepPriorities: payload.prepPriorities ?? session.prepPriorities,
       prepSuggestedActivities: payload.prepSuggestedActivities ?? session.prepSuggestedActivities,
@@ -4790,20 +4871,34 @@ export function updateStudentClassPrep(
       prepDifferentiationTips: payload.prepDifferentiationTips ?? session.prepDifferentiationTips,
       prepCarryOver: payload.prepCarryOver ?? session.prepCarryOver,
     })
+    const classroomHomeGoals =
+      payload.classroomHomeGoals !== undefined
+        ? sanitizeClassroomHomeGoals(payload.classroomHomeGoals)
+        : session.classroomHomeGoals
     const hasOutline = Boolean(prepTimeBlocks?.length)
-    const mergedSession = { ...session, ...extras }
-    const hasPrepContent = hasOutline || Boolean(prepNotes) || hasPrepExtras(mergedSession)
+    const mergedSession = { ...session, ...extras, classroomHomeGoals }
+    const skipped = (prepSkippedPartIds ?? []).filter(Boolean)
+    const plannedWords =
+      payload.plannedVocabulary !== undefined
+        ? dedupeTrimmed(payload.plannedVocabulary)
+        : session.plannedVocabulary
+    const hasPrepContent =
+      hasOutline ||
+      Boolean(prepNotes) ||
+      hasPrepExtras(mergedSession) ||
+      Boolean(classroomHomeGoals) ||
+      skipped.length > 0 ||
+      plannedWords.length > 0
     return {
       ...session,
       status: session.status === 'planned' && hasPrepContent ? 'prepared' : session.status,
       prepTimeBlocks,
       prepOutlineSummary,
       prepNotes,
+      prepSkippedPartIds: skipped.length ? skipped : undefined,
       ...extras,
-      plannedVocabulary:
-        payload.plannedVocabulary !== undefined
-          ? dedupeTrimmed(payload.plannedVocabulary)
-          : session.plannedVocabulary,
+      classroomHomeGoals,
+      plannedVocabulary: plannedWords,
       updatedAt: nowIso,
     }
   })

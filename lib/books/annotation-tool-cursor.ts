@@ -11,6 +11,9 @@ import { strokeToolForToolbarMode, strokeWidthScaleForStrokeTool } from '@/lib/b
 
 const MIN_CURSOR_PX = 3
 const MAX_CURSOR_PX = 96
+/** Hairline dual-contrast outline around the true stroke disc. */
+const PEN_BORDER_WHITE_PX = 1
+const PEN_BORDER_BLACK_PX = 1
 
 const cursorCache = new Map<string, string>()
 
@@ -98,8 +101,24 @@ function buildInkDotCursor(
   return { svg, hotX: Math.round(cx), hotY: Math.round(cy) }
 }
 
+/** Filled disc at true stroke size, with a thin white + black edge so it stays findable. */
 function buildPenCursor(w: number, color: string): { svg: string; hotX: number; hotY: number } {
-  return buildInkDotCursor(w, color)
+  const d = clampCursorPx(w)
+  const r = d / 2
+  const pad = PEN_BORDER_WHITE_PX + PEN_BORDER_BLACK_PX + 1
+  const svgW = d + pad * 2
+  const svgH = svgW
+  const cx = svgW / 2
+  const cy = svgH / 2
+  const blackR = r + PEN_BORDER_BLACK_PX / 2
+  const whiteR = r + PEN_BORDER_BLACK_PX + PEN_BORDER_WHITE_PX / 2
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${svgW}" height="${svgH}" viewBox="0 0 ${svgW} ${svgH}">` +
+    `<circle cx="${cx}" cy="${cy}" r="${whiteR}" fill="none" stroke="#ffffff" stroke-width="${PEN_BORDER_WHITE_PX}"/>` +
+    `<circle cx="${cx}" cy="${cy}" r="${blackR}" fill="none" stroke="#000000" stroke-width="${PEN_BORDER_BLACK_PX}"/>` +
+    `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${color}"/>` +
+    `</svg>`
+  return { svg, hotX: Math.round(cx), hotY: Math.round(cy) }
 }
 
 function buildRubberEraserCursor(w: number): { svg: string; hotX: number; hotY: number } {
@@ -136,7 +155,7 @@ const EYEDROPPER_SMART_SVG =
   `</svg>`
 
 export function resolveEyedropperCursor(variant: EyedropperVariant): string {
-  const key = `v3:eyedropper:${variant}`
+  const key = `v5:eyedropper:${variant}`
   const hit = cursorCache.get(key)
   if (hit) return hit
   const svg = variant === 'smart' ? EYEDROPPER_SMART_SVG : EYEDROPPER_SAMPLE_SVG
@@ -151,7 +170,7 @@ export function buildAnnotationToolCursor(params: {
   color?: string
 }): string {
   if (params.tool === 'eraser-line') {
-    const key = 'v3:eraser-line:school'
+    const key = 'v5:eraser-line:school'
     const hit = cursorCache.get(key)
     if (hit) return hit
     const built = buildSchoolEraserCursor()
@@ -162,7 +181,7 @@ export function buildAnnotationToolCursor(params: {
 
   const w = clampCursorPx(params.widthPx)
   const color = params.color ?? '#171717'
-  const cacheKey = `v3:${params.tool}:${w}:${color}`
+  const cacheKey = `v5:${params.tool}:${w}:${color}`
   const hit = cursorCache.get(cacheKey)
   if (hit) return hit
 

@@ -5,6 +5,7 @@ import {
   formatPartListHeadline,
   formatPartPageRangeLabel,
   isStoryPartShelfTag,
+  isVocabPartShelfTag,
 } from '@/lib/books/book-part-shelf'
 import type { BookRecord } from '@/lib/books/types'
 
@@ -100,5 +101,13 @@ describe('book-part-shelf', () => {
     expect(isStoryPartShelfTag('paired_story')).toBe(true)
     expect(isStoryPartShelfTag('comprehension')).toBe(false)
     expect(isStoryPartShelfTag('vocabulary_in_context')).toBe(false)
+  })
+
+  it('isVocabPartShelfTag marks in-context and background vocabulary only', () => {
+    expect(isVocabPartShelfTag('vocabulary_in_context')).toBe(true)
+    expect(isVocabPartShelfTag('vocabulary_background')).toBe(true)
+    expect(isVocabPartShelfTag('vocabulary_strategy')).toBe(false)
+    expect(isVocabPartShelfTag('main_story')).toBe(false)
+    expect(isVocabPartShelfTag('comprehension')).toBe(false)
   })
 })

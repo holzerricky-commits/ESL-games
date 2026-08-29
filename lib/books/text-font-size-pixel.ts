@@ -1,6 +1,6 @@
-import { ANNOTATION_TEXT_FONT_NORM_STEPS } from '@/components/students/fullscreen-book-overlay/constants'
 import type { AnnotationStrokeThicknessStep } from '@/lib/books/annotation-storage'
 import {
+  ANNOTATION_TEXT_FONT_NORM_STEPS,
   fontSizeNormToTextThicknessStep,
   textThicknessStepToFontSizeNorm,
 } from '@/lib/books/text-font-size-steps'
@@ -28,6 +28,15 @@ export function textFontSizePxOptions(heightPx: number): readonly TextFontSizeSt
     step: i as AnnotationStrokeThicknessStep,
     px: textFontSizeNormToPx(norm, heightPx),
   }))
+}
+
+/** Slider preview dots — relative sizes so 8 text steps stay distinct in the rail. */
+export function textFontSizeThicknessPreviewDots(heightPx: number): readonly number[] {
+  const pxs = ANNOTATION_TEXT_FONT_NORM_STEPS.map((norm) => textFontSizeNormToPx(norm, heightPx))
+  const lo = pxs[0] ?? 10
+  const hi = pxs[pxs.length - 1] ?? lo
+  const span = Math.max(1, hi - lo)
+  return pxs.map((px) => Math.round(5 + (11 * (px - lo)) / span))
 }
 
 export function textFontSizeNormToStep(

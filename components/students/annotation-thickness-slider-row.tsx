@@ -7,7 +7,6 @@ import { cn } from '@/lib/utils'
 import { popoverSectionLabelClass, type PopoverControlSurface } from '@/components/students/annotation-popover-controls'
 import { ANNOTATION_CHROME_SECTION_LABEL } from '@/components/students/annotation-chrome-styles'
 
-const THICKNESS_STEP_MAX = 6
 const SLIDER_THUMB_PX = 14
 const SLIDER_THUMB_PX_COMPACT = 10
 
@@ -15,9 +14,13 @@ const SLIDER_THUMB_PX_COMPACT = 10
 const PREVIEW_DOT_CLASS = 'shrink-0 rounded-full bg-white/60'
 const PREVIEW_DOT_ACTIVE_CLASS = 'shrink-0 rounded-full bg-white/85'
 
-function sliderStepLeft(step: number, thumbPx: number): string {
+function sliderStepMax(previewDots: readonly number[]): number {
+  return Math.max(0, previewDots.length - 1)
+}
+
+function sliderStepLeft(step: number, thumbPx: number, stepMax: number): string {
   const thumbInset = thumbPx / 2
-  const ratio = step / THICKNESS_STEP_MAX
+  const ratio = stepMax > 0 ? step / stepMax : 0
   return `calc(${thumbInset}px + (100% - ${thumbPx}px) * ${ratio})`
 }
 
@@ -25,12 +28,13 @@ function clientXToThicknessStep(
   clientX: number,
   railRect: DOMRect,
   thumbPx: number,
+  stepMax: number,
 ): AnnotationStrokeThicknessStep {
   const thumbInset = thumbPx / 2
   const usable = railRect.width - thumbPx
   const x = clientX - railRect.left - thumbInset
   const ratio = usable > 0 ? Math.max(0, Math.min(1, x / usable)) : 0
-  return Math.round(ratio * THICKNESS_STEP_MAX) as AnnotationStrokeThicknessStep
+  return Math.round(ratio * stepMax) as AnnotationStrokeThicknessStep
 }
 
 function ThicknessPreviewDot({
@@ -72,16 +76,17 @@ export function ThicknessSliderRow({
   const railRef = useRef<HTMLDivElement>(null)
   const draggingRef = useRef(false)
   const thumbPx = compact ? SLIDER_THUMB_PX_COMPACT : SLIDER_THUMB_PX
-  const maxDotPx = previewDots[THICKNESS_STEP_MAX] ?? previewDots[previewDots.length - 1] ?? 14
+  const stepMax = sliderStepMax(previewDots)
+  const maxDotPx = previewDots[stepMax] ?? previewDots[previewDots.length - 1] ?? 14
   const currentDotPx = previewDots[value] ?? previewDots[0] ?? 8
 
   const updateFromClientX = useCallback(
     (clientX: number) => {
       const rail = railRef.current
       if (!rail) return
-      onChange(clientXToThicknessStep(clientX, rail.getBoundingClientRect(), thumbPx))
+      onChange(clientXToThicknessStep(clientX, rail.getBoundingClientRect(), thumbPx, stepMax))
     },
-    [onChange, thumbPx],
+    [onChange, stepMax, thumbPx],
   )
 
   useEffect(() => {
@@ -124,7 +129,7 @@ export function ThicknessSliderRow({
       role="slider"
       aria-label={ariaLabel}
       aria-valuemin={0}
-      aria-valuemax={THICKNESS_STEP_MAX}
+      aria-valuemax={stepMax}
       aria-valuenow={value}
       aria-valuetext={`Stroke size ${value + 1}`}
       className={cn(
@@ -142,7 +147,7 @@ export function ThicknessSliderRow({
       >
         <div
           className={cn('absolute inset-y-0 left-0 rounded-full', fillClass)}
-          style={{ width: sliderStepLeft(value, thumbPx) }}
+          style={{ width: sliderStepLeft(value, thumbPx, stepMax) }}
         />
       </div>
       <div
@@ -151,7 +156,7 @@ export function ThicknessSliderRow({
           thumbClass,
           compact ? 'size-2.5' : 'size-3.5',
         )}
-        style={{ left: sliderStepLeft(value, thumbPx) }}
+        style={{ left: sliderStepLeft(value, thumbPx, stepMax) }}
         aria-hidden
       />
     </div>
@@ -185,7 +190,6 @@ export function ThicknessSliderRow({
       >
         {previewDots.map((dotPx, i) => {
           const step = i as AnnotationStrokeThicknessStep
-          if (step > THICKNESS_STEP_MAX) return null
           const active = value === step
           return (
             <button
@@ -196,7 +200,7 @@ export function ThicknessSliderRow({
               aria-pressed={active}
               onClick={() => onChange(step)}
               className="absolute bottom-0 z-[1] flex h-10 w-10 -translate-x-1/2 items-end justify-center rounded-md"
-              style={{ left: sliderStepLeft(step, thumbPx) }}
+              style={{ left: sliderStepLeft(step, thumbPx, stepMax) }}
             >
               <ThicknessPreviewDot
                 diameterPx={dotPx}

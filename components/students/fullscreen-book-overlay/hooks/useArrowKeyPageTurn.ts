@@ -3,12 +3,18 @@ import { shouldDeferBookOverlayToolShortcuts } from '@/lib/books/book-overlay-ke
 
 interface UseArrowKeyPageTurnArgs {
   open: boolean
+  /** When false (e.g. Overview grid), leave arrows alone so the grid can scroll. */
+  enabled?: boolean
   goToAdjacentPage: (direction: -1 | 1) => void
 }
 
-export function useArrowKeyPageTurn({ open, goToAdjacentPage }: UseArrowKeyPageTurnArgs) {
+export function useArrowKeyPageTurn({
+  open,
+  enabled = true,
+  goToAdjacentPage,
+}: UseArrowKeyPageTurnArgs) {
   useEffect(() => {
-    if (!open) return
+    if (!open || !enabled) return
 
     function onArrowPageTurn(e: KeyboardEvent) {
       if (e.defaultPrevented) return
@@ -28,5 +34,5 @@ export function useArrowKeyPageTurn({ open, goToAdjacentPage }: UseArrowKeyPageT
 
     window.addEventListener('keydown', onArrowPageTurn, true)
     return () => window.removeEventListener('keydown', onArrowPageTurn, true)
-  }, [open, goToAdjacentPage])
+  }, [open, enabled, goToAdjacentPage])
 }

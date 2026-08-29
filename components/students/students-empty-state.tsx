@@ -8,14 +8,14 @@ interface StudentsEmptyStateProps {
 
 export function StudentsEmptyState({ hasSearch, rosterEmpty, statusFilter }: StudentsEmptyStateProps) {
   let title = 'No students yet'
-  let body = 'Use Add student above to create your first profile and start planning classes.'
+  let body = 'Tap Add student to create a profile and start planning classes.'
 
   if (hasSearch) {
     title = 'No students match your search'
-    body = 'Try a different name and keep class flow moving.'
+    body = 'Try a different name.'
   } else if (rosterEmpty) {
     title = 'No students yet'
-    body = 'Use Add student above to create your first profile and start planning classes.'
+    body = 'Tap Add student to create a profile and start planning classes.'
   } else if (statusFilter === 'needsSetup') {
     title = 'No one needs setup'
     body = 'Everyone on the active roster has a book and a class time.'
@@ -24,13 +24,13 @@ export function StudentsEmptyState({ hasSearch, rosterEmpty, statusFilter }: Stu
     body = 'Students you put on break will show up here until you restore them.'
   } else if (statusFilter === 'active') {
     title = 'No active students'
-    body = 'Add a student, or check the On break filter if someone is hidden.'
+    body = 'Add a student, or check On break if someone is hidden.'
   }
 
   return (
-    <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--surface-2)] p-8 text-center">
-      <h2 className="text-xl font-bold text-foreground">{title}</h2>
-      <p className="mt-2 text-sm text-muted-foreground">{body}</p>
+    <div className="px-1 py-10">
+      <h2 className="text-[17px] font-semibold tracking-tight text-foreground">{title}</h2>
+      <p className="mt-1 text-[13px] text-muted-foreground">{body}</p>
     </div>
   )
 }

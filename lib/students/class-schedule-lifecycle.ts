@@ -118,7 +118,7 @@ export function isSessionEligibleForSoftAutoStart(
   return nowMs < endMs + graceMs
 }
 
-/** Same window as the floating “starting soon” reminder (Phase 6). Enter replaces Prepare. */
+/** Same window as the floating “starting soon” reminder (Phase 6). Enter becomes primary; Prepare stays. */
 export const CLASS_STARTING_SOON_MINUTES = 20
 
 /** Show “In Xh Ymin” under the row action when start is within this window. */
@@ -145,6 +145,7 @@ export type ClassEntryAction = 'prepare' | 'enter' | 'continue' | 'reschedule' |
 /**
  * Primary list action from schedule proximity (not soft-auto-start).
  * Enter within ~20 min of start (or past start while still open); Prepare otherwise.
+ * Planned/prepared classes can still open Prep in the Enter window.
  */
 export function resolveClassEntryAction(
   session: ClassSessionAutoStartFields & { status: string },
@@ -161,6 +162,11 @@ export function resolveClassEntryAction(
   const enterFromMs = startMs - CLASS_STARTING_SOON_MINUTES * 60_000
   if (nowMs >= enterFromMs) return 'enter'
   return 'prepare'
+}
+
+/** Prep desk + checks stay available until the class is actually live. */
+export function canOpenClassPrep(session: { status: string }): boolean {
+  return session.status === 'planned' || session.status === 'prepared'
 }
 
 export function classEntryActionLabel(action: ClassEntryAction): string {
