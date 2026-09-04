@@ -5,6 +5,7 @@ import {
   isSearchableSidecarAbsPath,
   SEARCHABLE_PDF_DIR,
   searchablePdfAbsolutePath,
+  shouldServeSearchableSidecar,
 } from '@/lib/books/searchable-pdf-path'
 
 describe('searchablePdfAbsolutePath', () => {
@@ -32,5 +33,16 @@ describe('isHiddenLibraryDirName', () => {
   it('skips dot folders so auto-discover does not list the sidecar', () => {
     expect(isHiddenLibraryDirName('.searchable')).toBe(true)
     expect(isHiddenLibraryDirName('journeys-g3')).toBe(false)
+  })
+})
+
+describe('shouldServeSearchableSidecar', () => {
+  it('serves the sidecar when it is as new as the original', () => {
+    expect(shouldServeSearchableSidecar(200, 200)).toBe(true)
+    expect(shouldServeSearchableSidecar(250, 200)).toBe(true)
+  })
+
+  it('rejects a stale sidecar after the original scan was replaced', () => {
+    expect(shouldServeSearchableSidecar(100, 200)).toBe(false)
   })
 })

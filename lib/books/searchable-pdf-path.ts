@@ -13,6 +13,17 @@ export function isSearchableSidecarAbsPath(absPath: string): boolean {
 }
 
 /**
+ * Serve / reuse the OCR sidecar only when it is at least as new as the original PDF.
+ * A replaced scan has a newer mtime; the old sidecar must not be shown as the book.
+ */
+export function shouldServeSearchableSidecar(
+  sidecarMtimeMs: number,
+  originalMtimeMs: number,
+): boolean {
+  return sidecarMtimeMs >= originalMtimeMs
+}
+
+/**
  * Searchable copy path for an original unit PDF.
  * `book-library/foo/unit.pdf` → `book-library/foo/.searchable/unit.pdf`
  */

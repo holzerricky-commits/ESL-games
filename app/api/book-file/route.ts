@@ -4,7 +4,7 @@ import { stat } from 'node:fs/promises'
 import { NextRequest, NextResponse } from 'next/server'
 import { getBookLibraryRoot } from '@/lib/books/server'
 import { fileEtag, ifNoneMatchHits, IMAGE_REVALIDATE_CACHE_CONTROL } from '@/lib/books/file-http-cache'
-import { isSearchableSidecarAbsPath, searchablePdfAbsolutePath } from '@/lib/books/searchable-pdf-path'
+import { resolveBookFileServeAbsolutePath } from '@/lib/books/resolve-book-file-serve-path'
 
 export const runtime = 'nodejs'
 
@@ -121,16 +121,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Path must be inside book-library.' }, { status: 400 })
   }
 
-  let absTarget = absOriginal
-  if (absOriginal.toLowerCase().endsWith('.pdf') && !isSearchableSidecarAbsPath(absOriginal)) {
-    const sidecar = searchablePdfAbsolutePath(absOriginal)
-    try {
-      const sidecarStat = await stat(sidecar)
-      if (sidecarStat.isFile()) absTarget = sidecar
-    } catch {
-      // No searchable copy yet — serve the original scan.
-    }
-  }
+  const absTarget = await resolveBookFileServeAbsolutePath(absOriginal)
 
   let fileStat
   try {
