@@ -6,7 +6,7 @@ import { PDFDocument, StandardFonts } from 'pdf-lib'
 import { pdfFilePageHasSelectableText, pdfFilePagesWithSelectableText } from '@/lib/books/extract-story-pdf-text'
 import { renderPdfPageToPngBuffer } from '@/lib/books/generate-book-cover-server'
 import { recognizePageWords } from '@/lib/books/searchable-pdf-ocr'
-import { searchablePdfAbsolutePath } from '@/lib/books/searchable-pdf-path'
+import { searchablePdfAbsolutePath, shouldServeSearchableSidecar } from '@/lib/books/searchable-pdf-path'
 import {
   HELVETICA_DESCENDER_RATIO,
   mapOcrWordToPdfText,
@@ -49,7 +49,7 @@ export async function ensureSearchableSidecar(originalAbsPath: string): Promise<
   const orig = await stat(originalAbsPath)
   if (await fileExists(sidecar)) {
     const side = await stat(sidecar)
-    if (orig.mtimeMs <= side.mtimeMs) return sidecar
+    if (shouldServeSearchableSidecar(side.mtimeMs, orig.mtimeMs)) return sidecar
   }
   await copyFile(originalAbsPath, sidecar)
   return sidecar
