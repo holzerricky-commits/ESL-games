@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { migrateBookVolumes } from '@/lib/books/book-volumes'
 import { bookLibraryPayloadSchema } from '@/lib/books/manifest-validation'
 
 describe('bookLibraryPayloadSchema', () => {
@@ -117,6 +118,59 @@ describe('bookLibraryPayloadSchema', () => {
       ],
     }
     expect(bookLibraryPayloadSchema.safeParse(payload).success).toBe(true)
+  })
+
+  it('accepts volumes and unit volumeId from a multi-PDF book', () => {
+    const payload = {
+      books: [
+        {
+          id: 'journeys-g3',
+          title: 'Journeys G3',
+          volumes: [
+            {
+              id: 'vol-unit-1',
+              title: 'Unit 1',
+              filePath: 'book-library/journeys-g3/unit-1.pdf',
+            },
+            {
+              id: 'vol-unit-2',
+              title: 'Unit 2',
+              filePath: 'book-library/journeys-g3/unit-2.pdf',
+            },
+          ],
+          units: [
+            {
+              id: 'u1',
+              title: 'Unit 1',
+              filePath: 'book-library/journeys-g3/unit-1.pdf',
+              volumeId: 'vol-unit-1',
+            },
+            {
+              id: 'u2',
+              title: 'Unit 2',
+              filePath: 'book-library/journeys-g3/unit-2.pdf',
+              volumeId: 'vol-unit-2',
+            },
+          ],
+        },
+      ],
+    }
+    expect(bookLibraryPayloadSchema.safeParse(payload).success).toBe(true)
+  })
+
+  it('accepts a library after migrateBookVolumes on a two-PDF book', () => {
+    const migrated = migrateBookVolumes({
+      id: 'b1',
+      title: 'Two files',
+      units: [
+        { id: 'u1', title: 'Unit 1', filePath: 'book-library/b/unit-a.pdf' },
+        { id: 'u2', title: 'Unit 2', filePath: 'book-library/b/unit-b.pdf' },
+      ],
+    })
+    const result = bookLibraryPayloadSchema.safeParse({ books: [migrated] })
+    expect(result.success).toBe(true)
+    expect(migrated.volumes?.length).toBe(2)
+    expect(migrated.units.every((unit) => Boolean(unit.volumeId))).toBe(true)
   })
 
   it('rejects duplicate book ids', () => {

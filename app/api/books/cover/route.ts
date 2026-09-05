@@ -72,6 +72,14 @@ async function persistManifest(payload: BookLibraryPayload): Promise<BookLibrary
         { status: 400 },
       )
     }
+    for (const volume of book.volumes ?? []) {
+      if (!isBookLibraryFilePath(volume.filePath, cwd, libraryRoot)) {
+        return NextResponse.json(
+          { error: `Volume filePath must be inside book-library: ${volume.filePath}` },
+          { status: 400 },
+        )
+      }
+    }
   }
 
   const manifestPath = getBookManifestPath()
