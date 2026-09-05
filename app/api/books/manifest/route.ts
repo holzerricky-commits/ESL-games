@@ -48,6 +48,14 @@ export async function POST(req: Request) {
         { status: 400 },
       )
     }
+    for (const volume of book.volumes ?? []) {
+      if (!isBookLibraryFilePath(volume.filePath, cwd, libraryRoot)) {
+        return NextResponse.json(
+          { error: `Volume filePath must be inside book-library: ${volume.filePath}` },
+          { status: 400 },
+        )
+      }
+    }
   }
 
   try {
