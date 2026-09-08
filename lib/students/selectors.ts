@@ -2259,6 +2259,13 @@ function buildWeeklySlotFromInput(
   return { ok: true, assignment }
 }
 
+function isFuturePlannedOrPreparedSlotSession(session: StudentClassSession, slotId: string, todayMs: number): boolean {
+  if (session.sourceSlotId !== slotId) return false
+  if (session.status !== 'planned' && session.status !== 'prepared') return false
+  const t = new Date(session.scheduledFor).getTime()
+  return Number.isFinite(t) && t >= todayMs
+}
+
 function cancelFutureSessionsForSlot(slotId: string): void {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -2267,12 +2274,57 @@ function cancelFutureSessionsForSlot(slotId: string): void {
   for (const student of getStudents()) {
     let changed = false
     const nextSessions = (student.scheduledClasses ?? []).map((session) => {
-      if (session.sourceSlotId !== slotId) return session
-      if (session.status !== 'planned' && session.status !== 'prepared') return session
-      const t = new Date(session.scheduledFor).getTime()
-      if (!Number.isFinite(t) || t < todayMs) return session
+      if (!isFuturePlannedOrPreparedSlotSession(session, slotId, todayMs)) return session
       changed = true
       return { ...session, status: 'cancelled' as const, updatedAt: nowIso }
+    })
+    if (changed) {
+      saveStudent({
+        ...student,
+        scheduledClasses: sortClassesByDate(
+          nextSessions.map((s) => sanitizeClassSession(s)).filter((s): s is StudentClassSession => !!s),
+        ),
+        updatedAt: nowIso,
+      })
+    }
+  }
+}
+
+/** Drop untaught future copies so a moved weekly time can regenerate cleanly. */
+function removeFuturePlannedSessionsForSlot(slotId: string): void {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const todayMs = today.getTime()
+  const nowIso = new Date().toISOString()
+  for (const student of getStudents()) {
+    const sessions = student.scheduledClasses ?? []
+    const nextSessions = sessions.filter(
+      (session) => !isFuturePlannedOrPreparedSlotSession(session, slotId, todayMs),
+    )
+    if (nextSessions.length === sessions.length) continue
+    saveStudent({
+      ...student,
+      scheduledClasses: sortClassesByDate(
+        nextSessions.map((s) => sanitizeClassSession(s)).filter((s): s is StudentClassSession => !!s),
+      ),
+      updatedAt: nowIso,
+    })
+  }
+}
+
+/** Keep prep on future classes when only the weekly length changes. */
+function patchFutureSlotSessionDurations(slotId: string, durationMin: number): void {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const todayMs = today.getTime()
+  const nowIso = new Date().toISOString()
+  for (const student of getStudents()) {
+    let changed = false
+    const nextSessions = (student.scheduledClasses ?? []).map((session) => {
+      if (!isFuturePlannedOrPreparedSlotSession(session, slotId, todayMs)) return session
+      if (session.durationMin === durationMin) return session
+      changed = true
+      return { ...session, durationMin, updatedAt: nowIso }
     })
     if (changed) {
       saveStudent({
@@ -2353,11 +2405,21 @@ export function updateWeeklySlotAssignment(
   if (!validated.ok) return validated
   const assignment = validated.assignment
   const assignments = getWeeklySlotAssignments()
+  const previous = assignments.find((row) => row.id === slotId)
   const next = assignments
     .map((row) => (row.id === slotId ? assignment : row))
     .sort((a, b) => (a.dayOfWeek - b.dayOfWeek) || (a.startMinute - b.startMinute))
   saveWeeklySlotAssignments(next)
-  cancelFutureSessionsForSlot(slotId)
+  const sameOccurrenceClock =
+    !!previous &&
+    previous.dayOfWeek === assignment.dayOfWeek &&
+    previous.startMinute === assignment.startMinute &&
+    previous.studentId === assignment.studentId
+  if (sameOccurrenceClock) {
+    patchFutureSlotSessionDurations(slotId, assignment.durationMinutes)
+  } else {
+    removeFuturePlannedSessionsForSlot(slotId)
+  }
   generateScheduledClassesWindow(30)
   notifyStudentLocalDataChanged(input.studentId)
   return { ok: true, assignment }
