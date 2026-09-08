@@ -490,6 +490,150 @@ describe('weekly schedule slots and rolling generation', () => {
     expect(overlap.ok).toBe(false)
   })
 
+  it('updateWeeklySlotAssignment duration-only keeps future classes and updates length', () => {
+    saveStudents([seedStudent()])
+    saveTeacherWeeklyScheduleConfig({
+      workingDays: [1],
+      startMinute: 9 * 60,
+      endMinute: 12 * 60,
+      slotMinutes: 30,
+    })
+    const slot = upsertWeeklySlotAssignment({
+      dayOfWeek: 1,
+      startMinute: 9 * 60,
+      durationMinutes: 30,
+      studentId: 'student-1',
+    })
+    expect(slot.ok).toBe(true)
+    if (!slot.ok) return
+    generateScheduledClassesWindow(30)
+
+    const before = getStudentScheduledClasses('student-1').filter(
+      (row) => row.sourceSlotId === slot.assignment.id && row.status === 'planned',
+    )
+    expect(before.length).toBeGreaterThan(0)
+    const keptId = before[0]?.id
+    const withPrep = updateStudentClassPrep('student-1', keptId ?? '', {
+      prepNotes: 'Finish unit 2',
+    })
+    expect(withPrep.ok).toBe(true)
+
+    const updated = updateWeeklySlotAssignment(slot.assignment.id, {
+      dayOfWeek: 1,
+      startMinute: 9 * 60,
+      durationMinutes: 45,
+      studentId: 'student-1',
+    })
+    expect(updated.ok).toBe(true)
+
+    const after = getStudentScheduledClasses('student-1').filter(
+      (row) => row.sourceSlotId === slot.assignment.id && (row.status === 'planned' || row.status === 'prepared'),
+    )
+    const cancelledAfter = getStudentScheduledClasses('student-1').filter(
+      (row) => row.sourceSlotId === slot.assignment.id && row.status === 'cancelled',
+    )
+    expect(after.length).toBe(before.length)
+    expect(after.every((row) => row.durationMin === 45)).toBe(true)
+    expect(cancelledAfter).toHaveLength(0)
+    const saved = after.find((row) => row.id === keptId)
+    expect(saved?.prepNotes).toBe('Finish unit 2')
+
+    const visible = getClassSessionsForDateRange(new Date(), (() => {
+      const horizon = new Date()
+      horizon.setDate(horizon.getDate() + 30)
+      return horizon
+    })())
+    expect(
+      visible.filter((row) => row.session.sourceSlotId === slot.assignment.id).length,
+    ).toBe(before.length)
+  })
+
+  it('updateWeeklySlotAssignment can move day then move back without wiping the series', () => {
+    saveStudents([seedStudent()])
+    saveTeacherWeeklyScheduleConfig({
+      workingDays: [1, 3],
+      startMinute: 9 * 60,
+      endMinute: 12 * 60,
+      slotMinutes: 30,
+    })
+    const slot = upsertWeeklySlotAssignment({
+      dayOfWeek: 1,
+      startMinute: 9 * 60,
+      durationMinutes: 30,
+      studentId: 'student-1',
+    })
+    expect(slot.ok).toBe(true)
+    if (!slot.ok) return
+    generateScheduledClassesWindow(30)
+    const mondayCount = getStudentScheduledClasses('student-1').filter(
+      (row) => row.sourceSlotId === slot.assignment.id && row.status === 'planned',
+    ).length
+    expect(mondayCount).toBeGreaterThan(0)
+
+    const toWednesday = updateWeeklySlotAssignment(slot.assignment.id, {
+      dayOfWeek: 3,
+      startMinute: 9 * 60,
+      durationMinutes: 30,
+      studentId: 'student-1',
+    })
+    expect(toWednesday.ok).toBe(true)
+    const wednesdayPlanned = getStudentScheduledClasses('student-1').filter(
+      (row) => row.sourceSlotId === slot.assignment.id && row.status === 'planned',
+    )
+    expect(wednesdayPlanned.length).toBeGreaterThan(0)
+    expect(wednesdayPlanned.every((row) => new Date(row.scheduledFor).getDay() === 3)).toBe(true)
+
+    const backToMonday = updateWeeklySlotAssignment(slot.assignment.id, {
+      dayOfWeek: 1,
+      startMinute: 9 * 60,
+      durationMinutes: 30,
+      studentId: 'student-1',
+    })
+    expect(backToMonday.ok).toBe(true)
+    const mondayAgain = getStudentScheduledClasses('student-1').filter(
+      (row) => row.sourceSlotId === slot.assignment.id && row.status === 'planned',
+    )
+    expect(mondayAgain.length).toBeGreaterThan(0)
+    expect(mondayAgain.every((row) => new Date(row.scheduledFor).getDay() === 1)).toBe(true)
+    expect(new Set(mondayAgain.map((row) => row.id)).size).toBe(mondayAgain.length)
+  })
+
+  it('cancelled weekly occurrence stays cancelled after generateScheduledClassesWindow', () => {
+    saveStudents([seedStudent()])
+    saveTeacherWeeklyScheduleConfig({
+      workingDays: [1],
+      startMinute: 9 * 60,
+      endMinute: 12 * 60,
+      slotMinutes: 30,
+    })
+    const slot = upsertWeeklySlotAssignment({
+      dayOfWeek: 1,
+      startMinute: 9 * 60,
+      durationMinutes: 30,
+      studentId: 'student-1',
+    })
+    expect(slot.ok).toBe(true)
+    if (!slot.ok) return
+    generateScheduledClassesWindow(30)
+    const target = getStudentScheduledClasses('student-1').find(
+      (row) => row.sourceSlotId === slot.assignment.id && row.status === 'planned',
+    )
+    expect(target).toBeTruthy()
+    if (!target) return
+
+    const cancelled = cancelClassOccurrence('student-1', target.id)
+    expect(cancelled.ok).toBe(true)
+    generateScheduledClassesWindow(30)
+
+    const sameId = getStudentScheduledClasses('student-1').find((row) => row.id === target.id)
+    expect(sameId?.status).toBe('cancelled')
+    const sameDayPlanned = getStudentScheduledClasses('student-1').filter((row) => {
+      if (row.sourceSlotId !== slot.assignment.id) return false
+      return localDateKey(new Date(row.scheduledFor)) === localDateKey(new Date(target.scheduledFor))
+    })
+    expect(sameDayPlanned.filter((row) => row.status === 'planned')).toHaveLength(0)
+  })
+
   it('removeWeeklySlotAssignment cancels future linked sessions', () => {
     saveStudents([seedStudent()])
     saveTeacherWeeklyScheduleConfig({
