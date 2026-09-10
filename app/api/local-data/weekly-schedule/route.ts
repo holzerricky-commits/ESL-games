@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { normalizeWeeklyScheduleDiskPayload } from '@/lib/local-data/weekly-schedule-disk-types'
+import { mergeWeeklySchedulePutBody } from '@/lib/local-data/weekly-schedule-disk-types'
 import {
   readWeeklyScheduleFromDisk,
   writeWeeklyScheduleToDisk,
@@ -27,7 +27,8 @@ export async function PUT(req: NextRequest) {
   if (!body || typeof body !== 'object') {
     return NextResponse.json({ ok: false, error: 'Expected weekly schedule payload.' }, { status: 400 })
   }
-  const payload = normalizeWeeklyScheduleDiskPayload(body)
+  const current = await readWeeklyScheduleFromDisk()
+  const payload = mergeWeeklySchedulePutBody(body, current)
   try {
     await writeWeeklyScheduleToDisk(payload)
     return NextResponse.json({ ok: true })
