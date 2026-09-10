@@ -97,12 +97,16 @@ export async function buildBackupPayloadAsync(): Promise<LocalDataBackupPayload>
       const data = (await scheduleRes.json()) as {
         config?: Record<string, unknown> | null
         assignments?: unknown[]
+        exceptions?: unknown[]
       }
       if (data.config && typeof data.config === 'object') {
         payload.localStorage.esl_weekly_schedule_config = JSON.stringify(data.config)
       }
       if (Array.isArray(data.assignments)) {
         payload.localStorage.esl_weekly_slot_assignments = JSON.stringify(data.assignments)
+      }
+      if (Array.isArray(data.exceptions)) {
+        payload.localStorage.esl_weekly_slot_exceptions = JSON.stringify(data.exceptions)
       }
     }
     if (challengeRes.ok) {
@@ -216,47 +220,48 @@ async function applyDiskStudentRecordsFromBackup(payload: LocalDataBackupPayload
   const whiteboardRaw =
     payload.localStorage[BACKUP_WHITEBOARD_SESSIONS_KEY] ??
     payload.localStorage[LIVE_WHITEBOARD_SESSIONS_KEY]
-  if (!annotationsRaw && !spreadRaw && !whiteboardRaw) return
-
-  try {
-    let annotations: Record<string, unknown> = {}
-    let spreadSessions: Record<string, unknown> = {}
-    let whiteboardSessions: Record<string, unknown> = {}
-    if (annotationsRaw) {
-      const parsed = JSON.parse(annotationsRaw) as unknown
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        annotations = parsed as Record<string, unknown>
+  if (annotationsRaw || spreadRaw || whiteboardRaw) {
+    try {
+      let annotations: Record<string, unknown> = {}
+      let spreadSessions: Record<string, unknown> = {}
+      let whiteboardSessions: Record<string, unknown> = {}
+      if (annotationsRaw) {
+        const parsed = JSON.parse(annotationsRaw) as unknown
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          annotations = parsed as Record<string, unknown>
+        }
       }
-    }
-    if (spreadRaw) {
-      const parsed = JSON.parse(spreadRaw) as unknown
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        spreadSessions = parsed as Record<string, unknown>
+      if (spreadRaw) {
+        const parsed = JSON.parse(spreadRaw) as unknown
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          spreadSessions = parsed as Record<string, unknown>
+        }
       }
-    }
-    if (whiteboardRaw) {
-      const parsed = JSON.parse(whiteboardRaw) as unknown
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        whiteboardSessions = parsed as Record<string, unknown>
+      if (whiteboardRaw) {
+        const parsed = JSON.parse(whiteboardRaw) as unknown
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          whiteboardSessions = parsed as Record<string, unknown>
+        }
       }
+      await fetch('/api/local-data/book-annotations', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ annotations, spreadSessions, whiteboardSessions }),
+      })
+      // Live session stores use non-esl keys; restore them for browser-only fallback.
+      if (typeof window !== 'undefined') {
+        if (spreadRaw) localStorage.setItem(LIVE_SPREAD_SESSIONS_KEY, spreadRaw)
+        if (whiteboardRaw) localStorage.setItem(LIVE_WHITEBOARD_SESSIONS_KEY, whiteboardRaw)
+      }
+    } catch {
+      /* ignore */
     }
-    await fetch('/api/local-data/book-annotations', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ annotations, spreadSessions, whiteboardSessions }),
-    })
-    // Live session stores use non-esl keys; restore them for browser-only fallback.
-    if (typeof window !== 'undefined') {
-      if (spreadRaw) localStorage.setItem(LIVE_SPREAD_SESSIONS_KEY, spreadRaw)
-      if (whiteboardRaw) localStorage.setItem(LIVE_WHITEBOARD_SESSIONS_KEY, whiteboardRaw)
-    }
-  } catch {
-    /* ignore */
   }
 
   const scheduleConfigRaw = payload.localStorage.esl_weekly_schedule_config
   const scheduleAssignmentsRaw = payload.localStorage.esl_weekly_slot_assignments
-  if (scheduleConfigRaw || scheduleAssignmentsRaw) {
+  const scheduleExceptionsRaw = payload.localStorage.esl_weekly_slot_exceptions
+  if (scheduleConfigRaw || scheduleAssignmentsRaw || scheduleExceptionsRaw) {
     try {
       let config: Record<string, unknown> | null = null
       let assignments: unknown[] = []
@@ -270,10 +275,19 @@ async function applyDiskStudentRecordsFromBackup(payload: LocalDataBackupPayload
         const parsed = JSON.parse(scheduleAssignmentsRaw) as unknown
         if (Array.isArray(parsed)) assignments = parsed
       }
+      const scheduleBody: {
+        config: Record<string, unknown> | null
+        assignments: unknown[]
+        exceptions?: unknown[]
+      } = { config, assignments }
+      if (scheduleExceptionsRaw) {
+        const parsed = JSON.parse(scheduleExceptionsRaw) as unknown
+        if (Array.isArray(parsed)) scheduleBody.exceptions = parsed
+      }
       await fetch('/api/local-data/weekly-schedule', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config, assignments }),
+        body: JSON.stringify(scheduleBody),
       })
     } catch {
       /* ignore */
