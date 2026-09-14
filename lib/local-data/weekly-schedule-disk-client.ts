@@ -171,7 +171,8 @@ export async function hydrateWeeklyScheduleFromDisk(): Promise<boolean> {
       cache = payload
       diskActive = true
 
-      // Drop weekly times for students who no longer exist (or are on break).
+      // Drop leftover slots for deleted / on-break students. No-ops until the
+      // roster has hydrated so a parallel student load cannot empty the calendar.
       // Dynamic import avoids a circular dependency with selectors.
       void import('@/lib/students/selectors')
         .then((mod) => {

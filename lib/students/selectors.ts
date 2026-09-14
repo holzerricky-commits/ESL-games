@@ -141,8 +141,19 @@ function activeStudentIds(): Set<string> {
  */
 export function pruneOrphanWeeklySlots(): number {
   if (typeof window === 'undefined') return 0
-  const keepIds = activeStudentIds()
   const assignments = getWeeklySlotAssignments()
+  if (assignments.length === 0) return 0
+
+  // After migrate-to-disk, browser student keys are empty until roster hydrate
+  // finishes. Weekly hydrate (and the roster view) prune in parallel with that
+  // load — treating "no students yet" as "no students" would persist an empty
+  // teaching calendar. Wait until disk roster is live, or localStorage has rows.
+  const students = getStudents()
+  if (students.length === 0 && !isStudentRecordsDiskActive()) {
+    return 0
+  }
+
+  const keepIds = activeStudentIds()
   const next = assignments.filter((slot) => keepIds.has(slot.studentId))
   const removedCount = assignments.length - next.length
   if (removedCount === 0) return 0
