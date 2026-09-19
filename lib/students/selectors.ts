@@ -4139,7 +4139,9 @@ function endOtherInProgressClassSessions(
     (session) => session.id !== exceptClassId && session.status === 'in_progress',
   )
   for (const session of others) {
-    const ended = endStudentClassSession(studentId, session.id)
+    // Same bookmark + last-page flush as timer auto-end. A bare complete drops
+    // "where we left off" on Past classes and curriculum history.
+    const ended = hardAutoEndStudentClassSession(studentId, session.id)
     if (!ended.ok) return ended
   }
   return { ok: true }
