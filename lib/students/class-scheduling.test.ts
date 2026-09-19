@@ -1924,6 +1924,59 @@ describe('class sessions and outcomes', () => {
     expect(profile?.scheduledClasses.find((s) => s.id === b.session.id)?.status).toBe('in_progress')
   })
 
+  it('startStudentClassSession auto-end of another live class saves the lesson bookmark', () => {
+    saveStudents([
+      seedStudent({
+        assignedBookIds: ['book-a'],
+        assignedUnitRefs: [{ bookId: 'book-a', unitId: 'unit-1' }],
+      }),
+    ])
+    const a = upsertStudentClassSession('student-1', {
+      title: 'First',
+      scheduledFor: '2026-04-25T09:00',
+      durationMin: 45,
+    })
+    const b = upsertStudentClassSession('student-1', {
+      title: 'Second',
+      scheduledFor: '2026-04-25T10:00',
+      durationMin: 45,
+    })
+    expect(a.ok && b.ok).toBe(true)
+    if (!a.ok || !b.ok) return
+
+    expect(
+      updateStudentClassSelectedSection('student-1', a.session.id, {
+        id: 'sec-1',
+        bookId: 'book-a',
+        bookTitle: 'Book A',
+        unitId: 'unit-1',
+        unitTitle: 'Unit 1',
+        type: 'lesson',
+        title: 'Lesson',
+        startPageHint: 12,
+        endPageHint: 14,
+      }).ok,
+    ).toBe(true)
+
+    expect(startStudentClassSession('student-1', a.session.id).ok).toBe(true)
+    saveUnitPage('book-a', 'unit-1', 18)
+
+    const startedB = startStudentClassSession('student-1', b.session.id)
+    expect(startedB.ok).toBe(true)
+
+    const profile = getStudentProfileView('student-1')
+    const endedA = profile?.scheduledClasses.find((s) => s.id === a.session.id)
+    expect(endedA?.status).toBe('completed')
+    expect(endedA?.bookmarkAtEnd).toEqual({ bookId: 'book-a', pdfPage: 18, unitId: 'unit-1' })
+    expect(profile?.curriculumHistory?.[0]).toMatchObject({
+      bookId: 'book-a',
+      unitId: 'unit-1',
+      page: 18,
+    })
+    expect(getStudentLastClassBookmarkPdfPageForBookUnit('student-1', 'book-a', 'unit-1')).toBe(18)
+    expect(profile?.scheduledClasses.find((s) => s.id === b.session.id)?.status).toBe('in_progress')
+  })
+
   it('after endStudentClassSession, another class on the same student can start', () => {
     saveStudents([seedStudent()])
     const a = upsertStudentClassSession('student-1', {
