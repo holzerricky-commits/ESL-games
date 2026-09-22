@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getContextStore } from '@/lib/context/file-store'
+import { mergeBookContextSaveWithExisting } from '@/lib/context/merge-book-context-save'
 import { DEFAULT_BOOK_FOCUS_AREAS } from '@/lib/context/types'
 import type {
   BookContextDraftRecord,
@@ -119,10 +120,8 @@ export async function POST(req: Request) {
     }
     const store = getContextStore()
     const existing = await store.getBookContext(record.bookId)
-    if (existing) {
-      record.createdAt = existing.createdAt
-    }
-    const saved = await store.saveBookContext(record)
+    const merged = mergeBookContextSaveWithExisting(record, existing)
+    const saved = await store.saveBookContext(merged)
     return NextResponse.json({ ok: true, context: saved })
   } catch {
     return NextResponse.json({ ok: false, error: 'Failed to save book context.' }, { status: 500 })

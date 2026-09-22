@@ -12,7 +12,12 @@ import type {
   BookUnitRecord,
 } from '@/lib/books/types'
 import { DEFAULT_BOOK_FOCUS_AREAS } from '@/lib/context/types'
-import type { BookContextDraftRecord, BookContextMaterialRecord, BookContextSummaryRecord } from '@/lib/context/types'
+import type {
+  BookContextDraftRecord,
+  BookContextMaterialRecord,
+  BookContextRecord,
+  BookContextSummaryRecord,
+} from '@/lib/context/types'
 import {
   formatEffectivePageSpan,
   mapPdfPageToDisplayLabel,
@@ -507,6 +512,7 @@ export function BooksPageClient() {
   const [unitContext, setUnitContext] = useState<UnitContextRecord | null>(null)
   const [lessonContext, setLessonContext] = useState<LessonContextRecord | null>(null)
   const [bookContext, setBookContext] = useState<BookContextSummaryRecord | null>(null)
+  const [savedBookRecord, setSavedBookRecord] = useState<BookContextRecord | null>(null)
   const [contextBusy, setContextBusy] = useState<'unit' | 'lesson' | null>(null)
   const [unitContextLoading, setUnitContextLoading] = useState(false)
   const [lessonContextLoading, setLessonContextLoading] = useState(false)
@@ -1496,18 +1502,16 @@ export function BooksPageClient() {
       const payload = (await res.json()) as {
         ok: boolean
         book?: BookContextSummaryRecord | null
-        bookRecord?: {
-          summary?: string | null
-          focusAreas?: string[] | null
-          focusNotesByLesson?: Record<string, Record<string, string>> | null
-        } | null
+        bookRecord?: BookContextRecord | null
       }
       if (rev !== bookContextLoadRevRef.current) return
       if (!res.ok || !payload.ok) {
         setBookContext(null)
+        setSavedBookRecord(null)
         return
       }
       setBookContext(payload.book ?? null)
+      setSavedBookRecord(payload.bookRecord ?? null)
       if (typeof payload.bookRecord?.summary === 'string') {
         setBookText(payload.bookRecord.summary)
       }
@@ -1524,6 +1528,7 @@ export function BooksPageClient() {
     } catch {
       if (rev !== bookContextLoadRevRef.current) return
       setBookContext(null)
+      setSavedBookRecord(null)
       setBookFocusAreas([...DEFAULT_BOOK_FOCUS_AREAS])
       setFocusNotesByLesson({})
     } finally {
@@ -1865,6 +1870,7 @@ export function BooksPageClient() {
     if (!activeBookKey || !selectedBook) {
       bookContextLoadRevRef.current += 1
       setBookContext(null)
+      setSavedBookRecord(null)
       setBookContextLoading(false)
       setDownloadedMaterials([])
       setMaterialsLoading(false)
@@ -2099,19 +2105,21 @@ export function BooksPageClient() {
     setContextError(null)
     setBookSaveBusy(true)
     try {
+      // Focus-table saves often run with no in-memory AI draft. Reuse the last
+      // saved book record so materials/evidence/goals are not replaced with [].
       const baseDraft: BookContextDraftRecord = bookDraft ?? {
         kind: 'book-draft',
         bookId: selectedBook.id,
         summary: bookText.trim(),
-        goals: [],
-        pacing: [],
-        instructionalPriorities: [],
+        goals: savedBookRecord?.goals ?? [],
+        pacing: savedBookRecord?.pacing ?? [],
+        instructionalPriorities: savedBookRecord?.instructionalPriorities ?? [],
         focusAreas: [...bookFocusAreas],
-        focusNotesByLesson: {},
-        sourcePageRange: null,
-        materials: [],
+        focusNotesByLesson: savedBookRecord?.focusNotesByLesson ?? {},
+        sourcePageRange: savedBookRecord?.sourcePageRange ?? null,
+        materials: savedBookRecord?.materials ?? [],
         sources: [],
-        evidence: [],
+        evidence: savedBookRecord?.evidence ?? [],
         generatedAt: new Date().toISOString(),
       }
       const res = await fetch('/api/context/save-book', {
@@ -2126,12 +2134,15 @@ export function BooksPageClient() {
           },
         }),
       })
-      const payload = (await res.json()) as { ok: boolean; error?: string }
+      const payload = (await res.json()) as { ok: boolean; error?: string; context?: BookContextRecord }
       if (!res.ok || !payload.ok) {
         setContextError(payload.error ?? 'Failed to save book context.')
         return
       }
       toast.success('Book context saved.')
+      if (payload.context) {
+        setSavedBookRecord(payload.context)
+      }
       setBookDraft(null)
       const rev = bookContextLoadRevRef.current + 1
       bookContextLoadRevRef.current = rev
