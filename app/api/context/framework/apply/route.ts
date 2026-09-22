@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getContextStore } from '@/lib/context/file-store'
+import { preserveUnitContextResearchFields } from '@/lib/context/framework-apply'
 import type {
   BookContextRecord,
   LessonContextRecord,
@@ -359,22 +360,25 @@ export async function POST(req: Request) {
     const unitRecords: UnitContextRecord[] = []
     for (const [unitId, unitData] of unitAccum.entries()) {
       const existingUnit = await store.getUnitContext(parsed.bookId, unitId)
-      const unitRecord: UnitContextRecord = {
-        id: stableId(`unit:${parsed.bookId}:${unitId}`),
-        kind: 'unit',
-        bookId: parsed.bookId,
-        unitId,
-        unitTitle: unitData.unitTitle,
-        theme: unitData.theme[0] ?? existingUnit?.theme ?? 'Not specified',
-        bigIdeas: trimList(unitData.bigIdeas, 12),
-        crossCurricularLinks: trimList(unitData.cross, 12),
-        targetLanguageDomains: trimList(unitData.domains, 12),
-        sourcePageRange: unitData.range,
-        scanProfile: 'balanced',
-        contextVersion: CONTEXT_VERSION,
-        createdAt: existingUnit?.createdAt ?? now,
-        updatedAt: now,
-      }
+      const unitRecord: UnitContextRecord = preserveUnitContextResearchFields(
+        {
+          id: stableId(`unit:${parsed.bookId}:${unitId}`),
+          kind: 'unit',
+          bookId: parsed.bookId,
+          unitId,
+          unitTitle: unitData.unitTitle,
+          theme: unitData.theme[0] ?? existingUnit?.theme ?? 'Not specified',
+          bigIdeas: trimList(unitData.bigIdeas, 12),
+          crossCurricularLinks: trimList(unitData.cross, 12),
+          targetLanguageDomains: trimList(unitData.domains, 12),
+          sourcePageRange: unitData.range,
+          scanProfile: 'balanced',
+          contextVersion: CONTEXT_VERSION,
+          createdAt: existingUnit?.createdAt ?? now,
+          updatedAt: now,
+        },
+        existingUnit,
+      )
       unitRecords.push(unitRecord)
       if (!dryRun) await store.saveUnitContext(unitRecord)
     }
