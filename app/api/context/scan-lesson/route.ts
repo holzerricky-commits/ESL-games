@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getContextStore } from '@/lib/context/file-store'
+import { resolveScannedContextSave } from '@/lib/context/scan-persist'
 import { scanLessonContext } from '@/lib/context/scan-service'
 import type { LessonContextScanInput } from '@/lib/context/types'
 
@@ -51,7 +52,15 @@ export async function POST(req: Request) {
 
     const store = getContextStore()
     const scanned = await scanLessonContext(input)
-    const saved = await store.saveLessonContext(scanned)
+    const existing = await store.getLessonContext(input.bookId, input.unitId, input.lessonId)
+    const decision = resolveScannedContextSave(scanned, existing)
+    if (decision.action === 'reject') {
+      return NextResponse.json(
+        { ok: false, error: 'Could not scan lesson context. Existing research was not changed.' },
+        { status: 502 },
+      )
+    }
+    const saved = await store.saveLessonContext(decision.record)
     return NextResponse.json({ ok: true, context: saved })
   } catch {
     return NextResponse.json({ ok: false, error: 'Failed to scan lesson context.' }, { status: 500 })
