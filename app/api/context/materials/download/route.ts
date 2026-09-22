@@ -4,6 +4,7 @@ import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { NextResponse } from 'next/server'
 import { getBookLibraryRoot, loadBookLibrary } from '@/lib/books/server'
 import type { BookContextMaterialRecord } from '@/lib/context/types'
+import { assertSafeOutboundHttpUrl, fetchSafeOutboundUrl } from '@/lib/security/safe-outbound-url'
 
 export const runtime = 'nodejs'
 
@@ -143,7 +144,8 @@ async function performDownload(taskId: string): Promise<void> {
   if (!task) return
   try {
     updateTask(taskId, { status: 'downloading', startedAt: new Date().toISOString() })
-    const parsedUrl = new URL(task.url)
+    // Block localhost / private / metadata targets (and redirect hops into them).
+    const parsedUrl = await assertSafeOutboundHttpUrl(task.url)
     const library = await loadBookLibrary()
     const book = library.books.find((item) => item.id === task.bookId)
     if (!book) throw new Error('Book not found.')
@@ -151,7 +153,7 @@ async function performDownload(taskId: string): Promise<void> {
     const bookFolder = resolveBookFolderFromUnitPath(unitPath)
     if (!bookFolder) throw new Error('Book folder could not be resolved.')
 
-    const response = await fetch(parsedUrl.toString())
+    const response = await fetchSafeOutboundUrl(parsedUrl.toString())
     if (!response.ok) throw new Error(`Download failed (${response.status}).`)
     const contentType = response.headers.get('content-type')?.split(';')[0]?.trim() || 'application/octet-stream'
     if (contentType.toLowerCase().includes('text/html')) {
@@ -260,12 +262,10 @@ export async function POST(req: Request) {
     }
     let parsedUrl: URL
     try {
-      parsedUrl = new URL(rawUrl)
-    } catch {
-      return NextResponse.json({ ok: false, error: 'Invalid URL.' }, { status: 400 })
-    }
-    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-      return NextResponse.json({ ok: false, error: 'Only http(s) URLs are supported.' }, { status: 400 })
+      parsedUrl = await assertSafeOutboundHttpUrl(rawUrl)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Invalid URL.'
+      return NextResponse.json({ ok: false, error: message }, { status: 400 })
     }
     const taskId = createHash('sha1')
       .update(`${bookId}::${parsedUrl.toString()}::${Date.now()}::${Math.random()}`)
