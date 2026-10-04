@@ -43,7 +43,8 @@ import {
   storySubtitleForVisualKind,
 } from '@/lib/books/book-part-visual-kind'
 import { normalizeLessonsStructureTags, resolvePartStructureTag } from '@/lib/books/part-structure-tag'
-import { draftsToUnits, type TocUnitDraft } from '@/lib/books/toc-import'
+import { mergeOutlineUnitsOntoBook } from '@/lib/books/merge-outline-units'
+import type { TocUnitDraft } from '@/lib/books/toc-import'
 import { mergeExtractedStructureBatches } from '@/lib/books/merge-toc-extract-batches'
 import { formatTocChunkTitle } from '@/lib/books/lesson-title'
 import { resolveTocExtractProfileForBook, tocChunkLabelStyleForProfile } from '@/lib/books/toc-extract-profile'
@@ -274,70 +275,6 @@ function restoreOutlineDraftsFromBook(
   }
 
   return { drafts: [], lessonsByUnitIndex: [], hasMapping: false }
-}
-
-/** Merge outline drafts onto the book; when volume-scoped, only replace that volume’s units. */
-function mergeOutlineUnitsOntoBook(
-  book: BookRecord,
-  fallbackFilePath: string,
-  drafts: TocUnitDraft[],
-  lessonsByUnitIndex: BookLessonRecord[][],
-  options?: { volumeId?: string | null },
-): BookUnitRecord[] {
-  const volumeId = options?.volumeId?.trim() || null
-  const volume = volumeId ? findBookVolume(book, volumeId) : null
-  const filePath = normalizeBookFilePath(volume?.filePath || fallbackFilePath)
-  const fromDrafts = draftsToUnits(filePath, drafts, lessonsByUnitIndex).map((unit) => ({
-    ...unit,
-    filePath,
-    ...(volumeId ? { volumeId } : unit.volumeId ? { volumeId: unit.volumeId } : {}),
-  }))
-
-  if (!volumeId && !bookHasDistinctUnitFiles(book) && listBookVolumes(book).length < 2) {
-    return fromDrafts
-  }
-
-  if (volumeId || filePath) {
-    const targetPath = filePath
-    // Preserve book order: kept units + new drafts at the replaced slice’s old position.
-    const firstReplacedIndex = book.units.findIndex((unit) => {
-      if (volumeId && unit.volumeId === volumeId) return true
-      return normalizeBookFilePath(unit.filePath ?? '') === targetPath
-    })
-    if (firstReplacedIndex < 0) {
-      return [...book.units, ...fromDrafts]
-    }
-    const before = book.units.slice(0, firstReplacedIndex).filter((unit) => {
-      if (volumeId && unit.volumeId === volumeId) return false
-      return normalizeBookFilePath(unit.filePath ?? '') !== targetPath
-    })
-    const after = book.units.slice(firstReplacedIndex).filter((unit) => {
-      if (volumeId && unit.volumeId === volumeId) return false
-      return normalizeBookFilePath(unit.filePath ?? '') !== targetPath
-    })
-    return [...before, ...fromDrafts, ...after]
-  }
-
-  // Legacy distinct-files merge by id.
-  const draftById = new Map(fromDrafts.map((unit) => [unit.id, unit]))
-  const seen = new Set<string>()
-  const merged: BookUnitRecord[] = book.units.map((existing) => {
-    seen.add(existing.id)
-    const updated = draftById.get(existing.id)
-    if (!updated) return existing
-    return {
-      ...existing,
-      ...updated,
-      id: existing.id,
-      filePath: existing.filePath,
-      ...(existing.volumeId ? { volumeId: existing.volumeId } : {}),
-    }
-  })
-  for (const draftUnit of fromDrafts) {
-    if (seen.has(draftUnit.id)) continue
-    merged.push(draftUnit)
-  }
-  return merged
 }
 
 export type BookStructureManifestSaveMeta = {
