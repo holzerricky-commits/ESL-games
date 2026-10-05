@@ -320,5 +320,30 @@ export function applyDiskCleanupPlanToBook(book: BookRecord, plan: BookDiskClean
     next.coverImagePath = remapLibraryPath(book.coverImagePath, plan, pathMap)
   }
 
+  // Volume paths are the source of truth on the next library load. If they stay
+  // on the old folder, reload points every unit back at files that were just renamed.
+  if (book.volumes?.length) {
+    next.volumes = book.volumes.map((volume) => ({
+      ...volume,
+      filePath: remapLibraryPath(volume.filePath, plan, pathMap),
+    }))
+  }
+
   return next
+}
+
+/** Rewrite one stored library path the same way a cleanup updates the book record. */
+export function remapCleanupLibraryPath(filePath: string, plan: BookDiskCleanupPlan): string {
+  const pathMap = new Map<string, string>()
+  for (const rename of plan.fileRenames) {
+    pathMap.set(rename.fromRelative.replaceAll('\\', '/'), rename.toRelative)
+    if (plan.currentFolder && plan.folderNeedsRename) {
+      const mid = rename.fromRelative.replace(
+        `book-library/${plan.currentFolder}/`,
+        `book-library/${plan.targetFolder}/`,
+      )
+      pathMap.set(mid.replaceAll('\\', '/'), rename.toRelative)
+    }
+  }
+  return remapLibraryPath(filePath, plan, pathMap)
 }
