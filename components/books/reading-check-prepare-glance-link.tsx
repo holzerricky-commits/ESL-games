@@ -32,7 +32,7 @@ function toneClass(kind: ReadingCheckPrepareGlanceKind): string {
 
 /**
  * Short Prepare / next-class status for reading checks.
- * With a class session: opens Prep checks panel. Otherwise: Books → Stories.
+ * With a class session: opens Prep checks panel. Otherwise: the lesson or part in Books.
  */
 export function ReadingCheckPrepareGlanceLink({
   bookId,
@@ -100,10 +100,10 @@ export function ReadingCheckPrepareGlanceLink({
           setHref(
             buildBooksPageHref({
               book: bid,
-              unit: story?.unitId ?? uid,
-              tab: 'stories',
+              unit: uid,
+              lesson: lessonId,
+              part: partId,
               student: studentId,
-              story: story?.id ?? null,
             }),
           )
         }

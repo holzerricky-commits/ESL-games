@@ -1280,18 +1280,21 @@ export function BookStructureWizard({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(nextPayload),
     })
-    const body = (await res.json()) as BookLibraryPayload
-    if (res.ok) {
-      onManifestSaved(body, { bookId: selectedBook.id })
-      const cleared = body.books.find((b) => b.id === selectedBook.id) ?? stripBookTocMapping(selectedBook)
-      const restored = restoreOutlineDraftsFromBook(cleared)
-      setDrafts(restored.drafts)
-      setLessonsByUnitIndex(restored.lessonsByUnitIndex)
-      setWizardStep('toc')
-      setFurthestStep('toc')
-      setTocRangeAtExtract(null)
-      exitUnitMergeSelectMode()
+    const body = (await res.json().catch(() => ({}))) as BookLibraryPayload & { error?: string }
+    if (!res.ok) {
+      toast.error(body.error ?? 'Could not clear the structure.')
+      return
     }
+    onManifestSaved(body, { bookId: selectedBook.id })
+    const cleared = body.books.find((b) => b.id === selectedBook.id) ?? stripBookTocMapping(selectedBook)
+    const restored = restoreOutlineDraftsFromBook(cleared)
+    setDrafts(restored.drafts)
+    setLessonsByUnitIndex(restored.lessonsByUnitIndex)
+    setWizardStep('toc')
+    setFurthestStep('toc')
+    setTocRangeAtExtract(null)
+    exitUnitMergeSelectMode()
+    toast.success('Structure cleared. Start the outline again from the TOC step.')
   }
 
   function toggleUnitMergeSelection(unitIndex: number) {
@@ -2398,7 +2401,7 @@ export function BookStructureWizard({
                         </TooltipTrigger>
                         <TooltipContent>More</TooltipContent>
                       </Tooltip>
-                      <DropdownMenuContent align="end">
+                      <DropdownMenuContent align="end" className="z-[90]">
                         <DropdownMenuItem
                           className="text-[var(--brand-red)] focus:text-[var(--brand-red)]"
                           onSelect={() => {

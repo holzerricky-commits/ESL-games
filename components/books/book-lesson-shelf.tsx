@@ -1,7 +1,9 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { BookOpen, Library, Scissors, Wand2 } from 'lucide-react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { BookOpen, LayoutGrid, Library, Scissors, Wand2 } from 'lucide-react'
+import { BookAddUnitsDrop } from '@/components/books/book-add-units-drop'
+import { BookCoverUploadControl } from '@/components/books/book-cover-upload-control'
 import {
   BookIdentityDangerMenu,
   BookIdentityEditDialog,
@@ -13,7 +15,9 @@ import { Button } from '@/components/ui/button'
 import { PersistedPageThumbnail } from '@/components/books/persisted-page-thumbnail'
 import { UnitPdfPageCountLoader } from '@/components/books/unit-pdf-page-count-loader'
 import { isPresentationBook, resolveBookCatalogIdentity } from '@/lib/books/book-catalog-labels'
+import { bookHasCustomCover } from '@/lib/books/book-cover-display'
 import { makeUnitFileUrl } from '@/lib/books/book-file-url'
+import { BOOK_SETUP_COPY, type BookShelfTab } from '@/lib/books/book-setup-copy'
 import {
   bookHasBrowsablePdf,
   bookNeedsLessonShelfOutline,
@@ -29,6 +33,13 @@ import { cn } from '@/lib/utils'
 
 /** One step smaller than Library covers (200) so lessons read as nested. */
 const LESSON_THUMB_WIDTH = 160
+const HEADER_COVER_WIDTH = 72
+
+const SHELF_TABS: { id: BookShelfTab; label: string }[] = [
+  { id: 'lessons', label: BOOK_SETUP_COPY.lessons.tabLabel },
+  { id: 'audio', label: BOOK_SETUP_COPY.audio.tabLabel },
+  { id: 'materials', label: BOOK_SETUP_COPY.materials.tabLabel },
+]
 
 interface BookLessonShelfProps {
   book: BookRecord
@@ -40,8 +51,15 @@ interface BookLessonShelfProps {
   onOutlineVolume?: (volumeId: string) => void
   /** Cut a stacked single-PDF book into unit files. */
   onCutIntoUnits?: () => void
-  /** Quiet overflow for materials / plan / advanced. */
-  onOpenAdvancedTools: () => void
+  activeTab: BookShelfTab
+  onTabChange: (tab: BookShelfTab) => void
+  audioTab: ReactNode
+  materialsTab: ReactNode
+  /** Teaching focus grid (planning notes per lesson). */
+  onOpenFocusGrid?: () => void
+  onCoverUpdated?: (payload: BookLibraryPayload) => void
+  /** Book with no PDFs yet — drop zone to add unit files. */
+  onUnitsUploaded?: () => Promise<void> | void
   /** Presentation with no units — open add-PDF flow. */
   onAddPdf?: () => void
   /** Open parts list for a lesson (Phase B). */
@@ -62,7 +80,13 @@ export function BookLessonShelf({
   onOutlineBook,
   onOutlineVolume,
   onCutIntoUnits,
-  onOpenAdvancedTools,
+  activeTab,
+  onTabChange,
+  audioTab,
+  materialsTab,
+  onOpenFocusGrid,
+  onCoverUpdated,
+  onUnitsUploaded,
   onAddPdf,
   onOpenLesson,
   onBookSaved,
@@ -80,6 +104,9 @@ export function BookLessonShelf({
   const catalog = useMemo(() => resolveBookCatalogIdentity(book), [book])
   const catalogLine = [catalog.series, catalog.grade, catalog.role].filter(Boolean).join(' · ')
   const [editOpen, setEditOpen] = useState(false)
+  const showCover =
+    Boolean(onCoverUpdated) && (Boolean(book.units[0]?.filePath) || bookHasCustomCover(book))
+  const showAddUnits = Boolean(onUnitsUploaded) && book.units.length === 0
   const lessonCount = rows.reduce((n, row) => n + row.cards.length, 0)
   const [pageCountByFile, setPageCountByFile] = useState<Record<string, number>>({})
   const browsableUnits = useMemo(
@@ -165,26 +192,37 @@ export function BookLessonShelf({
               Library
             </Button>
           </div>
-          <div>
-            <h2 className="text-[24px] font-semibold tracking-tight text-foreground md:text-[28px]">
-              {book.title}
-            </h2>
-            {catalogLine ? (
-              <p className="mt-0.5 text-[13px] text-muted-foreground">{catalogLine}</p>
+          <div className="flex items-start gap-4">
+            {showCover ? (
+              <BookCoverUploadControl
+                book={book}
+                pdfReady={pdfReady}
+                width={HEADER_COVER_WIDTH}
+                label={isPresentation ? 'Presentation cover' : 'Book cover'}
+                onCoverUpdated={onCoverUpdated!}
+              />
             ) : null}
-            {needsOutline ? (
-              <p className={catalogLine ? 'text-[13px] text-muted-foreground' : 'mt-0.5 text-[13px] text-muted-foreground'}>
-                {isPresentation ? 'No decks yet' : 'No lessons yet'}
-              </p>
-            ) : (
-              <p className={catalogLine ? 'text-[13px] text-muted-foreground' : 'mt-0.5 text-[13px] text-muted-foreground'}>
-                {isPresentation
-                  ? `${lessonCount} ${lessonCount === 1 ? 'deck' : 'decks'}`
-                  : multiVolume
-                    ? `${listBookVolumes(book).length} volumes · ${book.units.length} ${book.units.length === 1 ? 'unit' : 'units'}`
-                    : `${lessonCount} ${lessonCount === 1 ? 'lesson' : 'lessons'} · ${rows.length} ${rows.length === 1 ? 'unit' : 'units'}`}
-              </p>
-            )}
+            <div className="min-w-0">
+              <h2 className="text-[24px] font-semibold tracking-tight text-foreground md:text-[28px]">
+                {book.title}
+              </h2>
+              {catalogLine ? (
+                <p className="mt-0.5 text-[13px] text-muted-foreground">{catalogLine}</p>
+              ) : null}
+              {needsOutline ? (
+                <p className={catalogLine ? 'text-[13px] text-muted-foreground' : 'mt-0.5 text-[13px] text-muted-foreground'}>
+                  {isPresentation ? 'No decks yet' : 'No lessons yet'}
+                </p>
+              ) : (
+                <p className={catalogLine ? 'text-[13px] text-muted-foreground' : 'mt-0.5 text-[13px] text-muted-foreground'}>
+                  {isPresentation
+                    ? `${lessonCount} ${lessonCount === 1 ? 'deck' : 'decks'}`
+                    : multiVolume
+                      ? `${listBookVolumes(book).length} volumes · ${book.units.length} ${book.units.length === 1 ? 'unit' : 'units'}`
+                      : `${lessonCount} ${lessonCount === 1 ? 'lesson' : 'lessons'} · ${rows.length} ${rows.length === 1 ? 'unit' : 'units'}`}
+                </p>
+              )}
+            </div>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -212,13 +250,19 @@ export function BookLessonShelf({
               Cut into units
             </Button>
           ) : null}
-          <button
-            type="button"
-            onClick={onOpenAdvancedTools}
-            className="rounded-full px-2.5 py-1 text-[12px] text-muted-foreground/70 transition hover:bg-[var(--surface-3)] hover:text-foreground"
-          >
-            Advanced tools
-          </button>
+          {onOpenFocusGrid && !needsOutline ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 gap-1.5"
+              onClick={onOpenFocusGrid}
+              title={BOOK_SETUP_COPY.focusGrid.subtitle}
+            >
+              <LayoutGrid className="h-3.5 w-3.5" aria-hidden />
+              {BOOK_SETUP_COPY.focusGrid.label}
+            </Button>
+          ) : null}
           {onBookRemoved ? (
             <BookIdentityDangerMenu
               book={book}
@@ -238,7 +282,36 @@ export function BookLessonShelf({
         onSaved={(payload) => onBookSaved?.(payload)}
       />
 
-      {needsOutline ? (
+      <div className="flex flex-wrap items-center gap-1.5 px-0.5" role="tablist" aria-label="Book sections">
+        {SHELF_TABS.map((tab) => {
+          const selected = activeTab === tab.id
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              onClick={() => onTabChange(tab.id)}
+              className={cn(
+                'rounded-full px-3.5 py-1.5 text-[13px] font-medium tracking-tight transition',
+                selected
+                  ? 'bg-foreground text-background'
+                  : 'bg-[var(--surface-3)] text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {tab.label}
+            </button>
+          )
+        })}
+      </div>
+
+      {activeTab === 'audio' ? (
+        <div role="tabpanel" className="min-w-0">{audioTab}</div>
+      ) : activeTab === 'materials' ? (
+        <div role="tabpanel" className="min-w-0">{materialsTab}</div>
+      ) : showAddUnits ? (
+        <BookAddUnitsDrop book={book} onUploadComplete={onUnitsUploaded!} />
+      ) : needsOutline ? (
         <div className="mx-auto flex max-w-md flex-col items-center gap-4 rounded-2xl bg-[var(--surface-2)] px-6 py-12 text-center">
           <div className="flex h-16 w-12 items-center justify-center rounded-sm bg-[var(--surface-3)] shadow-sm">
             <Wand2 className="h-6 w-6 text-muted-foreground" strokeWidth={1.5} aria-hidden />

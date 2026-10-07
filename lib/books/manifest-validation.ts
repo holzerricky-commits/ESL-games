@@ -7,9 +7,15 @@ const anchorSourceSchema = z.enum(['toc', 'heading', 'fallback'])
 
 const bookLessonPartTagSchema = z.enum(BOOK_LESSON_PART_TAGS as unknown as [string, ...string[]])
 
+const pdfPageRangeSchema = z.object({
+  start: z.number().int().min(1),
+  end: z.number().int().min(1),
+}).strict()
+
 const bookLessonPartSchema = z.object({
   id: z.string().min(1),
   title: z.string(),
+  pdfPageRange: pdfPageRangeSchema.optional(),
   startPageHint: z.number().int().min(1).optional(),
   endPageHint: z.number().int().min(1).optional(),
   anchorConfidence: anchorConfidenceSchema.optional(),
@@ -20,6 +26,7 @@ const bookLessonPartSchema = z.object({
 const bookLessonSchema = z.object({
   id: z.string().min(1),
   title: z.string(),
+  pdfPageRange: pdfPageRangeSchema.optional(),
   startPageHint: z.number().int().min(1).optional(),
   endPageHint: z.number().int().min(1).optional(),
   anchorConfidence: anchorConfidenceSchema.optional(),
@@ -31,11 +38,20 @@ const bookUnitSchema = z.object({
   id: z.string().min(1),
   title: z.string(),
   filePath: z.string().min(1),
+  volumeId: z.string().min(1).optional(),
+  pdfPageRange: pdfPageRangeSchema.optional(),
+  pdfContentStart: z.number().int().min(1).optional(),
   startPageHint: z.number().int().min(1).optional(),
   endPageHint: z.number().int().min(1).optional(),
   anchorConfidence: anchorConfidenceSchema.optional(),
   anchorSource: anchorSourceSchema.optional(),
   lessons: z.array(bookLessonSchema).optional(),
+}).strict()
+
+const bookVolumeSchema = z.object({
+  id: z.string().min(1),
+  title: z.string(),
+  filePath: z.string().min(1),
 }).strict()
 
 const bookFilePageAlignmentSchema = z.object({
@@ -57,6 +73,7 @@ const bookRecordSchema = z.object({
   spreadGutterPullRatio: spreadGutterPullRatioSchema.optional(),
   spreadGutterByFile: z.record(z.string().min(1), spreadGutterPullRatioSchema).optional(),
   coverImagePath: z.string().min(1).optional(),
+  volumes: z.array(bookVolumeSchema).optional(),
   units: z.array(bookUnitSchema).min(1),
 }).strict()
 

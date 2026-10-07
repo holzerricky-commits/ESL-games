@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
-import { Camera, ChevronDown, ChevronLeft, ChevronRight, Eye, FileText, FileType2, Library, Pencil, Plus, X } from 'lucide-react'
+import { Camera, ChevronDown, ChevronLeft, ChevronRight, FileText, FileType2, Pencil, Plus, X } from 'lucide-react'
 import type {
   BookLessonPartRecord,
   BookLessonRecord,
@@ -15,20 +15,15 @@ import { DEFAULT_BOOK_FOCUS_AREAS } from '@/lib/context/types'
 import type { BookContextDraftRecord, BookContextMaterialRecord, BookContextSummaryRecord } from '@/lib/context/types'
 import {
   formatEffectivePageSpan,
-  mapPdfPageToDisplayLabel,
   type PageNumberingMode,
 } from '@/lib/books/page-numbering'
 import { pageRangeForIndex } from '@/lib/books/toc-page-range'
-import { resolveOutlinePrintedStartPdfPage } from '@/lib/books/story-thumb-pdf-page'
-import { clampPdfPage, clampPdfPageToVisible, getFileAlignment, getUnitReaderBounds, getVisiblePdfPages } from '@/lib/books/page-range'
-import { buildPageAlignmentRuntime, resolveEffectiveAnchorToPdfPage } from '@/lib/books/page-alignment-runtime'
+import { clampPdfPage, clampPdfPageToVisible, getUnitReaderBounds, getVisiblePdfPages } from '@/lib/books/page-range'
 import { getSavedUnitPage, saveUnitPage } from '@/lib/books/progress'
 import {
   appendStudentCurriculumSession,
   getStudentDefaultBookUnitForReader,
   getStudentTeachingOpenPdfPageForBookUnit,
-  resolveStudentSectionAtMappedPage,
-  updateStudentCurriculumBookStart,
   updateStudentCurriculumAssignments,
 } from '@/lib/students/selectors'
 import {
@@ -56,24 +51,18 @@ import {
   BookStructureWizard,
   type BookStructureManifestSaveMeta,
 } from '@/components/books/book-structure-wizard'
-import { BookSetupHub } from '@/components/books/book-setup-hub'
-import { BookAdvancedTab } from '@/components/books/tabs/book-advanced-tab'
 import { BookMaterialsTab } from '@/components/books/tabs/book-materials-tab'
 import { BookAudioTab } from '@/components/books/tabs/book-audio-tab'
-import { BookOutlineTab } from '@/components/books/tabs/book-outline-tab'
-import { BookPlanTab } from '@/components/books/tabs/book-plan-tab'
-import { BookStoriesTab } from '@/components/books/tabs/book-stories-tab'
+import { LessonContextPanel } from '@/components/books/lesson-context-panel'
 import { UnitPdfPageCountLoader } from '@/components/books/unit-pdf-page-count-loader'
 import { makeUnitFileUrl } from '@/lib/books/book-file-url'
 import { findLessonInBook, findPartInLesson } from '@/lib/books/book-part-shelf'
 import {
   buildBooksPageHref,
-  parseBookSetupTab,
-  resolveBookSetupTab,
-  type BookSetupTab,
+  parseBookShelfTab,
+  type BookShelfTab,
 } from '@/lib/books/book-setup-copy'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -214,34 +203,6 @@ interface MaterialAnalysisResult {
   parsedAt: string
 }
 
-
-function estimatePageByIndex(min: number, max: number, idx: number, total: number): number {
-  if (max <= min) return min
-  if (total <= 1) return min
-  const clampedIdx = Math.max(0, Math.min(idx, total - 1))
-  const span = max - min
-  const ratio = clampedIdx / (total - 1)
-  return min + Math.round(span * ratio)
-}
-
-function resolveStartHintWithAlignment(
-  min: number,
-  max: number,
-  hint: number | null | undefined,
-  book: BookRecord | null | undefined,
-  unit: BookUnitRecord,
-  totalPdfPages: number | null,
-): number | null {
-  if (typeof hint !== 'number' || !Number.isFinite(hint)) return null
-  const rounded = Math.round(hint)
-  const raw = clampPdfPage(rounded, { min, max })
-  const { notCountedPdfPages, hiddenPdfPages } = getFileAlignment(book, unit.filePath)
-  if (!notCountedPdfPages.length && !hiddenPdfPages.length) return raw
-  const runtime = buildPageAlignmentRuntime(totalPdfPages, hiddenPdfPages, notCountedPdfPages)
-  const mapped = resolveEffectiveAnchorToPdfPage(rounded, runtime)
-  if (mapped == null) return raw
-  return clampPdfPage(mapped, { min, max })
-}
 
 function inferGradeHintFromBook(book: BookRecord | null): string | null {
   if (!book) return null
@@ -472,7 +433,6 @@ export function BooksPageClient() {
   const requestedBookId = searchParams.get('book')
   const requestedUnitId = searchParams.get('unit')
   const requestedTab = searchParams.get('tab')
-  const requestedStoryId = searchParams.get('story')
   const requestedLessonId = searchParams.get('lesson')
   const requestedPartId = searchParams.get('part')
   const isBrowsePreview = searchParams.get('preview') === '1'
@@ -500,7 +460,6 @@ export function BooksPageClient() {
     initialTocRange?: { from: number; to: number } | null
     skipAutoTocDetect?: boolean
   } | null>(null)
-  const [isSavingStudentStart, setIsSavingStudentStart] = useState(false)
   const [readerLessonId, setReaderLessonId] = useState<string | null>(null)
   const [readerPartId, setReaderPartId] = useState<string | null>(null)
   const [workshopOpen, setWorkshopOpen] = useState<BooksWorkshopOpenRequest | null>(null)
@@ -521,13 +480,6 @@ export function BooksPageClient() {
   const [bookText, setBookText] = useState('')
   const [unitText, setUnitText] = useState('')
   const [lessonText, setLessonText] = useState('')
-  const [partText, setPartText] = useState('')
-  const [editingLevel, setEditingLevel] = useState<Record<'book' | 'unit' | 'lesson' | 'part', boolean>>({
-    book: false,
-    unit: false,
-    lesson: false,
-    part: false,
-  })
   const [aiPanelOpen, setAiPanelOpen] = useState<Record<'book' | 'unit' | 'lesson' | 'part', boolean>>({
     book: false,
     unit: false,
@@ -757,6 +709,13 @@ export function BooksPageClient() {
     }
   }, [library, loading, requestedBookId, requestedUnitId])
 
+  /** Lesson / part desk URL drives which lesson the context panel loads. */
+  useEffect(() => {
+    if (!library || loading) return
+    setReaderLessonId(requestedLessonId?.trim() || null)
+    setReaderPartId(requestedLessonId?.trim() ? requestedPartId?.trim() || null : null)
+  }, [library, loading, requestedLessonId, requestedPartId])
+
   const selectedBook: BookRecord | null = useMemo(() => {
     if (!library || !selected) return null
     return library.books.find((book) => book.id === selected.bookId) ?? null
@@ -859,11 +818,6 @@ export function BooksPageClient() {
     const idx = Math.max(0, visiblePages.indexOf(pageNumber))
     return visiblePages[idx] ?? pageNumber
   }, [pageNumber, visiblePages])
-  const currentSpreadRightPage = useMemo(() => {
-    if (!visiblePages.length) return null
-    const idx = Math.max(0, visiblePages.indexOf(currentSpreadLeftPage))
-    return visiblePages[idx + 1] ?? null
-  }, [currentSpreadLeftPage, visiblePages])
   const selectedLesson = readerBreadcrumb.lesson
   const selectedPart = readerBreadcrumb.part
   const selectedPartRange = useMemo(() => {
@@ -876,10 +830,7 @@ export function BooksPageClient() {
     return pageRangeForIndex(parts, partIndex, lessonRange.start, lessonRange.end)
   }, [selectedLesson, selectedPart, selectedUnit])
 
-  const activeTab: BookSetupTab = useMemo(() => {
-    if (!selectedBook) return 'outline'
-    return resolveBookSetupTab(requestedTab, bookHasTocMapping(selectedBook))
-  }, [selectedBook, requestedTab])
+  const activeShelfTab = parseBookShelfTab(requestedTab)
 
   const frameworkLessonRows = useMemo(() => {
     if (!selectedBook) return []
@@ -969,40 +920,6 @@ export function BooksPageClient() {
     }
   }
 
-  function openUnit(bookId: string, unitId: string, initialPdfPage?: number) {
-    closeCurrentSession(pageNumber)
-    setReaderLessonId(null)
-    setReaderPartId(null)
-    const currentSelected = selectedRef.current
-    const currentBook = currentSelected ? library?.books.find((b) => b.id === currentSelected.bookId) : null
-    const currentUnit = currentSelected ? currentBook?.units.find((u) => u.id === currentSelected.unitId) : null
-    const book = library?.books.find((b) => b.id === bookId)
-    const unit = book?.units.find((u) => u.id === unitId)
-    const saved = getSavedUnitPage(bookId, unitId)
-    const studentId = selectedStudentId?.trim() ?? ''
-    const studentResume =
-      studentId.length > 0 && initialPdfPage == null
-        ? getStudentTeachingOpenPdfPageForBookUnit(studentId, bookId, unitId, library)
-        : null
-    const bounds = unit ? getUnitReaderBounds(unit, null, book ?? undefined) : { min: 1, max: Number.MAX_SAFE_INTEGER }
-    const target = initialPdfPage != null ? initialPdfPage : studentResume ?? saved
-    const bounded = clampPdfPageToVisible(target, unit ? getVisiblePdfPages(unit, null, book ?? undefined) : [], bounds)
-    const fileChanged =
-      currentUnit?.filePath != null && unit?.filePath != null
-        ? currentUnit.filePath !== unit.filePath
-        : true
-    setSelected({ bookId, unitId })
-    setPageNumber(bounded)
-    saveUnitPage(bookId, unitId, bounded)
-    if (fileChanged) setNumPages(null)
-    // Curriculum session clock only when teaching with a student — not Library Browse.
-    if (studentId.length > 0) {
-      setSessionStartedAt(new Date().toISOString())
-    } else {
-      setSessionStartedAt(null)
-    }
-  }
-
   function selectBook(bookId: string) {
     closeCurrentSession(pageNumber)
     setSelected({ bookId, unitId: null })
@@ -1010,54 +927,6 @@ export function BooksPageClient() {
     setReaderPartId(null)
     setNumPages(null)
     setSessionStartedAt(null)
-  }
-
-  function selectLessonForReading(bookId: string, unit: BookUnitRecord, lesson: BookLessonRecord) {
-    const book = library?.books.find((b) => b.id === bookId) ?? {
-      id: bookId,
-      title: '',
-      units: [],
-    }
-    const bounds = getUnitReaderBounds(unit, numPages, book)
-    const lessons = unit.lessons ?? []
-    const lessonIdx = Math.max(0, lessons.findIndex((l) => l.id === lesson.id))
-    const lessonRange = pageRangeForIndex(lessons, lessonIdx)
-    const page =
-      resolveOutlinePrintedStartPdfPage(lessonRange.start, book, unit, numPages) ??
-      resolveStartHintWithAlignment(bounds.min, bounds.max, lesson.startPageHint, book, unit, numPages) ??
-      lesson.pdfPageRange?.start ??
-      estimatePageByIndex(bounds.min, bounds.max, lessonIdx, lessons.length || 1)
-    openUnit(bookId, unit.id, page)
-    setReaderLessonId(lesson.id)
-    setReaderPartId(null)
-  }
-
-  function selectPartForReading(
-    bookId: string,
-    unit: BookUnitRecord,
-    lesson: BookLessonRecord,
-    part: BookLessonPartRecord,
-  ) {
-    const book = library?.books.find((b) => b.id === bookId) ?? {
-      id: bookId,
-      title: '',
-      units: [],
-    }
-    const lessons = unit.lessons ?? []
-    const lessonIdx = Math.max(0, lessons.findIndex((l) => l.id === lesson.id))
-    const lessonRange = pageRangeForIndex(lessons, lessonIdx)
-    const parts = lesson.parts ?? []
-    const partIdx = Math.max(0, parts.findIndex((p) => p.id === part.id))
-    const partRange = pageRangeForIndex(parts, partIdx, lessonRange.start, lessonRange.end)
-    const printedStart = partRange.start ?? lessonRange.start
-    const page =
-      resolveOutlinePrintedStartPdfPage(printedStart, book, unit, numPages) ??
-      part.pdfPageRange?.start ??
-      (typeof part.startPageHint === 'number' ? Math.round(part.startPageHint) : null) ??
-      1
-    openUnit(bookId, unit.id, page)
-    setReaderLessonId(lesson.id)
-    setReaderPartId(part.id)
   }
 
   function goToPage(nextPage: number) {
@@ -1071,67 +940,6 @@ export function BooksPageClient() {
     }
     setPageNumber(bounded)
     saveUnitPage(selected.bookId, selectedUnit.id, bounded)
-  }
-
-  async function saveCurrentPageAsStudentStart() {
-    const studentId = selectedStudentId?.trim() ?? ''
-    if (!studentId || !library || !selectedBook || !selectedUnit) return
-    if (numPages == null) {
-      toast.error('Still loading book pages… try again in a moment.')
-      return
-    }
-    setIsSavingStudentStart(true)
-    try {
-      const leftLabel = mapPdfPageToDisplayLabel(
-        currentSpreadLeftPage,
-        selectedBook,
-        selectedUnit,
-        numPages,
-        'mapped',
-      )
-      let mappedPage = Math.floor(Number(leftLabel))
-      if (!Number.isFinite(mappedPage) || mappedPage < 1 || leftLabel === '·') {
-        if (currentSpreadRightPage != null) {
-          const rightLabel = mapPdfPageToDisplayLabel(
-            currentSpreadRightPage,
-            selectedBook,
-            selectedUnit,
-            numPages,
-            'mapped',
-          )
-          mappedPage = Math.floor(Number(rightLabel))
-        }
-      }
-      if (!Number.isFinite(mappedPage) || mappedPage < 1) {
-        toast.error('This page is not in the lesson map. Try another page or pick from the Curriculum tab.')
-        return
-      }
-      const section = resolveStudentSectionAtMappedPage(
-        studentId,
-        library,
-        selectedBook.id,
-        selectedUnit.id,
-        mappedPage,
-        numPages,
-      )
-      if (!section) {
-        toast.error('No lesson matches this page. Try another page or pick from the Curriculum tab.')
-        return
-      }
-      const result = updateStudentCurriculumBookStart(
-        studentId,
-        { bookId: selectedBook.id, sectionId: section.id, mappedPage },
-        library,
-      )
-      if (!result.ok) {
-        toast.error(result.error)
-        return
-      }
-      toast.success('Starting place saved for this book.')
-      router.push(`/students/${encodeURIComponent(studentId)}?tab=curriculum`)
-    } finally {
-      setIsSavingStudentStart(false)
-    }
   }
 
   function goToNeighborPage(direction: -1 | 1, step = 1) {
@@ -1176,7 +984,7 @@ export function BooksPageClient() {
       null
     if (!focusUnit) {
       setSelected({ bookId: book.id, unitId: null })
-      syncBooksUrl({ book: book.id, unit: null, tab: 'outline' })
+      syncBooksUrl({ book: book.id, unit: null, tab: null })
       return
     }
     const bounds = getUnitReaderBounds(focusUnit, null, book)
@@ -1184,7 +992,7 @@ export function BooksPageClient() {
     setSelected({ bookId: book.id, unitId: focusUnit.id })
     setPageNumber(clampPdfPage(saved, bounds))
     setNumPages(null)
-    syncBooksUrl({ book: book.id, unit: focusUnit.id, tab: 'outline' })
+    syncBooksUrl({ book: book.id, unit: focusUnit.id, tab: null })
   }
 
   function clearBookAssignmentsAfterRemove(payload: BookLibraryPayload, removedBookId: string) {
@@ -1200,36 +1008,6 @@ export function BooksPageClient() {
         payload,
       )
     }
-  }
-
-  function handleBookRemoved(payload: BookLibraryPayload, removedBookId: string) {
-    setLibrary(payload)
-    clearBookAssignmentsAfterRemove(payload, removedBookId)
-
-    const nextBook = payload.books[0]
-    if (nextBook) {
-      selectBook(nextBook.id)
-      const tab = 'outline'
-      router.replace(
-        buildBooksPageHref({
-          book: nextBook.id,
-          unit: null,
-          tab,
-          student: selectedStudentId,
-        }),
-      )
-      return
-    }
-
-    setSelected(null)
-    router.replace(
-      buildBooksPageHref({
-        book: null,
-        unit: null,
-        tab: null,
-        student: selectedStudentId,
-      }),
-    )
   }
 
   /** From the open-book shelf: always return to the library after remove. */
@@ -1290,21 +1068,17 @@ export function BooksPageClient() {
   function syncBooksUrl(updates: {
     book?: string | null
     unit?: string | null
-    tab?: BookSetupTab | null
+    tab?: BookShelfTab | null
     preview?: boolean | null
     lesson?: string | null
     part?: string | null
   }) {
     const bookId = updates.book !== undefined ? updates.book : selectedRef.current?.bookId ?? null
     const unitId = updates.unit !== undefined ? updates.unit : selectedRef.current?.unitId ?? null
-    const book = bookId ? library?.books.find((b) => b.id === bookId) : null
-    const tab =
-      updates.tab !== undefined
-        ? updates.tab
-        : resolveBookSetupTab(requestedTab, book ? bookHasTocMapping(book) : false)
+    const tab = updates.tab !== undefined ? updates.tab : parseBookShelfTab(requestedTab)
     const preview =
       updates.preview !== undefined ? Boolean(updates.preview) : isBrowsePreview
-    // Opening the old prep desk (tab set) drops lesson/part desk deep links.
+    // Switching shelf tabs drops lesson/part desk deep links.
     const lesson =
       updates.lesson !== undefined
         ? updates.lesson
@@ -1342,22 +1116,6 @@ export function BooksPageClient() {
         book: bookId,
         unit: null,
         tab: null,
-        student: selectedStudentId,
-        preview: null,
-        lesson: null,
-        part: null,
-      }),
-    )
-  }
-
-  /** Quiet overflow to materials / plan / advanced (part prep is the main path now). */
-  function handleOpenAdvancedTools() {
-    if (!selectedBook) return
-    router.push(
-      buildBooksPageHref({
-        book: selectedBook.id,
-        unit: null,
-        tab: 'materials',
         student: selectedStudentId,
         preview: null,
         lesson: null,
@@ -1455,14 +1213,8 @@ export function BooksPageClient() {
     )
   }
 
-  function handleTabChange(tab: BookSetupTab) {
+  function handleShelfTabChange(tab: BookShelfTab) {
     syncBooksUrl({ tab })
-  }
-
-  function handleSelectUnitFromOutline(unitId: string) {
-    if (!selected?.bookId) return
-    openUnit(selected.bookId, unitId)
-    syncBooksUrl({ unit: unitId })
   }
 
   async function loadUnitContextForSelection(bookId: string, unitId: string, rev: number) {
@@ -1959,10 +1711,6 @@ export function BooksPageClient() {
       lessonContext ? `${lessonContext.comprehensionSkill} · ${lessonContext.strategy}` : '',
     )
   }, [lessonContext?.comprehensionSkill, lessonContext?.strategy, selectedLesson?.id])
-
-  useEffect(() => {
-    setPartText('')
-  }, [selectedPart?.id])
 
   useEffect(() => {
     const unitStart = selectedUnit?.startPageHint ?? selectedUnit?.pdfPageRange?.start ?? 1
@@ -2601,8 +2349,6 @@ export function BooksPageClient() {
 
   const books = library?.books ?? []
   const shelfView = !selectedBook
-  const wantsPrepDesk = parseBookSetupTab(requestedTab) != null
-  const lessonDeskView = Boolean(selectedBook) && !wantsPrepDesk
   const deskLesson =
     selectedBook && requestedUnitId?.trim() && requestedLessonId?.trim()
       ? findLessonInBook(selectedBook, requestedUnitId.trim(), requestedLessonId.trim())
@@ -2611,6 +2357,24 @@ export function BooksPageClient() {
     deskLesson && requestedPartId?.trim()
       ? findPartInLesson(deskLesson.lesson, requestedPartId.trim())
       : null
+  const lessonContextPanel = deskLesson ? (
+    <LessonContextPanel
+      unit={deskLesson.unit}
+      lesson={deskLesson.lesson}
+      unitText={unitText}
+      lessonText={lessonText}
+      unitContextLoading={unitContextLoading}
+      lessonContextLoading={lessonContextLoading}
+      aiRange={{ unit: aiRange.unit, lesson: aiRange.lesson }}
+      aiBusyLevel={aiBusyLevel}
+      contextError={contextError}
+      onSetUnitText={setUnitText}
+      onSetLessonText={setLessonText}
+      onSetAiRange={(level, range) => setAiRange((prev) => ({ ...prev, [level]: range }))}
+      onRunUnitAi={() => void runUnitAiFromPanel()}
+      onRunLessonAi={() => void runLessonAiFromPanel()}
+    />
+  ) : null
 
   let mainContent: ReactNode
   if (loading) {
@@ -2675,222 +2439,81 @@ export function BooksPageClient() {
             onAddBook={() => openAddBookSheet()}
           />
         </div>
-      ) : lessonDeskView && selectedBook && deskLesson && deskPart ? (
-        <BookPartPrepShell
-          book={selectedBook}
-          unit={deskLesson.unit}
-          lesson={deskLesson.lesson}
-          lessonIndex={deskLesson.lessonIndex}
-          part={deskPart.part}
-          partIndex={deskPart.partIndex}
-          pdfReady={pdfReady}
-          onBackToParts={handleBackToParts}
-          onBackToLessons={handleBackToLessons}
-          onBackToLibrary={handleBackToShelf}
-          onOpenWorkshop={handleOpenWorkshop}
-        />
-      ) : lessonDeskView && selectedBook && deskLesson ? (
-        <BookPartShelf
-          book={selectedBook}
-          unit={deskLesson.unit}
-          lesson={deskLesson.lesson}
-          lessonIndex={deskLesson.lessonIndex}
-          pdfReady={pdfReady}
-          onBackToLessons={handleBackToLessons}
-          onBackToLibrary={handleBackToShelf}
-          onOutlineBook={() => openStructureWizardForBook(selectedBook)}
-          onOpenPart={handleOpenPart}
-          onOpenWorkshop={handleOpenWorkshop}
-        />
-      ) : lessonDeskView && selectedBook && library ? (
+      ) : selectedBook && deskLesson && deskPart ? (
         <div className="space-y-6">
-          <BookLessonShelf
+          <BookPartPrepShell
             book={selectedBook}
-            library={library}
+            unit={deskLesson.unit}
+            lesson={deskLesson.lesson}
+            lessonIndex={deskLesson.lessonIndex}
+            part={deskPart.part}
+            partIndex={deskPart.partIndex}
             pdfReady={pdfReady}
+            onBackToParts={handleBackToParts}
+            onBackToLessons={handleBackToLessons}
             onBackToLibrary={handleBackToShelf}
-            onOutlineBook={() => openStructureWizardForBook(selectedBook)}
-            onOutlineVolume={(volumeId) => openStructureWizardForBook(selectedBook, volumeId)}
-            onCutIntoUnits={() => openCutUnitsForBook(selectedBook)}
-            onOpenAdvancedTools={handleOpenAdvancedTools}
-            onAddPdf={() => openAddBookSheet({ targetBookId: selectedBook.id })}
-            onOpenLesson={handleOpenLesson}
-            onBookSaved={(payload) => setLibrary(payload)}
-            onBookRemoved={handleBookRemovedFromLessonShelf}
             onOpenWorkshop={handleOpenWorkshop}
           />
+          {lessonContextPanel}
         </div>
-      ) : (
-      <Card>
-        <CardContent className="space-y-4 pt-5">
-          {library ? (
-            <>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="h-8 gap-1.5 text-muted-foreground"
-                  onClick={handleBackToShelf}
-                >
-                  <Library className="h-3.5 w-3.5" aria-hidden />
-                  Library
-                </Button>
-                <button
-                  type="button"
-                  onClick={handleBackToLessons}
-                  className="text-[12px] font-medium text-muted-foreground transition hover:text-foreground"
-                >
-                  Back to lessons
-                </button>
-                {isBrowsePreview ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--surface-3)] px-2.5 py-1 text-[12px] font-medium text-muted-foreground">
-                    <Eye className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden />
-                    Browsing · preview only
-                  </span>
-                ) : selectedStudentId?.trim() ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--accent)] px-2.5 py-1 text-[12px] font-medium text-[var(--brand-blue)]">
-                    Prep with student
-                  </span>
-                ) : null}
-              </div>
-              <BookSetupHub
-                book={selectedBook}
-                library={library}
-                activeTab={activeTab}
-                onTabChange={handleTabChange}
-                pdfReady={pdfReady}
-                materialsCount={downloadedMaterials.length}
-                onCoverUpdated={handleManifestSaved}
-                onIdentitySaved={handleManifestSaved}
-                onBookRemoved={handleBookRemoved}
-                onUnitsUploaded={() => loadLibrary({ preserveSelection: true })}
-                outlineTab={
-                  <BookOutlineTab
-                    book={selectedBook}
-                    selectedUnitId={selected?.unitId ?? null}
-                    readerLessonId={readerLessonId}
-                    readerPartId={readerPartId}
-                    numPages={numPages}
-                    pdfReady={pdfReady}
-                    previewPage={pageNumber}
-                    onPreviewPageChange={(page) => {
-                      if (!selectedUnit) {
-                        setPageNumber(Math.max(1, Math.floor(page)))
-                        return
-                      }
-                      const bounds = getUnitReaderBounds(selectedUnit, numPages, selectedBook ?? undefined)
-                      const nextVisible = getVisiblePdfPages(selectedUnit, numPages, selectedBook ?? undefined)
-                      const bounded = clampPdfPageToVisible(page, nextVisible, bounds)
-                      setPageNumber(bounded)
-                      saveUnitPage(selectedBook!.id, selectedUnit.id, bounded)
-                    }}
-                    onPdfNumPages={(pages) => {
-                      setNumPages(pages)
-                      if (!selectedUnit || !selectedBook) return
-                      const bounds = getUnitReaderBounds(selectedUnit, pages, selectedBook)
-                      const nextVisible = getVisiblePdfPages(selectedUnit, pages, selectedBook)
-                      if (selectedPart && selectedLesson) {
-                        const lessons = selectedUnit.lessons ?? []
-                        const lessonIdx = Math.max(0, lessons.findIndex((l) => l.id === selectedLesson.id))
-                        const lessonRange = pageRangeForIndex(lessons, lessonIdx)
-                        const parts = selectedLesson.parts ?? []
-                        const partIdx = Math.max(0, parts.findIndex((p) => p.id === selectedPart.id))
-                        const partRange = pageRangeForIndex(parts, partIdx, lessonRange.start, lessonRange.end)
-                        const aligned =
-                          resolveOutlinePrintedStartPdfPage(
-                            partRange.start ?? lessonRange.start,
-                            selectedBook,
-                            selectedUnit,
-                            pages,
-                          ) ?? pageNumber
-                        const bounded = clampPdfPageToVisible(aligned, nextVisible, bounds)
-                        if (bounded !== pageNumber) setPageNumber(bounded)
-                        return
-                      }
-                      if (selectedLesson) {
-                        const lessons = selectedUnit.lessons ?? []
-                        const lessonIdx = Math.max(0, lessons.findIndex((l) => l.id === selectedLesson.id))
-                        const lessonRange = pageRangeForIndex(lessons, lessonIdx)
-                        const aligned =
-                          resolveOutlinePrintedStartPdfPage(lessonRange.start, selectedBook, selectedUnit, pages) ??
-                          pageNumber
-                        const bounded = clampPdfPageToVisible(aligned, nextVisible, bounds)
-                        if (bounded !== pageNumber) setPageNumber(bounded)
-                        return
-                      }
-                      const bounded = clampPdfPageToVisible(pageNumber, nextVisible, bounds)
-                      if (bounded !== pageNumber) setPageNumber(bounded)
-                    }}
-                    onEditOutline={() => openStructureWizardForBook(selectedBook)}
-                    onSelectUnit={handleSelectUnitFromOutline}
-                    onSelectLesson={(unit, lesson) => selectLessonForReading(selectedBook.id, unit, lesson)}
-                    onSelectPart={(unit, lesson, part) => selectPartForReading(selectedBook.id, unit, lesson, part)}
-                  />
-                }
-                materialsTab={
-                  <BookMaterialsTab
-                    materialsLoading={materialsLoading}
-                    downloadedMaterials={downloadedMaterials}
-                    isPdfMaterial={isPdfMaterial}
-                    onOpenFindGuides={() => setAiPanelOpen((prev) => ({ ...prev, book: true }))}
-                    onOpenScanGuides={() => setMappingWorkspaceOpen(true)}
-                  />
-                }
-                audioTab={
-                  <BookAudioTab
-                    bookId={selectedBook.id}
-                    units={selectedBook.units.map((u) => ({
-                      id: u.id,
-                      title: u.title,
-                      filePath: u.filePath,
-                    }))}
-                  />
-                }
-                storiesTab={
-                  <BookStoriesTab
-                    book={selectedBook}
-                    libraryBooks={library?.books ?? []}
-                    selectedUnit={selectedUnit}
-                    numPages={numPages}
-                    currentPdfPage={pageNumber}
-                    pdfReady={pdfReady}
-                    focusStoryId={requestedStoryId}
-                    onPdfNumPages={(pages) => {
-                      setNumPages(pages)
-                    }}
-                  />
-                }
-                planTab={<BookPlanTab onOpenFocusGrid={() => setFrameworkWorkspaceOpen(true)} />}
-                advancedTab={
-                  <BookAdvancedTab
-                    selectedUnit={selectedUnit}
-                    selectedLesson={selectedLesson}
-                    selectedPart={selectedPart}
-                    unitText={unitText}
-                    lessonText={lessonText}
-                    partText={partText}
-                    unitContextLoading={unitContextLoading}
-                    lessonContextLoading={lessonContextLoading}
-                    editingLevel={editingLevel}
-                    aiPanelOpen={aiPanelOpen}
-                    aiRange={aiRange}
-                    aiBusyLevel={aiBusyLevel}
-                    contextError={contextError}
-                    selectedStudentId={selectedStudentId}
-                    isSavingStudentStart={isSavingStudentStart}
-                    onSaveStudentStart={() => void saveCurrentPageAsStudentStart()}
-                    onSetUnitText={setUnitText}
-                    onSetLessonText={setLessonText}
-                    onSetPartText={setPartText}
-                    onToggleEditing={(level) => setEditingLevel((prev) => ({ ...prev, [level]: !prev[level] }))}
-                    onToggleAiPanel={(level) => setAiPanelOpen((prev) => ({ ...prev, [level]: !prev[level] }))}
-                    onSetAiRange={setAiRange}
-                    onRunUnitAi={() => void runUnitAiFromPanel()}
-                    onRunLessonAi={() => void runLessonAiFromPanel()}
-                  />
-                }
-              />
+      ) : selectedBook && deskLesson ? (
+        <div className="space-y-6">
+          <BookPartShelf
+            book={selectedBook}
+            unit={deskLesson.unit}
+            lesson={deskLesson.lesson}
+            lessonIndex={deskLesson.lessonIndex}
+            pdfReady={pdfReady}
+            onBackToLessons={handleBackToLessons}
+            onBackToLibrary={handleBackToShelf}
+            onOutlineBook={() => openStructureWizardForBook(selectedBook)}
+            onOpenPart={handleOpenPart}
+            onOpenWorkshop={handleOpenWorkshop}
+          />
+          {lessonContextPanel}
+        </div>
+      ) : selectedBook && library ? (
+        <BookLessonShelf
+          book={selectedBook}
+          library={library}
+          pdfReady={pdfReady}
+          onBackToLibrary={handleBackToShelf}
+          onOutlineBook={() => openStructureWizardForBook(selectedBook)}
+          onOutlineVolume={(volumeId) => openStructureWizardForBook(selectedBook, volumeId)}
+          onCutIntoUnits={() => openCutUnitsForBook(selectedBook)}
+          activeTab={activeShelfTab}
+          onTabChange={handleShelfTabChange}
+          audioTab={
+            <BookAudioTab
+              bookId={selectedBook.id}
+              units={selectedBook.units.map((u) => ({
+                id: u.id,
+                title: u.title,
+                filePath: u.filePath,
+              }))}
+            />
+          }
+          materialsTab={
+            <BookMaterialsTab
+              materialsLoading={materialsLoading}
+              downloadedMaterials={downloadedMaterials}
+              isPdfMaterial={isPdfMaterial}
+              onOpenFindGuides={() => setAiPanelOpen((prev) => ({ ...prev, book: true }))}
+              onOpenScanGuides={() => setMappingWorkspaceOpen(true)}
+            />
+          }
+          onOpenFocusGrid={() => setFrameworkWorkspaceOpen(true)}
+          onCoverUpdated={(payload) => setLibrary(payload)}
+          onUnitsUploaded={() => loadLibrary({ preserveSelection: true })}
+          onAddPdf={() => openAddBookSheet({ targetBookId: selectedBook.id })}
+          onOpenLesson={handleOpenLesson}
+          onBookSaved={(payload) => setLibrary(payload)}
+          onBookRemoved={handleBookRemovedFromLessonShelf}
+          onOpenWorkshop={handleOpenWorkshop}
+        />
+      ) : null}
+      {selectedBook && library ? (
+        <>
                 <Dialog
                   open={aiPanelOpen.book}
                   onOpenChange={(open) => setAiPanelOpen((prev) => ({ ...prev, book: open }))}
@@ -4191,11 +3814,8 @@ export function BooksPageClient() {
                     </div>
                   </DialogContent>
                 </Dialog>
-            </>
-          ) : null}
-        </CardContent>
-      </Card>
-      )}
+        </>
+      ) : null}
     </div>
     )
   }
