@@ -2,9 +2,10 @@
 
 Last updated: 2026-06-03
 
-**Product source of truth:** `LESSON_BOARD_PRODUCT.md`
+**Product source of truth for pages:** `LESSON_BOARD_PRODUCT.md`  
+**Ownership / chrome / links:** `NOTEBOOK_PRODUCT.md` · `NOTEBOOK_PHASED_PLAN.md`
 
-**Related (finding boards / book identity):** `LESSON_BOARD_NAV_PRODUCT.md` · `LESSON_BOARD_NAV_PHASED_PLAN.md` — separate track; do not mix into these page/dock phases unless a phase explicitly depends on it.
+**Related (finding pages):** `LESSON_BOARD_NAV_PRODUCT.md` · `LESSON_BOARD_NAV_PHASED_PLAN.md` — footer TOC still valid; per-book picker superseded.
 
 **How to use this doc:** Implement **one phase at a time**. After each phase, **you test** in the app, fix issues, then start the next phase. Do not skip phases unless a prerequisite is already done and checked.
 

@@ -113,12 +113,12 @@ function buildGifSearchTiers(
   const q = rawWord.toLowerCase().trim().slice(0, 100)
   const opts = imageSearchQuery?.trim() ? { imageSearchQuery } : undefined
   const tier1Base = buildGifSearchQuery(rawWord, opts)
-  const tier1 = applyStyleToGifSearchString(tier1Base, styleKey, variant, 0)
+  const tier1 = applyStyleToGifSearchString(tier1Base, styleKey, variant, 0, q)
   const tier2Base = q.length > 0 ? q : 'nature'
-  const tier2 = applyStyleToGifSearchString(tier2Base, styleKey, variant, 1)
+  const tier2 = applyStyleToGifSearchString(tier2Base, styleKey, variant, 1, q)
   const tier3Base =
     variantHash(`${rawWord}\0gif-tier3\0${styleKey}`) % 2 === 0 ? `${tier2Base} loop` : `${tier2Base} nature`
-  const tier3 = applyStyleToGifSearchString(tier3Base, styleKey, variant, 2)
+  const tier3 = applyStyleToGifSearchString(tier3Base, styleKey, variant, 2, q)
   const tiers: string[] = [tier1]
   if (tier2 !== tier1) tiers.push(tier2)
   if (tier3 !== tier2 && tier3 !== tier1) tiers.push(tier3)
@@ -190,12 +190,10 @@ export async function searchBoardGifImages(
   }
 
   const sorted = [...merged.values()]
-    .filter((row) => row.score >= minScore || row.score > GIF_SCORE_HARD_REJECT)
+    .filter((row) => row.score >= minScore)
     .sort((a, b) => b.score - a.score)
 
-  const pool = sorted.length > 0 ? sorted : [...merged.values()].sort((a, b) => b.score - a.score)
-
-  const results = pool.slice(0, limit).map((row) => ({
+  const results = sorted.slice(0, limit).map((row) => ({
     id: giphyItemId(row.item, row.fullUrl),
     thumbUrl: row.thumbUrl,
     fullUrl: row.fullUrl,

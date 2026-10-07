@@ -36,6 +36,7 @@ import {
   subscribeStoryTextScan,
 } from '@/lib/books/story-text-scan-manager'
 import { useSearchablePdfJob } from '@/lib/books/use-searchable-pdf-job'
+import { useSearchablePdfStatus } from '@/lib/books/use-searchable-pdf-status'
 import type { BookRecord, BookUnitRecord } from '@/lib/books/types'
 
 const WORKSHOP_DIALOG_Z = 'z-[90]'
@@ -69,8 +70,14 @@ export function BooksWorkshopStoryTools({
   onStatusChange,
 }: BooksWorkshopStoryToolsProps) {
   const storyId = request.storyId?.trim() ?? ''
-  const { selectableRunning, selectableProgress, startSelectable, stopSelectable } =
-    useSearchablePdfJob(storyId)
+  const {
+    selectableRunning,
+    selectableProgress,
+    selectableNotice,
+    startSelectable,
+    stopSelectable,
+    dismissSelectableNotice,
+  } = useSearchablePdfJob(storyId)
   const outlineParsed = useMemo(() => parseOutlineReadingStoryId(storyId), [storyId])
   const manualParsed = useMemo(() => parseManualReadingStoryId(storyId), [storyId])
   const isManual = Boolean(manualParsed) || isManualReadingStoryId(storyId)
@@ -144,6 +151,17 @@ export function BooksWorkshopStoryTools({
   }, [story, book, unit, totalPdfPages, override])
 
   const pagesReady = Boolean(resolved && resolved.source !== 'none')
+  const { status: selectableStatus } = useSearchablePdfStatus({
+    bookId: story?.bookId ?? '',
+    unitId: story?.unitId ?? '',
+    storyId,
+    lessonId: story?.lessonId,
+    partId: story?.partId,
+    title: story?.title,
+    totalPdfPages,
+    enabled: Boolean(story && pagesReady),
+    refreshKey: selectableRunning ? 1 : 0,
+  })
   const pageRangeLabel = pagesReady
     ? `p${resolved!.startDisplayPage}–${resolved!.endDisplayPage}`
     : request.pageRangeLabel?.trim() || null
@@ -384,9 +402,28 @@ export function BooksWorkshopStoryTools({
             totalPdfPages,
           })
         }}
+        onRedoSelectable={() => {
+          if (!story) return
+          if (!pagesReady) {
+            toast.error('Set pages for this story first.')
+            return
+          }
+          startSelectable({
+            bookId: story.bookId,
+            unitId: story.unitId,
+            lessonId: story.lessonId,
+            partId: story.partId,
+            title: story.title,
+            totalPdfPages,
+            force: true,
+          })
+        }}
         onStopMakeSelectable={stopSelectable}
         selectableProgress={selectableProgress}
         selectableRunning={selectableRunning}
+        selectableNotice={selectableNotice}
+        onDismissSelectableNotice={dismissSelectableNotice}
+        selectableStatus={selectableStatus}
         dialogOpen={textOpen}
         onDialogOpenChange={onTextOpenChange}
         hideCollapsedRow

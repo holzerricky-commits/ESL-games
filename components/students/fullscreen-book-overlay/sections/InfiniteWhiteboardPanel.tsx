@@ -115,6 +115,7 @@ type LayerProps = Pick<
   | 'strokeLineDashStyle'
   | 'markerStraightStroke'
   | 'markerDecoratedEdge'
+  | 'penSmoothingLevel'
   | 'penAutoGroupConnected'
   | 'marqueeSelectRule'
   | 'shapeColor'
@@ -193,7 +194,9 @@ export interface InfiniteWhiteboardPanelProps extends LayerProps {
   canDeleteLessonBoardPage?: boolean
   onStartBoardLinkPlacement?: () => void
   onRemoveBoardLink?: () => void
+  onGoToBoardLink?: () => void
   activeBoardPageLinkPdfPage?: number | null
+  activeBoardPageLinkGoToLabel?: string | null
   boardLinkPlacementActive?: boolean
   /** Prep mode: keep link-to-book as a header icon. */
   boardLinkInHeader?: boolean
@@ -265,7 +268,9 @@ export function InfiniteWhiteboardPanel({
   canDeleteLessonBoardPage,
   onStartBoardLinkPlacement,
   onRemoveBoardLink,
+  onGoToBoardLink,
   activeBoardPageLinkPdfPage,
+  activeBoardPageLinkGoToLabel,
   boardLinkPlacementActive,
   boardLinkInHeader = false,
   onEnterSelectMode,
@@ -962,7 +967,9 @@ export function InfiniteWhiteboardPanel({
         canDeleteLessonBoardPage={whiteboardSessionActive ? canDeleteLessonBoardPage : false}
         onStartBoardLinkPlacement={whiteboardSessionActive ? onStartBoardLinkPlacement : undefined}
         onRemoveBoardLink={whiteboardSessionActive ? onRemoveBoardLink : undefined}
+        onGoToBoardLink={whiteboardSessionActive ? onGoToBoardLink : undefined}
         activeBoardPageLinkPdfPage={whiteboardSessionActive ? activeBoardPageLinkPdfPage : null}
+        activeBoardPageLinkGoToLabel={whiteboardSessionActive ? activeBoardPageLinkGoToLabel : null}
         boardLinkPlacementActive={whiteboardSessionActive ? boardLinkPlacementActive : false}
         boardLinkInHeader={boardLinkInHeader}
         imageSearchControl={
@@ -1088,6 +1095,7 @@ export function InfiniteWhiteboardPanel({
                 strokeLineDashStyle={layerProps.strokeLineDashStyle}
                 markerStraightStroke={layerProps.markerStraightStroke}
                 markerDecoratedEdge={layerProps.markerDecoratedEdge}
+                penSmoothingLevel={layerProps.penSmoothingLevel}
                 shapeColor={shapeColor}
                 shapeStrokeWidthScale={layerProps.shapeStrokeWidthScale}
                 shapeLineDashStyle={layerProps.shapeLineDashStyle}

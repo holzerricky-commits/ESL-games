@@ -201,12 +201,14 @@ export function applyStyleToStaticBaseQuery(
   base: string,
   styleKey: ImageStyleKey,
   variant: string,
-  addonAttempt: number
+  addonAttempt: number,
+  /** Teacher/typed subject — preferred over first token of curated phrase. */
+  subjectWord?: string,
 ): string {
   const profile = PROFILES[styleKey]
   const idx = pickTemplateIndex(variant, 'static', addonAttempt, profile.staticTemplates.length)
   const template = profile.staticTemplates[idx] ?? '{word}'
-  const word = extractPrimaryWord(base)
+  const word = resolveStyleSubjectWord(subjectWord, base)
   const templated = template.replace(/\{word\}/g, word || base.trim())
   const baseTail = shortenBaseForMerge(base, templated, 10)
   const merged = mergeQueryParts(templated, baseTail)
@@ -249,12 +251,14 @@ export function applyStyleToGifSearchString(
   search: string,
   styleKey: ImageStyleKey,
   variant: string,
-  tierIdx: number
+  tierIdx: number,
+  /** Teacher/typed subject — preferred over first token of curated phrase. */
+  subjectWord?: string,
 ): string {
   const profile = PROFILES[styleKey]
   const idx = pickTemplateIndex(variant, 'gif', tierIdx, profile.gifTemplates.length)
   const template = profile.gifTemplates[idx] ?? '{word}'
-  const word = extractPrimaryWord(search)
+  const word = resolveStyleSubjectWord(subjectWord, search)
   const templated = template.replace(/\{word\}/g, word || search.trim())
   const tail = shortenBaseForMerge(search, templated, 8)
   const merged = mergeQueryParts(templated, tail)
@@ -324,6 +328,16 @@ function tokenMatchesHaystack(haystack: string, token: string): boolean {
 
 function escapeReg(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function resolveStyleSubjectWord(subjectWord: string | undefined, fallbackQuery: string): string {
+  const fromSubject = subjectWord?.toLowerCase().trim() ?? ''
+  if (fromSubject) {
+    // Keep short multi-word subjects intact (e.g. "ice cream"); otherwise first token.
+    if (/\s/.test(fromSubject)) return extractPrimaryWord(fromSubject) || fromSubject
+    return fromSubject.replace(/[^a-z0-9]+/g, '') || fromSubject
+  }
+  return extractPrimaryWord(fallbackQuery)
 }
 
 function extractPrimaryWord(query: string): string {

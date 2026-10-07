@@ -10,7 +10,6 @@ import { FantasyHUD } from '@/components/students/fantasy-hud'
 import { FullscreenBookOverlay } from '@/components/students/fullscreen-book-overlay'
 import { PrepSessionCapsule } from '@/components/students/prep-session-capsule'
 import { SimpleBookLaunchShell, type SimpleBookLaunchCover, type BookLaunchShelfTone } from '@/components/students/simple-book-launch-shell'
-import { TodaysClassDesk } from '@/components/students/todays-class-desk'
 import { StudentMapTab } from '@/components/students/tabs/student-map-tab'
 import { flushAnnotationsForClassEnd } from '@/lib/books/class-annotation-durability'
 import type { ReadingCheckClassWrapSummary } from '@/lib/books/reading-check-live-marks'
@@ -31,7 +30,6 @@ import {
 import { buildClassroomHomeReview } from '@/lib/students/classroom-home-review'
 import { prepRevisitWordLabels } from '@/lib/students/class-prep-extras'
 import { listTodaysClassLessonParts, todaysClassPartKindLabel } from '@/lib/students/todays-class-desk'
-import { toggleTrimmedItem } from '@/lib/students/todays-class-briefing'
 import {
   clearMapBookOverlayOpenSession,
   readMapBookOverlaySession,
@@ -51,6 +49,7 @@ import {
   FULLSCREEN_CLASS_SCOPE,
 } from '@/components/students/fullscreen-book-overlay/constants'
 import {
+  getStudentDefaultBookUnitForReader,
   getStudentOpenTargetForBook,
   getStudentProfileView,
   getStudentSectionOptions,
@@ -58,9 +57,6 @@ import {
   getStudentWordReviewView,
   resolveBookOverlayClassSessionId,
   resolveClassTeachingBookUnit,
-  toStudentBookSectionRef,
-  updateStudentClassPrep,
-  updateStudentClassSelectedSection,
   STUDENT_LOCAL_DATA_CHANGED_EVENT,
 } from '@/lib/students/selectors'
 import { StudentRewardBurstProvider, useStudentRewardBurst } from '@/components/students/student-reward-burst-context'
@@ -109,8 +105,6 @@ function StudentFullscreenMapRouteClientContent({
   /** Bumps when class status changes on this route (e.g. soft auto-start). */
   const [profileTick, setProfileTick] = useState(0)
   const [prepExitBusy, setPrepExitBusy] = useState<'save' | 'leave' | null>(null)
-  const [prepNotesDraft, setPrepNotesDraft] = useState('')
-  const [previewWelcome, setPreviewWelcome] = useState(false)
   const [checksPrepOpen, setChecksPrepOpen] = useState(openChecksPrep)
   /** Mounts overlay off-screen on map enter so PDF + first spread render before the user opens the book. */
   const [bookWarmArmed, setBookWarmArmed] = useState(false)
@@ -140,8 +134,9 @@ function StudentFullscreenMapRouteClientContent({
   /** Above the book only while the board is not covering the center. */
   const classChromeElevated = mapBookChromeOpen && !lessonBoardOpen
 
-  const shelfDefaultBookId = launcherCovers[0]?.bookId ?? null
-  const shelfDefaultUnitId = launcherCovers[0]?.unitId ?? null
+  const shelfDefaultCover = launcherCovers.find((cover) => cover.isTodayPlan) ?? launcherCovers[0] ?? null
+  const shelfDefaultBookId = shelfDefaultCover?.bookId ?? null
+  const shelfDefaultUnitId = shelfDefaultCover?.unitId ?? null
   const urlPreferBookId = preferBookId?.trim() || null
   const urlPreferUnitId = preferUnitId?.trim() || null
   const chosenCover = chosenBookId
@@ -168,13 +163,6 @@ function StudentFullscreenMapRouteClientContent({
     setChosenBookId(preferBookId?.trim() || null)
     setChosenUnitId(preferUnitId?.trim() || null)
   }, [preferBookId, preferUnitId, studentId])
-
-  useEffect(() => {
-    if (!isHydrated || !recordsReady || !activeClassSessionId) return
-    const student = getStudentProfileView(studentId)
-    const session = student?.scheduledClasses?.find((s) => s.id === activeClassSessionId)
-    setPrepNotesDraft(session?.prepNotes ?? '')
-  }, [isHydrated, recordsReady, studentId, activeClassSessionId, profileTick])
 
   useEffect(() => {
     if (!isHydrated || activeClassSessionId) return
@@ -212,7 +200,8 @@ function StudentFullscreenMapRouteClientContent({
       : undefined
     const isPrep =
       Boolean(session) && (session?.status === 'planned' || session?.status === 'prepared')
-    const autoOpen = openBookOnEnter
+    const hasAssignedBook = (student.assignedBookIds?.length ?? 0) > 0
+    const autoOpen = openBookOnEnter || (isPrep && hasAssignedBook)
     const savedBookSession =
       !activeClassSessionId ? readMapBookOverlaySession(studentId) : null
     // Restore a prior open only on a bare map return — not when entering a class
@@ -258,6 +247,7 @@ function StudentFullscreenMapRouteClientContent({
     }
     if (
       bookOpenPresented ||
+      bookOpenAttempted ||
       readMapBookOverlayOpenSession(studentId) ||
       openBookOnEnter
     ) {
@@ -275,6 +265,7 @@ function StudentFullscreenMapRouteClientContent({
     activeClassSessionId,
     profileTick,
     bookOpenPresented,
+    bookOpenAttempted,
     openBookOnEnter,
   ])
 
@@ -330,8 +321,22 @@ function StudentFullscreenMapRouteClientContent({
     [bookOpenPresented, rewarmTeachingTarget, teachingBookId, teachingUnitId],
   )
 
+  const handleSwitchTeachingBook = useCallback(
+    (bookId: string, unitId: string) => {
+      if (!bookOpenPresented) {
+        handleOpenBook(bookId, unitId)
+        return
+      }
+      if (teachingBookId === bookId && teachingUnitId === unitId) return
+      setChosenBookId(bookId)
+      setChosenUnitId(unitId)
+      rewarmTeachingTarget(bookId, unitId)
+    },
+    [bookOpenPresented, handleOpenBook, rewarmTeachingTarget, teachingBookId, teachingUnitId],
+  )
+
   const handleOpenDefaultBook = useCallback(() => {
-    const first = launcherCovers[0]
+    const first = launcherCovers.find((cover) => cover.isTodayPlan) ?? launcherCovers[0]
     if (!first) return
     handleOpenBook(first.bookId, first.unitId)
   }, [handleOpenBook, launcherCovers])
@@ -355,23 +360,34 @@ function StudentFullscreenMapRouteClientContent({
   const handleBookOpenPaintTimeout = useCallback(() => {
     toast.error('The book is taking too long to load. Retrying…')
     if (bookOpenPresented) {
-      clearMapBookOverlayOpenSession(studentId)
-      setBookOpenAttempted(false)
-      setUserOpenPending(false)
+      // Already teaching — keep the overlay. In-place book swaps must not
+      // dump back to the yellow shelf.
+      return
     }
+    setBookOpenAttempted(false)
+    setUserOpenPending(false)
     setBookPagesReady(false)
     setBookOpenPresented(false)
     setBookWarmArmed(false)
     window.requestAnimationFrame(() => setBookWarmArmed(true))
-  }, [studentId, bookOpenPresented])
+  }, [bookOpenPresented])
 
   const handleBookClose = useCallback(() => {
     clearMapBookOverlayOpenSession(studentId)
+    const session = activeClassSessionId
+      ? getStudentProfileView(studentId)?.scheduledClasses?.find((s) => s.id === activeClassSessionId)
+      : undefined
+    const prep =
+      session != null && (session.status === 'planned' || session.status === 'prepared')
+    if (prep) {
+      router.push(`/students/${encodeURIComponent(studentId)}?tab=classes`)
+      return
+    }
     setBookOpenPresented(false)
     setBookOpenAttempted(false)
     setUserOpenPending(false)
     setLessonBoardOpen(false)
-  }, [studentId])
+  }, [activeClassSessionId, router, studentId])
 
   const handleClassEndedWrap = useCallback(
     (payload: { sessionId: string; summary: ReadingCheckClassWrapSummary }) => {
@@ -407,16 +423,7 @@ function StudentFullscreenMapRouteClientContent({
 
       if (keyLower === 'escape' && bookOpenPresented) {
         e.preventDefault()
-        clearMapBookOverlayOpenSession(studentId)
-        setBookOpenPresented(false)
-        setBookOpenAttempted(false)
-        setUserOpenPending(false)
-        return
-      }
-
-      if (keyLower === 'escape' && previewWelcome && !bookOpenPresented) {
-        e.preventDefault()
-        setPreviewWelcome(false)
+        handleBookClose()
         return
       }
 
@@ -439,7 +446,7 @@ function StudentFullscreenMapRouteClientContent({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [bookOpenPresented, handleOpenDefaultBook, previewWelcome, studentId, triggerReward])
+  }, [bookOpenPresented, handleBookClose, handleOpenDefaultBook, triggerReward])
 
   useEffect(() => {
     setIsHydrated(true)
@@ -497,8 +504,13 @@ function StudentFullscreenMapRouteClientContent({
           activeClassSessionId != null
             ? resolveClassTeachingBookUnit(studentId, activeClassSessionId, lib)
             : null
-        const todayBookId = planned?.bookId ?? preferBookId?.trim() ?? null
-        const todayUnitId = planned?.unitId ?? preferUnitId?.trim() ?? null
+        const upNext = planned ? null : getStudentDefaultBookUnitForReader(studentId, lib)
+        const todayBookId = planned?.bookId || preferBookId?.trim() || upNext?.bookId || null
+        const todayUnitId =
+          planned?.unitId ||
+          preferUnitId?.trim() ||
+          (todayBookId === upNext?.bookId ? upNext?.unitId : null) ||
+          null
 
         const covers = resolveLauncherBookCovers({
           library: lib,
@@ -613,13 +625,8 @@ function StudentFullscreenMapRouteClientContent({
     if (prepExitBusy) return
     setPrepExitBusy('save')
     try {
-      if (activeClassSessionId) {
-        const notesResult = updateStudentClassPrep(studentId, activeClassSessionId, { prepNotes: prepNotesDraft })
-        if (!notesResult.ok) throw new Error(notesResult.error)
-      }
       await flushAnnotationsForClassEnd()
       clearMapBookOverlayOpenSession(studentId)
-      setPreviewWelcome(false)
       toast.success('Saved')
       router.push(`/students/${encodeURIComponent(studentId)}?tab=classes`)
     } catch (err) {
@@ -635,47 +642,6 @@ function StudentFullscreenMapRouteClientContent({
     router.push(`/students/${encodeURIComponent(studentId)}?tab=classes`)
   }
 
-  function savePrepNotesDraft() {
-    if (!activeClassSessionId) return
-    const result = updateStudentClassPrep(studentId, activeClassSessionId, { prepNotes: prepNotesDraft })
-    if (!result.ok) toast.error(result.error)
-  }
-
-  function handleSetStartHere(partId: string) {
-    if (!activeClassSessionId) return
-    const library = getBooksLibraryCached()
-    const option = getStudentSectionOptions(studentId, library).find((row) => row.id === partId)
-    if (!option) return
-    const result = updateStudentClassSelectedSection(studentId, activeClassSessionId, toStudentBookSectionRef(option))
-    if (!result.ok) toast.error(result.error)
-  }
-
-  function handleToggleSkip(partId: string) {
-    if (!activeClassSessionId || !activeSession) return
-    const result = updateStudentClassPrep(studentId, activeClassSessionId, {
-      prepSkippedPartIds: toggleTrimmedItem(activeSession.prepSkippedPartIds ?? [], partId),
-    })
-    if (!result.ok) toast.error(result.error)
-  }
-
-  function handleToggleStar(word: string) {
-    if (!activeClassSessionId || !activeSession) return
-    const result = updateStudentClassPrep(studentId, activeClassSessionId, {
-      plannedVocabulary: toggleTrimmedItem(activeSession.plannedVocabulary ?? [], word),
-    })
-    if (!result.ok) toast.error(result.error)
-  }
-
-  const showTodaysClassDesk =
-    isPrepMode &&
-    Boolean(activeSession) &&
-    !mapBookChromeOpen &&
-    !showClassWrap &&
-    !challengeMapLayerEnabled &&
-    !previewWelcome
-  const showPreviewWelcome =
-    isPrepMode && previewWelcome && !mapBookChromeOpen && !showClassWrap && !challengeMapLayerEnabled
-  const continueCover = todayCover ?? launcherCovers[0] ?? null
   const teachingTarget =
     activeClassSessionId != null
       ? resolveClassTeachingBookUnit(studentId, activeClassSessionId, getBooksLibraryCached())
@@ -738,7 +704,9 @@ function StudentFullscreenMapRouteClientContent({
       className={cn(
         'fixed inset-0 z-0 overflow-hidden overscroll-none',
         FULLSCREEN_CLASS_SCOPE,
-        mapBookChromeOpen ? 'bg-[var(--book-reading-mat)]' : 'bg-background',
+        mapBookChromeOpen || (isPrepMode && !showClassWrap)
+          ? 'bg-[var(--book-reading-mat)]'
+          : 'bg-background',
       )}
     >
       <ClassAutoStartReconciler />
@@ -753,9 +721,9 @@ function StudentFullscreenMapRouteClientContent({
           onClassEnded={handleClassEndedWrap}
         />
       ) : null}
-      {isPrepMode && activeSession && !showClassWrap && mapBookChromeOpen ? (
+      {isPrepMode && activeSession && !showClassWrap ? (
         <PrepSessionCapsule
-          bookOpen
+          bookOpen={mapBookChromeOpen}
           checksPrepOpen={checksPrepOpen}
           onOpenChecksPrep={() => setChecksPrepOpen(true)}
           exitBusy={prepExitBusy}
@@ -768,53 +736,32 @@ function StudentFullscreenMapRouteClientContent({
           <div className="map-viewport-bottom-shadow" aria-hidden />
           <StudentMapTab key={student.id} student={student} fullscreen introMode={introMode} />
         </div>
-      ) : showTodaysClassDesk && activeSession ? (
-        <TodaysClassDesk
-          studentId={student.id}
-          studentName={student.name}
-          avatarUrl={student.avatarUrl}
-          scheduledFor={activeSession.scheduledFor}
-          durationMin={activeSession.durationMin}
-          bookTitle={continueCover?.bookTitle}
-          unitLabel={continueCover?.unitLabel}
-          lessonLabel={continueCover?.lessonLabel}
-          lastStopLabel={continueCover?.lastStopLabel}
-          parts={deskParts}
-          onSetStartHere={handleSetStartHere}
-          starredWords={activeSession.plannedVocabulary ?? []}
-          onToggleStar={handleToggleStar}
-          onToggleSkip={handleToggleSkip}
-          notes={prepNotesDraft}
-          onNotesChange={setPrepNotesDraft}
-          onNotesBlur={savePrepNotesDraft}
-          canContinue={Boolean(continueCover)}
-          continueBusy={userOpenPending && !bookOpenPresented}
-          onContinue={() => {
-            if (!continueCover) return
-            handleOpenBook(continueCover.bookId, continueCover.unitId)
-          }}
-          onPreview={() => setPreviewWelcome(true)}
-          onOpenChecksPrep={() => setChecksPrepOpen(true)}
-          onDone={() => void handleSaveAndExitPrep()}
-          doneBusy={prepExitBusy === 'save'}
-        />
+      ) : isPrepMode && !showClassWrap ? (
+        !mapBookChromeOpen && launcherCovers.length === 0 ? (
+          <div className="flex h-full min-h-0 w-full items-center justify-center px-6">
+            <p className="text-sm text-muted-foreground">
+              No book assigned. Assign one on the student page, then Prepare again.
+            </p>
+          </div>
+        ) : !mapBookChromeOpen ? (
+          <p className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+            Opening book…
+          </p>
+        ) : null
       ) : (
         <SimpleBookLaunchShell
           exitHref={mapExitHref}
           studentName={student.name}
           showFirstClassWelcome={student.showFirstClassWelcome}
-          shelfTone={showPreviewWelcome ? 'welcome' : shelfTone}
+          shelfTone={shelfTone}
           covers={launcherCovers}
           onOpenBook={(bookId, unitId) => {
-            if (showPreviewWelcome) setPreviewWelcome(false)
             handleOpenBook(bookId, unitId)
           }}
           openingBookId={userOpenPending ? chosenBookId ?? teachingBookId : teachingBookId}
           isBookOpeningPending={userOpenPending && !bookOpenPresented}
           hidden={mapBookChromeOpen && !showClassWrap}
           onWrapDone={handleWrapDone}
-          onExit={showPreviewWelcome ? () => setPreviewWelcome(false) : undefined}
-          exitLabel={showPreviewWelcome ? 'Back' : 'Exit'}
           todayLesson={todayLesson}
           lastTime={lastTime}
           streakCount={streakCount}
@@ -855,6 +802,7 @@ function StudentFullscreenMapRouteClientContent({
         onBookPaintInvalidated={handleBookPaintInvalidated}
         onBookOpenPaintTimeout={handleBookOpenPaintTimeout}
         onLessonBoardOpenChange={setLessonBoardOpen}
+        onSwitchTeachingBook={handleSwitchTeachingBook}
         onClose={handleBookClose}
       />
     </div>

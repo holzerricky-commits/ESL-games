@@ -1,0 +1,309 @@
+{
+  "storyId": "literature-anthology-g2::unit-1-040de00e::lesson-b214850c::part-aeae5255",
+  "bookId": "literature-anthology-g2",
+  "unitId": "unit-1-040de00e",
+  "status": "approved",
+  "stops": [
+    {
+      "id": "stop-3c1f0451",
+      "label": "Raccoons try to dig",
+      "displayPage": 168,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 170,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-1487edd7",
+          "kind": "mcq",
+          "prompt": "What did the young hands do to protect the turtle eggs from the raccoons?",
+          "choices": [
+            "They put sand over the eggs.",
+            "They placed wire mesh around the nest.",
+            "They chased the raccoons into the sea.",
+            "They built a wall around the nest."
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "They place wire mesh around the turtle nest to protect the buried eggs.",
+          "evidenceHighlight": "place wire mesh around the turtle nest"
+        }
+      ]
+    },
+    {
+      "id": "stop-43d8c127",
+      "label": "Car on the beach",
+      "displayPage": 169,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 171,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-7da98e1b",
+          "kind": "true_false",
+          "prompt": "Is it true or false that a car drove over the turtle eggs?",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "The car stops. Hands have put up a painted sign. NO DRIVING ON THE BEACH, the sign says. The car leaves. The turtle nest is safe and undisturbed.",
+          "evidenceHighlight": "The car stops."
+        }
+      ]
+    },
+    {
+      "id": "stop-ffcdc4e5",
+      "label": "Hatchlings dig up",
+      "displayPage": 170,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 172,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-d1b2a951",
+          "kind": "mcq",
+          "prompt": "How long did it take the hatchlings to dig their way to the surface of the sand?",
+          "choices": [
+            "One day",
+            "Two days",
+            "Three days",
+            "A week"
+          ],
+          "correctIndex": 2,
+          "correctTrue": null,
+          "evidenceSnippet": "Their upward journey takes three whole days.",
+          "evidenceHighlight": "three whole days"
+        }
+      ]
+    },
+    {
+      "id": "stop-b3c73eea",
+      "label": "Turtle crawls to wrong light",
+      "displayPage": 171,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 173,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-ae716ba7",
+          "kind": "mcq",
+          "prompt": "Turtle is crawling towards a light from across the street. What do you think will happen next?",
+          "choices": [
+            "She will reach the ocean safely.",
+            "She will get lost and not find the ocean.",
+            "Someone will help her turn around.",
+            "She will stop and rest on the beach."
+          ],
+          "correctIndex": 2,
+          "correctTrue": null,
+          "evidenceSnippet": "Tonight it is not. Turtle crawls toward the wrong light, shining from across the street.",
+          "evidenceHighlight": "Turtle crawls toward the wrong light"
+        }
+      ]
+    },
+    {
+      "id": "stop-2bf7c5f3",
+      "label": "Turtle's natural instinct",
+      "displayPage": 171,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 173,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-ecb2dd56",
+          "kind": "mcq",
+          "prompt": "What is the natural instinct that Turtle follows when she crawls across the beach at night?",
+          "choices": [
+            "Go to the sound.",
+            "Go to the light.",
+            "Go to the dark.",
+            "Go to the warmth."
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "Go to the light! That's all Turtle knows. At night the brightest light should be the horizon over the sea.",
+          "evidenceHighlight": "Go to the light! That's all Turtle knows."
+        }
+      ]
+    },
+    {
+      "id": "stop-9692acee",
+      "label": "Animals on the beach",
+      "displayPage": 172,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 174,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-74aa45e8",
+          "kind": "true_false",
+          "prompt": "Is it true or false that night herons, cats, and raccoons gather on the beach to help the hatchlings get to the ocean?",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "Animals gather: night herons, cats, and raccoons. They are hungry and are here to eat the hatchlings.",
+          "evidenceHighlight": "They are hungry and are here to eat the hatchlings."
+        }
+      ]
+    },
+    {
+      "id": "stop-c3a10342",
+      "label": "Plastic bag vs. jellyfish",
+      "displayPage": 175,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 177,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-b209a1d8",
+          "kind": "mcq",
+          "prompt": "What did the quick hands grab that looked like a jellyfish but was actually dangerous for Turtle?",
+          "choices": [
+            "A piece of seaweed",
+            "A plastic bag",
+            "A shiny rock",
+            "A small fish"
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "Splash! Quick hands dip down, grabbing the plastic bag. It looks like a jellyfish, but it is not.",
+          "evidenceHighlight": "grabbing the plastic bag. It looks like a jellyfish"
+        }
+      ]
+    },
+    {
+      "id": "stop-79b7d075",
+      "label": "Turtle's long journey",
+      "displayPage": 176,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 178,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-87beab0e",
+          "kind": "true_false",
+          "prompt": "Is it true or false that Turtle stopped swimming and rested after twenty years?",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "For twenty years this is her turtle life . . . until one day she feels restless. It is time for her to travel, far and fast.",
+          "evidenceHighlight": "until one day she feels restless. It is time for her to travel, far and fast."
+        }
+      ]
+    },
+    {
+      "id": "stop-645d06ac",
+      "label": "Sharks pursue Turtle",
+      "displayPage": 176,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 178,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-ed7f2e89",
+          "kind": "mcq",
+          "prompt": "Three sharks see Turtle. What do you think will happen next?",
+          "choices": [
+            "The sharks will swim away from Turtle.",
+            "Turtle will swim faster and escape the sharks.",
+            "Another animal will scare the sharks away.",
+            "Turtle will hide in the coral reef."
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "Three sharks see her. Turtle, Turtle, watch out!",
+          "evidenceHighlight": "Three sharks see her."
+        }
+      ]
+    },
+    {
+      "id": "stop-eda09881",
+      "label": "Escape from net",
+      "displayPage": 179,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 181,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-15b528f8",
+          "kind": "mcq",
+          "prompt": "How did Turtle get out of the shrimper's net?",
+          "choices": [
+            "She bit a hole in the net.",
+            "She was pulled out by other turtles.",
+            "She slipped through a special escape hatch.",
+            "The fishermen let her go."
+          ],
+          "correctIndex": 2,
+          "correctTrue": null,
+          "evidenceSnippet": "She is almost out of air—when she slips through an escape hatch. She is free! Months before, weathered hands had sewn that hatch onto the net, just so sea turtles could escape.",
+          "evidenceHighlight": "she slips through an escape hatch."
+        }
+      ]
+    },
+    {
+      "id": "stop-f0c094c8",
+      "label": "Turtle becomes a mother",
+      "displayPage": 180,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 182,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-c8eb0a6d",
+          "kind": "true_false",
+          "prompt": "Is it true or false that Turtle returned to the same beach where she was born to lay her own eggs?",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": true,
+          "evidenceSnippet": "It is the same beach where she hatched. But now things are different: now she is a mother turtle, about to lay her eggs.",
+          "evidenceHighlight": "It is the same beach where she hatched. But now things are different: now she is a mother turtle, about to lay her eggs."
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-09-15T12:59:27.222Z",
+  "approvedAt": "2026-09-15T12:59:27.212Z"
+}

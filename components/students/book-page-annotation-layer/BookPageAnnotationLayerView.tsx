@@ -62,6 +62,7 @@ export interface BookPageAnnotationLayerViewProps {
   pointerOverlayZ: number
   domZBoost: number
   pointerEventsOnOverlay: boolean
+  rootPointerEventsPassThrough: boolean
   overlayRef: RefObject<HTMLDivElement | null>
   overlayClass: string
   effectiveOverlayCursor: CSSProperties['cursor']
@@ -115,6 +116,7 @@ export function BookPageAnnotationLayerView({
   pointerOverlayZ,
   domZBoost,
   pointerEventsOnOverlay,
+  rootPointerEventsPassThrough,
   overlayRef,
   overlayClass,
   effectiveOverlayCursor,
@@ -136,7 +138,10 @@ export function BookPageAnnotationLayerView({
   const pageBox = (zIndex: number): CSSProperties => pageLayerBox(widthPx, heightPx, zIndex)
 
   return (
-    <div className="absolute inset-0">
+    <div
+      className={cn('absolute inset-0', rootPointerEventsPassThrough && 'pointer-events-none')}
+      data-book-page-annotation-pass-through={rootPointerEventsPassThrough ? 'true' : undefined}
+    >
       {renderSlices.map((slice) => {
         if (slice.kind === 'ink') {
           const idx = inkSliceIdx++

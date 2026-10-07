@@ -118,6 +118,17 @@ export function resolvePartStructureTag(
   return computeStructureTagFromTitleAndIndex(part, partIndexInLesson, profile)
 }
 
+/** Main / paired only — same resolution as the outline (title + lesson slot). */
+export function resolvePartStoryKind(
+  part: BookLessonPartRecord,
+  partIndexInLesson: number,
+  profile: TocExtractProfileId = 'journeys',
+): 'main_story' | 'paired_story' | undefined {
+  const tag = resolvePartStructureTag(part, partIndexInLesson, profile)
+  if (tag === 'main_story' || tag === 'paired_story') return tag
+  return undefined
+}
+
 export function inferStructureTagFromTitle(
   title: string,
   profile: TocExtractProfileId = 'journeys',

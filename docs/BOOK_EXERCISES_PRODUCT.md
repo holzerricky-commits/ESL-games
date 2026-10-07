@@ -46,7 +46,7 @@ AI only **drafts** the activity from a crop of the box. You always approve. Draf
 |---------|------|
 | **Open book** (Today’s class Continue, workshop, or live class) | Box a task on the page; list of tasks; pins; Draft from box; Check sheet. |
 
-Today’s class desk only shows ready/not later — boxing stays on the page.
+Boxing stays on the page (workshop or live class).
 
 Do **not** merge into reading checks or timed challenges.
 

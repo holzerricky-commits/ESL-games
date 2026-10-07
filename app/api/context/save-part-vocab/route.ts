@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getContextStore } from '@/lib/context/file-store'
-import type { ContextPageRange, PartContextRecord, PartContextVocabularyWord } from '@/lib/context/types'
+import type { ContextPageRange, PartContextRecord, PartContextVocabularyWord, VocabTapSpot } from '@/lib/context/types'
 import { clampPageRange, CONTEXT_VERSION, stableId } from '@/lib/context/utils'
 
 interface SavePartVocabBody {
@@ -11,6 +11,20 @@ interface SavePartVocabBody {
   partTitle?: string
   words?: unknown
   sourcePageRange?: unknown
+}
+
+function parseTapSpot(input: unknown): VocabTapSpot | null {
+  if (!input || typeof input !== 'object') return null
+  const o = input as Record<string, unknown>
+  const pdfPage = Math.floor(Number(o.pdfPage))
+  const x = Number(o.x)
+  const y = Number(o.y)
+  const w = Number(o.w)
+  const h = Number(o.h)
+  if (!Number.isFinite(pdfPage) || pdfPage < 1) return null
+  if (![x, y, w, h].every((v) => Number.isFinite(v) && v >= 0 && v <= 1)) return null
+  if (w < 0.001 || h < 0.001) return null
+  return { pdfPage, x, y, w, h }
 }
 
 function sanitizeWords(input: unknown): PartContextVocabularyWord[] {
@@ -31,11 +45,13 @@ function sanitizeWords(input: unknown): PartContextVocabularyWord[] {
           .map((e) => e.slice(0, 2000))
       : []
     if (!word) continue
+    const tapSpot = parseTapSpot(o.tapSpot)
     out.push({
       id: id || word.toLowerCase().replace(/\s+/g, '-').slice(0, 80),
       word,
       definition,
       examples,
+      ...(tapSpot ? { tapSpot } : {}),
     })
     if (out.length >= 40) break
   }

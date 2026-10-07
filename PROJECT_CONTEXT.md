@@ -123,10 +123,16 @@ Exact “success metrics” can evolve; update this section when you lock them.
 | `docs/BOOK_EXERCISES_PHASED_PLAN.md` | Book exercises implementation phases (test after each). |
 | `docs/CLASSROOM_HOME_PRODUCT.md` | Welcome / wrap screen as classroom home — locked product. |
 | `docs/CLASSROOM_HOME_PHASED_PLAN.md` | Classroom home implementation phases (test after each). |
-| `docs/CLASS_PREP_DESK_PRODUCT.md` | Today’s class — Prepare lands on the teacher desk, not yellow Welcome. |
+| `docs/NOTEBOOK_PRODUCT.md` | Notebook (student working paper, Pin / Tab / Overlay, book links) — locked product. |
+| `docs/NOTEBOOK_PHASED_PLAN.md` | Notebook implementation phases (test after each). |
+| `docs/CLASS_SOURCE_STRIP_PRODUCT.md` | In-class source chips (book swap). Notebook jobs → `NOTEBOOK_PRODUCT.md`. |
+| `docs/CLASS_SOURCE_STRIP_PHASED_PLAN.md` | Class source strip implementation phases (test after each). |
+| `docs/CLASS_PREP_DESK_PRODUCT.md` | Prepare opens the book (clock off). No teacher-sheet lobby. |
 | `docs/CLASS_PREP_DESK_PHASED_PLAN.md` | Today’s class implementation phases (test after each). |
 | `docs/BOOKS_LIBRARY_PRODUCT.md` | Books library + lesson desk (locked). |
 | `docs/BOOKS_WORKSHOP_PRODUCT.md` | Workshop place bar + mark section (locked). |
+| `docs/LESSON_VAULT_PRODUCT.md` | Lesson vault (save words while reading into per-student, per-lesson cards) — locked product. |
+| `docs/LESSON_VAULT_PHASED_PLAN.md` | Lesson vault implementation phases (test after each). |
 | `PARKING_LOT.md` | Deferred polish and ideas (optional). |
 | `.cursor/rules/milestone-first.mdc` | Agent behavior: milestone-first, anti-drift, parking-lot handoff. |
 
@@ -134,6 +140,11 @@ Exact “success metrics” can evolve; update this section when you lock them.
 
 ## Changelog
 
+- **2026-10-07** — Lesson vault track: `docs/LESSON_VAULT_PRODUCT.md` + `LESSON_VAULT_PHASED_PLAN.md`; save words while reading into one vault per student + lesson (part as label).
+
+- **2026-09-18** — Notebook Phase 3: primary book links live on the student notebook page (`bookId` + page + spot); old per-unit markers migrate (`docs/NOTEBOOK_PHASED_PLAN.md`).
+- **2026-09-18** — Notebook Phase 2: student-scoped store + copy-merge of old book/unit boards (`docs/NOTEBOOK_PHASED_PLAN.md`).
+- **2026-09-18** — Notebook product: one student working paper; Pin / Tab / Overlay / Park; optional book links (`docs/NOTEBOOK_PRODUCT.md` + `NOTEBOOK_PHASED_PLAN.md`). Supersedes per-book lesson-board ownership.
 - **2026-08-20** — Books workshop chrome: place bar on the open book; outline optional; Checks wizard retired as workshop UI (`docs/BOOKS_WORKSHOP_*.md`).
 - **2026-08-19** — Classroom home track: `docs/CLASSROOM_HOME_PRODUCT.md` + `CLASSROOM_HOME_PHASED_PLAN.md`; existing welcome/wrap screen becomes Prep → Class → Review (keep warm yellow world).
 - **2026-08-17** — Book exercises track: `docs/BOOK_EXERCISES_PRODUCT.md` + `BOOK_EXERCISES_PHASED_PLAN.md`; Compact Key word-bank tasks (box → later Check).

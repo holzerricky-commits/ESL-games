@@ -393,6 +393,10 @@ export interface BookSpreadFrameProps {
    * Does not cover the desk outside the shell. Overlays stay above the dim.
    */
   dimBook?: boolean
+  /**
+   * Hide the book body while keeping it mounted (notebook Focus). Overlays stay visible.
+   */
+  hideBook?: boolean
 }
 
 /**
@@ -409,6 +413,7 @@ export function BookSpreadFrame({
   children,
   overlayChildren,
   dimBook = false,
+  hideBook = false,
 }: BookSpreadFrameProps) {
   const hardcoverGutterOnly = bookSpreadHardcoverGutterOnlyForFrameTuning
   const metrics = computeBookSpreadFrameMetrics(contentWidthPx, contentHeightPx)
@@ -457,7 +462,11 @@ export function BookSpreadFrame({
         overflow: 'visible',
       }}
     >
-      <div className="relative isolate" style={bookShellStyle}>
+      <div
+        className={cn('relative isolate', hideBook && 'pointer-events-none opacity-0')}
+        style={bookShellStyle}
+        aria-hidden={hideBook || undefined}
+      >
         <CoverBoardAmbientDeskShadowShell
           shellRadiusPx={shellRadiusPx}
           shellWidthPx={bookBodyWidthPx}

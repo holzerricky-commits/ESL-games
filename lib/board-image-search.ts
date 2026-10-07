@@ -132,7 +132,7 @@ export async function searchBoardStaticImages(
 
   try {
     for (let qv = 0; qv < maxPxVariants; qv += 1) {
-      const searchQuery = applyStyleToStaticBaseQuery(baseStatic, styleKey, variant, qv)
+      const searchQuery = applyStyleToStaticBaseQuery(baseStatic, styleKey, variant, qv, q)
       const hits = await fetchPixabayHits(key, searchQuery, {
         imageType: pxImageType,
         perPage,

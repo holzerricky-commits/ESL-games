@@ -1,0 +1,111 @@
+{
+  "storyId": "readingwriting-workshop-g2::unit-2-b7f10b10::lesson-4ea83621::part-cb570962",
+  "bookId": "readingwriting-workshop-g2",
+  "unitId": "unit-2-b7f10b10",
+  "status": "approved",
+  "stops": [
+    {
+      "id": "stop-26ae382c",
+      "label": "Pete appears",
+      "displayPage": 134,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 136,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-566de2b9",
+          "kind": "true_false",
+          "prompt": "Pete calls loudly to his family to let them know it is safe. True or False?",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": true,
+          "evidenceSnippet": "He peeks his head out of his burrow underground. He looks around. Then Pete calls loudly to his family, \"Yip!\" He lets them know it is safe to come out.",
+          "evidenceHighlight": "He lets them know it is safe to come out."
+        }
+      ]
+    },
+    {
+      "id": "stop-078b437f",
+      "label": "Pete's job",
+      "displayPage": 136,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 138,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-0d72f226",
+          "kind": "true_false",
+          "prompt": "Pete is the guard, so he is always looking for danger. True or False?",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": true,
+          "evidenceSnippet": "Pete is the guard and he is restless. He cannot rest because he is always looking around for danger.",
+          "evidenceHighlight": "Pete is the guard and he is restless. He cannot rest because he is always looking around for danger."
+        }
+      ]
+    },
+    {
+      "id": "stop-fec3a91b",
+      "label": "Danger appears",
+      "displayPage": 136,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 138,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-4aad4e89",
+          "kind": "mcq",
+          "prompt": "What animal does Pete see that makes him bark a warning?",
+          "choices": [
+            "A. A large bird",
+            "B. A small mouse",
+            "C. A large badger",
+            "D. Another prairie dog"
+          ],
+          "correctIndex": 2,
+          "correctTrue": null,
+          "evidenceSnippet": "Oh no! Pete spies a large badger! When he sees it, he gives a loud bark, \"Yap! Yap!\" His family recognizes the warning.",
+          "evidenceHighlight": "Pete spies a large badger!"
+        }
+      ]
+    },
+    {
+      "id": "stop-d7377b99",
+      "label": "New guard",
+      "displayPage": 138,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 140,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-d80f98c5",
+          "kind": "true_false",
+          "prompt": "At the end of the day, Pete is still the guard. True or False?",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "Finally, the sun begins to set and a different prairie dog peeks its head out. I name him Gary. Pete must be off duty.",
+          "evidenceHighlight": "Pete must be off duty."
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-08-31T17:35:00.672Z",
+  "approvedAt": "2026-08-31T17:35:00.672Z"
+}

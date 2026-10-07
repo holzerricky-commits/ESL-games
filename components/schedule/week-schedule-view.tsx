@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
+import { ensureStudentRecordsHydrated } from '@/lib/local-data/student-records-client'
+import { hydrateWeeklyScheduleFromDisk } from '@/lib/local-data/weekly-schedule-disk-client'
 import {
   clearScheduledClassesInDateRange,
   getClassSessionsForDateRange,
@@ -39,12 +41,21 @@ import { useScheduleKeyboardShortcuts } from '@/lib/schedule/use-schedule-keyboa
 import type { TodaysClassSessionRow } from '@/lib/students/selectors'
 import type { TeacherWeeklyScheduleConfig } from '@/lib/types'
 
+/** Matches the server default from `sanitizeWeeklyScheduleConfig(null)`. */
+const SCHEDULE_CONFIG_BEFORE_HYDRATION: TeacherWeeklyScheduleConfig = {
+  workingDays: [1, 2, 3, 4, 5],
+  startMinute: 9 * 60,
+  endMinute: 17 * 60,
+  slotMinutes: 30,
+}
+
 interface WeekScheduleViewProps {
   highlightStudentId?: string | null
 }
 
 export function WeekScheduleView({ highlightStudentId = null }: WeekScheduleViewProps) {
   const [version, setVersion] = useState(0)
+  const [scheduleReady, setScheduleReady] = useState(false)
   const [viewMode, setViewMode] = useState<ScheduleViewMode>('week')
   const [weekAnchor, setWeekAnchor] = useState(() => getWeekStart(new Date()))
   const [monthAnchor, setMonthAnchor] = useState(() => getMonthStart(new Date()))
@@ -65,32 +76,40 @@ export function WeekScheduleView({ highlightStudentId = null }: WeekScheduleView
 
   const shortcutsEnabled = !createOpen && !detailOpen && !hoursOpen && !recurringDialogOpen
 
-  const config = useMemo(() => getTeacherWeeklyScheduleConfig(), [version])
-  const students = useMemo(() => getStudentsListView(), [version])
+  const config = useMemo(
+    () => (scheduleReady ? getTeacherWeeklyScheduleConfig() : SCHEDULE_CONFIG_BEFORE_HYDRATION),
+    [version, scheduleReady],
+  )
+  const students = useMemo(
+    () => (scheduleReady ? getStudentsListView() : []),
+    [version, scheduleReady],
+  )
   const weekDays = useMemo(() => getWeekDays(weekAnchor), [weekAnchor])
   const weekEnd = weekDays[6] ?? weekAnchor
   const monthGridDays = useMemo(() => getMonthGridDays(monthAnchor), [monthAnchor])
   const monthGridEnd = monthGridDays[monthGridDays.length - 1] ?? monthAnchor
 
   const highlightStudent = useMemo(() => {
-    if (!highlightStudentId) return null
+    if (!scheduleReady || !highlightStudentId) return null
     return (
       students.find((student) => student.id === highlightStudentId) ??
       getStudentProfileView(highlightStudentId)
     )
-  }, [highlightStudentId, students, version])
+  }, [scheduleReady, highlightStudentId, students, version])
 
   const weekSessions = useMemo(() => {
+    if (!scheduleReady) return []
     return getClassSessionsForDateRange(weekDays[0] ?? weekAnchor, weekEnd)
-  }, [weekDays, weekAnchor, weekEnd, version])
+  }, [scheduleReady, weekDays, weekAnchor, weekEnd, version])
 
   const monthSessions = useMemo(() => {
+    if (!scheduleReady) return []
     const rangeStart = monthGridDays[0] ?? monthAnchor
     const rangeEnd = monthGridEnd
     return getClassSessionsForDateRange(rangeStart, rangeEnd, {
       daysAhead: daysAheadToCover(rangeEnd),
     })
-  }, [monthGridDays, monthAnchor, monthGridEnd, version])
+  }, [scheduleReady, monthGridDays, monthAnchor, monthGridEnd, version])
 
   const sessions = viewMode === 'week' ? weekSessions : monthSessions
   const periodLabel =
@@ -101,10 +120,17 @@ export function WeekScheduleView({ highlightStudentId = null }: WeekScheduleView
   }
 
   useEffect(() => {
+    let cancelled = false
+    void Promise.all([ensureStudentRecordsHydrated(), hydrateWeeklyScheduleFromDisk()]).then(() => {
+      if (cancelled) return
+      setScheduleReady(true)
+      setVersion((v) => v + 1)
+    })
     const bump = () => refresh()
     window.addEventListener(STUDENT_LOCAL_DATA_CHANGED_EVENT, bump)
     window.addEventListener('focus', bump)
     return () => {
+      cancelled = true
       window.removeEventListener(STUDENT_LOCAL_DATA_CHANGED_EVENT, bump)
       window.removeEventListener('focus', bump)
     }
@@ -283,42 +309,50 @@ export function WeekScheduleView({ highlightStudentId = null }: WeekScheduleView
         highlightStudentName={highlightStudent?.name ?? null}
       />
 
-      {sessions.length === 0 && !highlightStudentId ? (
-        <p className="text-[13px] text-muted-foreground">
-          {viewMode === 'week'
-            ? 'No classes this week. Tap an empty time to add one.'
-            : 'No classes this month. Open a week to add times.'}
+      {!scheduleReady ? (
+        <p className="text-[13px] text-muted-foreground" aria-live="polite">
+          Loading schedule…
         </p>
-      ) : null}
+      ) : (
+        <>
+          {sessions.length === 0 && !highlightStudentId ? (
+            <p className="text-[13px] text-muted-foreground">
+              {viewMode === 'week'
+                ? 'No classes this week. Tap an empty time to add one.'
+                : 'No classes this month. Open a week to add times.'}
+            </p>
+          ) : null}
 
-      <div
-        key={viewMode}
-        className="animate-in fade-in duration-200 motion-reduce:animate-none"
-      >
-        {viewMode === 'week' ? (
-          <ScheduleTimeGrid
-            weekDays={weekDays}
-            config={config}
-            sessions={sessions}
-            focusedDay={focusedDay}
-            onClearFocusedDay={() => setFocusedDay(null)}
-            onEmptyClick={handleEmptyClick}
-            onEventClick={handleEventClick}
-            onPendingRecurringChange={handlePendingRecurringChange}
-            onAnnounce={announce}
-            highlightStudentId={highlightStudentId}
-          />
-        ) : (
-          <ScheduleMonthGrid
-            monthAnchor={monthAnchor}
-            sessions={sessions}
-            onDayZoom={handleMonthDayZoom}
-            onEventClick={handleEventClick}
-            highlightStudentId={highlightStudentId}
-            workingDays={config.workingDays}
-          />
-        )}
-      </div>
+          <div
+            key={viewMode}
+            className="animate-in fade-in duration-200 motion-reduce:animate-none"
+          >
+            {viewMode === 'week' ? (
+              <ScheduleTimeGrid
+                weekDays={weekDays}
+                config={config}
+                sessions={sessions}
+                focusedDay={focusedDay}
+                onClearFocusedDay={() => setFocusedDay(null)}
+                onEmptyClick={handleEmptyClick}
+                onEventClick={handleEventClick}
+                onPendingRecurringChange={handlePendingRecurringChange}
+                onAnnounce={announce}
+                highlightStudentId={highlightStudentId}
+              />
+            ) : (
+              <ScheduleMonthGrid
+                monthAnchor={monthAnchor}
+                sessions={sessions}
+                onDayZoom={handleMonthDayZoom}
+                onEventClick={handleEventClick}
+                highlightStudentId={highlightStudentId}
+                workingDays={config.workingDays}
+              />
+            )}
+          </div>
+        </>
+      )}
 
       <TeachingHoursSheet
         open={hoursOpen}

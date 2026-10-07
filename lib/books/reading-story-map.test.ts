@@ -3,6 +3,7 @@ import type { BookRecord, BookUnitRecord } from '@/lib/books/types'
 import {
   discoverOutlineStories,
   findReadingStoryAtPdfPage,
+  listReadingStoriesAtPdfPage,
   getReadingStoryPageStatus,
   isPdfPageInReadingStory,
   lessonIdFromReadingStoryId,
@@ -249,6 +250,115 @@ describe('reading-story-map', () => {
     })
     expect(hit?.story.id).toBe(storyId)
     expect(hit?.range.startDisplayPage).toBe(434)
+  })
+
+  it('prefers an outline story over a manual story on the same pages', () => {
+    const filePath = 'book-library/journeys-g3-book-1/journeys-g3-book-1.pdf'
+    const unit2: BookUnitRecord = {
+      id: 'unit-2',
+      title: 'Express Yourself',
+      filePath,
+      lessons: [],
+    }
+    const unit3: BookUnitRecord = {
+      id: 'unit-3',
+      title: 'Learning Lessons',
+      filePath,
+      lessons: [],
+    }
+    const book: BookRecord = {
+      id: 'journeys-g3-book-1',
+      title: 'Journeys Grade 3 — Student book',
+      units: [unit2, unit3],
+    }
+    const manualId = 'manual::journeys-g3-book-1::unit-2::smu1b58ns'
+    const outlineId = readingStoryPartKey(book.id, unit3.id, 'lesson-12', 'part-science')
+    const manual = {
+      id: manualId,
+      bookId: book.id,
+      unitId: unit2.id,
+      lessonId: null,
+      partId: null,
+      title: 'New Lesson',
+      kind: 'manual' as const,
+    }
+    const outline = {
+      id: outlineId,
+      bookId: book.id,
+      unitId: unit3.id,
+      lessonId: 'lesson-12',
+      partId: 'part-science',
+      title: 'The Science Fair',
+      kind: 'main_story' as const,
+    }
+    const overrides = {
+      [manualId]: {
+        storyId: manualId,
+        startPage: 398,
+        endPage: 417,
+        rangeConfirmed: true,
+        updatedAt: '2026-09-14T00:00:00.000Z',
+      },
+      [outlineId]: {
+        storyId: outlineId,
+        startPage: 398,
+        endPage: 416,
+        rangeConfirmed: true,
+        updatedAt: '2026-09-14T00:00:00.000Z',
+      },
+    }
+    const args = {
+      book,
+      unit: unit2,
+      pdfPage: 406,
+      totalPdfPages: 500,
+      stories: [manual, outline],
+      overridesByStoryId: overrides,
+    }
+    expect(findReadingStoryAtPdfPage(args)?.story.id).toBe(outlineId)
+    expect(listReadingStoriesAtPdfPage(args).map((hit) => hit.story.id)).toEqual([
+      outlineId,
+      manualId,
+    ])
+  })
+
+  it('still matches a manual story when no outline part covers the page', () => {
+    const filePath = 'book.pdf'
+    const unit: BookUnitRecord = {
+      id: 'unit-2',
+      title: 'Express Yourself',
+      filePath,
+      lessons: [],
+    }
+    const book: BookRecord = { id: 'book', title: 'Book', units: [unit] }
+    const manualId = 'manual::book::unit-2::only'
+    const hit = findReadingStoryAtPdfPage({
+      book,
+      unit,
+      pdfPage: 12,
+      totalPdfPages: 40,
+      stories: [
+        {
+          id: manualId,
+          bookId: book.id,
+          unitId: unit.id,
+          lessonId: null,
+          partId: null,
+          title: 'Extra story',
+          kind: 'manual',
+        },
+      ],
+      overridesByStoryId: {
+        [manualId]: {
+          storyId: manualId,
+          startPage: 10,
+          endPage: 14,
+          rangeConfirmed: true,
+          updatedAt: '2026-09-14T00:00:00.000Z',
+        },
+      },
+    })
+    expect(hit?.story.id).toBe(manualId)
   })
 
   it('mergeStoriesForBook adds manual stories from overrides', () => {

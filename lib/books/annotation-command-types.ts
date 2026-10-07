@@ -214,6 +214,10 @@ export interface TextAnnotationCommand {
   fontId?: AnnotationTextFontId
   /** Regular or Bold; omitted on legacy annotations (treated as Regular). */
   fontWeight?: AnnotationTextFontWeight
+  /** Italic emphasis; omitted / false on legacy annotations. */
+  italic?: boolean
+  /** Underline decoration; omitted / false on legacy annotations. */
+  underline?: boolean
   color: string
   maxWidthNorm?: number
   visualStyle?: TextAnnotationVisualStyle

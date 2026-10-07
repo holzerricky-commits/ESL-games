@@ -41,6 +41,7 @@ describe('student-annotation-tool-prefs', () => {
       penSwatchId: 'fx-rainbow',
       penThicknessStep: 5,
       penLineDashStyle: 'dashed',
+      penSmoothingLevel: 8,
     })
     patchStudentAnnotationToolPrefs('stu-b', { penSwatchId: 'fx-galaxy' })
 
@@ -48,6 +49,7 @@ describe('student-annotation-tool-prefs', () => {
       penSwatchId: 'fx-rainbow',
       penThicknessStep: 5,
       penLineDashStyle: 'dashed',
+      penSmoothingLevel: 8,
     })
     expect(readStudentAnnotationToolPrefs('stu-b').penSwatchId).toBe('fx-galaxy')
 
@@ -56,6 +58,7 @@ describe('student-annotation-tool-prefs', () => {
     expect(penA.penColorSource).toBe('swatch')
     expect(penA.penThicknessStep).toBe(5)
     expect(penA.penLineDashStyle).toBe('dashed')
+    expect(penA.penSmoothingLevel).toBe(8)
   })
 
   it('stores custom pen and marker colors', () => {
@@ -272,6 +275,7 @@ describe('student-annotation-tool-prefs', () => {
       penCustomHex: '#6366f1',
       penThicknessStep: 4,
       penLineDashStyle: 'solid',
+      penSmoothingLevel: 5,
       markerColor: '#ffeb3b',
       markerColorSource: 'swatch',
       markerCustomHex: '#ffeb3b',
@@ -305,6 +309,22 @@ describe('student-annotation-tool-prefs', () => {
     expect(patch.annotationMode).toBe('pen')
     expect(patch.eyedropperVariant).toBe('smart')
     expect(patch.penAutoGroupConnected).toBe(false)
+  })
+
+  it('penSmoothingLevel defaults to 5 when omitted', () => {
+    mockLocalStorage()
+    expect(resolvePenToolPrefsFromStorage('stu-a').penSmoothingLevel).toBe(5)
+    expect(resolveAnnotationToolPrefsFromStorage('stu-a').penSmoothingLevel).toBe(5)
+  })
+
+  it('persists penSmoothingLevel and rejects out-of-range values', () => {
+    mockLocalStorage()
+    patchStudentAnnotationToolPrefs('stu-a', { penSmoothingLevel: 3 })
+    expect(resolvePenToolPrefsFromStorage('stu-a').penSmoothingLevel).toBe(3)
+    patchStudentAnnotationToolPrefs('stu-a', { penSmoothingLevel: 11 })
+    expect(resolvePenToolPrefsFromStorage('stu-a').penSmoothingLevel).toBe(3)
+    patchStudentAnnotationToolPrefs('stu-a', { penSmoothingLevel: -1 })
+    expect(resolvePenToolPrefsFromStorage('stu-a').penSmoothingLevel).toBe(3)
   })
 
   it('penAutoGroupConnected defaults to true when omitted', () => {

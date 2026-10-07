@@ -27,11 +27,8 @@ import {
   type WhiteboardSessionStore,
 } from '@/lib/books/whiteboard-session-store'
 import { invalidateWhiteboardSessionRootCache } from '@/lib/books/whiteboard-session-storage'
-import {
-  BOOK_ANNOTATIONS_HYDRATED_EVENT,
-  ensureBookAnnotationsHydrated,
-  isBookAnnotationsDiskActive,
-} from '@/lib/local-data/book-annotations-disk-client'
+import { useBookAnnotationsStorageReady } from '@/lib/local-data/use-book-annotations-storage-ready'
+import type { StudentNotebookMergeSource } from '@/lib/books/student-notebook-merge'
 
 export type UseWhiteboardInkSessionArgs = {
   enabled: boolean
@@ -41,6 +38,7 @@ export type UseWhiteboardInkSessionArgs = {
   storagePageKey: string | null
   /** Local + legacy class keys tried on reload so older session boards can migrate in. */
   storagePageKeyCandidates?: readonly string[]
+  mergeSources?: readonly StudentNotebookMergeSource[]
   whiteboardSessionStoreRef: MutableRefObject<WhiteboardSessionStore | null>
   selectionMoveClampRef?: MutableRefObject<SelectionMoveClampContext | null>
   onOverlayCaps?: (caps: { canUndo: boolean; canRedo: boolean }) => void
@@ -53,6 +51,7 @@ export function useWhiteboardInkSession({
   unitId,
   storagePageKey,
   storagePageKeyCandidates,
+  mergeSources,
   whiteboardSessionStoreRef,
   selectionMoveClampRef,
   onOverlayCaps,
@@ -61,10 +60,9 @@ export function useWhiteboardInkSession({
   const whiteboardSessionDocRef = useRef<WhiteboardSessionDocument | null>(null)
   const [whiteboardInkRevision, setWhiteboardInkRevision] = useState(0)
   const sessionKeyRef = useRef<string | null>(null)
-  const [annotationsStorageReady, setAnnotationsStorageReady] = useState(() =>
-    typeof window === 'undefined' ? false : isBookAnnotationsDiskActive(),
-  )
-  const [annotationsStorageEpoch, setAnnotationsStorageEpoch] = useState(0)
+  const { annotationsStorageReady, annotationsStorageEpoch } = useBookAnnotationsStorageReady()
+  const mergeSourcesRef = useRef(mergeSources)
+  mergeSourcesRef.current = mergeSources
 
   const flushWhiteboardSessionToLegacy = useCallback(() => {
     const doc = whiteboardSessionDocRef.current
@@ -99,35 +97,6 @@ export function useWhiteboardInkSession({
   }, [enabled, flushWhiteboardSessionToLegacy])
 
   useEffect(() => {
-    let cancelled = false
-
-    const markReady = () => {
-      if (cancelled) return
-      invalidateWhiteboardSessionRootCache()
-      setAnnotationsStorageReady(true)
-      setAnnotationsStorageEpoch((n) => n + 1)
-    }
-
-    if (isBookAnnotationsDiskActive()) {
-      setAnnotationsStorageReady(true)
-    } else {
-      void ensureBookAnnotationsHydrated().then((ok) => {
-        if (cancelled || ok) return
-        // Hydrate failed — allow browser fallback without waiting forever.
-        invalidateWhiteboardSessionRootCache()
-        setAnnotationsStorageReady(true)
-        setAnnotationsStorageEpoch((n) => n + 1)
-      })
-    }
-
-    window.addEventListener(BOOK_ANNOTATIONS_HYDRATED_EVENT, markReady)
-    return () => {
-      cancelled = true
-      window.removeEventListener(BOOK_ANNOTATIONS_HYDRATED_EVENT, markReady)
-    }
-  }, [])
-
-  useEffect(() => {
     if (!enabled || !annotationsStorageReady || !bookId || !unitId) {
       setWhiteboardSessionDoc(null)
       setWhiteboardInkRevision(0)
@@ -146,6 +115,7 @@ export function useWhiteboardInkSession({
     }
 
     sessionKeyRef.current = trimmedKey
+    invalidateWhiteboardSessionRootCache()
     const sessionKey = { studentId, bookId, unitId, storagePageKey: trimmedKey }
     const candidates =
       storagePageKeyCandidates?.length
@@ -154,6 +124,7 @@ export function useWhiteboardInkSession({
     const store = createWhiteboardSessionStore(sessionKey, {
       autosaveMs: INK_SESSION_AUTOSAVE_MS,
       storageKeyCandidates: candidates,
+      mergeSources: mergeSourcesRef.current,
       getSelectionMoveClamp: () => selectionMoveClampRef?.current ?? null,
     })
     whiteboardSessionStoreRef.current = store
@@ -343,6 +314,22 @@ export function useWhiteboardInkSession({
     [whiteboardSessionStoreRef],
   )
 
+  const setLessonBoardPagePrimaryLink = useCallback(
+    (pageId: string, link: import('@/lib/books/lesson-board-types').LessonBoardPagePrimaryLink | null) =>
+      whiteboardSessionStoreRef.current?.setLessonBoardPagePrimaryLink(pageId, link) ?? false,
+    [whiteboardSessionStoreRef],
+  )
+
+  const applyLessonBoardPagePrimaryLinks = useCallback(
+    (
+      linksByPageId: ReadonlyMap<
+        string,
+        import('@/lib/books/lesson-board-types').LessonBoardPagePrimaryLink
+      >,
+    ) => whiteboardSessionStoreRef.current?.applyLessonBoardPagePrimaryLinks(linksByPageId) ?? false,
+    [whiteboardSessionStoreRef],
+  )
+
   return {
     whiteboardSessionDoc,
     whiteboardInkRevision,
@@ -359,5 +346,7 @@ export function useWhiteboardInkSession({
     setLessonBoardPageTitle,
     deleteLessonBoardPage,
     setLessonBoardPageBookPageHint,
+    setLessonBoardPagePrimaryLink,
+    applyLessonBoardPagePrimaryLinks,
   }
 }

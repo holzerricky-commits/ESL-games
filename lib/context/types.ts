@@ -59,12 +59,23 @@ export interface LessonContextRecord {
   updatedAt: string
 }
 
+/** Normalized 0–1 tap target on a specific PDF page. */
+export interface VocabTapSpot {
+  pdfPage: number
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
 /** Same fields as `InteractiveVocabWord` in `lib/books/interactive-vocab.ts` (reader word list). */
 export interface PartContextVocabularyWord {
   id: string
   word: string
   definition: string
   examples: string[]
+  /** Where the word appears on the page — normalized 0–1 coords for responsive positioning. */
+  tapSpot?: VocabTapSpot | null
 }
 
 export interface PartContextRecord {

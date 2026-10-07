@@ -124,9 +124,6 @@ export interface ReaderPageSlotProps {
   confirmSlotPixelsReady?: boolean
   /** Open-book bulge clip — spine on the left (right page) or right (left page). */
   pageBulgeSide?: 'left' | 'right'
-  /** When true, enable PDF.js text layer if this page has selectable text. */
-  bookTextSelectActive?: boolean
-  pageHasSelectableText?: boolean
   /** Focus zoom / effective screen scale for sharper prefetch lookup. */
   screenScale?: number
   children: ReactNode
@@ -134,7 +131,7 @@ export interface ReaderPageSlotProps {
 
 /**
  * Progressive display: prefetch cache while loading, then live react-pdf (Phase 3 primary).
- * Text selection keeps cache visible under transparent text spans until live PDF composited.
+ * Searchable-page text selection uses spread-level overlay geometry — no DOM text layer here.
  */
 export function ReaderPageSlot({
   unitId,
@@ -150,8 +147,6 @@ export function ReaderPageSlot({
   onSlotPixelsReady,
   confirmSlotPixelsReady = true,
   pageBulgeSide,
-  bookTextSelectActive = false,
-  pageHasSelectableText = false,
   screenScale = 1,
   children,
 }: ReaderPageSlotProps) {
@@ -212,6 +207,10 @@ export function ReaderPageSlot({
     placeholder: placeholderSource,
   })
 
+  const { pdfHiddenBehindCache, showSharpCacheLayer } = resolveReaderPageLayerVisibility({
+    showSharpCache,
+  })
+
   const reportSlotPixelsReady = () => {
     if (!confirmSlotPixelsReadyRef.current) return
     if (slotPixelsReportedRef.current) return
@@ -241,17 +240,6 @@ export function ReaderPageSlot({
       reportSlotPixelsReady()
     })
   }
-
-  const {
-    pdfTextLayerActive,
-    pdfTextOverCache,
-    pdfHiddenBehindCache,
-    showSharpCacheLayer,
-  } = resolveReaderPageLayerVisibility({
-    bookTextSelectActive,
-    pageHasSelectableText,
-    showSharpCache,
-  })
 
   const pageArtClipStyle: CSSProperties | undefined = pageBulgeSide
     ? { clipPath: readerPageBulgeClipPath(pageBulgeSide, pageCanvasHeightPx) }
@@ -346,9 +334,6 @@ export function ReaderPageSlot({
         <div
           className={cn(
             'relative z-[3]',
-            pdfTextLayerActive && 'book-pdf-text-select',
-            pdfTextOverCache && 'book-pdf-text-select-over-cache',
-            bookReaderLivePdfPrimaryEnabled && 'book-pdf-live-primary',
             pdfHiddenBehindCache && 'pointer-events-none invisible',
           )}
           style={{
@@ -391,7 +376,7 @@ export function ReaderPageSlot({
                 pdf={pdf}
                 pageNumber={pageNumber}
                 width={pdfRenderWidthPx}
-                renderTextLayer={pdfTextLayerActive}
+                renderTextLayer={false}
                 renderAnnotationLayer={false}
                 onLoadSuccess={handlePdfLoadSuccess}
               />

@@ -110,4 +110,27 @@ describe('book-part-shelf', () => {
     expect(isVocabPartShelfTag('main_story')).toBe(false)
     expect(isVocabPartShelfTag('comprehension')).toBe(false)
   })
+
+  it('tags Journeys bare selection titles by lesson slot', () => {
+    const unit = book.units[0]!
+    const lesson = {
+      id: 'l13',
+      title: 'Lesson 13',
+      startPageHint: 426,
+      parts: [
+        { id: 'p0', title: 'Vocabulary in Context', startPageHint: 426 },
+        { id: 'p1', title: 'Comprehension: Compare and Contrast', startPageHint: 429 },
+        { id: 'p2', title: 'Yonder Mountain', startPageHint: 430 },
+        { id: 'p3', title: 'Your Turn.', startPageHint: 447 },
+        { id: 'p4', title: 'The Trail of Tears', startPageHint: 448 },
+      ],
+    }
+    const cards = buildBookPartShelfCards(unit, lesson, 0)
+    expect(cards[2]!.structureTag).toBe('main_story')
+    expect(cards[2]!.typeLabel).toBe('Main story')
+    expect(cards[4]!.structureTag).toBe('paired_story')
+    expect(cards[4]!.typeLabel).toBe('Paired story')
+    expect(isStoryPartShelfTag(cards[2]!.structureTag)).toBe(true)
+    expect(isStoryPartShelfTag(cards[0]!.structureTag)).toBe(false)
+  })
 })

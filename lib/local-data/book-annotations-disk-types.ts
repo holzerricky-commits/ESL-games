@@ -88,18 +88,68 @@ export function mergeRichestInkSessionMaps(
   return { map: changed ? out : primary, changed }
 }
 
-/** Merge browser safety-net ink into a disk payload when browser has newer board/spread ink. */
+/** Command-list length for preferring browser vs disk page marks after a refresh race. */
+export function scoreAnnotationPageRichness(commands: unknown): number {
+  return Array.isArray(commands) ? commands.length : 0
+}
+
+/**
+ * Prefer the richer page array per student/book/unit/pageKey so a hydrate that
+ * already has whiteboard/spread data cannot drop page marks still only in the browser.
+ */
+export function mergeRichestAnnotationRoots(
+  primary: BookAnnotationsDiskRoot,
+  secondary: BookAnnotationsDiskRoot,
+): { root: BookAnnotationsDiskRoot; changed: boolean } {
+  let changed = false
+  let out: BookAnnotationsDiskRoot | null = null
+
+  const ensureOut = (): BookAnnotationsDiskRoot => {
+    if (!out) out = { ...primary }
+    return out
+  }
+
+  for (const [studentId, books] of Object.entries(secondary)) {
+    if (!books || typeof books !== 'object' || Array.isArray(books)) continue
+    for (const [bookId, units] of Object.entries(books)) {
+      if (!units || typeof units !== 'object' || Array.isArray(units)) continue
+      for (const [unitId, pages] of Object.entries(units)) {
+        if (!pages || typeof pages !== 'object' || Array.isArray(pages)) continue
+        for (const [pageKey, commands] of Object.entries(pages)) {
+          const primaryCommands = primary[studentId]?.[bookId]?.[unitId]?.[pageKey]
+          const secondaryScore = scoreAnnotationPageRichness(commands)
+          const primaryScore = scoreAnnotationPageRichness(primaryCommands)
+          if (primaryScore >= secondaryScore) continue
+          const root = ensureOut()
+          const student = { ...(root[studentId] ?? {}) }
+          const book = { ...(student[bookId] ?? {}) }
+          const unit = { ...(book[unitId] ?? {}) }
+          unit[pageKey] = commands as unknown[]
+          book[unitId] = unit
+          student[bookId] = book
+          root[studentId] = student
+          changed = true
+        }
+      }
+    }
+  }
+
+  return { root: out ?? primary, changed }
+}
+
+/** Merge browser safety-net ink into a disk payload when browser has newer board/spread/page ink. */
 export function mergeBrowserInkSafetyNetIntoPayload(
   disk: BookAnnotationsDiskPayload,
   browser: BookAnnotationsDiskPayload,
 ): { payload: BookAnnotationsDiskPayload; changed: boolean } {
+  const annotations = mergeRichestAnnotationRoots(disk.annotations, browser.annotations)
   const whiteboard = mergeRichestInkSessionMaps(disk.whiteboardSessions, browser.whiteboardSessions)
   const spread = mergeRichestInkSessionMaps(disk.spreadSessions, browser.spreadSessions)
-  const changed = whiteboard.changed || spread.changed
+  const changed = annotations.changed || whiteboard.changed || spread.changed
   if (!changed) return { payload: disk, changed: false }
   return {
     payload: {
-      ...disk,
+      annotations: annotations.root,
       whiteboardSessions: whiteboard.map,
       spreadSessions: spread.map,
     },

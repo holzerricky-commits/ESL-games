@@ -12,7 +12,10 @@ import {
   type LessonFrameRecord,
 } from '@/lib/books/lesson-frame'
 import { parseStopsFromAi } from '@/lib/books/parse-reading-check-ai-stops'
-import { READING_STORY_ILLUSTRATION_ONLY_PLACEHOLDER } from '@/lib/books/reading-story-page-markers'
+import {
+  READING_STORY_ILLUSTRATION_ONLY_PLACEHOLDER,
+  normalizeStoryTextPageMarkers,
+} from '@/lib/books/reading-story-page-markers'
 import {
   formatStopChecksForPrompt,
   parseReadingStoryStopChecks,
@@ -186,6 +189,7 @@ export async function draftReadingCheckPackWithGemini(params: {
   unitId: string
   storyTitle?: string
   storyText: string
+  startPdfPage?: number | null
   startDisplayPage?: number | null
   endDisplayPage?: number | null
   book?: BookRecord | null
@@ -199,7 +203,16 @@ export async function draftReadingCheckPackWithGemini(params: {
   | { ok: true; pack: ReadingCheckPack; usedLessonFrame: boolean; stopCheckCount: number }
   | { ok: false; error: string }
 > {
-  const raw = params.storyText.trim()
+  const raw = normalizeStoryTextPageMarkers(
+    params.storyText.trim(),
+    typeof params.startPdfPage === 'number' && params.startPdfPage >= 1
+      ? {
+          startPdfPage: params.startPdfPage,
+          startDisplayPage: params.startDisplayPage ?? null,
+          endDisplayPage: params.endDisplayPage ?? null,
+        }
+      : null,
+  )
   if (!raw) {
     return {
       ok: false,

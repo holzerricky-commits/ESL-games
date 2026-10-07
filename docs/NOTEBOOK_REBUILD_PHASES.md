@@ -1,6 +1,6 @@
 # Notebook Rebuild Phases (Intent-Driven)
 
-> **Superseded (2026-06-24):** The lesson notebook / class log side panel was removed in Phase A. Saved words live in the translate dock; the live teaching surface is the **lesson board**. Kept for historical context only.
+> **Superseded (2026-06-24):** The lesson notebook / class log side panel was removed in Phase A. Saved words live in the translate dock. The live teaching surface is **Notebook** (`NOTEBOOK_PRODUCT.md`). Kept for historical context only.
 
 Last updated: 2026-05-27
 

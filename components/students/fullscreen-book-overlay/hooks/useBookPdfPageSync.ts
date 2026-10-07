@@ -1,6 +1,5 @@
 import { useCallback, useEffect } from 'react'
 import { clampPdfPageToVisible, getUnitReaderBounds, getVisiblePdfPages } from '@/lib/books/page-range'
-import { saveUnitPage } from '@/lib/books/progress'
 import type { BookReaderDocumentReadyMeta } from '@/components/students/fullscreen-book-overlay/types'
 import type { BookLibraryPayload } from '@/lib/books/types'
 
@@ -49,7 +48,6 @@ export function useBookPdfPageSync({
       if (bounded !== pageNumber) {
         setPageNumber(bounded)
       }
-      saveUnitPage(selectedBookId, selectedUnitId, bounded)
     },
     [
       pageNumber,
@@ -70,7 +68,6 @@ export function useBookPdfPageSync({
     bounded = clampSpreadAnchorPage(bounded, visiblePages)
     if (bounded === pageNumber) return
     setPageNumber(bounded)
-    saveUnitPage(selectedBookId, selectedUnitId, bounded)
   }, [
     numPages,
     pageNumber,

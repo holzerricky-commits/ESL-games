@@ -2,8 +2,8 @@
 
 Last updated: 2026-07-30
 
-**Product source of truth:** `LESSON_BOARD_NAV_PRODUCT.md`  
-**Base board product:** `LESSON_BOARD_PRODUCT.md` / `LESSON_BOARD_PHASED_PLAN.md`
+**Product source of truth:** `LESSON_BOARD_NAV_PRODUCT.md` (footer / page list only)  
+**Notebook ownership:** `NOTEBOOK_PRODUCT.md` / `NOTEBOOK_PHASED_PLAN.md` — do **not** add new per-book notebooks here.
 
 **How to use:** Implement **one phase at a time**. After each phase, **you test** in the app, fix issues, then start the next. Do not skip phases unless a prerequisite is already done and checked.
 

@@ -20,8 +20,25 @@ export type WhiteboardSessionDocument = InkSessionDocument &
     key: WhiteboardSessionKey
   }
 
+const WHITEBOARD_DOC_ID_MARKER = '::wb::'
+
 export function whiteboardSessionDocId(key: WhiteboardSessionKey): string {
-  return `${key.studentId}::${key.bookId}::${key.unitId}::wb::${key.storagePageKey}`
+  return `${key.studentId}::${key.bookId}::${key.unitId}${WHITEBOARD_DOC_ID_MARKER}${key.storagePageKey}`
+}
+
+export function parseWhiteboardSessionDocId(docId: string): WhiteboardSessionKey | null {
+  const markerAt = docId.indexOf(WHITEBOARD_DOC_ID_MARKER)
+  if (markerAt <= 0) return null
+  const head = docId.slice(0, markerAt)
+  const storagePageKey = docId.slice(markerAt + WHITEBOARD_DOC_ID_MARKER.length).trim()
+  if (!storagePageKey) return null
+  const parts = head.split('::')
+  if (parts.length !== 3) return null
+  const studentId = parts[0]?.trim() ?? ''
+  const bookId = parts[1]?.trim() ?? ''
+  const unitId = parts[2]?.trim() ?? ''
+  if (!studentId || !bookId || !unitId) return null
+  return { studentId, bookId, unitId, storagePageKey }
 }
 
 export function createEmptyWhiteboardSession(

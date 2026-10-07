@@ -52,7 +52,6 @@ type StatusTone = 'neutral' | 'attention' | 'urgent' | 'success' | 'danger' | 'p
 function toneForTeachingState(state: TodayClassTeachingState): StatusTone {
   switch (state) {
     case 'live':
-    case 'starting':
       return 'attention'
     case 'grace':
     case 'ending':
@@ -61,6 +60,7 @@ function toneForTeachingState(state: TodayClassTeachingState): StatusTone {
       return 'danger'
     case 'done':
       return 'success'
+    case 'starting':
     case 'cancelled':
       return 'neutral'
     default:
@@ -465,10 +465,12 @@ export function DashboardOverview() {
     }
 
     if (entry === 'enter' || entry === 'continue') {
+      // Enter window still allows Prep; hide Prep only once the class is actually live.
+      const showPrep = entry === 'enter' || canOpenClassPrep(row.session)
       return (
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-          {canOpenClassPrep(row.session) ? (
-            <Button asChild variant="secondary" size="sm">
+          {showPrep ? (
+            <Button asChild variant="outline" size="sm">
               <Link href={buildPrepareLessonMapHref(row.studentId, row.session.id)}>Prepare</Link>
             </Button>
           ) : null}
@@ -842,8 +844,8 @@ export function DashboardOverview() {
     const nowState = nowRow ? resolveTodayClassTeachingState(nowRow.session, nowMs) : null
     const nowTone = nowState ? toneForTeachingState(nowState) : 'neutral'
     const nowCountdown = nowRow ? formatClassCountdown(nowRow.session.scheduledFor, nowMs) : null
-    const nowIsLiveBand =
-      nowState === 'live' || nowState === 'grace' || nowState === 'ending' || nowState === 'starting'
+    // Yellow “live” band only after the class is actually in progress — not in the soon window.
+    const nowIsLiveBand = nowState === 'live' || nowState === 'grace' || nowState === 'ending'
 
     if (!nowRow) {
       // Quiet empty: no duplicate sidebar buttons. Optional next-up one-liner.

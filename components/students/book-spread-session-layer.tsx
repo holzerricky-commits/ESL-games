@@ -98,8 +98,6 @@ type BookSpreadSessionLayerProps = {
   nudgePreview?: InkSessionNudgePreview | null
   /** Book spread: text/sticky on session layer (omit on whiteboard until parity). */
   domConfig?: SpreadSessionDomConfig | null
-  /** Route empty select clicks to native PDF text when move tool is active. */
-  pdfTextRoutingEnabled?: boolean
   /** Lesson board panel is open — keep spread ink below it (no z-40 selection lift). */
   lessonBoardObscures?: boolean
 }
@@ -124,7 +122,6 @@ export function BookSpreadSessionLayer({
   onRotateSelectedBy,
   nudgePreview = null,
   domConfig = null,
-  pdfTextRoutingEnabled = false,
   lessonBoardObscures = false,
 }: BookSpreadSessionLayerProps) {
   const useStoreBoundary =
@@ -305,7 +302,6 @@ export function BookSpreadSessionLayer({
         clampSelectionMoveDelta(selectCommands, moveIds, dx, dy, widthPx, heightPx, {
           deadIndices,
         }),
-      pdfTextRoutingEnabled: pdfTextRoutingEnabled && selectEnabled,
     },
     toNorm,
   )

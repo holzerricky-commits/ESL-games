@@ -12,6 +12,11 @@ export type FlushSpreadSessionToPagesParams = {
   studentId: string
   bookId: string
   unitId: string
+  /**
+   * False until disk (or browser fallback) annotations are the source of truth.
+   * An empty pre-hydrate session must not replace stored page marks.
+   */
+  storageReady?: boolean
 }
 
 /** Last-page spread uses the same page index for left and right session key slots. */
@@ -38,7 +43,9 @@ export function flushSpreadSessionDocumentToPageStorage({
   studentId,
   bookId,
   unitId,
+  storageReady = true,
 }: FlushSpreadSessionToPagesParams): void {
+  if (!storageReady) return
   if (!isInkSessionPageFlushEnabled()) return
   const pages = { leftPage: key.leftPage, rightPage: key.rightPage }
   const lastPageOnly = isLastPageSpreadKey(pages)

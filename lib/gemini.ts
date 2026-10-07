@@ -1122,8 +1122,10 @@ Do not use: ${combinedExclude.slice(0, 48).join(', ') || 'none'}.`
 const IMAGE_PHRASE_SYSTEM = `You write English stock-photo search phrases for ESL vocabulary (ages 8–14).
 
 Rules:
-- For EACH word, give the single most common, literal, concrete meaning — what most people picture first.
-- No metaphor, slang, brands, or secondary meanings (e.g. "art" → painting, palette, artist — NOT camera, graphic design, or museum only).
+- For EACH word, give one literal, concrete stock-photo phrase that matches the intended sense.
+- If an example sentence is given for a word, match THAT sense (e.g. "bank" + river example → river bank, not money).
+- If no example is given, use the single most common concrete meaning — what most people picture first.
+- No metaphor, slang, brands, or secondary meanings unless the example clearly needs them.
 - Phrase should work in Pixabay search: clear subject, simple or white background when possible, "stock photo" style.
 - Short: under 18 words per phrase. Plain ASCII letters, numbers, spaces. No quotes inside phrases.
 - Return ONLY valid JSON: { "phrases": { "word": "phrase here", ... } }
@@ -1172,9 +1174,11 @@ function parseImagePhrases(
 
 /**
  * One Gemini call: map vocabulary lemmas (no curated override) → literal stock-search phrases.
+ * Optional `contexts` maps lemma → English example sentence to pin the intended sense.
  */
 export async function generateImageSearchPhrases(
-  words: string[]
+  words: string[],
+  contexts?: Record<string, string>,
 ): Promise<Record<string, string>> {
   const normalized = [...new Set(words.map(normalizePhraseWord))].filter(Boolean).slice(0, 36)
   if (normalized.length === 0) return {}
@@ -1182,7 +1186,25 @@ export async function generateImageSearchPhrases(
   const key = await resolveGeminiApiKey()
   if (!key) return {}
 
-  const userText = `Each lemma needs one literal English stock-photo search phrase (most common concrete meaning for young ESL learners).
+  const contextLines = normalized
+    .map((lemma) => {
+      const example = contexts?.[lemma]?.replace(/\s+/g, ' ').trim().slice(0, 160)
+      if (!example) return null
+      return `- "${lemma}" example: ${example}`
+    })
+    .filter(Boolean)
+
+  const userText =
+    contextLines.length > 0
+      ? `Each lemma needs one literal English stock-photo search phrase for young ESL learners. When an example is listed, the phrase MUST match that sentence sense (word + scene), not a different meaning of the word.
+
+Lemmas: ${normalized.join(', ')}
+
+Example sentences (sense hints):
+${contextLines.join('\n')}
+
+Return only valid JSON: {"phrases":{"lemma":"phrase",...}} with every lemma above as a lowercase key.`
+      : `Each lemma needs one literal English stock-photo search phrase (most common concrete meaning for young ESL learners).
 
 Lemmas: ${normalized.join(', ')}
 

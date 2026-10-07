@@ -1,9 +1,11 @@
 import type { StrokeTool } from '@/lib/books/annotation-command-types'
 import type { PenInkStyle } from '@/lib/books/pen-ink'
 import {
-  STROKE_FREEHAND_SMOOTH_BLEND,
   appendNormPointsIfMoved,
+  smoothingLevelToBlend,
+  smoothingLevelToRdpEpsilon,
 } from '@/lib/books/stroke-pointer-samples'
+import { rdpSimplify } from '@/lib/books/stroke-rdp-simplify'
 import { STROKE_TAP_MAX_DIST_SQ } from '@/lib/books/stroke-tap-dot'
 
 export type StraightStrokeTool = Extract<StrokeTool, 'pen' | 'marker'>
@@ -77,6 +79,7 @@ export function extendStrokeDraftFromMove(
     straightFromHold?: boolean
     markerStraightStrokeEnabled: boolean
     penInkStyle?: PenInkStyle
+    penSmoothingLevel?: number
     straightStrokeAxis: StraightStrokeAxis | null
   },
 ): StraightStrokeAxis | null {
@@ -104,7 +107,7 @@ export function extendStrokeDraftFromMove(
     return axis
   }
 
-  const smoothBlend = draft.tool === 'pen' ? STROKE_FREEHAND_SMOOTH_BLEND : 0
+  const smoothBlend = draft.tool === 'pen' ? smoothingLevelToBlend(opts.penSmoothingLevel ?? 5) : 0
   appendNormPointsIfMoved(draft.points, samples, undefined, smoothBlend)
   return opts.straightStrokeAxis
 }
@@ -118,6 +121,7 @@ export function finalizeStrokeDraftEndPoint(
     straightFromHold?: boolean
     markerStraightStrokeEnabled: boolean
     penInkStyle?: PenInkStyle
+    penSmoothingLevel?: number
     straightStrokeAxis: StraightStrokeAxis | null
   },
 ): StraightStrokeAxis | null {
@@ -155,5 +159,14 @@ export function finalizeStrokeDraftEndPoint(
       draft.points[draft.points.length - 1] = end
     }
   }
+
+  // RDP simplification for freehand pen strokes at commit time.
+  if (draft.tool === 'pen' && !opts.straightStrokeAxis && draft.points.length > 2) {
+    const epsilon = smoothingLevelToRdpEpsilon(opts.penSmoothingLevel ?? 5)
+    if (epsilon > 0) {
+      draft.points = rdpSimplify(draft.points, epsilon)
+    }
+  }
+
   return opts.straightStrokeAxis
 }

@@ -178,6 +178,8 @@ export interface BookPageAnnotationLayerProps {
   strokeLineDashStyle?: AnnotationLineDashStyle
   /** When true, highlighter strokes snap to horizontal underlines (Shift does H/V for pen). */
   markerStraightStroke?: boolean
+  /** Pen smoothing level 0–10; controls live blend and commit-time RDP. Default 5. */
+  penSmoothingLevel?: number
   /** When true, themed ornaments draw on the upper edge of highlighter strokes. */
   markerDecoratedEdge?: boolean
   /** When true, each committed pen stroke auto-joins a figureGroupId with touching pen strokes. */
@@ -233,8 +235,6 @@ export interface BookPageAnnotationLayerProps {
   onSelectionMoveCommitted?: (ids: string[], dx: number, dy: number) => void
   /** When spread ink is delegated, stamp/callout commits go to the spread session (page-norm cmd). */
   onSpreadCanvasCommandCommit?: (cmd: AnnotationCommand, pageNumber: number) => void
-  /** Route empty select clicks to native PDF text (move tool). */
-  pdfTextRoutingEnabled?: boolean
   /** Whiteboard only: scroll + viewport + optional click anchor for pasted content. */
   getImagePastePlacement?: () => {
     scrollTopPx: number

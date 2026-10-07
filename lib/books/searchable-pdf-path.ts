@@ -22,3 +22,15 @@ export function searchablePdfAbsolutePath(originalAbsPath: string): string {
   const base = path.basename(originalAbsPath)
   return path.join(dir, SEARCHABLE_PDF_DIR, base)
 }
+
+/**
+ * OCR word-box file for Select (printed boxes, not Helvetica metrics).
+ * `unit.pdf` page 3 → `.searchable/unit.p3.boxes.json`
+ */
+export function searchableOcrBoxesAbsolutePath(originalAbsPath: string, pdfPage: number): string {
+  const sidecarPdf = searchablePdfAbsolutePath(originalAbsPath)
+  const dir = path.dirname(sidecarPdf)
+  const stem = path.basename(sidecarPdf, path.extname(sidecarPdf))
+  const pageNo = Math.max(1, Math.floor(pdfPage))
+  return path.join(dir, `${stem}.p${pageNo}.boxes.json`)
+}

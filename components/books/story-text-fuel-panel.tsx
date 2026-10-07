@@ -1,19 +1,19 @@
 'use client'
 
 import { useState } from 'react'
-import { BookOpen, Check, Loader2, MousePointer2, Sparkles } from 'lucide-react'
+import { BookOpen, Check, Loader2, MousePointer2, RefreshCw, Sparkles } from 'lucide-react'
 import {
   DismissibleScanNotice,
   type ScanNotice,
 } from '@/components/books/dismissible-scan-notice'
 import { CHECKS_DIALOG_STYLE } from '@/components/books/checks-editor-theme'
+import { SelectableJobStatus } from '@/components/books/selectable-job-status'
 import { StoryScanProgressBar } from '@/components/books/story-scan-progress-bar'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
@@ -22,7 +22,7 @@ import type {
   StoryScanProgress,
   StoryTextScanMode,
 } from '@/lib/books/story-text-scan-client'
-import type { SearchablePdfProgress } from '@/lib/books/searchable-pdf-client'
+import type { SearchablePdfProgress, SearchablePdfRangeStatus } from '@/lib/books/searchable-pdf-client'
 import { cn } from '@/lib/utils'
 
 export type StoryTextFuelBusy = 'scan' | 'saveText' | null
@@ -44,9 +44,15 @@ export interface StoryTextFuelPanelProps {
   scanDisabled?: boolean
   /** Hidden-text layer for image-only PDFs (class select / copy / translate). */
   onMakeSelectable?: () => void
+  onRedoSelectable?: () => void
   onStopMakeSelectable?: () => void
   selectableProgress?: SearchablePdfProgress | null
   selectableRunning?: boolean
+  /** Outcome of the last Make pages selectable / Redo run — stays until dismissed. */
+  selectableNotice?: ScanNotice | null
+  onDismissSelectableNotice?: () => void
+  /** From plan API — drives done / redo button state. */
+  selectableStatus?: SearchablePdfRangeStatus
   /** Partial scan — show Continue + Re-scan from start */
   canContinueScan?: boolean
   /** Controlled dialog open (for “View story” from checks). */
@@ -62,6 +68,13 @@ export interface StoryTextFuelPanelProps {
   chrome?: 'desk' | 'soft' | 'rail'
   /** Hide the collapsed status row — only the edit dialog (icon launchers). */
   hideCollapsedRow?: boolean
+  /**
+   * `dialog` — collapsed row + modal editor (default).
+   * `inline` — editor body in-place (part desk left panel); no Dialog.
+   */
+  presentation?: 'dialog' | 'inline'
+  /** When inline: skip the title strip (parent already labeled the tool). */
+  omitInlineHeader?: boolean
   /** Extra classes for DialogContent / overlay (e.g. z-[90] above workshop). */
   dialogClassName?: string
   dialogOverlayClassName?: string
@@ -96,9 +109,13 @@ export function StoryTextFuelPanel({
   onSave,
   scanDisabled = false,
   onMakeSelectable,
+  onRedoSelectable,
   onStopMakeSelectable,
   selectableProgress = null,
   selectableRunning = false,
+  selectableNotice = null,
+  onDismissSelectableNotice,
+  selectableStatus = 'unknown',
   canContinueScan = false,
   dialogOpen: controlledOpen,
   onDialogOpenChange,
@@ -108,12 +125,15 @@ export function StoryTextFuelPanel({
   hideRowLabel = false,
   chrome = 'desk',
   hideCollapsedRow = false,
+  presentation = 'dialog',
+  omitInlineHeader = false,
   dialogClassName,
   dialogOverlayClassName,
 }: StoryTextFuelPanelProps) {
   const [internalOpen, setInternalOpen] = useState(false)
   const open = controlledOpen ?? internalOpen
   const setOpen = onDialogOpenChange ?? setInternalOpen
+  const inline = presentation === 'inline'
 
   const scanning = busy === 'scan'
   const saving = busy === 'saveText'
@@ -130,7 +150,7 @@ export function StoryTextFuelPanel({
 
   async function handleSave() {
     const ok = await onSave()
-    if (ok) setOpen(false)
+    if (ok && !inline) setOpen(false)
   }
 
   const statusPill = !hasStoryText ? (
@@ -196,6 +216,250 @@ export function StoryTextFuelPanel({
       ? 'h-7 gap-1.5 rounded-md border-white/15 bg-white/10 px-2 text-white hover:bg-white/15'
       : 'h-8 gap-1.5'
 
+  const selectableFeedback = !onMakeSelectable ? null : selectableRunning && selectableProgress ? (
+    <SelectableJobStatus progress={selectableProgress} onStop={onStopMakeSelectable} />
+  ) : !selectableRunning && selectableNotice && onDismissSelectableNotice ? (
+    <DismissibleScanNotice notice={selectableNotice} onDismiss={onDismissSelectableNotice} />
+  ) : null
+
+  const editorBody = (
+    <>
+      {inline && omitInlineHeader ? null : (
+      <div
+        className={cn(
+          'shrink-0 space-y-1 border-b px-5 py-3 text-left',
+          soft
+            ? 'border-border/60 bg-[var(--surface-2)]'
+            : 'border-[var(--checks-border)] bg-white',
+          inline && 'rounded-t-[inherit]',
+        )}
+      >
+        <p
+          className={cn(
+            soft ? 'text-[17px] font-semibold tracking-tight' : 'text-base text-[var(--checks-ink)]',
+          )}
+        >
+          {storyTitle}
+        </p>
+        <p
+          className={cn(
+            soft ? 'text-[13px] text-muted-foreground' : 'text-sm text-[var(--checks-muted)]',
+          )}
+        >
+          Story text for reading checks
+          {range ? ` · ${range}` : ''}
+          {hasStoryText && words > 0
+            ? ` · ${words.toLocaleString()} word${words === 1 ? '' : 's'}`
+            : ''}
+          {showContinue ? ' · scan incomplete' : ''}
+        </p>
+      </div>
+      )}
+
+      <div
+        className={cn(
+          'flex min-h-0 flex-1 flex-col gap-3 overflow-hidden',
+          omitInlineHeader ? 'px-0 py-0' : 'px-5 py-3',
+          !omitInlineHeader && (soft ? 'bg-[var(--surface-1)]' : 'bg-[var(--checks-bg)]'),
+          inline && 'min-h-[200px]',
+        )}
+      >
+        {scanProgress ? (
+          <StoryScanProgressBar progress={scanProgress} onCancel={onStopScan} />
+        ) : null}
+        {scanNotice && onDismissScanNotice ? (
+          <DismissibleScanNotice notice={scanNotice} onDismiss={onDismissScanNotice} />
+        ) : null}
+        <Textarea
+          value={textDraft}
+          onChange={(e) => onTextDraftChange(e.target.value)}
+          placeholder="Scan from the PDF, or paste the story here."
+          className={cn(
+            'min-h-0 flex-1 resize-none',
+            soft
+              ? 'rounded-2xl border-0 bg-[var(--surface-3)] font-sans text-[14px] leading-relaxed text-foreground shadow-none'
+              : 'border-[var(--checks-border)] bg-white font-mono text-xs text-[var(--checks-ink)]',
+            inline && 'min-h-[160px]',
+          )}
+          disabled={scanning || selectableRunning}
+        />
+        <p className={cn('shrink-0', soft ? 'text-[12px] text-muted-foreground' : 'text-[11px] text-[var(--checks-muted)]')}>
+          {showContinue
+            ? 'Continue scan picks up after saved pages. Re-scan from start replaces everything.'
+            : 'Scan text is for reading checks. Make pages selectable puts hidden words on the book so you can drag, copy, and translate in class.'}
+        </p>
+      </div>
+
+      <div
+        className={cn(
+          'flex shrink-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between',
+          omitInlineHeader
+            ? 'gap-2 pt-1'
+            : cn(
+                'border-t px-5 py-3',
+                soft
+                  ? 'border-border/60 bg-[var(--surface-2)]'
+                  : 'border-[var(--checks-border)] bg-white',
+                inline && 'rounded-b-[inherit]',
+              ),
+        )}
+      >
+        {selectableFeedback ? <div className="sm:basis-full">{selectableFeedback}</div> : null}
+        <div className="flex flex-wrap items-center gap-2">
+          {showContinue ? (
+            <>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className={cn('gap-1.5', soft && 'h-9 rounded-full px-4')}
+                disabled={scanning || selectableRunning || scanDisabled}
+                onClick={() => onScan({ mode: 'continue' })}
+              >
+                {scanning ? (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                    Scanning…
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="size-3.5" aria-hidden />
+                    Continue scan
+                  </>
+                )}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className={cn(
+                  soft ? 'h-9 rounded-full px-3 text-muted-foreground' : 'text-[var(--checks-muted)]',
+                )}
+                disabled={scanning || selectableRunning || scanDisabled}
+                onClick={() => onScan({ mode: 'full' })}
+              >
+                Re-scan from start
+              </Button>
+            </>
+          ) : (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className={cn('gap-1.5', soft && 'h-9 rounded-full px-4')}
+              disabled={scanning || scanDisabled}
+              onClick={() => onScan({ mode: 'full' })}
+            >
+              {scanning ? (
+                <>
+                  <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                  Scanning…
+                </>
+              ) : (
+                <>
+                  <Sparkles className="size-3.5" aria-hidden />
+                  {hasStoryText ? 'Re-scan' : 'Scan text'}
+                </>
+              )}
+            </Button>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {!inline ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className={cn(soft && 'h-9 rounded-full px-3')}
+              disabled={scanning || saving || selectableRunning}
+              onClick={() => setOpen(false)}
+            >
+              Cancel
+            </Button>
+          ) : null}
+          {onMakeSelectable ? (
+            selectableRunning ? null : selectableStatus === 'stamped' ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className={cn(
+                    'inline-flex items-center gap-1.5 text-[13px] font-medium text-foreground',
+                    soft && 'px-1',
+                  )}
+                >
+                  <Check className="size-3.5 text-[var(--brand-blue)]" aria-hidden />
+                  Pages are selectable
+                </span>
+                {onRedoSelectable ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className={cn('gap-1.5', soft && 'h-9 rounded-full px-3')}
+                    disabled={scanning || scanDisabled}
+                    onClick={onRedoSelectable}
+                  >
+                    <RefreshCw className="size-3.5" aria-hidden />
+                    Redo
+                  </Button>
+                ) : null}
+              </div>
+            ) : selectableStatus === 'native-text' ? (
+              <span
+                className={cn(
+                  'inline-flex items-center gap-1.5 text-[13px] text-muted-foreground',
+                  soft && 'px-1',
+                )}
+              >
+                <Check className="size-3.5" aria-hidden />
+                Already in the book
+              </span>
+            ) : (
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className={cn('gap-1.5', soft && 'h-9 rounded-full px-4')}
+                disabled={scanning || scanDisabled}
+                onClick={onMakeSelectable}
+              >
+                <MousePointer2 className="size-3.5" aria-hidden />
+                Make pages selectable
+              </Button>
+            )
+          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            className={cn(soft && 'h-9 rounded-full px-5')}
+            disabled={scanning || saving || selectableRunning}
+            onClick={() => void handleSave()}
+          >
+            {saving ? 'Saving…' : 'Save text'}
+          </Button>
+        </div>
+      </div>
+    </>
+  )
+
+  if (inline) {
+    return (
+      <div
+        className={cn(
+          'flex flex-col overflow-hidden',
+          omitInlineHeader
+            ? 'gap-3'
+            : soft
+              ? 'rounded-2xl border border-border/60 bg-[var(--surface-1)]'
+              : 'rounded-2xl border border-[var(--checks-border)]',
+          className,
+        )}
+        style={soft || rail || omitInlineHeader ? undefined : CHECKS_DIALOG_STYLE}
+      >
+        {editorBody}
+      </div>
+    )
+  }
+
   return (
     <div className={cn(className)} style={soft || rail ? undefined : CHECKS_DIALOG_STYLE}>
       {!hideCollapsedRow ? (
@@ -254,6 +518,7 @@ export function StoryTextFuelPanel({
             {scanNotice && onDismissScanNotice ? (
               <DismissibleScanNotice notice={scanNotice} onDismiss={onDismissScanNotice} />
             ) : null}
+            {!open ? selectableFeedback : null}
           </div>
         ) : (
           <div className={cn('space-y-3', soft ? 'p-4 sm:p-5' : 'space-y-2 p-3')}>
@@ -351,6 +616,7 @@ export function StoryTextFuelPanel({
             {scanNotice && onDismissScanNotice ? (
               <DismissibleScanNotice notice={scanNotice} onDismiss={onDismissScanNotice} />
             ) : null}
+            {!open ? selectableFeedback : null}
           </div>
         )}
       </div>
@@ -368,193 +634,11 @@ export function StoryTextFuelPanel({
           )}
           style={soft ? undefined : CHECKS_DIALOG_STYLE}
         >
-          <DialogHeader
-            className={cn(
-              'shrink-0 space-y-1 border-b px-5 py-3 text-left',
-              soft
-                ? 'border-border/60 bg-[var(--surface-2)]'
-                : 'border-[var(--checks-border)] bg-white',
-            )}
-          >
-            <DialogTitle className={cn(soft ? 'text-[17px] font-semibold tracking-tight' : 'text-base text-[var(--checks-ink)]')}>
-              {storyTitle}
-            </DialogTitle>
-            <DialogDescription className={cn(soft ? 'text-[13px] text-muted-foreground' : 'text-[var(--checks-muted)]')}>
-              Story text for reading checks
-              {range ? ` · ${range}` : ''}
-              {hasStoryText && words > 0
-                ? ` · ${words.toLocaleString()} word${words === 1 ? '' : 's'}`
-                : ''}
-              {showContinue ? ' · scan incomplete' : ''}
-            </DialogDescription>
+          <DialogHeader className="sr-only">
+            <DialogTitle>{storyTitle}</DialogTitle>
+            <DialogDescription>Story text for reading checks</DialogDescription>
           </DialogHeader>
-
-          <div
-            className={cn(
-              'flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-5 py-3',
-              soft ? 'bg-[var(--surface-1)]' : 'bg-[var(--checks-bg)]',
-            )}
-          >
-            {scanProgress ? (
-              <StoryScanProgressBar progress={scanProgress} onCancel={onStopScan} />
-            ) : null}
-            {selectableProgress ? (
-              <div
-                className="space-y-1.5 rounded-lg border border-border bg-muted/30 p-3"
-                role="status"
-                aria-live="polite"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-medium text-foreground">
-                    {selectableProgress.activeLabel
-                      ? `Selectable text · p. ${selectableProgress.activeLabel}`
-                      : 'Selectable text'}
-                    <span className="ml-1.5 font-normal text-muted-foreground">
-                      {selectableProgress.doneCount}/{selectableProgress.totalCount}
-                    </span>
-                  </p>
-                  {onStopMakeSelectable && selectableRunning ? (
-                    <Button type="button" size="sm" variant="ghost" className="h-7 px-2" onClick={onStopMakeSelectable}>
-                      Stop
-                    </Button>
-                  ) : null}
-                </div>
-                <p className="text-[11px] text-muted-foreground">{selectableProgress.message}</p>
-              </div>
-            ) : null}
-            {scanNotice && onDismissScanNotice ? (
-              <DismissibleScanNotice notice={scanNotice} onDismiss={onDismissScanNotice} />
-            ) : null}
-            <Textarea
-              value={textDraft}
-              onChange={(e) => onTextDraftChange(e.target.value)}
-              placeholder="Scan from the PDF, or paste the story here."
-              className={cn(
-                'min-h-0 flex-1 resize-none',
-                soft
-                  ? 'rounded-2xl border-0 bg-[var(--surface-3)] font-sans text-[14px] leading-relaxed text-foreground shadow-none'
-                  : 'border-[var(--checks-border)] bg-white font-mono text-xs text-[var(--checks-ink)]',
-              )}
-              disabled={scanning || selectableRunning}
-            />
-            <p className={cn('shrink-0', soft ? 'text-[12px] text-muted-foreground' : 'text-[11px] text-[var(--checks-muted)]')}>
-              {showContinue
-                ? 'Continue scan picks up after saved pages. Re-scan from start replaces everything.'
-                : 'Scan text is for reading checks. Make pages selectable puts hidden words on the book so you can drag, copy, and translate in class.'}
-            </p>
-          </div>
-
-          <DialogFooter
-            className={cn(
-              'shrink-0 gap-2 border-t px-5 py-3 sm:justify-between',
-              soft
-                ? 'border-border/60 bg-[var(--surface-2)]'
-                : 'border-[var(--checks-border)] bg-white',
-            )}
-          >
-            <div className="flex flex-wrap items-center gap-2">
-              {showContinue ? (
-                <>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    className={cn('gap-1.5', soft && 'h-9 rounded-full px-4')}
-                    disabled={scanning || selectableRunning || scanDisabled}
-                    onClick={() => onScan({ mode: 'continue' })}
-                  >
-                    {scanning ? (
-                      <>
-                        <Loader2 className="size-3.5 animate-spin" aria-hidden />
-                        Scanning…
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="size-3.5" aria-hidden />
-                        Continue scan
-                      </>
-                    )}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    className={cn(
-                      soft ? 'h-9 rounded-full px-3 text-muted-foreground' : 'text-[var(--checks-muted)]',
-                    )}
-                    disabled={scanning || selectableRunning || scanDisabled}
-                    onClick={() => onScan({ mode: 'full' })}
-                  >
-                    Re-scan from start
-                  </Button>
-                </>
-              ) : (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  className={cn('gap-1.5', soft && 'h-9 rounded-full px-4')}
-                  disabled={scanning || scanDisabled}
-                  onClick={() => onScan({ mode: 'full' })}
-                >
-                  {scanning ? (
-                    <>
-                      <Loader2 className="size-3.5 animate-spin" aria-hidden />
-                      Scanning…
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="size-3.5" aria-hidden />
-                      {hasStoryText ? 'Re-scan' : 'Scan text'}
-                    </>
-                  )}
-                </Button>
-              )}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className={cn(soft && 'h-9 rounded-full px-3')}
-                disabled={scanning || saving || selectableRunning}
-                onClick={() => setOpen(false)}
-              >
-                Cancel
-              </Button>
-              {onMakeSelectable ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  className={cn('gap-1.5', soft && 'h-9 rounded-full px-4')}
-                  disabled={scanning || selectableRunning || scanDisabled}
-                  onClick={onMakeSelectable}
-                >
-                  {selectableRunning ? (
-                    <>
-                      <Loader2 className="size-3.5 animate-spin" aria-hidden />
-                      Adding text…
-                    </>
-                  ) : (
-                    <>
-                      <MousePointer2 className="size-3.5" aria-hidden />
-                      Make pages selectable
-                    </>
-                  )}
-                </Button>
-              ) : null}
-              <Button
-                type="button"
-                size="sm"
-                className={cn(soft && 'h-9 rounded-full px-5')}
-                disabled={scanning || saving || selectableRunning}
-                onClick={() => void handleSave()}
-              >
-                {saving ? 'Saving…' : 'Save text'}
-              </Button>
-            </div>
-          </DialogFooter>
+          {editorBody}
         </DialogContent>
       </Dialog>
     </div>

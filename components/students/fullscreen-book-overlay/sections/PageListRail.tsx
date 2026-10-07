@@ -46,6 +46,8 @@ interface PageListRailProps {
   goToPage: (page: number) => void
   setIsPageListOpen: (open: boolean) => void
   isWhiteboardOpen: boolean
+  /** Notebook Focus: book pages stay parked — board TOC only. */
+  lockToBoardTab?: boolean
   pageListRailTab: PageListRailTab
   setPageListRailTab: (tab: PageListRailTab) => void
   whiteboardSessionDoc: WhiteboardSessionDocument | null
@@ -101,6 +103,7 @@ export function PageListRail({
   goToPage,
   setIsPageListOpen,
   isWhiteboardOpen,
+  lockToBoardTab = false,
   pageListRailTab,
   setPageListRailTab,
   whiteboardSessionDoc,
@@ -113,12 +116,19 @@ export function PageListRail({
   const [renameDraft, setRenameDraft] = useState('')
 
   const showBoardTab = isWhiteboardOpen && whiteboardSessionDoc != null
-  const activeTab: PageListRailTab = showBoardTab ? pageListRailTab : 'book'
+  const activeTab: PageListRailTab =
+    lockToBoardTab && showBoardTab ? 'board' : showBoardTab ? pageListRailTab : 'book'
 
   const boardPageRows = useMemo(
     () => orderLessonBoardPagesForToc(whiteboardSessionDoc?.pages ?? []),
     [whiteboardSessionDoc?.pages],
   )
+
+  useEffect(() => {
+    if (lockToBoardTab && showBoardTab && pageListRailTab !== 'board') {
+      setPageListRailTab('board')
+    }
+  }, [lockToBoardTab, pageListRailTab, setPageListRailTab, showBoardTab])
 
   useEffect(() => {
     if (!showBoardTab && pageListRailTab === 'board') {
@@ -147,10 +157,17 @@ export function PageListRail({
     setRenameDraft(currentTitle?.trim() || `Page ${index + 1}`)
   }
 
-  const formatBookHint = (hint: number | undefined) => {
-    if (hint == null || !(hint >= 1)) return null
+  const formatBookHint = (page: { bookPageHint?: number; primaryLink?: { bookId: string; pdfPage: number } }) => {
+    if (page.primaryLink) {
+      const role =
+        page.primaryLink.bookId === selectedBook?.id && selectedBook
+          ? selectedBook.role?.trim() || 'Book'
+          : 'Book'
+      return `${role} p.${page.primaryLink.pdfPage}`
+    }
+    if (page.bookPageHint == null || !(page.bookPageHint >= 1)) return null
     const display = mapPdfPageToDisplayLabel(
-      hint,
+      page.bookPageHint,
       selectedBook,
       selectedUnit,
       numPages,
@@ -189,7 +206,7 @@ export function PageListRail({
               <X size={14} />
             </Button>
           </div>
-          {showBoardTab ? (
+          {showBoardTab && !lockToBoardTab ? (
             <div className="flex gap-1 rounded-lg bg-black/20 p-0.5" role="tablist" aria-label="Page list mode">
               <RailTabButton active={activeTab === 'book'} onClick={() => setPageListRailTab('book')}>
                 Book
@@ -253,7 +270,7 @@ export function PageListRail({
             : boardPageRows.map(({ page, index }) => {
                 const rowActive = page.id === activeBoardPageId
                 const label = lessonBoardPageDisplayLabel(page, index)
-                const bookHint = formatBookHint(page.bookPageHint)
+                const bookHint = formatBookHint(page)
                 const commands =
                   rowActive && whiteboardSessionDoc
                     ? whiteboardSessionDoc.commands

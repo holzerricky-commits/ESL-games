@@ -70,17 +70,24 @@ async function getWorker(): Promise<TesseractWorker> {
   return workerPromise
 }
 
+export type PageWordRecognition = {
+  /** Words that passed {@link OCR_MIN_CONFIDENCE}. */
+  words: OcrRecognizedWord[]
+  /** Every boxed word, including low-confidence ones, for the page score. */
+  scoredWords: OcrRecognizedWord[]
+}
+
 /** Recognize words on a page image. Serialized so one Tesseract worker is shared. */
-export async function recognizePageWords(pngBuffer: Buffer): Promise<OcrRecognizedWord[]> {
+export async function recognizePageWordsDetailed(pngBuffer: Buffer): Promise<PageWordRecognition> {
   return enqueueOcr(async () => {
     const worker = await getWorker()
     const result = await worker.recognize(pngBuffer)
     const words: OcrRecognizedWord[] = []
+    const scoredWords: OcrRecognizedWord[] = []
     for (const raw of result.data.words ?? []) {
       const text = typeof raw.text === 'string' ? raw.text.trim() : ''
       if (!text) continue
       const confidence = typeof raw.confidence === 'number' ? raw.confidence : 0
-      if (confidence < OCR_MIN_CONFIDENCE) continue
       const bbox = raw.bbox
       if (!bbox) continue
       const x0 = Number(bbox.x0)
@@ -88,8 +95,16 @@ export async function recognizePageWords(pngBuffer: Buffer): Promise<OcrRecogniz
       const x1 = Number(bbox.x1)
       const y1 = Number(bbox.y1)
       if (![x0, y0, x1, y1].every(Number.isFinite)) continue
-      words.push({ text, confidence, x0, y0, x1, y1 })
+      const word = { text, confidence, x0, y0, x1, y1 }
+      scoredWords.push(word)
+      if (confidence >= OCR_MIN_CONFIDENCE) words.push(word)
     }
-    return words
+    return { words, scoredWords }
   })
+}
+
+/** Words confident enough to stamp. See {@link recognizePageWordsDetailed} for the page score. */
+export async function recognizePageWords(pngBuffer: Buffer): Promise<OcrRecognizedWord[]> {
+  const recognized = await recognizePageWordsDetailed(pngBuffer)
+  return recognized.words
 }

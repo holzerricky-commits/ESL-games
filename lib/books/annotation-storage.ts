@@ -533,6 +533,8 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
       if (isAnnotationTextFontId(rec.fontId)) fontId = rec.fontId
       let fontWeight: TextAnnotationCommand['fontWeight']
       if (isAnnotationTextFontWeight(rec.fontWeight)) fontWeight = rec.fontWeight
+      const italic = rec.italic === true ? true : undefined
+      const underline = rec.underline === true ? true : undefined
       const restoredChipFill = restoreTranslationChipFill({
         visualStyle,
         fontId,
@@ -556,6 +558,8 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
         ...(textAlign != null ? { textAlign } : {}),
         ...(fontId != null ? { fontId } : {}),
         ...(fontWeight != null ? { fontWeight } : {}),
+        ...(italic ? { italic } : {}),
+        ...(underline ? { underline } : {}),
         ...(glosses != null ? { glosses } : {}),
       } satisfies TextAnnotationCommand)
       continue

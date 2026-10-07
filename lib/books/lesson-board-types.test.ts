@@ -138,6 +138,15 @@ describe('lesson-board-types', () => {
     expect(again.pages[0]?.id).toBe(page.id)
   })
 
+  it('createLessonBoardPage stamps optional source book/unit hints', () => {
+    const page = createLessonBoardPage('standard', {
+      sourceBookId: ' ws ',
+      sourceUnitId: 'u1',
+    })
+    expect(page.sourceBookId).toBe('ws')
+    expect(page.sourceUnitId).toBe('u1')
+  })
+
   it('syncLessonBoardCommandsToActivePage copies root commands into active page', () => {
     const page = createLessonBoardPage('standard', { commands: [] })
     const doc = {

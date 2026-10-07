@@ -238,6 +238,7 @@ export type TextLabelFieldLayoutOpts = {
   /** Width source for latch/grow (e.g. typed text + ghost assist suffix). */
   measureTextForWidth?: string
   fontWeight?: string | number
+  fontStyle?: string
 }
 
 /** @deprecated Use {@link TextLabelFieldLayoutOpts} */
@@ -357,14 +358,16 @@ export function measureRawLineWidth(lineText: string, cs: CSSStyleDeclaration): 
   const fontSize = cs.fontSize || '16px'
   const fontFamily = cs.fontFamily || 'sans-serif'
   const fontWeight = cs.fontWeight || '400'
+  const fontStyle = cs.fontStyle || 'normal'
   const font =
     cs.font && cs.font !== 'normal' && !/^\d+px$/.test(cs.font.trim())
       ? cs.font
-      : `${fontWeight} ${fontSize} ${fontFamily}`
+      : `${fontStyle} ${fontWeight} ${fontSize} ${fontFamily}`
   mirror.style.font = font
   mirror.style.fontFamily = fontFamily
   mirror.style.fontSize = fontSize
   mirror.style.fontWeight = fontWeight
+  mirror.style.fontStyle = fontStyle
   mirror.style.letterSpacing = cs.letterSpacing
   const sample = lineText.length > 0 ? lineText : '\u00a0'
   mirror.textContent = sample
@@ -669,6 +672,7 @@ export function createTextLabelLayoutProbe(
   fontSizePx: number,
   variant: TextLabelFieldVariant = 'filled',
   fontWeight?: string | number,
+  fontStyle?: string,
 ): HTMLTextAreaElement {
   const probe = document.createElement('textarea')
   probe.setAttribute('aria-hidden', 'true')
@@ -687,6 +691,7 @@ export function createTextLabelLayoutProbe(
     fontFamily,
     fontSize: `${fontSizePx}px`,
     ...(fontWeight != null ? { fontWeight: String(fontWeight) } : {}),
+    ...(fontStyle != null ? { fontStyle } : {}),
     lineHeight: `${lineHeightPx}px`,
     paddingTop: pad.paddingTop,
     paddingBottom: pad.paddingBottom,
@@ -739,7 +744,13 @@ export function resolveTextLabelFieldLayout(
     return { segments: [''], widths: [], fieldWidthPx: 8 }
   }
   const variant = opts?.variant ?? 'filled'
-  const probe = createTextLabelLayoutProbe(fontFamily, fontSizePx, variant, opts?.fontWeight)
+  const probe = createTextLabelLayoutProbe(
+    fontFamily,
+    fontSizePx,
+    variant,
+    opts?.fontWeight,
+    opts?.fontStyle,
+  )
   document.body.appendChild(probe)
   const cs = getComputedStyle(probe)
   const sourceText = opts?.emptyPlaceholder && !text.length ? '' : text

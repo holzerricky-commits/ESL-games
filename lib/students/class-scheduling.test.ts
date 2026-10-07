@@ -1,4 +1,4 @@
-﻿import { beforeEach, describe, expect, it } from 'vitest'
+﻿import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { getStudents, saveStudent, saveStudents } from '@/lib/storage'
 import {
   generateScheduledClassesWindow,
@@ -1836,7 +1836,7 @@ describe('class sessions and outcomes', () => {
     ).toBe('c-planned')
   })
 
-  it('buildPrepareLessonMapHref opens map with class session and planned book/unit (no auto-open)', () => {
+  it('buildPrepareLessonMapHref opens map with class session and planned book/unit', () => {
     saveStudents([
       seedStudent({
         assignedBookIds: ['book-a'],
@@ -2181,7 +2181,7 @@ describe('class sessions and outcomes', () => {
       28,
     )
     expect(hit?.id).toBe('part:book-a:unit-1:lesson-1:part-vocab')
-    expect(hit?.partTitle).toBe('Vocabulary')
+    expect(hit?.partTitle).toBe('Vocabulary warm-up')
   })
 
   it('resolveStudentSectionAtPdfPage returns null when page is outside all sections', () => {
@@ -3070,6 +3070,157 @@ describe('class sessions and outcomes', () => {
       ['book-a'],
     )
     expect(bookmark).toEqual({ bookId: 'book-a', pdfPage: 14, unitId: 'unit-1' })
+  })
+
+  it('resolveClassEndBookmark uses the newest reader page across assigned books when no section is pinned', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-18T12:20:00.000Z'))
+    saveUnitPage('book-a', 'unit-1', 3)
+    vi.setSystemTime(new Date('2026-09-18T12:21:00.000Z'))
+    saveUnitPage('book-b', 'unit-b1', 30)
+    vi.useRealTimers()
+    saveStudents([
+      seedStudent({
+        assignedBookIds: ['book-a', 'book-b'],
+        assignedUnitRefs: [
+          { bookId: 'book-a', unitId: 'unit-1' },
+          { bookId: 'book-b', unitId: 'unit-b1' },
+        ],
+      }),
+    ])
+    const bookmark = resolveClassEndBookmark('student-1', {}, ['book-a', 'book-b'])
+    expect(bookmark).toEqual({ bookId: 'book-b', pdfPage: 30, unitId: 'unit-b1' })
+  })
+
+  it('getStudentDefaultBookUnitForReader prefers the newer last-viewed assigned book over list order', () => {
+    const twoBookLibrary: BookLibraryPayload = {
+      books: [
+        miniLibraryForHeadline.books[0]!,
+        {
+          id: 'book-b',
+          title: 'Second Book',
+          units: [
+            {
+              id: 'unit-b1',
+              title: 'Unit B',
+              filePath: '/b.pdf',
+              lessons: [
+                {
+                  id: 'lesson-b1',
+                  title: 'Lesson B',
+                  parts: [{ id: 'part-b-story', title: 'Story B', startPageHint: 40, endPageHint: 50 }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    }
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-18T12:20:00.000Z'))
+    saveUnitPage('book-a', 'unit-1', 3)
+    vi.setSystemTime(new Date('2026-09-18T12:21:00.000Z'))
+    saveUnitPage('book-b', 'unit-b1', 44)
+    vi.useRealTimers()
+    saveStudents([
+      seedStudent({
+        assignedBookIds: ['book-a', 'book-b'],
+        assignedUnitRefs: [
+          { bookId: 'book-a', unitId: 'unit-1' },
+          { bookId: 'book-b', unitId: 'unit-b1' },
+        ],
+        scheduledClasses: [
+          sessionBase({
+            id: 'class-old-a',
+            title: 'Journeys leftover',
+            scheduledFor: '2026-09-18T12:00:00.000Z',
+            status: 'completed',
+            classEndedAt: '2026-09-18T12:20:30.000Z',
+            bookmarkAtEnd: { bookId: 'book-a', pdfPage: 3, unitId: 'unit-1' },
+          }),
+          sessionBase({
+            id: 'class-next',
+            title: 'Upcoming',
+            scheduledFor: '2026-09-19T12:00:00.000Z',
+            status: 'planned',
+          }),
+        ],
+      }),
+    ])
+    expect(getStudentDefaultBookUnitForReader('student-1', twoBookLibrary)).toEqual({
+      bookId: 'book-b',
+      unitId: 'unit-b1',
+    })
+    expect(getStudentTeachingOpenPdfPageForBookUnit('student-1', 'book-b', 'unit-b1', twoBookLibrary)).toBe(44)
+    expect(resolveNextSectionForClass('student-1', 'class-next', twoBookLibrary)?.bookId).toBe('book-b')
+    expect(resolveClassTeachingBookUnit('student-1', 'class-next', twoBookLibrary)).toMatchObject({
+      bookId: 'book-b',
+      unitId: 'unit-b1',
+    })
+  })
+
+  it('getStudentTeachingOpenPdfPageForBookUnit prefers a newer saved reader page over an older class bookmark', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-18T12:21:00.000Z'))
+    saveUnitPage('book-a', 'unit-1', 22)
+    vi.useRealTimers()
+    saveStudents([
+      seedStudent({
+        assignedBookIds: ['book-a'],
+        assignedUnitRefs: [{ bookId: 'book-a', unitId: 'unit-1' }],
+        scheduledClasses: [
+          sessionBase({
+            id: 'class-old',
+            title: 'Past',
+            scheduledFor: '2026-08-29T12:00:00.000Z',
+            status: 'completed',
+            classEndedAt: '2026-08-29T12:25:00.000Z',
+            bookmarkAtEnd: { bookId: 'book-a', pdfPage: 15, unitId: 'unit-1' },
+          }),
+        ],
+      }),
+    ])
+    expect(getStudentTeachingOpenPdfPageForBookUnit('student-1', 'book-a', 'unit-1', miniLibraryForHeadline)).toBe(22)
+  })
+
+  it('resolveNextSectionForClass stays on the last selected section instead of skipping ahead', () => {
+    const prior = sessionBase({
+      id: 'class-done',
+      title: 'Past',
+      scheduledFor: '2026-04-21T10:00:00.000Z',
+      status: 'completed',
+      selectedSection: {
+        id: 'part:book-a:unit-1:lesson-1:part-story',
+        type: 'part',
+        bookId: 'book-a',
+        bookTitle: 'Test Book',
+        unitId: 'unit-1',
+        unitTitle: 'Unit 1',
+        lessonId: 'lesson-1',
+        lessonTitle: 'Lesson 1',
+        partId: 'part-story',
+        partTitle: 'The River Story',
+        title: 'The River Story',
+        startPageHint: 10,
+        endPageHint: 25,
+      },
+    })
+    const next = sessionBase({
+      id: 'class-next',
+      title: 'Upcoming',
+      scheduledFor: '2026-04-28T10:00:00.000Z',
+      status: 'planned',
+    })
+    saveStudents([
+      seedStudent({
+        assignedBookIds: ['book-a'],
+        assignedUnitRefs: [{ bookId: 'book-a', unitId: 'unit-1' }],
+        scheduledClasses: [prior, next],
+      }),
+    ])
+    expect(resolveNextSectionForClass('student-1', 'class-next', miniLibraryForHeadline)?.id).toBe(
+      'part:book-a:unit-1:lesson-1:part-story',
+    )
   })
 
   it('resolveClassTeachingBookUnit uses saved selectedSection book and unit', () => {

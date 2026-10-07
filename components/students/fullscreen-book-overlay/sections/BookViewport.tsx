@@ -440,8 +440,8 @@ export function BookBottomChrome({
       {isWhiteboardSessionOpen ? (
         <>
           <ChromeIconButton
-            label={isWhiteboardMinimized ? 'Show lesson board' : 'Hide lesson board'}
-            title={isWhiteboardMinimized ? 'Restore lesson board' : 'Minimize lesson board'}
+            label={isWhiteboardMinimized ? 'Pin notebook' : 'Hide notebook'}
+            title={isWhiteboardMinimized ? 'Pin notebook beside the book' : 'Hide notebook'}
             active={!isWhiteboardMinimized}
             onClick={isWhiteboardMinimized ? onExpandWhiteboard : onMinimizeWhiteboard}
           >
@@ -453,8 +453,8 @@ export function BookBottomChrome({
           </ChromeIconButton>
           {boardVisible ? (
             <ChromeIconButton
-              label={boardFloating ? 'Dock lesson board' : 'Float lesson board'}
-              title={boardFloating ? 'Dock board beside the book' : 'Float board over the book'}
+              label={boardFloating ? 'Pin notebook' : 'Overlay notebook'}
+              title={boardFloating ? 'Pin notebook beside the book' : 'Overlay notebook on the book'}
               active={boardFloating}
               onClick={boardFloating ? onDockWhiteboard : onFloatWhiteboard}
             >

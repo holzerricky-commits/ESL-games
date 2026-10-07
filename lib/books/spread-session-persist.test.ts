@@ -145,4 +145,19 @@ describe('spread-session-persist', () => {
       'pdf',
     )
   })
+
+  it('flushSpreadSessionDocumentToPageStorage skips writes until storage is ready', () => {
+    mockedSetAnnotationsForPage.mockClear()
+    const doc = createEmptySpreadSession(key)
+    flushSpreadSessionDocumentToPageStorage({
+      doc,
+      key,
+      layout,
+      studentId: key.studentId,
+      bookId: key.bookId,
+      unitId: key.unitId,
+      storageReady: false,
+    })
+    expect(mockedSetAnnotationsForPage).not.toHaveBeenCalled()
+  })
 })

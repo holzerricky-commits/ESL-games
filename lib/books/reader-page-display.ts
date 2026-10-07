@@ -44,11 +44,8 @@ export function readerPageHasDrawablePixelsFromLayers(args: {
   return args.showSharpCache || args.pdfDisplayReady || args.showPlaceholder
 }
 
-/** Layer visibility when PDF text selection shares the page with prefetch cache. */
 export type ReaderPageLayerVisibility = {
-  pdfTextLayerActive: boolean
-  /** Text layer over sharp cache — hide live PDF canvas, keep cache as background. */
-  pdfTextOverCache: boolean
+  /** Hide live PDF compositing while sharp prefetch cache is the visible art. */
   pdfHiddenBehindCache: boolean
   showSharpCacheLayer: boolean
 }
@@ -68,19 +65,12 @@ export function resolveReaderPageShowSharpCache(args: {
 }
 
 export function resolveReaderPageLayerVisibility(args: {
-  bookTextSelectActive: boolean
-  pageHasSelectableText: boolean
   showSharpCache: boolean
 }): ReaderPageLayerVisibility {
-  const pdfTextLayerActive = args.bookTextSelectActive && args.pageHasSelectableText
   const showSharpCacheLayer = args.showSharpCache
-  const pdfTextOverCache = pdfTextLayerActive && showSharpCacheLayer
-  const pdfHiddenBehindCache = showSharpCacheLayer && !pdfTextLayerActive
   return {
-    pdfTextLayerActive,
-    pdfTextOverCache,
-    pdfHiddenBehindCache,
     showSharpCacheLayer,
+    pdfHiddenBehindCache: showSharpCacheLayer,
   }
 }
 

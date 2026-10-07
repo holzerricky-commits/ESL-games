@@ -245,6 +245,8 @@ function textLabelMirrorStyle(
     whiteSpace?: CSSProperties['whiteSpace']
     textAlign?: TextAnnotationCommand['textAlign']
     fontWeight?: CSSProperties['fontWeight']
+    fontStyle?: CSSProperties['fontStyle']
+    textDecoration?: CSSProperties['textDecoration']
   },
 ): CSSProperties {
   const lineHeightPx =
@@ -254,6 +256,8 @@ function textLabelMirrorStyle(
     fontSize,
     color,
     ...(opts?.fontWeight != null ? { fontWeight: opts.fontWeight } : {}),
+    ...(opts?.fontStyle != null ? { fontStyle: opts.fontStyle } : {}),
+    ...(opts?.textDecoration != null ? { textDecoration: opts.textDecoration } : {}),
     textAlign: textLabelAlignOrDefault(opts?.textAlign),
     ...(opts?.omitFieldPadding ? {} : textLabelFieldPaddingCSS(variant)),
     ...annotationTextFieldNoScrollCSS(),
@@ -273,7 +277,12 @@ function textLabelPlaceholderMirrorTypography(
   fontSize: number,
   color: string,
   variant: TextLabelFieldVariant = 'plain',
-  opts?: { omitFieldPadding?: boolean; fontWeight?: CSSProperties['fontWeight'] },
+  opts?: {
+    omitFieldPadding?: boolean
+    fontWeight?: CSSProperties['fontWeight']
+    fontStyle?: CSSProperties['fontStyle']
+    textDecoration?: CSSProperties['textDecoration']
+  },
 ): CSSProperties {
   return textLabelMirrorStyle(fontFamily, fontSize, color, '', variant, {
     ...opts,
@@ -712,6 +721,9 @@ function EditableBlock({
   const fs = Math.max(10, Math.round(cmd.fontSizeNorm * heightPx))
   const fontFamily = annotationTextFontFamily(cmd.fontId ?? defaultTextFontId)
   const fontWeight = annotationTextCssWeight(cmd.fontId ?? defaultTextFontId, cmd.fontWeight)
+  const fontStyle: CSSProperties['fontStyle'] = cmd.kind === 'text' && cmd.italic ? 'italic' : undefined
+  const textDecoration: CSSProperties['textDecoration'] =
+    cmd.kind === 'text' && cmd.underline ? 'underline' : undefined
   const translationChip = cmd.kind === 'text' && isTranslationChipText(cmd)
   const glossFontSizePx = Math.max(10, Math.round(fs * 0.58))
   const showGlosses = hasGlosses
@@ -1094,6 +1106,8 @@ function EditableBlock({
       whiteSpace: editingFieldWhiteSpace,
       textAlign: cmd.textAlign,
       ...(fontWeight != null ? { fontWeight } : {}),
+      ...(fontStyle != null ? { fontStyle } : {}),
+      ...(textDecoration != null ? { textDecoration } : {}),
     }
     const mirrorForLabel = textLabelMirrorStyle(
       fontFamily,
@@ -1125,6 +1139,7 @@ function EditableBlock({
         ? computeFilledPillLayout(cmd.text, fontFamily, fs, cmd.x, overlayWidthPx, undefined, {
             maxWidthNorm: cmd.maxWidthNorm,
             fontWeight,
+            ...(fontStyle != null ? { fontStyle } : {}),
           })
         : null
     const committedPlainLayout =
@@ -1133,6 +1148,7 @@ function EditableBlock({
             variant: 'plain',
             maxWidthNorm: cmd.maxWidthNorm,
             fontWeight,
+            ...(fontStyle != null ? { fontStyle } : {}),
           })
         : null
     const liveFieldLayout = textFieldLayout
@@ -1396,7 +1412,7 @@ function EditableBlock({
                         fs,
                         cmd.color,
                         'filled',
-                        { omitFieldPadding: true, fontWeight },
+                        { omitFieldPadding: true, fontWeight, fontStyle, textDecoration },
                       )}
                       className="inset-0"
                       absoluteStyle={filledTextFieldPaddingCSS}
@@ -1520,7 +1536,7 @@ function EditableBlock({
                         fs,
                         cmd.color,
                         textVariant,
-                        { fontWeight },
+                        { fontWeight, fontStyle, textDecoration },
                       )}
                       absoluteStyle={{ top: 0, left: 0 }}
                     />

@@ -1,8 +1,9 @@
 'use client'
 
-import { Trash2 } from 'lucide-react'
+import { MapPin, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import type { VocabTapSpot } from '@/lib/context/types'
 
 export interface VocabWordPrepCardProps {
   word: string
@@ -15,6 +16,8 @@ export interface VocabWordPrepCardProps {
   onExamplesChange: (value: string) => void
   onRemove: () => void
   className?: string
+  /** Tap spot for this word (null = not placed yet). */
+  tapSpot?: VocabTapSpot | null
 }
 
 const fieldReset =
@@ -31,6 +34,7 @@ export function VocabWordPrepCard({
   onExamplesChange,
   onRemove,
   className,
+  tapSpot,
 }: VocabWordPrepCardProps) {
   return (
     <article
@@ -54,17 +58,36 @@ export function VocabWordPrepCard({
       </Button>
 
       <div className="space-y-3 pr-8">
-        <input
-          type="text"
-          value={word}
-          onChange={(e) => onWordChange(e.target.value)}
-          placeholder="Word"
-          aria-label={`Word ${index + 1}`}
-          className={cn(
-            fieldReset,
-            'text-[28px] font-semibold leading-tight tracking-tight text-foreground placeholder:text-muted-foreground/40',
-          )}
-        />
+        <div className="flex items-start gap-2">
+          <input
+            type="text"
+            value={word}
+            onChange={(e) => onWordChange(e.target.value)}
+            placeholder="Word"
+            aria-label={`Word ${index + 1}`}
+            className={cn(
+              fieldReset,
+              'min-w-0 flex-1 text-[28px] font-semibold leading-tight tracking-tight text-foreground placeholder:text-muted-foreground/40',
+            )}
+          />
+          {tapSpot ? (
+            <span
+              className="mt-2 inline-flex shrink-0 items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-medium text-sky-700 dark:bg-sky-900/40 dark:text-sky-300"
+              title={`Placed on page ${tapSpot.pdfPage}`}
+            >
+              <MapPin className="size-3" aria-hidden />
+              p.{tapSpot.pdfPage}
+            </span>
+          ) : word.trim() ? (
+            <span
+              className="mt-2 inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100/80 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+              title="No tap spot — save to auto-place"
+            >
+              <MapPin className="size-3 opacity-50" aria-hidden />
+              unplaced
+            </span>
+          ) : null}
+        </div>
 
         <textarea
           value={definition}

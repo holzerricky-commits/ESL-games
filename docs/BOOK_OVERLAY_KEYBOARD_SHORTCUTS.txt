@@ -68,10 +68,10 @@ NAVIGATION & PANELS
 -------------------
   Left / Right arrow     Previous / next page
   G                      Toggle page list
-  W                      Toggle whiteboard
+  W                      Pin / hide notebook (same as the left-rail button)
   `  (backtick)           Show / hide annotation tool rail
 
-  Esc                    Close whiteboard, then page list, then close the book
+  Esc                    Hide notebook, then page list, then close the book
                          (dialogs such as clear-page confirm use Esc on their own)
 
 

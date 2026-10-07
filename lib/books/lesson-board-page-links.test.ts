@@ -4,12 +4,16 @@ import { appendLessonBoardStandardPage } from '@/lib/books/lesson-board-session-
 import {
   createMemoryLessonBoardPageLinksStorage,
   findLessonBoardPageLinkForBoardPage,
+  formatNotebookBookLinkGoToLabel,
+  listBoardLinksFromNotebookPages,
   listLessonBoardPageLinksForPdfPage,
   loadLessonBoardPageLinks,
   removeLessonBoardPageLink,
   resolveLessonBoardPageIdFromLink,
+  stampLegacyBoardLinksOntoPages,
   upsertLessonBoardPageLink,
 } from '@/lib/books/lesson-board-page-links'
+import { createLessonBoardPage } from '@/lib/books/lesson-board-types'
 
 const scope = {
   studentId: 's1',
@@ -32,6 +36,7 @@ describe('lesson-board-page-links', () => {
       storage,
     )
     expect(first.pdfPage).toBe(12)
+    expect(first.bookId).toBe('b1')
     expect(first.center).toEqual([0.2, 0.3])
 
     const second = upsertLessonBoardPageLink(
@@ -121,6 +126,7 @@ describe('lesson-board-page-links', () => {
 
     const linkByTitle = {
       id: 'l1',
+      bookId: 'b1',
       pdfPage: 8,
       center: [0.5, 0.5] as [number, number],
       boardPageRef: {
@@ -137,5 +143,64 @@ describe('lesson-board-page-links', () => {
       boardPageRef: { pageId: 'missing-id', ordinal: 1 },
     }
     expect(resolveLessonBoardPageIdFromLink(linkByOrdinal, doc.pages)).toBe(page2.id)
+  })
+
+  it('stamps legacy per-unit links onto notebook pages using the old scope bookId', () => {
+    const storage = createMemoryLessonBoardPageLinksStorage()
+    upsertLessonBoardPageLink(
+      { studentId: 's1', bookId: 'workshop', unitId: 'u1' },
+      {
+        pdfPage: 18,
+        center: [0.2, 0.8],
+        boardPage: { id: 'ws-p1', orientation: 'standard' },
+        ordinal: 0,
+      },
+      storage,
+    )
+    upsertLessonBoardPageLink(
+      { studentId: 's2', bookId: 'workshop', unitId: 'u1' },
+      {
+        pdfPage: 99,
+        center: [0.1, 0.1],
+        boardPage: { id: 'ws-p1', orientation: 'standard' },
+        ordinal: 0,
+      },
+      storage,
+    )
+    const pages = [
+      createLessonBoardPage('standard', { id: 'ws-p1', sourceBookId: 'workshop', sourceUnitId: 'u1' }),
+      createLessonBoardPage('standard', { id: 'blank' }),
+    ]
+    const stamped = stampLegacyBoardLinksOntoPages('s1', pages, storage)
+    expect(stamped.changed).toBe(true)
+    expect(stamped.pages[0]?.primaryLink).toEqual({
+      bookId: 'workshop',
+      pdfPage: 18,
+      center: [0.2, 0.8],
+    })
+    expect(stamped.pages[1]?.primaryLink).toBeUndefined()
+    const again = stampLegacyBoardLinksOntoPages('s1', stamped.pages, storage)
+    expect(again.changed).toBe(false)
+  })
+
+  it('lists notebook-derived links only for the cited book', () => {
+    const pages = [
+      createLessonBoardPage('standard', {
+        id: 'p1',
+        primaryLink: { bookId: 'lit', pdfPage: 18, center: [0.4, 0.5] },
+      }),
+      createLessonBoardPage('standard', {
+        id: 'p2',
+        primaryLink: { bookId: 'ws', pdfPage: 18, center: [0.1, 0.1] },
+      }),
+    ]
+    const links = listBoardLinksFromNotebookPages(pages)
+    expect(listLessonBoardPageLinksForPdfPage(links, 18, 'lit')).toHaveLength(1)
+    expect(listLessonBoardPageLinksForPdfPage(links, 18, 'lit')[0]?.boardPageRef.pageId).toBe('p1')
+    expect(
+      formatNotebookBookLinkGoToLabel(pages[0]!.primaryLink, {
+        books: [{ id: 'lit', title: 'Anthology', role: 'Literature', units: [] } as never],
+      }),
+    ).toBe('Go to Literature p.18')
   })
 })

@@ -6,6 +6,8 @@ Last updated: 2026-08-20
 
 **Related:** `PROJECT_CONTEXT.md` (book-first), student/class flow for **Teach**, reading-checks / outline as prep fuel.
 
+**Workbench shell:** Shared left-tools / right-book frame for Edit outline and (next) part prep — `docs/BOOK_WORKBENCH_SHELL.md`.
+
 ---
 
 ## What this page is

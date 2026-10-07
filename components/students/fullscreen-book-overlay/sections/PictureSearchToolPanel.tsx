@@ -16,6 +16,8 @@ type PictureSearchToolPanelProps = {
   boardVisible: boolean
   /** Start tap-to-place on the book (or visible board). */
   onPlacePicture?: (src: string, alt: string) => void
+  /** Prefill search when the drawer opens (e.g. from vocab deep dive). */
+  initialQuery?: string
 }
 
 /**
@@ -29,6 +31,7 @@ export function PictureSearchToolPanel({
   wbAnnRef,
   boardVisible,
   onPlacePicture,
+  initialQuery = '',
 }: PictureSearchToolPanelProps) {
   const onInsertImage = useBoardImageSearchInsert({ studentId, wbAnnRef })
 
@@ -43,6 +46,7 @@ export function PictureSearchToolPanel({
       <BoardImageSearchPanel
         variant="drawer"
         open={open}
+        initialQuery={initialQuery}
         onOpenChange={(next) => {
           if (!next) onClose()
         }}

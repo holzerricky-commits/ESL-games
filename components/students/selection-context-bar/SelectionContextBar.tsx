@@ -155,10 +155,6 @@ export function SelectionContextBar({
           SELECTION_CONTEXT_BAR_LAYOUT,
           'transition-opacity duration-150 ease-out motion-reduce:transition-none',
           visible ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0',
-          'before:pointer-events-none before:absolute before:left-1/2 before:z-10 before:h-2.5 before:w-2.5 before:-translate-x-1/2 before:rotate-45 before:border before:border-[#3f3f46] before:bg-[#2a2a2e] before:shadow-[0_1px_2px_rgba(0,0,0,0.2)]',
-          locked.placement === 'above'
-            ? 'before:-bottom-[5px] before:border-t-0 before:border-l-0'
-            : 'before:-top-[5px] before:border-b-0 before:border-r-0',
           className,
         )}
         style={barStyle}

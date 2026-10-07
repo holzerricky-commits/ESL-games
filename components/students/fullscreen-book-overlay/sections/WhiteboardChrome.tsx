@@ -89,7 +89,9 @@ export interface WhiteboardHeaderProps {
   canDeleteLessonBoardPage?: boolean
   onStartBoardLinkPlacement?: () => void
   onRemoveBoardLink?: () => void
+  onGoToBoardLink?: () => void
   activeBoardPageLinkPdfPage?: number | null
+  activeBoardPageLinkGoToLabel?: string | null
   boardLinkPlacementActive?: boolean
   /**
    * Prep mode: show link-to-book as a header icon instead of under More.
@@ -132,7 +134,9 @@ export function WhiteboardHeader({
   canDeleteLessonBoardPage = false,
   onStartBoardLinkPlacement,
   onRemoveBoardLink,
+  onGoToBoardLink,
   activeBoardPageLinkPdfPage = null,
+  activeBoardPageLinkGoToLabel = null,
   boardLinkPlacementActive = false,
   boardLinkInHeader = false,
   imageSearchControl,
@@ -258,18 +262,35 @@ export function WhiteboardHeader({
 
         {/* Link (prep) + More + Layout + Minimize */}
         <div className="flex shrink-0 items-center justify-end gap-0.5">
+          {activeBoardPageLinkGoToLabel && onGoToBoardLink ? (
+            <button
+              type="button"
+              onClick={onGoToBoardLink}
+              className={cn(
+                'pointer-events-auto flex h-7 max-w-[9.5rem] items-center rounded-md px-1.5',
+                'bg-transparent text-left text-[10px] font-semibold text-[#2563EB]',
+                'transition-colors duration-150 ease-out hover:bg-[#2563EB]/10',
+                'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#D1D5DB]',
+              )}
+              aria-label={activeBoardPageLinkGoToLabel}
+              title={activeBoardPageLinkGoToLabel}
+            >
+              <span className="truncate">{activeBoardPageLinkGoToLabel}</span>
+            </button>
+          ) : null}
+
           {linkInHeader ? (
             <>
               <ChromeIconButton
                 onClick={onStartBoardLinkPlacement}
                 aria-label={
-                  activeBoardPageLinkPdfPage != null
-                    ? `Linked to book page ${activeBoardPageLinkPdfPage}. Tap to re-link.`
-                    : 'Link this board page to a spot on the book'
+                  activeBoardPageLinkGoToLabel
+                    ? `${activeBoardPageLinkGoToLabel.replace(/^Go to /, 'Linked to ')}. Tap to re-link.`
+                    : 'Link this notebook page to a spot on the book'
                 }
                 title={
                   activeBoardPageLinkPdfPage != null
-                    ? `Linked · p.${activeBoardPageLinkPdfPage}`
+                    ? activeBoardPageLinkGoToLabel ?? `Linked · p.${activeBoardPageLinkPdfPage}`
                     : 'Link to book'
                 }
                 className={cn(
@@ -319,9 +340,14 @@ export function WhiteboardHeader({
                 {linkInMoreMenu ? (
                   <DropdownMenuItem onSelect={() => onStartBoardLinkPlacement?.()}>
                     <CircleDot className="size-4" aria-hidden />
-                    {activeBoardPageLinkPdfPage != null
-                      ? `Linked · p.${activeBoardPageLinkPdfPage}`
+                    {activeBoardPageLinkGoToLabel
+                      ? activeBoardPageLinkGoToLabel.replace(/^Go to /, 'Linked to ')
                       : 'Link to book'}
+                  </DropdownMenuItem>
+                ) : null}
+                {linkInMoreMenu && activeBoardPageLinkGoToLabel && onGoToBoardLink ? (
+                  <DropdownMenuItem onSelect={() => onGoToBoardLink()}>
+                    {activeBoardPageLinkGoToLabel}
                   </DropdownMenuItem>
                 ) : null}
                 {linkInMoreMenu &&
@@ -357,16 +383,16 @@ export function WhiteboardHeader({
               {layoutMode === 'floating' && onDock ? (
                 <ChromeIconButton
                   onClick={onDock}
-                  aria-label="Dock board to book"
-                  title="Dock to book"
+                  aria-label="Pin notebook to book"
+                  title="Pin to book"
                 >
                   <Dock className={CHROME_ICON} aria-hidden />
                 </ChromeIconButton>
               ) : onFloat ? (
                 <ChromeIconButton
                   onClick={onFloat}
-                  aria-label="Float board above book"
-                  title="Float board"
+                  aria-label="Overlay notebook on book"
+                  title="Overlay on book"
                 >
                   <PictureInPicture2 className={CHROME_ICON} aria-hidden />
                 </ChromeIconButton>
@@ -389,8 +415,8 @@ export function WhiteboardHeader({
 
           <ChromeIconButton
             onClick={onMinimize}
-            aria-label="Minimize lesson board"
-            title="Minimize board"
+            aria-label="Hide notebook"
+            title="Hide notebook"
           >
             <Minus className={CHROME_ICON} aria-hidden />
           </ChromeIconButton>

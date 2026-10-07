@@ -54,6 +54,7 @@ export type TextLabelMeasureInput = Pick<
   | 'fontSizeNorm'
   | 'fontId'
   | 'fontWeight'
+  | 'italic'
   | 'maxWidthNorm'
   | 'visualStyle'
 >
@@ -98,13 +99,15 @@ export function measurePlainTextLineWidthPx(
   fontId: AnnotationTextFontId | undefined,
   fontSizePx: number,
   fontWeight?: AnnotationTextFontWeight,
+  italic?: boolean,
 ): number {
   const sample = line.length > 0 ? line : ' '
   const fontFamily = annotationTextFontFamily(fontId)
   const cssWeight = annotationTextCssWeight(fontId, fontWeight)
+  const cssStyle = italic ? 'italic' : 'normal'
   const ctx = getMeasureCanvasContext()
   if (ctx) {
-    ctx.font = `${cssWeight} ${fontSizePx}px ${fontFamily}`
+    ctx.font = `${cssStyle} ${cssWeight} ${fontSizePx}px ${fontFamily}`
     return ctx.measureText(sample).width
   }
   const ratio = avgCharWidthRatioForFont(fontId)
@@ -136,6 +139,7 @@ export function measureFilledTextLabelBounds(
   const fontSizePx = textLabelFontSizePx(input.fontSizeNorm, heightPx)
   const fontFamily = annotationTextFontFamily(input.fontId)
   const cssWeight = annotationTextCssWeight(input.fontId, input.fontWeight)
+  const cssStyle = input.italic ? 'italic' : undefined
   const rowMinPx = filledPillRowMinPx(fontSizePx)
   const maxWidthNorm = input.maxWidthNorm ?? 0.88
   const minWidthNorm =
@@ -158,6 +162,7 @@ export function measureFilledTextLabelBounds(
         growOnly: opts?.growOnly,
         latchedMaxWidth: opts?.latchedMaxWidth,
         fontWeight: cssWeight,
+        ...(cssStyle ? { fontStyle: cssStyle } : {}),
       },
     )
     fieldWidthPx = layout.fieldWidthPx
@@ -168,8 +173,13 @@ export function measureFilledTextLabelBounds(
     for (const line of lines) {
       fieldWidthPx = Math.max(
         fieldWidthPx,
-        measurePlainTextLineWidthPx(line, input.fontId, fontSizePx, input.fontWeight) +
-          FILLED_TEXT_MEASURE_PAD_PX,
+        measurePlainTextLineWidthPx(
+          line,
+          input.fontId,
+          fontSizePx,
+          input.fontWeight,
+          input.italic,
+        ) + FILLED_TEXT_MEASURE_PAD_PX,
       )
     }
     const maxWidthPx = plainTextMaxWidthPx(input.x, input.maxWidthNorm, widthPx)
@@ -210,6 +220,7 @@ export function measurePlainTextLabelBounds(
   const fontSizePx = textLabelFontSizePx(input.fontSizeNorm, heightPx)
   const fontFamily = annotationTextFontFamily(input.fontId)
   const cssWeight = annotationTextCssWeight(input.fontId, input.fontWeight)
+  const cssStyle = input.italic ? 'italic' : undefined
   const lineRowMinPx = textLabelLineHeightPx(fontSizePx)
   const maxWidthNorm = input.maxWidthNorm ?? 0.88
   const minWidthNorm =
@@ -232,6 +243,7 @@ export function measurePlainTextLabelBounds(
         growOnly: opts?.growOnly,
         latchedMaxWidth: opts?.latchedMaxWidth,
         fontWeight: cssWeight,
+        ...(cssStyle ? { fontStyle: cssStyle } : {}),
       },
     )
     fieldWidthPx = layout.fieldWidthPx
@@ -242,8 +254,13 @@ export function measurePlainTextLabelBounds(
     for (const line of lines) {
       fieldWidthPx = Math.max(
         fieldWidthPx,
-        measurePlainTextLineWidthPx(line, input.fontId, fontSizePx, input.fontWeight) +
-          PLAIN_TEXT_MEASURE_PAD_PX,
+        measurePlainTextLineWidthPx(
+          line,
+          input.fontId,
+          fontSizePx,
+          input.fontWeight,
+          input.italic,
+        ) + PLAIN_TEXT_MEASURE_PAD_PX,
       )
     }
     const maxWidthPx = plainTextMaxWidthPx(input.x, input.maxWidthNorm, widthPx)

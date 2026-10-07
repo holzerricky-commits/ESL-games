@@ -58,6 +58,8 @@ export interface FullscreenBookOverlayProps {
   preferOpenPdfPage?: number | null
   /** When true, open the Exercises rail once the book is open (workshop mark → Exercise). */
   preferOpenExercises?: boolean
+  /** Switch the teaching book without closing the overlay (class source strip). */
+  onSwitchTeachingBook?: (bookId: string, unitId: string) => void
   /** Docked top chrome (place bar). Reserves space so it does not cover the book. */
   topChrome?: ReactNode
   /** Left desk rail (e.g. workshop story tools). Pushes the book like Listening. */

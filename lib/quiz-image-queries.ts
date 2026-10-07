@@ -196,14 +196,29 @@ export function buildTranslateImageSearchHint(
   return sanitizeLlmPhrase(`${word} ${uniq.join(' ')} isolated stock photo`)
 }
 
+/**
+ * When the example is too thin for a keyword hint, pass it to /api/image-search-phrase
+ * so the model can build a word+sentence stock phrase.
+ */
+export function buildTranslateImagePhraseContexts(
+  rawWord: string,
+  exampleEn?: string | null,
+): Record<string, string> | undefined {
+  const lemma = rawWord.toLowerCase().trim()
+  const example = (exampleEn ?? '').replace(/\s+/g, ' ').trim().slice(0, 160)
+  if (!lemma || example.length < 3) return undefined
+  return { [lemma]: example }
+}
+
 /** Pixabay-oriented — literal stock-style still. */
 export function buildStaticSearchQuery(rawWord: string, options?: ImageQueryOptions): string {
   const word = rawWord.toLowerCase().trim()
   const llm = sanitizeLlmPhrase(options?.imageSearchQuery ?? '')
-  if (llm.length >= 3) return llm
+  if (llm.length >= 3) {
+    return ensureLemmaInPhrase(word, llm)
+  }
   const hit = mergedOverride(word)
   if (hit) return hit
-  if (word.includes('water')) return BEVERAGE.water
   return `${word} isolated on white background stock photo`
 }
 
@@ -221,6 +236,23 @@ const ACTION_WORDS = new Set([
   'sing',
   'play',
 ])
+
+function ensureLemmaInPhrase(word: string, phrase: string): string {
+  const lemma = word.toLowerCase().trim()
+  const p = phrase.trim()
+  if (!lemma || !p) return p || lemma
+  if (phraseContainsLemma(p, lemma)) return p
+  return sanitizeLlmPhrase(`${lemma} ${p}`)
+}
+
+function phraseContainsLemma(phrase: string, lemma: string): boolean {
+  const h = phrase.toLowerCase()
+  if (h.includes(lemma)) return true
+  // Multi-word subject: every significant token should appear.
+  const parts = lemma.split(/[^a-z0-9]+/).filter((t) => t.length >= 2)
+  if (parts.length <= 1) return false
+  return parts.every((t) => h.includes(t))
+}
 
 /** GIPHY — same intent: clear subject, no “cute/macro” leaning tier-1. */
 export function buildGifSearchQuery(rawWord: string, options?: ImageQueryOptions): string {
@@ -262,14 +294,16 @@ export function buildGifSearchQuery(rawWord: string, options?: ImageQueryOptions
     money: 'money coins loop simple',
     love: 'heart animation loop simple',
   }
-  if (gifMap[word]) return gifMap[word]
-  if (word.includes('water')) return gifMap.water
-  if (ACTION_WORDS.has(word)) {
-    return `${word} simple animation loop educational`
-  }
+
   const llm = sanitizeLlmPhrase(options?.imageSearchQuery ?? '')
   if (llm.length >= 3) {
-    return `${llm} loop simple educational`.slice(0, 220)
+    const withLemma = ensureLemmaInPhrase(word, llm)
+    return `${withLemma} loop simple educational`.slice(0, 220)
+  }
+
+  if (gifMap[word]) return gifMap[word]
+  if (ACTION_WORDS.has(word)) {
+    return `${word} simple animation loop educational`
   }
   return `${word} isolated loop simple background`
 }

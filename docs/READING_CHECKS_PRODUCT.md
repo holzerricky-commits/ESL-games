@@ -132,7 +132,7 @@ You pick one Literature story, save its text, get an AI draft (or write checks y
 
 ## Changelog
 
-- **2026-08-19** — Prepare destination is Today’s class; glance still status-only (Stories jump).
+- **2026-08-19** — Prepare destination was Today’s class (later removed; glance still status-only).
 - **2026-08-05** — Literature → Workshop lesson link (Phase 9e): Literature Stories pick a Workshop week; Generate uses that skill frame.
 - **2026-08-05** — Stop and Check harvest (Phase 9c): detect publisher pauses in story text; import to pack; Generate must-cover anchors.
 - **2026-08-05** — Skill-aware Generate (Phase 9b): ready lesson frame steers checks toward skill / EQ / target vocab.

@@ -140,6 +140,8 @@ interface AnnotationRailProps {
   setMarkerStraightStroke: (v: boolean) => void
   markerDecoratedEdge: boolean
   setMarkerDecoratedEdge: (v: boolean) => void
+  penSmoothingLevel: number
+  setPenSmoothingLevel: (v: number) => void
   penAutoGroupConnected: boolean
   setPenAutoGroupConnected: (v: boolean) => void
   marqueeSelectRule: MarqueeSelectRule
@@ -246,6 +248,8 @@ export function AnnotationRail({
   setMarkerStraightStroke,
   markerDecoratedEdge,
   setMarkerDecoratedEdge,
+  penSmoothingLevel,
+  setPenSmoothingLevel,
   penAutoGroupConnected,
   setPenAutoGroupConnected,
   marqueeSelectRule,
@@ -421,6 +425,8 @@ export function AnnotationRail({
               setMarkerStraightStroke={setMarkerStraightStroke}
               markerDecoratedEdge={markerDecoratedEdge}
               setMarkerDecoratedEdge={setMarkerDecoratedEdge}
+              penSmoothingLevel={penSmoothingLevel}
+              setPenSmoothingLevel={setPenSmoothingLevel}
               shapeLineDashStyle={shapeLineDashStyle}
               setShapeLineDashStyle={setShapeLineDashStyle}
               shapeStrokeEnabled={shapeStrokeEnabled}

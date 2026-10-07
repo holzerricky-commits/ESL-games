@@ -1,77 +1,99 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   getLessonBoardActivePage,
 } from '@/lib/books/lesson-board-types'
-import { getLessonBoardActivePageIndex } from '@/lib/books/lesson-board-session-ops'
+import type { LessonBoardPagePrimaryLink } from '@/lib/books/lesson-board-types'
 import {
   findLessonBoardPageLinkForBoardPage,
-  loadLessonBoardPageLinks,
-  removeLessonBoardPageLink,
+  formatNotebookBookLinkLabel,
+  listBoardLinksFromNotebookPages,
   resolveLessonBoardPageIdFromLink,
-  upsertLessonBoardPageLink,
+  stampLegacyBoardLinksOntoPages,
   type LessonBoardPageLink,
-  type LessonBoardPageLinksScope,
 } from '@/lib/books/lesson-board-page-links'
 import { hydrateLessonBoardLinksFromDisk } from '@/lib/local-data/lesson-board-links-disk-client'
 import type { WhiteboardSessionDocument } from '@/lib/books/whiteboard-session-types'
+import type { BookLibraryPayload } from '@/lib/books/types'
 
 export type UseBoardLinkPlacementArgs = {
   studentId: string
-  bookId: string | null
-  unitId: string | null
+  /** Currently focused PDF book — new links cite this book. */
+  openBookId: string | null
+  library: BookLibraryPayload | null
   whiteboardSessionDoc: WhiteboardSessionDocument | null
   minimizeWhiteboard: () => void
-  openWhiteboard: () => void
+  /** Marker tap: Pin notebook and show that page (book stays Focus). */
+  pinNotebook: () => void
   selectLessonBoardPage: (pageId: string) => void
-  setLessonBoardPageBookPageHint: (pageId: string, bookPageHint: number) => boolean
+  setLessonBoardPagePrimaryLink: (
+    pageId: string,
+    link: LessonBoardPagePrimaryLink | null,
+  ) => boolean
+  applyLessonBoardPagePrimaryLinks: (
+    linksByPageId: ReadonlyMap<string, LessonBoardPagePrimaryLink>,
+  ) => boolean
 }
 
 export function useBoardLinkPlacement({
   studentId,
-  bookId,
-  unitId,
+  openBookId,
+  library,
   whiteboardSessionDoc,
   minimizeWhiteboard,
-  openWhiteboard,
+  pinNotebook,
   selectLessonBoardPage,
-  setLessonBoardPageBookPageHint,
+  setLessonBoardPagePrimaryLink,
+  applyLessonBoardPagePrimaryLinks,
 }: UseBoardLinkPlacementArgs) {
   const [placementActive, setPlacementActive] = useState(false)
-  const [linksRevision, setLinksRevision] = useState(0)
+  const [legacyStampEpoch, setLegacyStampEpoch] = useState(0)
+  const stampedDocIdRef = useRef<string | null>(null)
 
-  const scope = useMemo<LessonBoardPageLinksScope | null>(() => {
-    if (!bookId || !unitId) return null
-    return { studentId, bookId, unitId }
-  }, [bookId, studentId, unitId])
+  const links = useMemo(
+    () => listBoardLinksFromNotebookPages(whiteboardSessionDoc?.pages ?? []),
+    [whiteboardSessionDoc?.pages],
+  )
 
-  const links = useMemo(() => {
-    if (!scope) return []
-    void linksRevision
-    return loadLessonBoardPageLinks(scope)
-  }, [linksRevision, scope])
+  const stampLegacyLinks = useCallback(() => {
+    const doc = whiteboardSessionDoc
+    if (!doc) return
+    const stamped = stampLegacyBoardLinksOntoPages(studentId, doc.pages)
+    if (!stamped.changed) return
+    const byPageId = new Map<string, LessonBoardPagePrimaryLink>()
+    for (const page of stamped.pages) {
+      if (!page.primaryLink) continue
+      const current = doc.pages.find((p) => p.id === page.id)?.primaryLink
+      if (current) continue
+      byPageId.set(page.id, page.primaryLink)
+    }
+    if (byPageId.size === 0) return
+    applyLessonBoardPagePrimaryLinks(byPageId)
+  }, [applyLessonBoardPagePrimaryLinks, studentId, whiteboardSessionDoc])
 
-  const refreshLinks = useCallback(() => {
-    setLinksRevision((n) => n + 1)
-  }, [])
-
-  // First reads can happen before saved links finish loading from disk;
-  // re-read once hydration completes so markers don't stay empty until a new link is placed.
   useEffect(() => {
     let cancelled = false
     void hydrateLessonBoardLinksFromDisk().then(() => {
-      if (!cancelled) refreshLinks()
+      if (cancelled) return
+      setLegacyStampEpoch((n) => n + 1)
     })
     return () => {
       cancelled = true
     }
-  }, [refreshLinks])
+  }, [])
 
   useEffect(() => {
-    refreshLinks()
-  }, [refreshLinks, whiteboardSessionDoc?.activePageId, bookId, unitId])
+    if (!whiteboardSessionDoc) {
+      stampedDocIdRef.current = null
+      return
+    }
+    const token = `${whiteboardSessionDoc.docId}:${legacyStampEpoch}`
+    if (stampedDocIdRef.current === token) return
+    stampedDocIdRef.current = token
+    stampLegacyLinks()
+  }, [legacyStampEpoch, stampLegacyLinks, whiteboardSessionDoc])
 
   const activeBoardPage = whiteboardSessionDoc
     ? getLessonBoardActivePage(whiteboardSessionDoc.pages, whiteboardSessionDoc.activePageId)
@@ -82,11 +104,13 @@ export function useBoardLinkPlacement({
     return findLessonBoardPageLinkForBoardPage(links, activeBoardPage.id)
   }, [activeBoardPage, links])
 
+  const activePrimaryLink = activeBoardPage?.primaryLink ?? null
+
   const startBoardLinkPlacement = useCallback(() => {
-    if (!activeBoardPage || !scope) return
+    if (!activeBoardPage || !openBookId) return
     minimizeWhiteboard()
     setPlacementActive(true)
-  }, [activeBoardPage, minimizeWhiteboard, scope])
+  }, [activeBoardPage, minimizeWhiteboard, openBookId])
 
   const cancelBoardLinkPlacement = useCallback(() => {
     setPlacementActive(false)
@@ -94,66 +118,57 @@ export function useBoardLinkPlacement({
 
   const placeBoardLinkAt = useCallback(
     (pdfPage: number, center: [number, number]) => {
-      if (!scope || !whiteboardSessionDoc || !activeBoardPage) {
-        toast.error('Could not place link — open the board and try again.')
+      const bookId = openBookId?.trim()
+      if (!bookId || !activeBoardPage) {
+        toast.error('Could not place link — open a book and try again.')
         setPlacementActive(false)
         return false
       }
-      const ordinal = getLessonBoardActivePageIndex(whiteboardSessionDoc)
-      upsertLessonBoardPageLink(scope, {
-        pdfPage,
-        center,
-        boardPage: activeBoardPage,
-        ordinal,
-      })
-      setLessonBoardPageBookPageHint(activeBoardPage.id, pdfPage)
-      refreshLinks()
+      const next: LessonBoardPagePrimaryLink = { bookId, pdfPage, center }
+      const saved = setLessonBoardPagePrimaryLink(activeBoardPage.id, next)
       setPlacementActive(false)
-      toast.success(`Linked to book page ${pdfPage}`)
+      if (!saved) {
+        toast.error('Could not place link — open the notebook and try again.')
+        return false
+      }
+      toast.success(`Linked to ${formatNotebookBookLinkLabel(next, library)}`)
       return true
     },
-    [
-      activeBoardPage,
-      refreshLinks,
-      scope,
-      setLessonBoardPageBookPageHint,
-      whiteboardSessionDoc,
-    ],
+    [activeBoardPage, library, openBookId, setLessonBoardPagePrimaryLink],
   )
 
   const removeActiveBoardPageLink = useCallback(() => {
-    if (!scope || !activeBoardPage) return false
-    const removed = removeLessonBoardPageLink(scope, activeBoardPage.id)
+    if (!activeBoardPage) return false
+    const removed = setLessonBoardPagePrimaryLink(activeBoardPage.id, null)
     if (!removed) return false
-    refreshLinks()
     toast.success('Book link removed')
     return true
-  }, [activeBoardPage, refreshLinks, scope])
+  }, [activeBoardPage, setLessonBoardPagePrimaryLink])
 
   const openBoardFromLink = useCallback(
     (link: LessonBoardPageLink) => {
       if (!whiteboardSessionDoc) return false
       const resolvedId = resolveLessonBoardPageIdFromLink(link, whiteboardSessionDoc.pages)
       if (!resolvedId) {
-        toast.error("That board page couldn't be found — open the board list and re-link.")
+        toast.error("That notebook page couldn't be found — open the page list and re-link.")
         return false
       }
-      openWhiteboard()
+      pinNotebook()
       selectLessonBoardPage(resolvedId)
       return true
     },
-    [openWhiteboard, selectLessonBoardPage, whiteboardSessionDoc],
+    [pinNotebook, selectLessonBoardPage, whiteboardSessionDoc],
   )
 
   return {
     boardLinkPlacementActive: placementActive,
     lessonBoardPageLinks: links,
     activeBoardPageLink,
+    activePrimaryLink,
     startBoardLinkPlacement,
     cancelBoardLinkPlacement,
     placeBoardLinkAt,
     removeActiveBoardPageLink,
     openBoardFromLink,
-    refreshLinks,
   }
 }

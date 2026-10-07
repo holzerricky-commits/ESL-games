@@ -21,16 +21,11 @@ export const SELECTION_CONTEXT_BAR_RIGHT_DOCK_INSET_NORM = 0.14
 export const SELECTION_CONTEXT_BAR_DEFAULT_HALF_WIDTH_NORM = 0.12
 
 /**
- * When the anchor sits this close to the top edge, place the bar below the selection instead.
- * Roughly one toolbar height on a typical board viewport.
+ * When the selection top sits this close to the top edge, place the bar below instead.
+ * Roughly one toolbar height on a typical board viewport — keeps the floater clear of
+ * top chrome and leaves the caret / text growth path unobstructed in the common case.
  */
 export const SELECTION_CONTEXT_BAR_FLIP_BELOW_TOP_NORM = 0.08
-
-/**
- * When the anchor sits this close to the bottom edge, prefer placing the bar above
- * (same as default) — used to avoid a below placement that would clip off-screen.
- */
-export const SELECTION_CONTEXT_BAR_FLIP_ABOVE_BOTTOM_NORM = 0.92
 
 export function clampSelectionBarCenterX(
   centerNorm: number,
@@ -53,8 +48,8 @@ export function clampSelectionBarCenterX(
   return Math.max(minCenter, Math.min(maxCenter, centerNorm))
 }
 
+/** Prefer above the selection; flip below only when there is not enough room at the top. */
 export function resolveSelectionBarPlacement(anchorRect: NormRect): SelectionBarPlacement {
-  const bottom = anchorRect.y + anchorRect.h
-  if (bottom > SELECTION_CONTEXT_BAR_FLIP_ABOVE_BOTTOM_NORM) return 'above'
-  return 'below'
+  if (anchorRect.y < SELECTION_CONTEXT_BAR_FLIP_BELOW_TOP_NORM) return 'below'
+  return 'above'
 }

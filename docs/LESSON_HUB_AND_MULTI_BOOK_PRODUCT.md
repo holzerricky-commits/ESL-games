@@ -4,7 +4,9 @@ Last updated: 2026-06-08
 
 **Status:** Agreed direction from design discussion. **Not current sprint** — build **after** Phase 2–3 lesson interactivity (vocab deep panels, reading popups) unless a minimal two-book workaround is needed to unblock live teaching.
 
-**Related:** `PROJECT_CONTEXT.md` (book-first, map timing), `MILESTONE.md` (Phase 2–3), `LESSON_BOARD_PRODUCT.md` (dock/float/minimize for lesson board in reader), `DESIGN_SYSTEM.md` (dark storybook-night tokens), **`CLASSROOM_HOME_PRODUCT.md`** (near-term start/end screen — do not build a second welcome).
+**Near-term two-book swap:** `docs/CLASS_SOURCE_STRIP_PRODUCT.md` (in-class source chips). This hub doc stays the later lobby. Notebook Pin / Tab / Overlay / Park: `docs/NOTEBOOK_PRODUCT.md`.
+
+**Related:** `PROJECT_CONTEXT.md` (book-first, map timing), `MILESTONE.md` (Phase 2–3), `NOTEBOOK_PRODUCT.md` (notebook layouts), `LESSON_BOARD_PRODUCT.md` (page model), `DESIGN_SYSTEM.md` (dark storybook-night tokens), **`CLASSROOM_HOME_PRODUCT.md`** (near-term start/end screen — do not build a second welcome).
 
 **UI names (teacher-facing):** Lesson Hub (landing between teaching blocks); **Workshop** / **Literature** (Wonders track names — map to assigned books in data).
 
@@ -91,7 +93,7 @@ Every teaching source (Workshop, Literature, Lesson board, Slides later) is in e
 - **Max one Focus book** (center spread).
 - **Max one Dock book** (one side slot).
 - Second book otherwise **Park** only, unless explicit **Split** preset (50/50 or 40/60) for short compare moments.
-- **Lesson board:** reuse existing **dock / float / minimize tab** (`LESSON_BOARD_PRODUCT.md`) — dock opposite focused book when possible.
+- **Notebook:** reuse **Pin / Tab / Overlay / Park** (`NOTEBOOK_PRODUCT.md`) — Pin opposite focused book when possible.
 
 ### Common Wonders flows
 
@@ -109,7 +111,7 @@ Per student, per live class session:
 - `workshop: { bookId, unitId, page }`
 - `literature: { bookId, unitId, page }`
 - Optional `unitLink` (e.g. `g3-u3`) for hub + future AI prep
-- `lastFocusedSource`: `workshop` \| `literature` \| `board`
+- `lastFocusedSource`: `workshop` \| `literature` \| `notebook`
 
 Lesson plan time bands can say “0–15 Workshop · 15–45 Literature” without picking a permanent “main” book.
 
@@ -126,9 +128,9 @@ Lesson plan time bands can say “0–15 Workshop · 15–45 Literature” witho
 | Layer | Behavior |
 |-------|----------|
 | **Primary** | Usually one **focused book** or **fullscreen slides** while presenting |
-| **Secondary** | Board, vocab shelf, translate — **dock / float / park** (extend lesson board pattern) |
+| **Secondary** | Notebook, vocab shelf, translate — **Pin / Overlay / Park** (`NOTEBOOK_PRODUCT.md`) |
 | **Second book / slides** | **Swap**, **dock**, or **split preset** — not overlapping arbitrary windows |
-| **Quick access** | Thin **source strip**: `Workshop · Literature · Board · ⌂ Hub` |
+| **Quick access** | Thin **source strip**: `Workshop · Literature · Notebook · ⌂ Hub` |
 
 **Rationale:** 1:1 screen share — student needs **one obvious main view**, not window management. Full window manager is large scope vs Phase 2–3.
 
@@ -222,7 +224,7 @@ Reader keeps thin **source strip** + **⌂ Hub** while teaching.
 
 | Feature | Relationship |
 |---------|----------------|
-| **Lesson board** | Dock/float/minimize in **reader**; “Board” card on hub. See `LESSON_BOARD_PRODUCT.md`. |
+| **Notebook** | Pin / Tab / Overlay / Park in **reader**; later “Notebook” card on hub. See `NOTEBOOK_PRODUCT.md`. |
 | **Fullscreen map route** | Map + book today; long term map at **class start/end**, not mid-class backdrop. |
 | **Classes tab** | Schedule, start class, spotlight, bookmarks — hub does **not** replace scheduling UI. |
 | **Interactive vocab** | Phase 2 — build packs **before** hub; hub checklist can **link** to vocab moments later. |
@@ -235,7 +237,7 @@ Reader keeps thin **source strip** + **⌂ Hub** while teaching.
 
 1. Static lesson **backdrop** (replace dimmed map behind book) — small, unblocks calmer reader shell.
 2. **Phase 2–3 interactivity** for real units (vocab packs, one reading check) — **before** full hub.
-3. Minimal **two-book swap** if needed (strip or library jump) — days, not weeks.
+3. Minimal **two-book swap** — **`CLASS_SOURCE_STRIP_PRODUCT.md`** (in-overlay chips). Do not wait on full Hub.
 4. **Lesson Hub v1:** one carousel card (Vocabulary) + material chips + **Start Workshop** transition.
 5. Carousel slides + checklist persistence per class session.
 6. Welcome popup + streak.

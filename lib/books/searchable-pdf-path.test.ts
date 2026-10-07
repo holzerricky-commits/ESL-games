@@ -4,6 +4,7 @@ import {
   isHiddenLibraryDirName,
   isSearchableSidecarAbsPath,
   SEARCHABLE_PDF_DIR,
+  searchableOcrBoxesAbsolutePath,
   searchablePdfAbsolutePath,
 } from '@/lib/books/searchable-pdf-path'
 
@@ -18,6 +19,16 @@ describe('searchablePdfAbsolutePath', () => {
   it('does not nest when the path is already a sidecar', () => {
     const sidecar = path.join('book-library', 'foo', SEARCHABLE_PDF_DIR, 'unit.pdf')
     expect(searchablePdfAbsolutePath(sidecar)).toBe(sidecar)
+  })
+})
+
+describe('searchableOcrBoxesAbsolutePath', () => {
+  it('stores page boxes beside the searchable PDF', () => {
+    const original = path.join('book-library', 'foo', 'story.pdf')
+    const boxes = searchableOcrBoxesAbsolutePath(original, 2)
+    expect(boxes).toBe(
+      path.join('book-library', 'foo', SEARCHABLE_PDF_DIR, 'story.p2.boxes.json'),
+    )
   })
 })
 

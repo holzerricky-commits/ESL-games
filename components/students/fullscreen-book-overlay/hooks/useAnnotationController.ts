@@ -184,6 +184,7 @@ export function useAnnotationController({
   const [markerStraightStroke, setMarkerStraightStroke] = useState(true)
   const [markerDecoratedEdge, setMarkerDecoratedEdge] = useState(false)
   const [penAutoGroupConnected, setPenAutoGroupConnected] = useState(true)
+  const [penSmoothingLevel, setPenSmoothingLevel] = useState(5)
   const [marqueeSelectRule, setMarqueeSelectRule] = useState<
     import('@/lib/books/annotation-select').MarqueeSelectRule
   >('follow-drag')
@@ -310,6 +311,7 @@ export function useAnnotationController({
     setMarkerStraightStroke(prefs.markerStraightStroke)
     setMarkerDecoratedEdge(prefs.markerDecoratedEdge)
     setPenAutoGroupConnected(prefs.penAutoGroupConnected)
+    setPenSmoothingLevel(prefs.penSmoothingLevel)
     setMarqueeSelectRule(prefs.marqueeSelectRule)
     setShapeThicknessStep(prefs.shapeThicknessStep)
     setTextThicknessStep(prefs.textThicknessStep)
@@ -362,6 +364,7 @@ export function useAnnotationController({
         markerStraightStroke,
         markerDecoratedEdge,
         penAutoGroupConnected,
+        penSmoothingLevel,
         marqueeSelectRule,
         shapeThicknessStep,
         textThicknessStep,
@@ -408,6 +411,7 @@ export function useAnnotationController({
     markerStraightStroke,
     markerDecoratedEdge,
     penAutoGroupConnected,
+    penSmoothingLevel,
     shapeThicknessStep,
     textThicknessStep,
     stickyThicknessStep,
@@ -962,6 +966,7 @@ export function useAnnotationController({
     markerStraightStroke, setMarkerStraightStroke,
     markerDecoratedEdge, setMarkerDecoratedEdge,
     penAutoGroupConnected, setPenAutoGroupConnected,
+    penSmoothingLevel, setPenSmoothingLevel,
     marqueeSelectRule, setMarqueeSelectRule,
     shapeLineDashStyle, setShapeLineDashStyle,
     shapeStrokeEnabled, setShapeStrokeEnabled,

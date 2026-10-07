@@ -371,39 +371,43 @@ export type ReadingCheckLivePinOnSpread = {
   y: number
 }
 
-const LIVE_PIN_STAGGER_Y = 0.08
+/** Bottom margin row for auto-placed pins, below the story text. */
+export const READING_CHECK_PIN_ROW_Y = 0.96
+/** Page-width step between row pins (32px pin plus a gap on a typical page). */
+const READING_CHECK_PIN_ROW_STEP_X = 0.08
+const READING_CHECK_PIN_ROW_MIN_X = 0.06
+const READING_CHECK_PIN_ROW_MAX_X = 0.94
 
-function staggerOverlappingLivePins(
+/** Centered x positions for `count` pins in the bottom row, kept on the page. */
+export function readingCheckPinRowXs(count: number): number[] {
+  if (count <= 0) return []
+  const span = READING_CHECK_PIN_ROW_MAX_X - READING_CHECK_PIN_ROW_MIN_X
+  const step = count > 1 ? Math.min(READING_CHECK_PIN_ROW_STEP_X, span / (count - 1)) : 0
+  const start = 0.5 - (step * (count - 1)) / 2
+  return Array.from({ length: count }, (_, i) => start + i * step)
+}
+
+/** Default (not teacher-moved) pins on each page sit side by side in the bottom row. */
+function layoutDefaultLivePinsInRow(
   pins: ReadingCheckLivePinOnSpread[],
 ): ReadingCheckLivePinOnSpread[] {
   const byPage = new Map<number, ReadingCheckLivePinOnSpread[]>()
   for (const pin of pins) {
+    if (!isDefaultReadingCheckHotspotCoords(pin.stop.hotspot)) continue
     const list = byPage.get(pin.pdfPage) ?? []
     list.push(pin)
     byPage.set(pin.pdfPage, list)
   }
-  const moved = new Map<string, ReadingCheckLivePinOnSpread>()
+  const placed = new Map<string, ReadingCheckLivePinOnSpread>()
   for (const group of byPage.values()) {
-    if (group.length < 2) continue
-    const clusters: ReadingCheckLivePinOnSpread[][] = []
-    for (const pin of group) {
-      const cluster = clusters.find(
-        (c) => Math.abs(c[0]!.x - pin.x) < 0.03 && Math.abs(c[0]!.y - pin.y) < 0.03,
-      )
-      if (cluster) cluster.push(pin)
-      else clusters.push([pin])
-    }
-    for (const cluster of clusters) {
-      if (cluster.length < 2) continue
-      cluster.sort((a, b) => a.index - b.index)
-      const startY = Math.max(0.12, cluster[0]!.y - LIVE_PIN_STAGGER_Y * (cluster.length - 1))
-      cluster.forEach((pin, i) => {
-        moved.set(pin.stop.id, { ...pin, y: Math.min(0.92, startY + i * LIVE_PIN_STAGGER_Y) })
-      })
-    }
+    group.sort((a, b) => a.index - b.index)
+    const xs = readingCheckPinRowXs(group.length)
+    group.forEach((pin, i) => {
+      placed.set(pin.stop.id, { ...pin, x: xs[i]!, y: READING_CHECK_PIN_ROW_Y })
+    })
   }
-  if (moved.size === 0) return pins
-  return pins.map((pin) => moved.get(pin.stop.id) ?? pin)
+  if (placed.size === 0) return pins
+  return pins.map((pin) => placed.get(pin.stop.id) ?? pin)
 }
 
 /** Live ? pins for the visible spread, using stored page-normalized hotspot coords. */
@@ -429,7 +433,7 @@ export function listReadingCheckLivePinsOnSpread(
       y: stop.hotspot.y,
     })
   })
-  return staggerOverlappingLivePins(pins)
+  return layoutDefaultLivePinsInRow(pins)
 }
 
 export function getReadingCheckCorrectAnswerLabel(
@@ -503,6 +507,21 @@ export function getLiveEligibleReadingCheckPack(
   if (!pack || pack.status !== 'approved') return null
   if (!readingCheckPackCanApprove(pack)) return null
   return pack
+}
+
+/**
+ * When several stories share a page, use the first (already ranked) one
+ * that has an approved check pack. An empty duplicate must not hide checks
+ * that were placed on another story covering the same pages.
+ */
+export function pickStoryWithLiveReadingChecks<T extends { id: string }>(
+  stories: readonly T[],
+  packsByStoryId: ReadonlyMap<string, ReadingCheckPack | null | undefined>,
+): T | null {
+  for (const story of stories) {
+    if (getLiveEligibleReadingCheckPack(packsByStoryId.get(story.id))) return story
+  }
+  return null
 }
 
 /** Force draft when content changes after approve (re-edit path). */

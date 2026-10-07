@@ -16,6 +16,13 @@ type GhostMirrorStyle = CSSProperties
 
 const STRIP_Z_INDEX = 10050
 
+/** Fleeting dark glass — same family as focus-zoom / overlay toasts. */
+const PREDICTION_STRIP_SURFACE =
+  'inline-flex w-max max-w-full items-center gap-0.5 overflow-x-auto rounded-2xl border border-white/12 bg-black/60 px-1 py-1 shadow-[0_8px_24px_rgba(0,0,0,0.35)] backdrop-blur-md [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
+
+const PREDICTION_CHIP_BASE =
+  'inline-flex shrink-0 items-baseline whitespace-nowrap rounded-md px-2 py-1 text-[11px] font-medium leading-tight tracking-tight transition-colors'
+
 function useAnchorRect(
   anchorRef: RefObject<HTMLElement | null>,
   active: boolean,
@@ -81,7 +88,7 @@ export function WritingAssistInlineGhost({
       aria-hidden
     >
       <span className="text-transparent">{text}</span>
-      <span className="text-slate-400/55">{ghost.suffix}</span>
+      <span className="text-zinc-500/55">{ghost.suffix}</span>
     </div>
   )
 }
@@ -103,13 +110,15 @@ function PredictionChip({
     <span
       title={word}
       className={cn(
-        'inline-flex shrink-0 items-baseline whitespace-nowrap rounded-md px-2 py-0.5 text-[11px] font-medium leading-tight',
-        active ? 'bg-slate-100 text-slate-800 ring-1 ring-slate-200' : 'text-slate-500',
+        PREDICTION_CHIP_BASE,
+        active
+          ? 'bg-white/14 text-zinc-50 ring-1 ring-white/12'
+          : 'text-zinc-400 hover:text-zinc-200',
       )}
     >
       {showSplit ? (
         <>
-          <span className="text-slate-400">{partial}</span>
+          <span className={active ? 'text-zinc-400' : 'text-zinc-500'}>{partial}</span>
           <span>{word.slice(partLower.length)}</span>
         </>
       ) : (
@@ -119,7 +128,7 @@ function PredictionChip({
   )
 }
 
-/** Light prediction chips when several next-word options exist (mobile keyboard style). */
+/** Dark-glass prediction chips when several next-word options exist. */
 export function WritingAssistPredictionStrip({
   candidates,
   activeIndex,
@@ -147,7 +156,7 @@ export function WritingAssistPredictionStrip({
       data-writing-assist-ui
       aria-hidden
     >
-      <div className="inline-flex w-max max-w-full items-center gap-1 overflow-x-auto rounded-lg border border-slate-200/90 bg-white/95 px-1.5 py-1 shadow-sm backdrop-blur-sm [scrollbar-width:thin]">
+      <div className={PREDICTION_STRIP_SURFACE}>
         {visible.map((candidate, i) => (
           <PredictionChip
             key={`${candidate.word}-${i}`}

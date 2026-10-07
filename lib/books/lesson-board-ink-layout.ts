@@ -28,8 +28,8 @@ export function lessonBoardWidePanelHeightPx(
   return Math.max(1, headerHeightPx + contentHeightPx)
 }
 
-/** Center the wide card on the spread while keeping at least slotInset margin on each side. */
-export function lessonBoardWidePanelAnchorPx(
+/** Center a panel on the spread while keeping at least slotInset margin on each side. */
+export function lessonBoardCenteredPanelAnchorPx(
   spreadOverlayWidthPx: number,
   pageCanvasHeightPx: number,
   panelWidthPx: number,
@@ -40,6 +40,43 @@ export function lessonBoardWidePanelAnchorPx(
     leftPx: Math.max(slotInsetPx, Math.round((spreadOverlayWidthPx - panelWidthPx) / 2)),
     topPx: Math.max(slotInsetPx, Math.round((pageCanvasHeightPx - panelHeightPx) / 2)),
   }
+}
+
+/** Center the wide card on the spread while keeping at least slotInset margin on each side. */
+export function lessonBoardWidePanelAnchorPx(
+  spreadOverlayWidthPx: number,
+  pageCanvasHeightPx: number,
+  panelWidthPx: number,
+  panelHeightPx: number,
+  slotInsetPx: number,
+): { leftPx: number; topPx: number } {
+  return lessonBoardCenteredPanelAnchorPx(
+    spreadOverlayWidthPx,
+    pageCanvasHeightPx,
+    panelWidthPx,
+    panelHeightPx,
+    slotInsetPx,
+  )
+}
+
+/**
+ * Center a Standard board on the desk during notebook Focus.
+ * Panel size stays the native slot (do not stretch to spread width).
+ */
+export function lessonBoardFocusStandardAnchorPx(
+  spreadOverlayWidthPx: number,
+  pageCanvasHeightPx: number,
+  panelWidthPx: number,
+  panelHeightPx: number,
+  slotInsetPx: number,
+): { leftPx: number; topPx: number } {
+  return lessonBoardCenteredPanelAnchorPx(
+    spreadOverlayWidthPx,
+    pageCanvasHeightPx,
+    panelWidthPx,
+    panelHeightPx,
+    slotInsetPx,
+  )
 }
 
 /** Default wide content height from inset spread width (16∶9). */

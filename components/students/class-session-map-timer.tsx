@@ -46,6 +46,7 @@ import {
   resolveClassEndBookmark,
 } from '@/lib/students/selectors'
 import { flushPendingUnitPageSave } from '@/lib/books/progress'
+import { flushPendingStudentBookPlaceSave } from '@/lib/students/student-book-place-save'
 import type { StudentClassSessionView } from '@/lib/students/types'
 import { MoveClassDialog } from '@/components/schedule/move-class-dialog'
 import { buildReadingCheckClassWrapSummary } from '@/lib/books/reading-check-class-wrap'
@@ -233,6 +234,7 @@ export function ClassSessionMapTimer({
         await flushAnnotationsForClassEnd()
         keepClassAnnotationChanges(session.id)
         flushPendingUnitPageSave()
+        flushPendingStudentBookPlaceSave()
         let wrapLine: string | undefined
         try {
           const wrap = await buildReadingCheckClassWrapSummary({
@@ -356,6 +358,7 @@ export function ClassSessionMapTimer({
   async function confirmEndClassWithSave() {
     setEndError(null)
     flushPendingUnitPageSave()
+    flushPendingStudentBookPlaceSave()
     const bookmark = resolveClassEndBookmark(studentId, session, assignedBookIds)
     if (!bookmark) {
       setEndError('Assign a book or choose a section in Prep so we can save the lesson bookmark.')
@@ -532,8 +535,10 @@ export function ClassSessionMapTimer({
       {showExtendChrome ? (
         <div
           className={cn(
-            'pointer-events-none absolute left-1/2 flex -translate-x-1/2 flex-col items-center gap-1.5',
-            elevated ? 'top-14 z-[60]' : 'top-[3.75rem] z-40',
+            'pointer-events-none absolute flex flex-col gap-1.5',
+            elevated
+              ? 'right-3 top-12 z-[60] items-end'
+              : 'left-1/2 top-[3.75rem] z-40 -translate-x-1/2 items-center',
           )}
         >
           <div className="pointer-events-auto flex max-w-[min(100vw-1.5rem,28rem)] flex-col items-center gap-1.5">

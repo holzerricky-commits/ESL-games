@@ -63,13 +63,17 @@ Defer **perfect PDF/LLM extraction**, **full monster/boss combat**, and **studen
 
 Phase 1 preview items above (bookmark paths, **Open book**, session log) are **checked**. **Two-page spread ink** (Phases 1–6 in `docs/SPREAD_INK_PHASED_PLAN.md`) is v1-shippable; further pen speed / marker canvas tuning is parking-lot only. **Phase 2 interactive vocab v0** has a shippable slice (one demo section + reader shelf UI). **Phase 3 reading checks** Phase 0–7 done through in-class check list (story map + text + packs + quiz editor + Generate + Prepare glance + live speak→mark); **Phase 8 polish** only after one real lesson—or other active tracks if those are the ship priority.
 
-**Lesson board (session notebook pages):** Product locked in `docs/LESSON_BOARD_PRODUCT.md`. Implement **phase by phase** per `docs/LESSON_BOARD_PHASED_PLAN.md` (test after each phase before continuing). Replaces infinite-scroll-as-product and spread-width fullscreen.
+**Notebook (student working paper):** Product locked in `docs/NOTEBOOK_PRODUCT.md`. Implement **phase by phase** per `docs/NOTEBOOK_PHASED_PLAN.md` (test after each). One notebook per student (`wb:session:local:student:{studentId}`); Pin / Tab / Overlay / Park; optional book links. Page model (Standard / Wide, New page) still stands in `docs/LESSON_BOARD_PRODUCT.md`. **Phase 1 chrome**, **Phase 2 student-scoped store + merge**, and **Phase 3 book links** are implemented; acceptance still yours. Next code phase **4 copy settle**.
 
-**Lesson board navigation & identity:** Product locked in `docs/LESSON_BOARD_NAV_PRODUCT.md`. Implement **phase by phase** per `docs/LESSON_BOARD_NAV_PHASED_PLAN.md` (test after each phase). Footer identity (role + color) + cross-book Boards menu — not handmade curriculum units. Ship bar: Phase 1 footer/Boards for teaching; 2–4 as needed.
+**Lesson board pages (historical track):** Page-model phases in `docs/LESSON_BOARD_PHASED_PLAN.md` are built. Do not reopen for ownership or chrome — that is the Notebook track.
+
+**Lesson board navigation:** Footer `‹ N/M ›` + page list still valid (`docs/LESSON_BOARD_NAV_PRODUCT.md`). Boards-as-notebook-picker and per-book storage are superseded; Phase 2 hides the picker and keeps one student notebook.
+
+**Class source strip (in-class book chips):** Product locked in `docs/CLASS_SOURCE_STRIP_PRODUCT.md`. Book swap in-place is shipped (Phases 1–3). Notebook chip jobs follow `NOTEBOOK_PRODUCT.md` (strip = Tab, rail = Pin/Park). Not Lesson Hub.
 
 **Class schedule lifecycle (move / clock / auto live / missed):** Product locked in `docs/CLASS_SCHEDULE_LIFECYCLE_PRODUCT.md`. Implement **phase by phase** per `docs/CLASS_SCHEDULE_LIFECYCLE_PHASED_PLAN.md` (test after each phase; **Move while live before auto-start**). Calendar is the source of truth for end time; no-shows → Missed; capped overtime then auto-end.
 
-**Lesson Hub + multi-book (Wonders Workshop/Literature):** Product locked in `docs/LESSON_HUB_AND_MULTI_BOOK_PRODUCT.md`. **Deferred** until Phase 2–3 interactivity ships; includes static reader backdrop (no dimmed map), Focus/Dock/Park sources, hub carousel, class-start streak. Teach with book + board **now** per “ready for classes” levels in that doc.
+**Lesson Hub + multi-book (Wonders Workshop/Literature):** Product locked in `docs/LESSON_HUB_AND_MULTI_BOOK_PRODUCT.md`. **Deferred** until Phase 2–3 interactivity ships; includes static reader backdrop (no dimmed map), Focus/Dock/Park sources, hub carousel, class-start streak. Teach with book + **Notebook** **now** per “ready for classes” levels in that doc.
 
 **Student home (roster → one teacher page per kid):** Product locked in `docs/STUDENT_HOME_PRODUCT.md`. Implement **phase by phase** per `docs/STUDENT_HOME_PHASED_PLAN.md` (test after each phase). Kills Plan vs Preview split; Next class default; Start / Open book in header. Phase 0–2b done (shell + Next class UX); next code phase **3 kill /plan split**.
 
@@ -81,9 +85,11 @@ Phase 1 preview items above (bookmark paths, **Open book**, session log) are **c
 
 **Book exercises (workbook word-bank + choose-answer):** Product locked in `docs/BOOK_EXERCISES_PRODUCT.md`. Implement **phase by phase** per `docs/BOOK_EXERCISES_PHASED_PLAN.md` (test after each phase). Box one exercise → draft (hand or Gemini) → Approve → **Check in class**. Not reading checks and not timed challenge. **Word-bank Phase 1–5 done.** **Choose-answer Phase 1–5 done** — both types ship the full loop.
 
-**Classroom home (Welcome / Wrap):** Product locked in `docs/CLASSROOM_HOME_PRODUCT.md`. Implement **phase by phase** per `docs/CLASSROOM_HOME_PHASED_PLAN.md` (test after each phase). Evolves the existing welcome/wrap book screen into a personal classroom home — not Lesson Hub, not a dashboard. **Phase 0–4 done.** Yellow home is the student stage. Teacher editing on yellow is superseded by Today’s class. Next: **Phase 5 greetings** only if you want them, or **Phase 6 polish** after a real class.
+**Classroom home (Welcome / Wrap):** Product locked in `docs/CLASSROOM_HOME_PRODUCT.md`. Implement **phase by phase** per `docs/CLASSROOM_HOME_PHASED_PLAN.md` (test after each phase). Evolves the existing welcome/wrap book screen into a personal classroom home — not Lesson Hub, not a dashboard. **Phase 0–4 done.** Yellow home is the student stage.
 
-**Today’s class (Prepare desk):** Product locked in `docs/CLASS_PREP_DESK_PRODUCT.md`. Implement **phase by phase** per `docs/CLASS_PREP_DESK_PHASED_PLAN.md`. Prepare → teacher sheet; yellow stays Welcome / Wrap. **Phase 0–4 done** (desk + parts + Preview + part content). Next: Phase 5 ready dots.
+**Lesson vault (save words while reading → per-lesson cards):** Product locked in `docs/LESSON_VAULT_PRODUCT.md`. Implement **phase by phase** per `docs/LESSON_VAULT_PHASED_PLAN.md` (test after each phase). One vault per student + lesson; part is a label. **Phase 0–1 implemented** (save from Select + vault panel); acceptance yours. Next: **Phase 2 flip card**.
+
+**Prepare:** Product locked in `docs/CLASS_PREP_DESK_PRODUCT.md`. Prepare opens the book spread, clock off. The Today’s class teacher-sheet lobby is **removed** (rebuild later only if the vocab bank needs a home).
 
 ---
 
@@ -122,6 +128,16 @@ Legacy one-liners (superseded by the docs above): reading span → teacher trigg
 ---
 
 ## Last updated
+
+2026-09-18 — **Notebook Phase 3:** One primary book link per notebook page (`bookId` + PDF page + spot). Intent-only placement; Go to {role} p.N; markers open that page; old per-unit links migrate with bookId. Next code phase **4 copy settle**.
+
+2026-09-18 — **Notebook Phase 2:** One lasting notebook per student (`wb:session:local:student:{studentId}`). Copy-merge old book/unit boards on first open; PDF swap does not change notes; Boards picker hidden; header = Notebook. Next code phase **3 book links**.
+
+2026-09-18 — **Notebook Phase 1:** Chrome contract (strip = Tab, rail = Pin/Park, header Pin/Overlay/Hide, `W`/`Esc` park). Same ink store. Next code phase **2 student-scoped store**.
+
+2026-09-18 — **Notebook:** product + phased plan locked (`docs/NOTEBOOK_PRODUCT.md`, `docs/NOTEBOOK_PHASED_PLAN.md`). One student notebook; Pin / Tab / Overlay / Park; optional book links.
+
+2026-09-16 — **Prepare:** Removed Today’s class lobby. Prepare opens the book spread (clock off); close returns to the student.
 
 2026-08-20 — **Workshop chrome Phase 4:** Vocab Words on the place bar (outlined + Mark → Vocab).
 2026-08-20 — **Workshop chrome Phase 3:** Shelf Open book → Mark this section → Story / Exercise (Vocab stub).

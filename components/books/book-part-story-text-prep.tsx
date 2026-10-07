@@ -18,7 +18,8 @@ import {
   readingStoryTextStatus,
   type ReadingStoryTextRecord,
 } from '@/lib/books/reading-story-text'
-import { effectivePartStructureTag } from '@/lib/books/part-structure-tag'
+import { resolvePartStoryKind } from '@/lib/books/part-structure-tag'
+import { resolveTocExtractProfileForBook } from '@/lib/books/toc-extract-profile'
 import {
   startStoryTextScan,
   stopStoryTextScan,
@@ -26,16 +27,26 @@ import {
 } from '@/lib/books/story-text-scan-manager'
 import type { StoryScanProgress, StoryTextScanMode } from '@/lib/books/story-text-scan-client'
 import { useSearchablePdfJob } from '@/lib/books/use-searchable-pdf-job'
+import { useSearchablePdfStatus } from '@/lib/books/use-searchable-pdf-status'
 import type { BookLessonPartRecord, BookLessonRecord, BookRecord, BookUnitRecord } from '@/lib/books/types'
+import { cn } from '@/lib/utils'
+
+export type BookPartStoryTextPrepLayout = 'section' | 'panel'
 
 interface BookPartStoryTextPrepProps {
   book: BookRecord
   unit: BookUnitRecord
   lesson: BookLessonRecord
   part: BookLessonPartRecord
+  partIndex?: number
   totalPdfPages: number | null
   /** Notify parent when text readiness changes (for header chips). */
   onTextReadyChange?: (ready: boolean) => void
+  /** `section` = stacked card; `panel` = left desk column. */
+  layout?: BookPartStoryTextPrepLayout
+  /** Shown in panel layout to return to Pages controls. */
+  onBackToPages?: () => void
+  className?: string
 }
 
 export function BookPartStoryTextPrep({
@@ -43,11 +54,16 @@ export function BookPartStoryTextPrep({
   unit,
   lesson,
   part,
+  partIndex = 0,
   totalPdfPages,
   onTextReadyChange,
+  layout = 'section',
+  onBackToPages,
+  className,
 }: BookPartStoryTextPrepProps) {
+  const panel = layout === 'panel'
   const story = useMemo<ReadingStoryMap>(() => {
-    const tag = effectivePartStructureTag(part)
+    const kind = resolvePartStoryKind(part, partIndex, resolveTocExtractProfileForBook(book))
     return {
       id: readingStoryPartKey(book.id, unit.id, lesson.id, part.id),
       bookId: book.id,
@@ -55,13 +71,19 @@ export function BookPartStoryTextPrep({
       lessonId: lesson.id,
       partId: part.id,
       title: part.title?.trim() || 'Story',
-      kind: tag === 'paired_story' ? 'paired_story' : tag === 'main_story' ? 'main_story' : undefined,
+      kind,
       lessonTitle: lesson.title,
     }
-  }, [book.id, unit.id, lesson.id, lesson.title, part])
+  }, [book, unit.id, lesson.id, lesson.title, part, partIndex])
 
-  const { selectableRunning, selectableProgress, startSelectable, stopSelectable } =
-    useSearchablePdfJob(story.id)
+  const {
+    selectableRunning,
+    selectableProgress,
+    selectableNotice,
+    startSelectable,
+    stopSelectable,
+    dismissSelectableNotice,
+  } = useSearchablePdfJob(story.id)
 
   const [override, setOverride] = useState<ReadingStoryRangeOverride | null>(null)
   const [textRecord, setTextRecord] = useState<ReadingStoryTextRecord | null>(null)
@@ -79,6 +101,17 @@ export function BookPartStoryTextPrep({
   )
 
   const pagesReady = resolved.source !== 'none'
+  const { status: selectableStatus } = useSearchablePdfStatus({
+    bookId: story.bookId,
+    unitId: story.unitId,
+    storyId: story.id,
+    lessonId: story.lessonId,
+    partId: story.partId,
+    title: story.title,
+    totalPdfPages,
+    enabled: pagesReady,
+    refreshKey: selectableRunning ? 1 : 0,
+  })
   const pageRangeLabel =
     pagesReady ? `p${resolved.startDisplayPage}–${resolved.endDisplayPage}` : null
   const hasStoryText = readingStoryTextStatus(textRecord?.text ?? textDraft) === 'ready'
@@ -222,10 +255,88 @@ export function BookPartStoryTextPrep({
   const fuelBusy: StoryTextFuelBusy =
     busy === 'saveText' ? 'saveText' : scanRunning ? 'scan' : null
 
+  const fuel = loading ? (
+    <p className="text-[14px] text-muted-foreground">Loading…</p>
+  ) : loadError ? (
+    <p className="text-[14px] text-destructive">{loadError}</p>
+  ) : (
+    <StoryTextFuelPanel
+      storyTitle={story.title}
+      pageRangeLabel={pageRangeLabel}
+      textDraft={textDraft}
+      onTextDraftChange={setTextDraft}
+      hasStoryText={hasStoryText}
+      busy={fuelBusy}
+      scanProgress={scanProgress}
+      onScan={(opts) => scanText(opts)}
+      onStopScan={stopScan}
+      onSave={() => saveTextPaste()}
+      scanDisabled={!pagesReady}
+      canContinueScan={canContinueScan}
+      onMakeSelectable={() => {
+        if (!pagesReady) {
+          toast.error('Set pages for this story first.')
+          return
+        }
+        startSelectable({
+          bookId: story.bookId,
+          unitId: story.unitId,
+          lessonId: story.lessonId,
+          partId: story.partId,
+          title: story.title,
+          totalPdfPages,
+        })
+      }}
+      onRedoSelectable={() => {
+        if (!pagesReady) {
+          toast.error('Set pages for this story first.')
+          return
+        }
+        startSelectable({
+          bookId: story.bookId,
+          unitId: story.unitId,
+          lessonId: story.lessonId,
+          partId: story.partId,
+          title: story.title,
+          totalPdfPages,
+          force: true,
+        })
+      }}
+      onStopMakeSelectable={stopSelectable}
+      selectableProgress={selectableProgress}
+      selectableRunning={selectableRunning}
+      selectableNotice={selectableNotice}
+      onDismissSelectableNotice={dismissSelectableNotice}
+      selectableStatus={selectableStatus}
+      dialogOpen={panel ? undefined : textDialogOpen}
+      onDialogOpenChange={panel ? undefined : setTextDialogOpen}
+      hideRowLabel
+      chrome="soft"
+      presentation={panel ? 'inline' : 'dialog'}
+      hideCollapsedRow={panel}
+      omitInlineHeader={panel}
+    />
+  )
+
+  if (panel) {
+    return (
+      <div className={cn('flex flex-col gap-3', className)}>
+        <div className="space-y-0.5">
+          <p className="text-[13px] font-semibold tracking-tight text-foreground">Story text</p>
+          <p className="text-[12px] text-muted-foreground">Scan from the PDF or paste</p>
+        </div>
+        <div className="min-h-0 flex-1">{fuel}</div>
+      </div>
+    )
+  }
+
   return (
     <div
       id="part-prep-story-text"
-      className="scroll-mt-6 overflow-hidden rounded-[28px] bg-[var(--surface-2)] shadow-[0_12px_40px_-24px_rgba(0,0,0,0.2)]"
+      className={cn(
+        'scroll-mt-6 overflow-hidden rounded-[28px] bg-[var(--surface-2)] shadow-[0_12px_40px_-24px_rgba(0,0,0,0.2)]',
+        className,
+      )}
     >
       <div className="space-y-4 px-6 py-5 sm:px-8 sm:py-6">
         <div className="flex items-start gap-3.5">
@@ -240,48 +351,7 @@ export function BookPartStoryTextPrep({
             <p className="text-[14px] text-muted-foreground">Scan from the PDF or paste</p>
           </div>
         </div>
-
-        {loading ? (
-          <p className="text-[14px] text-muted-foreground">Loading…</p>
-        ) : loadError ? (
-          <p className="text-[14px] text-destructive">{loadError}</p>
-        ) : (
-          <StoryTextFuelPanel
-            storyTitle={story.title}
-            pageRangeLabel={pageRangeLabel}
-            textDraft={textDraft}
-            onTextDraftChange={setTextDraft}
-            hasStoryText={hasStoryText}
-            busy={fuelBusy}
-            scanProgress={scanProgress}
-            onScan={(opts) => scanText(opts)}
-            onStopScan={stopScan}
-            onSave={() => saveTextPaste()}
-            scanDisabled={!pagesReady}
-            canContinueScan={canContinueScan}
-            onMakeSelectable={() => {
-              if (!pagesReady) {
-                toast.error('Set pages for this story first.')
-                return
-              }
-              startSelectable({
-                bookId: story.bookId,
-                unitId: story.unitId,
-                lessonId: story.lessonId,
-                partId: story.partId,
-                title: story.title,
-                totalPdfPages,
-              })
-            }}
-            onStopMakeSelectable={stopSelectable}
-            selectableProgress={selectableProgress}
-            selectableRunning={selectableRunning}
-            dialogOpen={textDialogOpen}
-            onDialogOpenChange={setTextDialogOpen}
-            hideRowLabel
-            chrome="soft"
-          />
-        )}
+        {fuel}
       </div>
     </div>
   )

@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Plus, Sparkles, Trash2 } from 'lucide-react'
+import { Plus, Sparkles, Trash2, Wand2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { VocabWordPrepCard } from '@/components/books/vocab-word-prep-card'
 import { Button } from '@/components/ui/button'
@@ -66,6 +66,7 @@ export function ClassPrepVocabEditor({
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [extracting, setExtracting] = useState(false)
+  const [cleaningUp, setCleaningUp] = useState(false)
 
   const previewPdfUrl = useMemo(() => {
     if (hidePagePreview) return null
@@ -93,6 +94,7 @@ export function ClassPrepVocabEditor({
           word: w.word,
           definition: w.definition,
           examples: Array.isArray(w.examples) ? w.examples : [],
+          tapSpot: w.tapSpot ?? undefined,
         }))
         setRows(mapped)
         const ex: Record<string, string> = {}
@@ -187,6 +189,55 @@ export function ClassPrepVocabEditor({
     }
   }
 
+  async function cleanUpOcrText() {
+    const wordsToClean = rows.filter((r) => r.word.trim())
+    if (wordsToClean.length === 0) return
+    setCleaningUp(true)
+    try {
+      const res = await fetch('/api/context/cleanup-vocab-text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          words: wordsToClean.map((r) => ({
+            id: r.id,
+            word: r.word.trim(),
+            definition: r.definition.trim(),
+          })),
+        }),
+      })
+      const data = (await res.json()) as {
+        ok?: boolean
+        error?: string
+        words?: Array<{ id: string; word: string; definition: string }>
+      }
+      if (!res.ok || !data.ok || !data.words?.length) {
+        toast.error(data.error ?? 'Could not clean up text.')
+        return
+      }
+      const cleaned = new Map(data.words.map((w) => [w.id, w]))
+      let fixes = 0
+      setRows((prev) =>
+        prev.map((r) => {
+          const c = cleaned.get(r.id)
+          if (!c) return r
+          const wordChanged = c.word !== r.word.trim()
+          const defChanged = c.definition !== r.definition.trim()
+          if (wordChanged || defChanged) fixes += 1
+          return {
+            ...r,
+            word: wordChanged ? c.word : r.word,
+            definition: defChanged ? c.definition : r.definition,
+          }
+        }),
+      )
+      toast.success(fixes > 0 ? `Fixed ${fixes} word${fixes > 1 ? 's' : ''}.` : 'Everything looks clean already.')
+    } catch {
+      toast.error('Cleanup request failed.')
+    } finally {
+      setCleaningUp(false)
+    }
+  }
+
   async function save() {
     setSaving(true)
     const words = rows
@@ -201,9 +252,51 @@ export function ClassPrepVocabEditor({
           word: r.word.trim(),
           definition: r.definition.trim(),
           examples,
+          tapSpot: r.tapSpot,
         }
       })
       .filter((r) => r.word.length > 0)
+
+    // Auto-suggest tap spots for words that don't have one yet
+    const unplacedWords = words.filter((w) => !w.tapSpot)
+    if (
+      unplacedWords.length > 0 &&
+      typeof startPageHint === 'number' &&
+      Number.isFinite(startPageHint)
+    ) {
+      try {
+        const suggestRes = await fetch('/api/context/suggest-tap-spots', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            bookId,
+            unitId,
+            words: unplacedWords.map((w) => ({ id: w.id, word: w.word })),
+            startPdfPage: Math.max(1, Math.floor(startPageHint)),
+            endPdfPage: Math.max(1, Math.floor(endPageHint ?? startPageHint)),
+          }),
+        })
+        const suggestData = (await suggestRes.json()) as {
+          ok?: boolean
+          spots?: Record<string, { pdfPage: number; x: number; y: number; w: number; h: number }>
+        }
+        if (suggestData.ok && suggestData.spots) {
+          let placed = 0
+          for (const w of words) {
+            if (!w.tapSpot && suggestData.spots[w.id]) {
+              w.tapSpot = suggestData.spots[w.id]
+              placed += 1
+            }
+          }
+          if (placed > 0) {
+            toast.info(`Auto-placed ${placed} word${placed > 1 ? 's' : ''} on the page.`)
+          }
+        }
+      } catch {
+        // Non-fatal — save without spots
+      }
+    }
+
     const start = startPageHint
     const end = endPageHint ?? startPageHint
     try {
@@ -226,10 +319,27 @@ export function ClassPrepVocabEditor({
               : undefined,
         }),
       })
-      const data = (await res.json()) as { ok?: boolean; error?: string }
+      const data = (await res.json()) as {
+        ok?: boolean
+        error?: string
+        context?: { interactiveVocabulary?: WordRow[] }
+      }
       if (!res.ok || !data.ok) {
         toast.error(data.error ?? 'Could not save word list.')
         return
+      }
+      // Refresh rows with saved tap spots
+      const saved = data.context?.interactiveVocabulary
+      if (saved?.length) {
+        setRows(
+          saved.map((w) => ({
+            id: w.id,
+            word: w.word,
+            definition: w.definition,
+            examples: Array.isArray(w.examples) ? w.examples : [],
+            tapSpot: w.tapSpot ?? undefined,
+          })),
+        )
       }
       onReadyChange?.(isVocabListReady(words))
       toast.success('Word list saved for this book section.')
@@ -277,6 +387,7 @@ export function ClassPrepVocabEditor({
           definition={row.definition}
           examplesText={examplesTextById[row.id] ?? row.examples.join('\n')}
           canRemove={rows.length > 1}
+          tapSpot={row.tapSpot}
           onWordChange={(value) =>
             setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, word: value } : r)))
           }
@@ -370,6 +481,20 @@ export function ClassPrepVocabEditor({
           >
             <Sparkles className={cn(isPlain ? 'size-3.5' : 'mr-1 h-3 w-3')} aria-hidden />
             {extracting ? 'Reading pages…' : scanButtonLabel}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={isPlain ? 'ghost' : 'outline'}
+            className={cn(
+              'gap-1.5',
+              isPlain ? 'h-9 rounded-full px-3 text-[13px] text-muted-foreground' : 'h-7 text-xs',
+            )}
+            disabled={extracting || saving || cleaningUp || rows.every((r) => !r.word.trim())}
+            onClick={() => void cleanUpOcrText()}
+          >
+            <Wand2 className={cn(isPlain ? 'size-3.5' : 'mr-1 h-3 w-3')} aria-hidden />
+            {cleaningUp ? 'Cleaning…' : 'Fix OCR'}
           </Button>
           <Button
             type="button"

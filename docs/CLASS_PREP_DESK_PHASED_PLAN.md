@@ -1,10 +1,11 @@
 # Today’s class — phased implementation plan
 
-Last updated: 2026-08-19
+Last updated: 2026-09-16
 
-**Product:** `CLASS_PREP_DESK_PRODUCT.md`
+**Stopped.** The teacher-sheet lobby is removed. See `CLASS_PREP_DESK_PRODUCT.md`. Do **not** continue Phase 5 ready dots or rebuild the desk.
 
-Implement **one phase at a time**. Test, then continue. Do not skip.
+Historical phases below (0–4 shipped, then reversed).
+
 
 ```text
 0 docs → 1 desk shell (Prepare ≠ yellow)

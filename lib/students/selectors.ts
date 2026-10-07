@@ -74,9 +74,19 @@ import type { BookLibraryPayload, BookRecord, BookUnitRecord } from '@/lib/books
 import { resolveMappedPageToPdfPage } from '@/lib/books/page-numbering'
 import {
   getLatestSavedUnitPageForBook,
+  getLatestSavedUnitPageForBooks,
   peekSavedUnitPage,
+  peekSavedUnitPageEntry,
   flushPendingUnitPageSave,
 } from '@/lib/books/progress'
+import { getBooksLibraryCached } from '@/lib/books/fetch-books-library-cached'
+import {
+  resolveOpenTargetForPlace,
+  resolveUpNextBookId,
+  sanitizeStudentBookPlaces,
+  type BookOpenTarget,
+  type StudentBookPlaces,
+} from '@/lib/students/book-places'
 import type { StudentListItemView, StudentProfileTab, StudentProfileView } from '@/lib/students/types'
 import type { BookContextRecord } from '@/lib/context/types'
 import type {
@@ -2828,6 +2838,16 @@ export function resolveNextSectionForClass(
   const sessions = getStudentScheduledClasses(studentId)
   const current = sessions.find((session) => session.id === classId)
   if (!current) return options[0] ?? null
+
+  const upNext = resolveUpNextSectionForStudent(studentId, library)
+  if (upNext) return upNext
+
+  const lastView = getStudentLastViewedAcrossAssignedBooks(studentId, library)
+  if (lastView) {
+    const fromView = sectionOptionForLastViewedPlace(studentId, library, lastView)
+    if (fromView) return fromView
+  }
+
   const completed = sessions
     .filter(
       (session) =>
@@ -2852,7 +2872,7 @@ export function resolveNextSectionForClass(
   }
   const index = options.findIndex((option) => option.id === lastCompletedId)
   if (index < 0) return options[0] ?? null
-  return options[index + 1] ?? options[index] ?? options[0] ?? null
+  return options[index] ?? options[0] ?? null
 }
 
 function pageInSectionOptionRange(
@@ -3019,7 +3039,10 @@ export function getNextClassResumeHeadline(
     )
     .sort((a, b) => new Date(b.scheduledFor).getTime() - new Date(a.scheduledFor).getTime())[0]
 
-  const bookmark = prior?.bookmarkAtEnd
+  const lastView = getStudentLastViewedAcrossAssignedBooks(studentId, library)
+  const bookmark = lastView
+    ? { bookId: lastView.bookId, pdfPage: lastView.pdfPage, unitId: lastView.unitId }
+    : prior?.bookmarkAtEnd
   if (!bookmark?.bookId?.trim()) return null
   const page = bookmark.pdfPage
   if (!Number.isFinite(page) || page < 1) return null
@@ -3154,6 +3177,130 @@ export function getStudentLastClassBookmarkPdfPageForBookUnit(
   return getStudentLastClassBookmarkForBookUnit(studentId, bookId, unitId)?.pdfPage ?? null
 }
 
+type StudentLastViewedPlace = {
+  bookId: string
+  unitId: string
+  pdfPage: number
+  atMs: number
+}
+
+function newerLastViewedPlace(
+  current: StudentLastViewedPlace | null,
+  next: StudentLastViewedPlace | null,
+): StudentLastViewedPlace | null {
+  if (!next || !Number.isFinite(next.atMs) || next.pdfPage < 1 || !next.bookId.trim() || !next.unitId.trim()) {
+    return current
+  }
+  if (!current || next.atMs >= current.atMs) return next
+  return current
+}
+
+function lastViewedPlaceFromSavedBook(bookId: string): StudentLastViewedPlace | null {
+  const latest = getLatestSavedUnitPageForBook(bookId)
+  if (!latest) return null
+  const parsed = Date.parse(latest.updatedAt)
+  return {
+    bookId,
+    unitId: latest.unitId,
+    pdfPage: latest.page,
+    atMs: Number.isFinite(parsed) ? parsed : 0,
+  }
+}
+
+function lastViewedPlaceFromSavedUnit(bookId: string, unitId: string): StudentLastViewedPlace | null {
+  const entry = peekSavedUnitPageEntry(bookId, unitId)
+  if (!entry) return null
+  return {
+    bookId: entry.bookId,
+    unitId: entry.unitId,
+    pdfPage: entry.page,
+    atMs: entry.atMs,
+  }
+}
+
+/** Newest last-class bookmark or reader page for this book+unit. */
+function getStudentLastViewedPageForBookUnit(
+  studentId: string,
+  bookId: string,
+  unitId: string,
+): { pdfPage: number; atMs: number } | null {
+  const bid = bookId.trim()
+  const uid = unitId.trim()
+  if (!bid || !uid) return null
+  const bookmark = getStudentLastClassBookmarkForBookUnit(studentId, bid, uid)
+  const saved = lastViewedPlaceFromSavedUnit(bid, uid)
+  const fromBookmark =
+    bookmark != null
+      ? { bookId: bid, unitId: uid, pdfPage: bookmark.pdfPage, atMs: bookmark.atMs }
+      : null
+  const best = newerLastViewedPlace(fromBookmark, saved)
+  return best ? { pdfPage: best.pdfPage, atMs: best.atMs } : null
+}
+
+/** Newest last-class bookmark or reader page for this book (any unit). */
+function getStudentLastViewedForBook(
+  studentId: string,
+  bookId: string,
+): StudentLastViewedPlace | null {
+  const bid = bookId.trim()
+  if (!bid) return null
+  const bookmark = getStudentLastClassBookmarkForBook(studentId, bid)
+  const fromBookmark =
+    bookmark?.unitId?.trim()
+      ? {
+          bookId: bid,
+          unitId: bookmark.unitId.trim(),
+          pdfPage: bookmark.pdfPage,
+          atMs: bookmark.atMs,
+        }
+      : null
+  return newerLastViewedPlace(fromBookmark, lastViewedPlaceFromSavedBook(bid))
+}
+
+/**
+ * Newest last-class bookmark, reader page, or fresher plan pin among assigned books.
+ * Used to pick which book to resume when a student has more than one.
+ */
+function getStudentLastViewedAcrossAssignedBooks(
+  studentId: string,
+  library: BookLibraryPayload | null = null,
+): StudentLastViewedPlace | null {
+  const student = getStudents().find((row) => row.id === studentId)
+  if (!student) return null
+  let best: StudentLastViewedPlace | null = null
+  for (const raw of student.assignedBookIds ?? []) {
+    const bid = raw.trim()
+    if (!bid) continue
+    best = newerLastViewedPlace(best, getStudentLastViewedForBook(studentId, bid))
+    if (!isStudentCurriculumBookStartFresherThanLastStop(studentId, bid, library)) continue
+    const start = getStudentCurriculumBookStart(studentId, bid, library)
+    if (!start) continue
+    const startMs = Date.parse(start.updatedAt)
+    best = newerLastViewedPlace(best, {
+      bookId: bid,
+      unitId: start.unitId,
+      pdfPage: Math.max(1, Math.floor(start.mappedPage)),
+      atMs: Number.isFinite(startMs) ? startMs : 0,
+    })
+  }
+  return best
+}
+
+function sectionOptionForLastViewedPlace(
+  studentId: string,
+  library: BookLibraryPayload | null,
+  view: StudentLastViewedPlace,
+): StudentSectionOption | null {
+  const atPage = resolveStudentSectionAtMappedBookPage(studentId, library, view.bookId, view.pdfPage)
+  if (atPage) return atPage
+  const options = getStudentSectionOptions(studentId, library)
+  for (let i = options.length - 1; i >= 0; i--) {
+    const option = options[i]
+    if (option?.bookId === view.bookId && option.unitId === view.unitId) return option
+  }
+  return null
+}
+
 function pdfPageFromCurriculumBookStart(
   bookStart: StudentCurriculumBookStart,
   bookId: string,
@@ -3185,7 +3332,7 @@ function isWeakDefaultPageOneStop(
   return pdfPage === 1 && bookStart != null && bookStart.mappedPage > 1
 }
 
-/** True when this book’s plan pin was saved more recently than its last class stop. */
+/** True when this book’s plan pin was saved more recently than its last class stop or reader page. */
 export function isStudentCurriculumBookStartFresherThanLastStop(
   studentId: string,
   bookId: string,
@@ -3195,16 +3342,109 @@ export function isStudentCurriculumBookStartFresherThanLastStop(
   if (!bookStart) return false
   const startMs = Date.parse(bookStart.updatedAt)
   if (!Number.isFinite(startMs)) return false
-  const last = getStudentLastClassBookmarkForBook(studentId, bookId)
+  const last = getStudentLastViewedForBook(studentId, bookId)
   if (!last) return true
   if (isWeakDefaultPageOneStop(last.pdfPage, bookStart)) return true
   return startMs > last.atMs
 }
 
+function libraryOrCached(library: BookLibraryPayload | null | undefined): BookLibraryPayload | null {
+  if (library?.books?.length) return library
+  return getBooksLibraryCached()
+}
+
+export function getStudentBookPlaces(studentId: string): StudentBookPlaces {
+  const student = getStudents().find((row) => row.id === studentId)
+  return sanitizeStudentBookPlaces(student?.bookPlaces)
+}
+
+/**
+ * Move this student's place in a book and mark the book as taught last.
+ * Called from real navigation in class and when the teacher sets a starting place.
+ */
+export function saveStudentBookPlace(
+  studentId: string,
+  input: { bookId: string; unitId: string; pdfPage: number },
+): void {
+  const bookId = input.bookId.trim()
+  const unitId = input.unitId.trim()
+  const pdfPage = Math.floor(Number(input.pdfPage))
+  if (!bookId || !unitId || !Number.isFinite(pdfPage) || pdfPage < 1) return
+  const students = getStudents()
+  const prev = students.find((s) => s.id === studentId)
+  if (!prev) return
+  const places = sanitizeStudentBookPlaces(prev.bookPlaces)
+  const existing = places[bookId]
+  if (existing && existing.unitId === unitId && existing.pdfPage === pdfPage && prev.lastTaughtBookId === bookId) {
+    return
+  }
+  const nowIso = new Date().toISOString()
+  saveStudent({
+    ...prev,
+    bookPlaces: { ...places, [bookId]: { unitId, pdfPage, updatedAt: nowIso } },
+    lastTaughtBookId: bookId,
+    updatedAt: nowIso,
+  })
+}
+
+/** Book up next for this student (null when no assigned book has a place yet). */
+export function getStudentUpNextBookId(studentId: string, library: BookLibraryPayload | null = null): string | null {
+  const student = getStudents().find((row) => row.id === studentId)
+  if (!student) return null
+  const lib = libraryOrCached(library)
+  if (!lib?.books?.length) return null
+  return resolveUpNextBookId({
+    assignedBookIds: student.assignedBookIds ?? [],
+    places: sanitizeStudentBookPlaces(student.bookPlaces),
+    lastTaughtBookId: student.lastTaughtBookId,
+    booksById: new Map(lib.books.map((b) => [b.id, b])),
+  })
+}
+
+/** Where this book opens from the student's saved place (null when there is no place for it). */
+export function getStudentPlaceOpenTargetForBook(
+  studentId: string,
+  bookId: string,
+  library: BookLibraryPayload | null = null,
+): BookOpenTarget | null {
+  const bid = bookId.trim()
+  const place = getStudentBookPlaces(studentId)[bid]
+  if (!place) return null
+  const lib = libraryOrCached(library)
+  const book = lib?.books.find((b) => b.id === bid) ?? null
+  if (book && !book.units.some((u) => u.id === place.unitId)) return null
+  return resolveOpenTargetForPlace(book, place)
+}
+
+/** Up-next book with its open unit + page, or null when the student has no places yet. */
+export function getStudentUpNextOpenTarget(
+  studentId: string,
+  library: BookLibraryPayload | null = null,
+): { bookId: string; unitId: string; pdfPage: number } | null {
+  const bookId = getStudentUpNextBookId(studentId, library)
+  if (!bookId) return null
+  const target = getStudentPlaceOpenTargetForBook(studentId, bookId, library)
+  return target ? { bookId, ...target } : null
+}
+
+/** Lesson piece at the up-next place (label for “today’s lesson”). */
+export function resolveUpNextSectionForStudent(
+  studentId: string,
+  library: BookLibraryPayload | null,
+): StudentSectionOption | null {
+  if (!library?.books?.length) return null
+  const target = getStudentUpNextOpenTarget(studentId, library)
+  if (!target) return null
+  const atPage = resolveStudentSectionAtPdfPage(studentId, library, target.bookId, target.unitId, target.pdfPage)
+  if (atPage) return atPage
+  const options = getStudentSectionOptions(studentId, library)
+  return options.find((o) => o.bookId === target.bookId && o.unitId === target.unitId) ?? null
+}
+
 /**
  * PDF page for opening the teaching reader on a book+unit.
- * Ladder: last-class bookmark (if ≥ plan pin time) → teacher starting place → weak reader history → null.
- * Re-saving a starting place beats an older last-class stop until the next end-class.
+ * The student's saved place for the book wins. Students without a place yet use the older ladder:
+ * last viewed page (class bookmark or reader, if ≥ plan pin time) → starting place → reader history → null.
  */
 export function getStudentTeachingOpenPdfPageForBookUnit(
   studentId: string,
@@ -3216,6 +3456,22 @@ export function getStudentTeachingOpenPdfPageForBookUnit(
   const bid = bookId.trim()
   const uid = unitId.trim()
   if (!bid || !uid) return null
+  const place = getStudentBookPlaces(studentId)[bid]
+  if (place) {
+    const target = getStudentPlaceOpenTargetForBook(studentId, bid, library)
+    if (target && target.unitId === uid) return target.pdfPage
+    if (place.unitId === uid) return place.pdfPage
+  }
+  return legacyTeachingOpenPdfPageForBookUnit(studentId, bid, uid, library, totalPdfPages)
+}
+
+function legacyTeachingOpenPdfPageForBookUnit(
+  studentId: string,
+  bid: string,
+  uid: string,
+  library: BookLibraryPayload | null,
+  totalPdfPages: number | null,
+): number | null {
 
   const bookStart = getStudentCurriculumBookStart(studentId, bid, library)
   const startMs = bookStart ? Date.parse(bookStart.updatedAt) : Number.NaN
@@ -3225,7 +3481,7 @@ export function getStudentTeachingOpenPdfPageForBookUnit(
       ? pdfPageFromCurriculumBookStart(bookStart, bid, library, totalPdfPages)
       : null
 
-  const lastStop = getStudentLastClassBookmarkForBookUnit(studentId, bid, uid)
+  const lastStop = getStudentLastViewedPageForBookUnit(studentId, bid, uid)
   if (lastStop != null) {
     const startBeatsStop =
       startOnThisUnit && startPdf != null && Number.isFinite(startMs) && startMs > lastStop.atMs
@@ -3268,6 +3524,9 @@ export function getStudentOpenTargetForBook(
   const book = library?.books.find((b) => b.id === bid)
   if (!book?.units.length) return null
 
+  const fromPlace = getStudentPlaceOpenTargetForBook(studentId, bid, library)
+  if (fromPlace) return fromPlace
+
   const bookStart = getStudentCurriculumBookStart(studentId, bid, library)
   const startFresher = isStudentCurriculumBookStartFresherThanLastStop(studentId, bid, library)
   if (startFresher && bookStart) {
@@ -3280,10 +3539,9 @@ export function getStudentOpenTargetForBook(
     }
   }
 
-  const last = getStudentLastClassBookmarkForBook(studentId, bid)
+  const last = getStudentLastViewedForBook(studentId, bid)
   if (last) {
-    const unit =
-      (last.unitId ? book.units.find((u) => u.id === last.unitId) : null) ?? book.units[0] ?? null
+    const unit = book.units.find((u) => u.id === last.unitId) ?? book.units[0] ?? null
     if (unit) {
       const pdf =
         getStudentTeachingOpenPdfPageForBookUnit(studentId, bid, unit.id, library, totalPdfPages) ??
@@ -3309,7 +3567,7 @@ export function getStudentOpenTargetForBook(
   return { unitId: first.id, pdfPage: pdf }
 }
 
-/** Book + unit for a class session: saved section → auto next section → assignment default. */
+/** Book + unit for a class session: saved section → last viewed place → assignment default. */
 export function resolveClassTeachingBookUnit(
   studentId: string,
   classSessionId: string,
@@ -3318,6 +3576,16 @@ export function resolveClassTeachingBookUnit(
   const sessions = getStudentScheduledClasses(studentId)
   const session = sessions.find((s) => s.id === classSessionId)
   if (!session) return null
+
+  if (!isClosedClassSessionStatus(session.status)) {
+    const upNext = getStudentUpNextOpenTarget(studentId, library ?? null)
+    if (upNext) {
+      const section = library?.books?.length
+        ? resolveStudentSectionAtPdfPage(studentId, library, upNext.bookId, upNext.unitId, upNext.pdfPage)
+        : null
+      return { bookId: upNext.bookId, unitId: upNext.unitId, section }
+    }
+  }
 
   const options = library?.books?.length ? getStudentSectionOptions(studentId, library) : []
   const savedId = session.selectedSection?.id?.trim()
@@ -3367,7 +3635,7 @@ export function toStudentBookSectionRef(option: StudentSectionOption): StudentBo
 
 /**
  * Default book + unit when opening the teaching reader for a student without explicit `book` / `unit` in the URL.
- * Prefers each assigned book’s starting-place unit when set; else assigned unit refs; else first unit.
+ * Prefers the newest last-viewed assigned book; else starting-place / unit refs; else first unit.
  */
 export function getStudentDefaultBookUnitForReader(
   studentId: string,
@@ -3376,6 +3644,23 @@ export function getStudentDefaultBookUnitForReader(
   const student = getStudents().find((row) => row.id === studentId)
   if (!student || !library?.books?.length) return null
   const bookMap = new Map(library.books.map((b) => [b.id, b]))
+
+  const upNext = getStudentUpNextOpenTarget(studentId, library)
+  if (upNext) return { bookId: upNext.bookId, unitId: upNext.unitId }
+
+  const lastView = getStudentLastViewedAcrossAssignedBooks(studentId, library)
+  if (lastView) {
+    const book = bookMap.get(lastView.bookId)
+    const unit = book?.units.find((u) => u.id === lastView.unitId)
+    if (book && unit) return { bookId: book.id, unitId: unit.id }
+    if (book) {
+      const openTarget = getStudentOpenTargetForBook(studentId, book.id, library)
+      if (openTarget) {
+        const openUnit = book.units.find((u) => u.id === openTarget.unitId)
+        if (openUnit) return { bookId: book.id, unitId: openUnit.id }
+      }
+    }
+  }
 
   for (const bid of student.assignedBookIds ?? []) {
     const book = bookMap.get(bid)
@@ -3433,7 +3718,10 @@ export function getLastStoppedCarryLine(
     )
     .sort((a, b) => new Date(b.scheduledFor).getTime() - new Date(a.scheduledFor).getTime())[0]
 
-  const bookmark = prior?.bookmarkAtEnd
+  const lastView = getStudentLastViewedAcrossAssignedBooks(studentId, library)
+  const bookmark = lastView
+    ? { bookId: lastView.bookId, pdfPage: lastView.pdfPage, unitId: lastView.unitId }
+    : prior?.bookmarkAtEnd
   const bid = bookId.trim()
   const uid = unitId.trim()
   const histBook = library.books.find((b) => b.id === bid)
@@ -3979,19 +4267,26 @@ export function updateStudentCurriculumBookStart(
   // Prefer explicit page → section hint → keep prior start for this book → 1 last resort.
   const mappedPage = mappedFromInput ?? mappedFromSection ?? previousMapped ?? 1
   const nowIso = new Date().toISOString()
+  const nextStart = {
+    sectionId: section.id,
+    unitId: section.unitId,
+    mappedPage,
+    updatedAt: nowIso,
+  }
   curriculumBookStarts = {
     ...curriculumBookStarts,
-    [bookId]: {
-      sectionId: section.id,
-      unitId: section.unitId,
-      mappedPage,
-      updatedAt: nowIso,
-    },
+    [bookId]: nextStart,
   }
+  const placePdf = pdfPageFromCurriculumBookStart(nextStart, bookId, library, null) ?? mappedPage
   saveStudent({
     ...prev,
     curriculumBookStarts,
     curriculumAnchorSectionId: section.id,
+    bookPlaces: {
+      ...sanitizeStudentBookPlaces(prev.bookPlaces),
+      [bookId]: { unitId: section.unitId, pdfPage: placePdf, updatedAt: nowIso },
+    },
+    lastTaughtBookId: bookId,
     updatedAt: nowIso,
   })
   notifyStudentLocalDataChanged(studentId)
@@ -4205,8 +4500,8 @@ export function buildStudentMapReaderHref({
 }
 
 /**
- * Fullscreen map for a class session — lands on the book shelf (no auto-open).
- * Teacher picks Workshop / Literature; `book`/`unit` hint the planned title for badges.
+ * Fullscreen map for a class session. Prep auto-opens the book in the map client
+ * (session still planned/prepared). Live Enter uses the same href with the clock on.
  */
 export function buildPrepareLessonMapHref(
   studentId: string,
@@ -4404,6 +4699,7 @@ export function reconcileSoftClassAutoStart(
 /**
  * Bookmark for end class / hard auto-end: prefer the last page actually viewed in the reader,
  * then the planned start, then section page hints. Avoid inventing page 1 when a better signal exists.
+ * With several assigned books and no pinned section, use the newest reader page rather than book list order.
  */
 export function resolveClassEndBookmark(
   studentId: string,
@@ -4417,8 +4713,28 @@ export function resolveClassEndBookmark(
     assignedBookIds && assignedBookIds.length > 0
       ? assignedBookIds
       : (student?.assignedBookIds ?? [])
+  const places = sanitizeStudentBookPlaces(student?.bookPlaces)
+  const taughtId = student?.lastTaughtBookId?.trim() || ''
+  const taughtPlace = taughtId && books.includes(taughtId) ? places[taughtId] : undefined
+  if (taughtPlace) {
+    return { bookId: taughtId, pdfPage: taughtPlace.pdfPage, unitId: taughtPlace.unitId }
+  }
+
   const section = session.selectedSection ?? undefined
-  const bookId = (section?.bookId ?? books[0] ?? '').trim()
+  const sectionBookId = section?.bookId?.trim() || ''
+
+  if (!sectionBookId) {
+    const latestAcross = getLatestSavedUnitPageForBooks(books)
+    if (latestAcross) {
+      return {
+        bookId: latestAcross.bookId,
+        pdfPage: latestAcross.page,
+        unitId: latestAcross.unitId,
+      }
+    }
+  }
+
+  const bookId = (sectionBookId || books[0] || '').trim()
   if (!bookId) return undefined
 
   let unitId = section?.unitId?.trim() || undefined

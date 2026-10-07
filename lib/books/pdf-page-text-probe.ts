@@ -2,7 +2,7 @@ import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { mergePdfTextItemsToLines, type PdfTextItem } from '@/lib/books/toc-import'
 
 /** Minimum joined plain-text length to treat a page as having selectable PDF text. */
-export const PDF_PAGE_SELECTABLE_TEXT_MIN_CHARS = 30
+export const PDF_PAGE_SELECTABLE_TEXT_MIN_CHARS = 5
 
 const probeCache = new Map<string, boolean>()
 const PROBE_CACHE_MAX = 256
@@ -64,9 +64,9 @@ async function probePdfPageHasSelectableTextInner(
 
 /** Drop cached probes for one file URL (after a searchable sidecar is written). */
 export function invalidatePdfPageTextProbeCacheForFileUrl(fileUrl: string): void {
-  const prefix = `${fileUrl}::`
   for (const key of [...probeCache.keys()]) {
-    if (key.startsWith(prefix)) probeCache.delete(key)
+    // Exact URL, `url::page`, and cache-busted `url&v=N::page`.
+    if (key.startsWith(fileUrl)) probeCache.delete(key)
   }
 }
 

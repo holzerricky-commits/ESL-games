@@ -33,6 +33,7 @@ import {
 } from '@/lib/books/book-part-shelf'
 import { resolveOutlinePrintedStartPdfPage } from '@/lib/books/story-thumb-pdf-page'
 import { readingStoryPartKey } from '@/lib/books/reading-story-map'
+import { resolveTocExtractProfileForBook } from '@/lib/books/toc-extract-profile'
 import type { BooksWorkshopOpenRequest } from '@/lib/books/books-workshop'
 import type { BookLessonPartTag, BookLessonRecord, BookRecord, BookUnitRecord } from '@/lib/books/types'
 import { cn } from '@/lib/utils'
@@ -84,8 +85,8 @@ export function BookPartShelf({
   onOpenWorkshop,
 }: BookPartShelfProps) {
   const cards = useMemo(
-    () => buildBookPartShelfCards(unit, lesson, lessonIndex),
-    [unit, lesson, lessonIndex],
+    () => buildBookPartShelfCards(unit, lesson, lessonIndex, resolveTocExtractProfileForBook(book)),
+    [book, unit, lesson, lessonIndex],
   )
   const hasStoryRow = cards.some((card) => isStoryPartShelfTag(card.structureTag))
   const [pageCount, setPageCount] = useState<number | null>(null)

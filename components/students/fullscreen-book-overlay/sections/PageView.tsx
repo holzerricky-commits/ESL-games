@@ -24,8 +24,6 @@ export interface PageViewProps {
   onSlotPixelsReady?: (pageNumber: number) => void
   className?: string
   style?: CSSProperties
-  bookTextSelectActive?: boolean
-  pageHasSelectableText?: boolean
   screenScale?: number
   /** When false, rectangular bare pages (no bulge, stacks, or page chrome shadow). */
   showBookFrame?: boolean
@@ -53,8 +51,6 @@ export function PageView({
   onSlotPixelsReady,
   className,
   style,
-  bookTextSelectActive = false,
-  pageHasSelectableText = false,
   screenScale = 1,
   showBookFrame = true,
   children,
@@ -68,6 +64,7 @@ export function PageView({
   }
 
   const warmHidden = slotRole === 'hidden'
+
   const layoutStyle = useMemo((): CSSProperties => {
     const rigidPageBox: CSSProperties = {
       boxSizing: 'border-box',
@@ -139,8 +136,6 @@ export function PageView({
             ? slotRole
             : undefined
         }
-        bookTextSelectActive={bookTextSelectActive}
-        pageHasSelectableText={pageHasSelectableText}
         screenScale={screenScale}
       >
         {isActiveSpread ? children : null}

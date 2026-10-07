@@ -245,7 +245,8 @@ export function todayClassStateLabel(state: TodayClassTeachingState): string {
     case 'upcoming':
       return 'Upcoming'
     case 'starting':
-      return 'Starting'
+      // Pre-start / not-yet-entered — never “Live” (Live is only in_progress).
+      return 'Soon'
     case 'live':
       return 'Live'
     case 'grace':

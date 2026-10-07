@@ -223,6 +223,27 @@ describe('book-lesson-shelf', () => {
     expect(resolveLessonShelfThumbPrintedStart(bare, bare.lessons[0]!, 0)).toBe(14)
   })
 
+  it('thumb uses Journeys slot when story title has no structureTag', () => {
+    const unit = {
+      id: 'u1',
+      title: 'Unit 3',
+      filePath: 'a.pdf',
+      lessons: [
+        {
+          id: 'l13',
+          title: 'Lesson 13',
+          startPageHint: 426,
+          parts: [
+            { id: 'p0', title: 'Vocabulary in Context', startPageHint: 426 },
+            { id: 'p1', title: 'Comprehension', startPageHint: 429 },
+            { id: 'p2', title: 'Yonder Mountain', startPageHint: 430 },
+          ],
+        },
+      ],
+    }
+    expect(resolveLessonShelfThumbPrintedStart(unit, unit.lessons[0]!, 0)).toBe(430)
+  })
+
   it('resolveLessonShelfCardPdfPage uses outline start with no offset', () => {
     const book = baseBook({
       units: [

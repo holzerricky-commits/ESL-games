@@ -9,21 +9,31 @@ import {
   type ReadingStoryMap,
   type ReadingStoryRangeOverride,
 } from '@/lib/books/reading-story-map'
-import type { ReadingCheckPack } from '@/lib/books/reading-check-pack'
+import type { ReadingCheckPack, ReadingCheckStop } from '@/lib/books/reading-check-pack'
 import { readingStoryTextStatus } from '@/lib/books/reading-story-text'
-import { effectivePartStructureTag } from '@/lib/books/part-structure-tag'
+import { resolvePartStoryKind } from '@/lib/books/part-structure-tag'
+import { resolveTocExtractProfileForBook } from '@/lib/books/toc-extract-profile'
 import type { BookLessonPartRecord, BookLessonRecord, BookRecord, BookUnitRecord } from '@/lib/books/types'
+import { cn } from '@/lib/utils'
 
 interface BookPartChecksPrepProps {
   book: BookRecord
   unit: BookUnitRecord
   lesson: BookLessonRecord
   part: BookLessonPartRecord
+  partIndex?: number
   totalPdfPages: number | null
   /** Optional: parent already knows text readiness (avoids a second fetch race). */
   textReady?: boolean
   /** Notify parent when checks are approved (for header badge). */
   onChecksReadyChange?: (ready: boolean) => void
+  /** Flush into workbench rail (no nested card). */
+  rail?: boolean
+  onOpenStoryText?: () => void
+  className?: string
+  onDraftChange?: (pack: ReadingCheckPack | null) => void
+  onActiveStopChange?: (stop: ReadingCheckStop | null) => void
+  requestedStopId?: string | null
 }
 
 export function BookPartChecksPrep({
@@ -31,12 +41,19 @@ export function BookPartChecksPrep({
   unit,
   lesson,
   part,
+  partIndex = 0,
   totalPdfPages,
   textReady: textReadyProp,
   onChecksReadyChange,
+  rail = false,
+  onOpenStoryText,
+  className,
+  onDraftChange,
+  onActiveStopChange,
+  requestedStopId = null,
 }: BookPartChecksPrepProps) {
   const story = useMemo<ReadingStoryMap>(() => {
-    const tag = effectivePartStructureTag(part)
+    const kind = resolvePartStoryKind(part, partIndex, resolveTocExtractProfileForBook(book))
     return {
       id: readingStoryPartKey(book.id, unit.id, lesson.id, part.id),
       bookId: book.id,
@@ -44,10 +61,10 @@ export function BookPartChecksPrep({
       lessonId: lesson.id,
       partId: part.id,
       title: part.title?.trim() || 'Story',
-      kind: tag === 'paired_story' ? 'paired_story' : tag === 'main_story' ? 'main_story' : undefined,
+      kind,
       lessonTitle: lesson.title,
     }
-  }, [book.id, unit.id, lesson.id, lesson.title, part])
+  }, [book, unit.id, lesson.id, lesson.title, part, partIndex])
 
   const [override, setOverride] = useState<ReadingStoryRangeOverride | null>(null)
   const [pack, setPack] = useState<ReadingCheckPack | null>(null)
@@ -128,6 +145,10 @@ export function BookPartChecksPrep({
   }, [book.id, unit.id, story.id, part.id, lesson.id])
 
   function openStoryText() {
+    if (onOpenStoryText) {
+      onOpenStoryText()
+      return
+    }
     const el = document.getElementById('part-prep-story-text')
     if (!el) return
     el.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -136,26 +157,40 @@ export function BookPartChecksPrep({
   return (
     <div
       id="part-prep-checks"
-      className="scroll-mt-6 overflow-hidden rounded-[28px] bg-[var(--surface-2)] shadow-[0_12px_40px_-24px_rgba(0,0,0,0.2)]"
+      className={cn(
+        'scroll-mt-4',
+        rail
+          ? 'flex h-full min-h-0 flex-col space-y-3'
+          : 'scroll-mt-6 overflow-hidden rounded-[28px] bg-[var(--surface-2)] shadow-[0_12px_40px_-24px_rgba(0,0,0,0.2)]',
+        className,
+      )}
     >
-      <div className="space-y-4 px-6 py-5 sm:px-8 sm:py-6">
-        <div className="flex items-start gap-3.5">
-          <span
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-[linear-gradient(160deg,color-mix(in_srgb,var(--brand-blue)_72%,white),var(--brand-blue))] text-white shadow-[0_10px_24px_-14px_rgba(0,0,0,0.35)]"
-            aria-hidden
-          >
-            <ListChecks className="h-5 w-5 stroke-[1.75]" />
-          </span>
-          <div className="min-w-0 space-y-0.5 pt-0.5">
-            <p className="text-[17px] font-semibold tracking-tight text-foreground">Reading checks</p>
+      <div className={cn(rail ? 'flex min-h-0 flex-1 flex-col space-y-3' : 'space-y-4 px-6 py-5 sm:px-8 sm:py-6')}>
+        {rail ? (
+          <div className="space-y-0.5">
+            <p className="text-[13px] font-semibold tracking-tight text-foreground">Reading checks</p>
+            <p className="text-[12px] text-muted-foreground">Questions for this story</p>
           </div>
-        </div>
+        ) : (
+          <div className="flex items-start gap-3.5">
+            <span
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-[linear-gradient(160deg,color-mix(in_srgb,var(--brand-blue)_72%,white),var(--brand-blue))] text-white shadow-[0_10px_24px_-14px_rgba(0,0,0,0.35)]"
+              aria-hidden
+            >
+              <ListChecks className="h-5 w-5 stroke-[1.75]" />
+            </span>
+            <div className="min-w-0 space-y-0.5 pt-0.5">
+              <p className="text-[17px] font-semibold tracking-tight text-foreground">Reading checks</p>
+            </div>
+          </div>
+        )}
 
         {loading ? (
-          <p className="text-[14px] text-muted-foreground">Loading…</p>
+          <p className="text-[13px] text-muted-foreground">Loading…</p>
         ) : loadError ? (
-          <p className="text-[14px] text-destructive">{loadError}</p>
+          <p className="text-[13px] text-destructive">{loadError}</p>
         ) : (
+          <div className={rail ? 'flex h-full min-h-0 flex-1 flex-col' : undefined}>
           <StoryCheckPackPanel
             storyId={story.id}
             bookId={story.bookId}
@@ -166,10 +201,20 @@ export function BookPartChecksPrep({
             lessonId={lesson.id}
             pack={pack}
             defaultDisplayPage={defaultDisplayPage}
-            onPackChange={setPack}
+            onPackChange={(next) => {
+              setPack(next)
+              onDraftChange?.(next)
+            }}
             onOpenStoryText={openStoryText}
             chrome="soft"
+            embed={rail}
+            keepBookVisible={rail}
+            hideCollapsedRow={rail}
+            onDraftChange={onDraftChange}
+            onActiveStopChange={onActiveStopChange}
+            requestedStopId={requestedStopId}
           />
+          </div>
         )}
       </div>
     </div>

@@ -148,6 +148,13 @@ export function scoreWhiteboardSessionRichness(doc: WhiteboardSessionDocument): 
 
 const WHITEBOARD_DOC_ID_SUFFIX = '::wb::'
 
+/** All whiteboard session doc ids currently on disk. */
+export function listWhiteboardSessionDocIds(
+  adapter: WhiteboardSessionStorageAdapter = browserStorageAdapter,
+): string[] {
+  return Object.keys(readWhiteboardSessionRoot(adapter))
+}
+
 /** Storage page keys already on disk for this student/book/unit (legacy class boards + local). */
 export function listStoredWhiteboardStoragePageKeys(
   scope: Pick<WhiteboardSessionKey, 'studentId' | 'bookId' | 'unitId'>,

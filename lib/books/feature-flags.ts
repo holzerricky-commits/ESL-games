@@ -125,6 +125,18 @@ export const bookSpreadPageArtHiddenForFrameTuning =
 export const bookPdfTextSelectionEnabled = true
 
 /**
+ * TEMP: draw OCR text-layer span boxes + visible ghost text for selectable-book debugging.
+ * Set `false` before ship.
+ */
+export const bookPdfTextLayerDebugEnabled = false
+
+/**
+ * On-page vocab word highlights (text-layer match or saved tap spots).
+ * Re-enabled in Phase 4 with tap spot support.
+ */
+export const interactiveVocabPageHighlightsEnabled = true
+
+/**
  * Live react-pdf as the primary page display once composited; prefetch cache only while loading.
  * Set `false` to restore cache-first display (Phase 1–2 behavior).
  */

@@ -19,12 +19,50 @@ export const LESSON_BOARD_VIEWPORTS_BELOW_VIEW_TOP = 2
 
 export type LessonBoardPageOrientation = 'standard' | 'wide'
 
+/** Intentional citation: this notebook page points at a place in a book. */
+export type LessonBoardPagePrimaryLink = {
+  bookId: string
+  pdfPage: number
+  /** Normalized page center. Omitted = jump to the page, no marker spot. */
+  center?: [number, number]
+}
+
+export function normalizeLessonBoardPagePrimaryLink(
+  raw: unknown,
+): LessonBoardPagePrimaryLink | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const o = raw as Record<string, unknown>
+  const bookId = typeof o.bookId === 'string' ? o.bookId.trim() : ''
+  const pdfPage = typeof o.pdfPage === 'number' ? Math.floor(o.pdfPage) : Number.NaN
+  if (!bookId || !Number.isFinite(pdfPage) || pdfPage < 1) return undefined
+  const centerRaw = o.center
+  let center: [number, number] | undefined
+  if (
+    Array.isArray(centerRaw) &&
+    centerRaw.length >= 2 &&
+    typeof centerRaw[0] === 'number' &&
+    typeof centerRaw[1] === 'number'
+  ) {
+    center = [
+      Math.max(0, Math.min(1, centerRaw[0])),
+      Math.max(0, Math.min(1, centerRaw[1])),
+    ]
+  }
+  return center ? { bookId, pdfPage, center } : { bookId, pdfPage }
+}
+
 export type LessonBoardPage = {
   id: string
   orientation: LessonBoardPageOrientation
   title?: string
   /** Optional PDF page number when this board page was created or last edited. */
   bookPageHint?: number
+  /** Weak citation: which book this page was copied or last edited from. Not a folder. */
+  sourceBookId?: string
+  /** Weak citation: which book unit this page was copied or last edited from. */
+  sourceUnitId?: string
+  /** One primary book link. Not a folder. Not auto-created on page turn. */
+  primaryLink?: LessonBoardPagePrimaryLink
   /** Locked logical canvas width (slot for standard, spread for wide). */
   logicalWidthPx?: number
   contentHeightPx: number
@@ -85,16 +123,23 @@ export function createLessonBoardPage(
     id?: string
     title?: string
     bookPageHint?: number
+    sourceBookId?: string
+    sourceUnitId?: string
+    primaryLink?: LessonBoardPagePrimaryLink
     logicalWidthPx?: number
     contentHeightPx?: number
     commands?: AnnotationCommand[]
   } = {},
 ): LessonBoardPage {
+  const primaryLink = normalizeLessonBoardPagePrimaryLink(options.primaryLink)
   return {
     id: options.id ?? newLessonBoardPageId(),
     orientation,
     ...(options.title != null ? { title: options.title } : {}),
     ...(options.bookPageHint != null ? { bookPageHint: options.bookPageHint } : {}),
+    ...(options.sourceBookId?.trim() ? { sourceBookId: options.sourceBookId.trim() } : {}),
+    ...(options.sourceUnitId?.trim() ? { sourceUnitId: options.sourceUnitId.trim() } : {}),
+    ...(primaryLink ? { primaryLink } : {}),
     ...(options.logicalWidthPx != null && options.logicalWidthPx > 0
       ? { logicalWidthPx: options.logicalWidthPx }
       : {}),
@@ -176,7 +221,11 @@ export function lessonBoardThumbDimensions(
 export function normalizeLessonBoardPageOrientation(
   page: LessonBoardPage,
 ): LessonBoardPage {
-  return { ...page, orientation: page.orientation ?? 'standard' }
+  const primaryLink = normalizeLessonBoardPagePrimaryLink(page.primaryLink)
+  const next: LessonBoardPage = { ...page, orientation: page.orientation ?? 'standard' }
+  if (primaryLink) next.primaryLink = primaryLink
+  else delete next.primaryLink
+  return next
 }
 
 export function getLessonBoardActivePage(

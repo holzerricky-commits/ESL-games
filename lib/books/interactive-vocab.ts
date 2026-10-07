@@ -3,11 +3,14 @@ import { buildPageAlignmentRuntime, resolveEffectiveAnchorToPdfPage } from '@/li
 import { getFileAlignment, getUnitReaderBounds } from '@/lib/books/page-range'
 import { pageRangeForIndex } from '@/lib/books/toc-page-range'
 
+import type { VocabTapSpot } from '@/lib/context/types'
+
 export interface InteractiveVocabWord {
   id: string
   word: string
   definition: string
   examples: string[]
+  tapSpot?: VocabTapSpot | null
 }
 
 export interface InteractiveVocabPack {

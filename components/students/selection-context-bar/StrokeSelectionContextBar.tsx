@@ -35,7 +35,12 @@ import {
 } from '@/components/students/selection-context-bar/SelectionContextActionsWithArrange'
 import { SelectionContextBarDivider } from '@/components/students/selection-context-bar/SelectionContextBarDivider'
 import { SelectionContextBarGroup } from '@/components/students/selection-context-bar/SelectionContextBarGroup'
-import { SelectionContextColorSection } from '@/components/students/selection-context-bar/SelectionContextColorSection'
+import {
+  CONTEXT_MARKER_COLORS,
+  CONTEXT_PEN_SWATCHES,
+  SelectionContextHexColorControl,
+  SelectionContextPenColorControl,
+} from '@/components/students/selection-context-bar/SelectionContextColorButton'
 import { SelectionContextSizeStepper } from '@/components/students/selection-context-bar/SelectionContextSizeStepper'
 import {
   TopStripLineStyleChip,
@@ -100,22 +105,6 @@ export function StrokeSelectionContextBar({
 
   const penSwatchId = getPenSwatchIdForColor(colorValue)
 
-  const penPaletteExtras = useMemo(
-    () => ({
-      penSwatchId,
-      pickPenSwatch: (id: string) => onPatch({ color: getPenSwatch(id).color }),
-    }),
-    [penSwatchId, onPatch],
-  )
-
-  const markerPaletteExtras = useMemo(
-    () => ({
-      markerColor: colorValue,
-      pickMarkerSwatchColor: (hex: string) => onPatch({ color: hex }),
-    }),
-    [colorValue, onPatch],
-  )
-
   const showPenColors = toolMix === 'pen'
   const showMarkerColors = toolMix === 'marker'
   const showPenDash = toolMix === 'pen'
@@ -145,22 +134,25 @@ export function StrokeSelectionContextBar({
         <>
           <SelectionContextBarGroup aria-label="Stroke color">
             {showPenColors ? (
-              <SelectionContextColorSection
-                kind="pen"
+              <SelectionContextPenColorControl
+                swatchId={penSwatchId}
+                swatches={CONTEXT_PEN_SWATCHES}
+                recentKind="pen"
+                ariaLabel="Pen color"
                 idPrefix="ctx-stroke-pen"
-                activeValue={penSwatchId}
-                paletteTarget="pen"
-                paletteExtras={penPaletteExtras}
+                label="Pen color"
                 onPick={(id) => onPatch({ color: getPenSwatch(id).color })}
               />
             ) : null}
             {showMarkerColors ? (
-              <SelectionContextColorSection
-                kind="marker"
+              <SelectionContextHexColorControl
+                role="marker"
+                color={colorValue}
+                colors={CONTEXT_MARKER_COLORS}
+                recentKind="marker"
+                ariaLabel="Highlighter color"
                 idPrefix="ctx-stroke-marker"
-                activeValue={colorValue}
-                paletteTarget="marker"
-                paletteExtras={markerPaletteExtras}
+                label="Highlighter"
                 onPick={(hex) => onPatch({ color: hex })}
               />
             ) : null}

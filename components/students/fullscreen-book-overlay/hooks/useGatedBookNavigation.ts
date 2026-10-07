@@ -25,6 +25,10 @@ import {
   scheduleSaveUnitPage,
 } from '@/lib/books/progress'
 import {
+  flushPendingStudentBookPlaceSave,
+  scheduleSaveStudentBookPlace,
+} from '@/lib/students/student-book-place-save'
+import {
   normalizePageTurnTarget,
   readerBoundsForUnit,
 } from '@/lib/books/reader-spread-navigation'
@@ -46,6 +50,8 @@ interface UseGatedBookNavigationArgs {
   open: boolean
   setPageNumber: (v: number) => void
   onBeforeCommitPage?: (fromPage: number, toPage: number) => void
+  /** When set, page turns also move this student's place in the book. */
+  placeStudentId?: string | null
 }
 
 /**
@@ -67,6 +73,7 @@ export function useGatedBookNavigation({
   open,
   setPageNumber,
   onBeforeCommitPage,
+  placeStudentId = null,
 }: UseGatedBookNavigationArgs) {
   const lastBookUnitRef = useRef<{ bookId: string; unitId: string } | null>(null)
   /** Latest anchor for burst taps (React state may lag one frame). */
@@ -134,9 +141,18 @@ export function useGatedBookNavigation({
       anchorRef.current = normalizedNext
       setPageNumber(normalizedNext)
       scheduleSaveUnitPage(selectedBookId, selectedUnitId, normalizedNext)
+      const sid = placeStudentId?.trim()
+      if (sid) {
+        scheduleSaveStudentBookPlace({
+          studentId: sid,
+          bookId: selectedBookId,
+          unitId: selectedUnitId,
+          pdfPage: normalizedNext,
+        })
+      }
       kickPrefetchForAnchor(normalizedNext, prefetchIntent)
     },
-    [selectedBookId, selectedUnitId, setPageNumber, kickPrefetchForAnchor],
+    [selectedBookId, selectedUnitId, setPageNumber, kickPrefetchForAnchor, placeStudentId],
   )
 
   const scheduleDrainAfterStep = useCallback(() => {
@@ -194,7 +210,9 @@ export function useGatedBookNavigation({
   )
 
   useEffect(() => {
-    if (!open) flushPendingUnitPageSave()
+    if (open) return
+    flushPendingUnitPageSave()
+    flushPendingStudentBookPlaceSave()
   }, [open])
 
   useEffect(() => {
@@ -202,6 +220,7 @@ export function useGatedBookNavigation({
     const prev = lastBookUnitRef.current
     if (prev && (prev.bookId !== selectedBookId || prev.unitId !== selectedUnitId)) {
       flushPendingUnitPageSave()
+      flushPendingStudentBookPlaceSave()
     }
     lastBookUnitRef.current = { bookId: selectedBookId, unitId: selectedUnitId }
   }, [selectedBookId, selectedUnitId])
@@ -209,6 +228,7 @@ export function useGatedBookNavigation({
   useEffect(() => {
     return () => {
       flushPendingUnitPageSave()
+      flushPendingStudentBookPlaceSave()
       if (drainTimerRef.current != null) clearTimeout(drainTimerRef.current)
     }
   }, [])

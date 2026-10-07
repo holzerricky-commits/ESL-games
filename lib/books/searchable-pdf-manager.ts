@@ -1,4 +1,5 @@
 import { toast } from 'sonner'
+import type { ScanNotice } from '@/components/books/dismissible-scan-notice'
 import {
   runSearchablePdfForStory,
   type SearchablePdfProgress,
@@ -8,6 +9,8 @@ export type SearchablePdfJobSnapshot = {
   storyId: string
   running: boolean
   progress: SearchablePdfProgress | null
+  /** Outcome of the last run; stays until dismissed or a new run starts. */
+  lastNotice: ScanNotice | null
 }
 
 type Listener = (snapshot: SearchablePdfJobSnapshot) => void
@@ -17,6 +20,7 @@ type Job = {
   controller: AbortController
   running: boolean
   progress: SearchablePdfProgress | null
+  lastNotice: ScanNotice | null
   listeners: Set<Listener>
   generation: number
 }
@@ -28,6 +32,7 @@ function snapshotOf(job: Job): SearchablePdfJobSnapshot {
     storyId: job.storyId,
     running: job.running,
     progress: job.progress,
+    lastNotice: job.lastNotice,
   }
 }
 
@@ -40,6 +45,14 @@ function emit(job: Job) {
       // Ignore one bad UI subscriber.
     }
   }
+}
+
+function pruneIdleJob(job: Job) {
+  if (!job.running && !job.lastNotice && job.listeners.size === 0) jobs.delete(job.storyId)
+}
+
+function pagesLabel(n: number): string {
+  return `${n} page${n === 1 ? '' : 's'}`
 }
 
 export function isSearchablePdfJobRunning(storyId: string): boolean {
@@ -56,6 +69,7 @@ export function subscribeSearchablePdfJob(storyId: string, listener: Listener): 
       controller: new AbortController(),
       running: false,
       progress: null,
+      lastNotice: null,
       listeners: new Set(),
       generation: 0,
     }
@@ -67,7 +81,7 @@ export function subscribeSearchablePdfJob(storyId: string, listener: Listener): 
     const current = jobs.get(id)
     if (!current) return
     current.listeners.delete(listener)
-    if (!current.running && current.listeners.size === 0) jobs.delete(id)
+    pruneIdleJob(current)
   }
 }
 
@@ -75,6 +89,14 @@ export function stopSearchablePdfJob(storyId: string): void {
   const job = jobs.get(storyId.trim())
   if (!job?.running) return
   job.controller.abort()
+}
+
+export function dismissSearchablePdfJobNotice(storyId: string): void {
+  const job = jobs.get(storyId.trim())
+  if (!job?.lastNotice) return
+  job.lastNotice = null
+  emit(job)
+  pruneIdleJob(job)
 }
 
 export function startSearchablePdfJob(input: {
@@ -85,6 +107,7 @@ export function startSearchablePdfJob(input: {
   partId?: string | null
   title?: string
   totalPdfPages?: number | null
+  force?: boolean
 }): void {
   const storyId = input.storyId.trim()
   if (!storyId) return
@@ -95,6 +118,7 @@ export function startSearchablePdfJob(input: {
   const controller = new AbortController()
   const generation = (prev?.generation ?? 0) + 1
   const listeners = prev?.listeners ?? new Set<Listener>()
+  const force = Boolean(input.force)
   const job: Job = {
     storyId,
     controller,
@@ -105,19 +129,30 @@ export function startSearchablePdfJob(input: {
       totalCount: 0,
       percent: 0,
       activeLabel: null,
-      message: 'Checking pages…',
+      activeStartedAt: null,
+      message: force ? 'Preparing redo…' : 'Checking pages…',
     },
+    lastNotice: null,
     listeners,
     generation,
   }
   jobs.set(storyId, job)
   emit(job)
 
+  const finish = (current: Job, notice: ScanNotice) => {
+    current.running = false
+    current.progress = null
+    current.lastNotice = notice
+    emit(current)
+    pruneIdleJob(current)
+  }
+
   void (async () => {
     try {
       const result = await runSearchablePdfForStory({
         ...input,
         storyId,
+        force,
         signal: controller.signal,
         onProgress: (progress) => {
           const current = jobs.get(storyId)
@@ -129,33 +164,56 @@ export function startSearchablePdfJob(input: {
 
       const current = jobs.get(storyId)
       if (!current || current.generation !== generation) return
-      current.running = false
-      current.progress = null
-      emit(current)
 
       if (result.ok) {
         if (result.stamped === 0) {
-          toast.message('These pages already have selectable text.')
+          const message = force
+            ? 'Nothing to redo — these pages already have text in the book.'
+            : 'These pages already have selectable text.'
+          toast.message(message)
+          finish(current, { kind: 'info', message })
         } else {
           toast.success(
-            `Selectable text is ready on ${result.stamped} page${result.stamped === 1 ? '' : 's'}. Drag words on the book to copy or translate.`,
+            force
+              ? `Selectable text redone on ${pagesLabel(result.stamped)}.`
+              : `Selectable text is ready on ${pagesLabel(result.stamped)}. Drag words on the book to copy or translate.`,
           )
+          finish(current, {
+            kind: 'success',
+            message: force
+              ? `Selectable text redone on ${pagesLabel(result.stamped)}.`
+              : `Selectable text is ready on ${pagesLabel(result.stamped)}. Drag words on the book to copy or translate.`,
+          })
         }
-      } else if (result.error !== 'Stopped.') {
+      } else if (controller.signal.aborted || result.error.startsWith('Stopped')) {
+        finish(current, {
+          kind: 'info',
+          message:
+            result.stamped > 0
+              ? `Stopped — ${pagesLabel(result.stamped)} done. Finished pages were kept.`
+              : 'Stopped before any page was finished.',
+        })
+      } else {
         toast.error(result.error)
+        finish(current, {
+          kind: 'error',
+          message:
+            result.stamped > 0
+              ? `${result.error} ${pagesLabel(result.stamped)} finished before it stopped.`
+              : result.error,
+        })
       }
-
-      if (current.listeners.size === 0) jobs.delete(storyId)
     } catch (err) {
       const current = jobs.get(storyId)
       if (!current || current.generation !== generation) return
-      current.running = false
-      current.progress = null
-      emit(current)
-      if (!controller.signal.aborted) {
-        toast.error(err instanceof Error ? err.message : 'Could not make pages selectable.')
-      }
-      if (current.listeners.size === 0) jobs.delete(storyId)
+      const message = err instanceof Error ? err.message : 'Could not make pages selectable.'
+      if (!controller.signal.aborted) toast.error(message)
+      finish(
+        current,
+        controller.signal.aborted
+          ? { kind: 'info', message: 'Stopped before any page was finished.' }
+          : { kind: 'error', message },
+      )
     }
   })()
 }

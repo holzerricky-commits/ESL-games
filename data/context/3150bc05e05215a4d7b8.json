@@ -1,0 +1,97 @@
+{
+  "id": "3150bc05e05215a4d7b8",
+  "kind": "part",
+  "bookId": "readingwriting-workshop-g2",
+  "unitId": "unit-2-b7f10b10",
+  "lessonId": "lesson-a9f3bc46",
+  "partId": "part-19e0e76e",
+  "partTitle": "Vocabulary",
+  "partGoals": [],
+  "activityNotes": [],
+  "languageFocus": {
+    "grammarNotes": [],
+    "writingNotes": []
+  },
+  "sourcePageRange": {
+    "startPage": 148,
+    "endPage": 149
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-08-31T17:57:57.730Z",
+  "updatedAt": "2026-08-31T17:57:57.730Z",
+  "interactiveVocabulary": [
+    {
+      "id": "cc-1",
+      "word": "adult",
+      "definition": "A person who is fully grown and developed.",
+      "examples": [
+        "My father is an adult.",
+        "What is the opposite of an adult?"
+      ]
+    },
+    {
+      "id": "cc-2",
+      "word": "alive",
+      "definition": "Living; not dead.",
+      "examples": [
+        "I water the flowers to keep them alive.",
+        "How can you tell that a plant is alive?"
+      ]
+    },
+    {
+      "id": "cc-3",
+      "word": "covered",
+      "definition": "Having something spread over the surface of something else.",
+      "examples": [
+        "Polar bears are covered with thick, white fur.",
+        "What are birds covered with?"
+      ]
+    },
+    {
+      "id": "cc-4",
+      "word": "fur",
+      "definition": "The soft, thick hair that covers the body of some animals.",
+      "examples": [
+        "My kitten has fur that is soft and fluffy.",
+        "What are some other animals that have fur?"
+      ]
+    },
+    {
+      "id": "cc-5",
+      "word": "giant",
+      "definition": "Extremely large or much larger than usual.",
+      "examples": [
+        "That giant tree is taller than my house.",
+        "Tell about the most giant thing you have ever seen."
+      ]
+    },
+    {
+      "id": "cc-6",
+      "word": "groom",
+      "definition": "To clean and brush an animal's fur or hair.",
+      "examples": [
+        "I use a brush to groom my horse each day.",
+        "What is another word for groom?"
+      ]
+    },
+    {
+      "id": "cc-7",
+      "word": "mammal",
+      "definition": "An animal that has fur or hair and breathes air.",
+      "examples": [
+        "A mammal has fur or hair and breathes air.",
+        "Describe a mammal you know about."
+      ]
+    },
+    {
+      "id": "cc-8",
+      "word": "offspring",
+      "definition": "The young of an animal or plant.",
+      "examples": [
+        "At the zoo, we saw a mother rabbit and two offspring.",
+        "What is the name for the offspring of a dog?"
+      ]
+    }
+  ]
+}

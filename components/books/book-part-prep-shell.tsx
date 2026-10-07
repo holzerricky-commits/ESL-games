@@ -1,22 +1,34 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Library } from 'lucide-react'
 import { BookPartChecksPrep } from '@/components/books/book-part-checks-prep'
-import { BookPartPagesConfirm } from '@/components/books/book-part-pages-confirm'
-import { BookPartPrepStatusChips } from '@/components/books/book-part-prep-status-chips'
+import { BookPartLiveSpreadPreview } from '@/components/books/book-part-live-spread-preview'
+import {
+  BookPartPagesConfirm,
+  type BookPartPagesDisplayRange,
+} from '@/components/books/book-part-pages-confirm'
 import { BookPartStoryTextPrep } from '@/components/books/book-part-story-text-prep'
 import { BookPartOutlineSpreadPreview } from '@/components/books/book-part-outline-spread-preview'
 import { BookPartVocabPrep } from '@/components/books/book-part-vocab-prep'
+import {
+  BookPartWorkbenchToolSwitcher,
+  type BookPartWorkbenchToolId,
+} from '@/components/books/book-part-workbench-tool-switcher'
+import { BookWorkbenchShell, BOOK_WORKBENCH_LEFT_WIDTH_PX } from '@/components/books/book-workbench-shell'
 import { UnitPdfPageCountLoader } from '@/components/books/unit-pdf-page-count-loader'
 import { makeUnitFileUrl } from '@/lib/books/book-file-url'
 import { formatPartListHeadline, formatPartPageRangeLabel, isStoryPartShelfTag, isVocabPartShelfTag } from '@/lib/books/book-part-shelf'
 import type { BooksWorkshopOpenRequest } from '@/lib/books/books-workshop'
-import { BOOK_LESSON_PART_TAG_LABELS, effectivePartStructureTag } from '@/lib/books/part-structure-tag'
+import { BOOK_LESSON_PART_TAG_LABELS, resolvePartStructureTag } from '@/lib/books/part-structure-tag'
+import { resolveTocExtractProfileForBook } from '@/lib/books/toc-extract-profile'
 import { readingStoryPartKey } from '@/lib/books/reading-story-map'
+import type { ReadingCheckPack, ReadingCheckStop } from '@/lib/books/reading-check-pack'
+import { resolveMappedPageToPdfPage } from '@/lib/books/page-numbering'
 import { readingStoryTextStatus } from '@/lib/books/reading-story-text'
 import { pageRangeForIndex } from '@/lib/books/toc-page-range'
 import { resolveOutlinePrintedStartPdfPage } from '@/lib/books/story-thumb-pdf-page'
+import { useSearchablePdfStatus } from '@/lib/books/use-searchable-pdf-status'
 import type { BookLessonPartRecord, BookLessonRecord, BookRecord, BookUnitRecord } from '@/lib/books/types'
 
 const PART_PREP_THUMB_WIDTH = 260
@@ -35,12 +47,6 @@ interface BookPartPrepShellProps {
   onOpenWorkshop?: (request: BooksWorkshopOpenRequest) => void
 }
 
-function scrollToPrepSection(id: string) {
-  const el = document.getElementById(id)
-  if (!el) return
-  el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-}
-
 export function BookPartPrepShell({
   book,
   unit,
@@ -57,12 +63,17 @@ export function BookPartPrepShell({
   const [pageCount, setPageCount] = useState<number | null>(null)
   const [textReady, setTextReady] = useState(false)
   const [checksReady, setChecksReady] = useState(false)
+  const [storyDisplayRange, setStoryDisplayRange] = useState<BookPartPagesDisplayRange | null>(null)
+  const [activeTool, setActiveTool] = useState<BookPartWorkbenchToolId>('pages')
+  const [checksDraft, setChecksDraft] = useState<ReadingCheckPack | null>(null)
+  const [checksActiveStop, setChecksActiveStop] = useState<ReadingCheckStop | null>(null)
+  const [requestedStopId, setRequestedStopId] = useState<string | null>(null)
   const fileUrl = unit.filePath ? makeUnitFileUrl(unit.filePath) : null
   const lessons = unit.lessons ?? []
   const lessonRange = pageRangeForIndex(lessons, lessonIndex)
   const parts = lesson.parts ?? []
   const range = pageRangeForIndex(parts, partIndex, lessonRange.start, lessonRange.end)
-  const tag = effectivePartStructureTag(part)
+  const tag = resolvePartStructureTag(part, partIndex, resolveTocExtractProfileForBook(book))
   const typeLabel = BOOK_LESSON_PART_TAG_LABELS[tag] ?? 'Part'
   const isStory = isStoryPartShelfTag(tag)
   const isVocab = isVocabPartShelfTag(tag)
@@ -71,6 +82,25 @@ export function BookPartPrepShell({
     () => readingStoryPartKey(book.id, unit.id, lesson.id, part.id),
     [book.id, unit.id, lesson.id, part.id],
   )
+  const pagesReadyForSelectable =
+    isStory &&
+    (storyDisplayRange != null || (range.start != null && range.end != null))
+  const { status: selectableStatus, filePath: searchableFilePath } = useSearchablePdfStatus({
+    bookId: book.id,
+    unitId: unit.id,
+    storyId,
+    lessonId: lesson.id,
+    partId: part.id,
+    title: part.title?.trim() || 'Story',
+    totalPdfPages: pageCount,
+    enabled: pagesReadyForSelectable,
+  })
+  const selectableReady =
+    selectableStatus === 'stamped' || selectableStatus === 'native-text'
+  const liveDocumentUrl =
+    selectableReady && searchableFilePath?.trim()
+      ? makeUnitFileUrl(searchableFilePath.trim())
+      : null
   const workshopPdfPage =
     resolveOutlinePrintedStartPdfPage(range.start, book, unit, pageCount) ??
     (typeof range.start === 'number' ? Math.max(1, Math.floor(range.start)) : 1)
@@ -109,10 +139,30 @@ export function BookPartPrepShell({
     setChecksReady(ready)
   }, [])
 
+  const handleChecksDraftChange = useCallback((next: ReadingCheckPack | null) => {
+    setChecksDraft(next)
+  }, [])
+
+  const handleChecksActiveStopChange = useCallback((stop: ReadingCheckStop | null) => {
+    setChecksActiveStop(stop)
+  }, [])
+
+  const handleStoryDisplayRangeChange = useCallback((next: BookPartPagesDisplayRange | null) => {
+    setStoryDisplayRange((prev) => {
+      if (next == null) return prev == null ? prev : null
+      if (prev?.startDisplay === next.startDisplay && prev?.endDisplay === next.endDisplay) {
+        return prev
+      }
+      return next
+    })
+  }, [])
+
   useEffect(() => {
     if (!isStory) {
       setTextReady(false)
       setChecksReady(false)
+      setStoryDisplayRange(null)
+      setActiveTool('pages')
       return
     }
     let cancelled = false
@@ -146,14 +196,156 @@ export function BookPartPrepShell({
     }
   }, [isStory, storyId])
 
+  const checksFocusPdfPage = useMemo(() => {
+    if (activeTool !== 'checks' || !checksActiveStop) return null
+    if (typeof checksActiveStop.hotspot?.pdfPage === 'number' && checksActiveStop.hotspot.pdfPage >= 1) {
+      return checksActiveStop.hotspot.pdfPage
+    }
+    if (typeof checksActiveStop.displayPage === 'number' && checksActiveStop.displayPage >= 1) {
+      return resolveMappedPageToPdfPage(checksActiveStop.displayPage, book, unit, pageCount)
+    }
+    return null
+  }, [activeTool, book, checksActiveStop, pageCount, unit])
+
+  useEffect(() => {
+    if (requestedStopId && checksActiveStop?.id === requestedStopId) {
+      setRequestedStopId(null)
+    }
+  }, [requestedStopId, checksActiveStop])
+
+  const pageCountLoader = (
+    <UnitPdfPageCountLoader
+      fileUrl={fileUrl}
+      pdfReady={pdfReady}
+      enabled={Boolean(fileUrl) && pageCount == null}
+      onNumPages={setPageCount}
+    />
+  )
+
+  if (isStory) {
+    let leftTool: ReactNode
+    if (activeTool === 'text') {
+      leftTool = (
+        <BookPartStoryTextPrep
+          book={book}
+          unit={unit}
+          lesson={lesson}
+          part={{ ...part, structureTag: tag }}
+          partIndex={partIndex}
+          totalPdfPages={pageCount}
+          layout="panel"
+          onTextReadyChange={handleTextReadyChange}
+        />
+      )
+    } else if (activeTool === 'checks') {
+      leftTool = (
+        <BookPartChecksPrep
+          book={book}
+          unit={unit}
+          lesson={lesson}
+          part={{ ...part, structureTag: tag }}
+          partIndex={partIndex}
+          totalPdfPages={pageCount}
+          textReady={textReady}
+          onChecksReadyChange={handleChecksReadyChange}
+          rail
+          onOpenStoryText={() => setActiveTool('text')}
+          onDraftChange={handleChecksDraftChange}
+          onActiveStopChange={handleChecksActiveStopChange}
+          requestedStopId={requestedStopId}
+          className="h-full"
+        />
+      )
+    } else {
+      leftTool = (
+        <BookPartPagesConfirm
+          book={book}
+          unit={unit}
+          lesson={lesson}
+          part={{ ...part, structureTag: tag }}
+          partIndex={partIndex}
+          partTypeLabel={headline.prefix}
+          partTitle={headline.name}
+          pdfReady={pdfReady}
+          totalPdfPages={pageCount}
+          onPdfNumPages={setPageCount}
+          layout="controls"
+          rail
+          onDisplayRangeChange={handleStoryDisplayRangeChange}
+          onOpenInBook={onOpenWorkshop ? () => openWorkshop() : undefined}
+        />
+      )
+    }
+
+    return (
+      <>
+        {pageCountLoader}
+        <BookWorkbenchShell
+          open
+          onClose={onBackToParts}
+          ariaLabel={`Prep ${headline.name}`}
+          title={headline.name}
+          subtitle={[headline.prefix, book.title].filter(Boolean).join(' · ')}
+          left={leftTool}
+          leftWidthPx={activeTool === 'checks' ? 420 : BOOK_WORKBENCH_LEFT_WIDTH_PX}
+          leftPaneClassName={
+            activeTool === 'checks'
+              ? 'flex min-h-0 flex-col overflow-hidden overscroll-contain'
+              : undefined
+          }
+          leftFooter={
+            <div className="px-3 py-3">
+              <BookPartWorkbenchToolSwitcher
+                active={activeTool}
+                onChange={setActiveTool}
+                textReady={textReady}
+                checksReady={checksReady}
+              />
+            </div>
+          }
+          book={
+            fileUrl ? (
+              <BookPartLiveSpreadPreview
+                fileUrl={fileUrl}
+                unitId={`${book.id}-${unit.id}-${part.id}-part-live`}
+                book={book}
+                unit={unit}
+                pdfReady={pdfReady}
+                totalPdfPages={pageCount}
+                printedStart={storyDisplayRange?.startDisplay ?? range.start}
+                printedEnd={storyDisplayRange?.endDisplay ?? range.end}
+                onPdfNumPages={setPageCount}
+                documentUrl={liveDocumentUrl}
+                enableTextLayer={selectableReady && activeTool !== 'checks'}
+                className="h-full min-h-0 rounded-none bg-transparent p-0 shadow-none sm:p-0"
+                checksPlacement={
+                  activeTool === 'checks'
+                    ? {
+                        storyId,
+                        bookId: book.id,
+                        unitId: unit.id,
+                        stops: checksDraft?.stops ?? [],
+                        activeStopId: checksActiveStop?.id ?? null,
+                        onSelectStop: setRequestedStopId,
+                      }
+                    : null
+                }
+                focusPdfPage={activeTool === 'checks' ? checksFocusPdfPage : null}
+              />
+            ) : (
+              <div className="flex h-full min-h-[320px] items-center justify-center text-sm text-muted-foreground">
+                No PDF
+              </div>
+            )
+          }
+        />
+      </>
+    )
+  }
+
   return (
     <section className="w-full space-y-8">
-      <UnitPdfPageCountLoader
-        fileUrl={fileUrl}
-        pdfReady={pdfReady}
-        enabled={Boolean(fileUrl) && pageCount == null}
-        onNumPages={setPageCount}
-      />
+      {pageCountLoader}
 
       <header className="flex items-center justify-between gap-4 px-0.5">
         <nav
@@ -196,28 +388,7 @@ export function BookPartPrepShell({
       </header>
 
       <div className="space-y-6">
-        {isStory ? (
-          <BookPartPagesConfirm
-            book={book}
-            unit={unit}
-            lesson={lesson}
-            part={{ ...part, structureTag: tag }}
-            partTypeLabel={headline.prefix}
-            partTitle={headline.name}
-            pdfReady={pdfReady}
-            totalPdfPages={pageCount}
-            onPdfNumPages={setPageCount}
-            onOpenInBook={onOpenWorkshop ? () => openWorkshop() : undefined}
-            statusSlot={
-              <BookPartPrepStatusChips
-                textState={textReady ? 'ready' : 'todo'}
-                checksState={checksReady ? 'ready' : 'todo'}
-                onTextClick={() => scrollToPrepSection('part-prep-story-text')}
-                onChecksClick={() => scrollToPrepSection('part-prep-checks')}
-              />
-            }
-          />
-        ) : isVocab ? null : (
+        {isVocab ? null : (
           <div className="rounded-[28px] bg-[var(--surface-2)] shadow-[0_12px_40px_-24px_rgba(0,0,0,0.2)]">
             <div className="flex flex-col gap-8 p-6 sm:p-8 lg:flex-row lg:items-start lg:gap-10 lg:p-10">
               <div className="mx-auto shrink-0 lg:mx-0">
@@ -270,27 +441,7 @@ export function BookPartPrepShell({
           </div>
         )}
 
-        {isStory ? (
-          <>
-            <BookPartStoryTextPrep
-              book={book}
-              unit={unit}
-              lesson={lesson}
-              part={{ ...part, structureTag: tag }}
-              totalPdfPages={pageCount}
-              onTextReadyChange={handleTextReadyChange}
-            />
-            <BookPartChecksPrep
-              book={book}
-              unit={unit}
-              lesson={lesson}
-              part={{ ...part, structureTag: tag }}
-              totalPdfPages={pageCount}
-              textReady={textReady}
-              onChecksReadyChange={handleChecksReadyChange}
-            />
-          </>
-        ) : isVocab ? (
+        {isVocab ? (
           <BookPartVocabPrep
             book={book}
             unit={unit}

@@ -125,7 +125,8 @@ export async function POST(req: Request) {
       if (!Number.isFinite(pdfPage) || pdfPage < 1) {
         return NextResponse.json({ ok: false, error: 'pdfPage is required.' }, { status: 400 })
       }
-      const result = await stampSearchablePdfPage(ctx.absPath, pdfPage)
+      const force = body.force === true
+      const result = await stampSearchablePdfPage(ctx.absPath, pdfPage, { force })
       if (!result.ok) {
         return NextResponse.json({ ok: false, error: result.error, pdfPage: result.pdfPage }, { status: 500 })
       }

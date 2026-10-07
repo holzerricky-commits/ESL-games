@@ -76,6 +76,8 @@ interface UseBookOverlayKeyboardShortcutsArgs {
   launchOpenWhiteboard?: () => void
   launchExpandWhiteboard?: () => void
   launchCloseWhiteboard?: () => void
+  launchToggleNotebookPin?: () => void
+  launchMinimizeWhiteboard?: () => void
   setWhiteboardSlotSide?: (side: 'left' | 'right') => void
   pdfDialogOpen: boolean
   regionSelectOpen: boolean
@@ -197,6 +199,8 @@ export function useBookOverlayKeyboardShortcuts({
   launchOpenWhiteboard,
   launchExpandWhiteboard,
   launchCloseWhiteboard,
+  launchToggleNotebookPin,
+  launchMinimizeWhiteboard,
   setWhiteboardSlotSide,
   pdfDialogOpen,
   regionSelectOpen,
@@ -531,7 +535,7 @@ export function useBookOverlayKeyboardShortcuts({
         }
         if (isWhiteboardOpen) {
           e.preventDefault()
-          setIsWhiteboardOpen(false)
+          launchMinimizeWhiteboard?.()
           return
         }
         if (isPageListOpen) {
@@ -734,13 +738,17 @@ export function useBookOverlayKeyboardShortcuts({
 
       if (keyLower === 'w') {
         e.preventDefault()
+        setIsPageListOpen(false)
+        if (launchToggleNotebookPin) {
+          launchToggleNotebookPin()
+          return
+        }
         if (!isWhiteboardSessionOpen) {
           launchOpenWhiteboard?.()
-          setIsPageListOpen(false)
         } else if (isWhiteboardMinimized) {
           launchExpandWhiteboard?.()
         } else {
-          launchCloseWhiteboard?.()
+          launchMinimizeWhiteboard?.()
         }
         return
       }
@@ -895,6 +903,8 @@ export function useBookOverlayKeyboardShortcuts({
     launchOpenWhiteboard,
     launchExpandWhiteboard,
     launchCloseWhiteboard,
+    launchToggleNotebookPin,
+    launchMinimizeWhiteboard,
     setWhiteboardSlotSide,
     pdfDialogOpen,
     regionSelectOpen,

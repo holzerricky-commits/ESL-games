@@ -20,6 +20,7 @@ export function FullscreenBookOverlay(props: FullscreenBookOverlayProps) {
       deskRailOpen={props.deskRailOpen}
       onDeskRailOpenChange={props.onDeskRailOpenChange}
       preferOpenExercises={props.preferOpenExercises}
+      onSwitchTeachingBook={props.onSwitchTeachingBook}
     />
   )
 }

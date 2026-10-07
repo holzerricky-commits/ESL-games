@@ -7,6 +7,26 @@ export const STROKE_POINT_MIN_DIST_SQ = 1e-8
  */
 export const STROKE_FREEHAND_SMOOTH_BLEND = 0.58
 
+/**
+ * Map penSmoothingLevel (0–10) to a live-input blend factor.
+ * Level 0 → ~0.85 (nearly raw), level 10 → ~0.3 (very smooth).
+ * Default level 5 yields ~0.575 (≈ the legacy 0.58).
+ */
+export function smoothingLevelToBlend(level: number): number {
+  const clamped = Math.max(0, Math.min(10, level))
+  return 0.85 - clamped * 0.055
+}
+
+/**
+ * Map penSmoothingLevel (0–10) to an RDP simplification epsilon
+ * in normalized coords. Level 0 → 0 (no simplification),
+ * level 10 → ~0.0004.
+ */
+export function smoothingLevelToRdpEpsilon(level: number): number {
+  const clamped = Math.max(0, Math.min(10, level))
+  return clamped * 0.00004
+}
+
 /** Pointer samples between frames (pen/tablet); falls back to the event itself. */
 export function coalescedPointerEvents(e: PointerEvent): readonly PointerEvent[] {
   const coalesced = e.getCoalescedEvents?.()

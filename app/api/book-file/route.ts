@@ -47,6 +47,8 @@ function getContentType(absPath: string): string {
 function cacheControlForContentType(contentType: string): string {
   if (contentType.startsWith('image/')) return IMAGE_REVALIDATE_CACHE_CONTROL
   if (contentType.startsWith('audio/')) return 'public, max-age=604800'
+  // PDFs can switch to a searchable sidecar under the same URL — never serve a stale body.
+  if (contentType === 'application/pdf') return 'private, max-age=0, must-revalidate'
   return 'public, max-age=300'
 }
 

@@ -22,6 +22,8 @@ export interface SpreadPageClusterProps {
   showBookFrame?: boolean
   /** Dim cover + stacks + pages (Full board). Desk stays bright. */
   dimBook?: boolean
+  /** Hide the book while keeping PDF mounted (notebook Focus). */
+  hideBook?: boolean
   /** Absolutely positioned overlay (e.g. spread stroke capture) inside the cluster. */
   children?: ReactNode
 }
@@ -41,10 +43,15 @@ export function SpreadPageCluster({
   className,
   showBookFrame = true,
   dimBook = false,
+  hideBook = false,
   children,
 }: SpreadPageClusterProps) {
   if (rightPage == null) {
-    const single = <div className={cn('relative inline-block', className)}>{leftPage}</div>
+    const single = (
+      <div className={cn('relative inline-block', className, hideBook && 'pointer-events-none opacity-0')}>
+        {leftPage}
+      </div>
+    )
     if (!showBookFrame) {
       if (!children) return single
       return (
@@ -61,6 +68,7 @@ export function SpreadPageCluster({
         spreadPageWidthPx={spreadPageWidthPx}
         twoPage={false}
         dimBook={dimBook}
+        hideBook={hideBook}
         overlayChildren={children}
       >
         {single}
@@ -71,7 +79,7 @@ export function SpreadPageCluster({
   const cluster = (
     <div
       ref={gridRef}
-      className={cn('relative shrink-0 grow-0 leading-none', className)}
+      className={cn('relative shrink-0 grow-0 leading-none', className, hideBook && 'pointer-events-none opacity-0')}
       style={{
         boxSizing: 'border-box',
         position: 'relative',
@@ -88,10 +96,16 @@ export function SpreadPageCluster({
         spreadOverlayWidthPx={spreadOverlayWidthPx}
         pageCanvasHeightPx={pageCanvasHeightPx}
       >
-        <div className={cn('shrink-0 grow-0', elevatedSlot === 'left' && 'relative z-10')}>
+        <div
+          className={cn('shrink-0 grow-0', elevatedSlot === 'left' && 'relative')}
+          style={elevatedSlot === 'left' ? { zIndex: 10 } : undefined}
+        >
           {leftPage}
         </div>
-        <div className={cn('shrink-0 grow-0', elevatedSlot === 'right' && 'relative z-10')}>
+        <div
+          className={cn('shrink-0 grow-0', elevatedSlot === 'right' && 'relative')}
+          style={elevatedSlot === 'right' ? { zIndex: 10 } : undefined}
+        >
           {rightPage}
         </div>
       </SpreadCanvasWrapper>
@@ -108,6 +122,7 @@ export function SpreadPageCluster({
       spreadPageWidthPx={spreadPageWidthPx}
       twoPage
       dimBook={dimBook}
+      hideBook={hideBook}
       overlayChildren={children}
     >
       {cluster}

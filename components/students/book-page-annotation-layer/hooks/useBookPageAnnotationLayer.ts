@@ -99,6 +99,7 @@ import {
   setAnnotationsForPage,
   setAnnotationsForStorageKey,
 } from '@/lib/books/annotation-storage'
+import { useBookAnnotationsStorageReady } from '@/lib/local-data/use-book-annotations-storage-ready'
 import {
   strokeWidthScaleForStrokeTool,
 } from '@/lib/books/annotation-stroke-utils'
@@ -315,6 +316,7 @@ export function useBookPageAnnotationLayer(
       strokeLineDashStyle = 'solid',
       markerStraightStroke = false,
       markerDecoratedEdge = false,
+      penSmoothingLevel = 5,
       penAutoGroupConnected = true,
       marqueeSelectRule = 'follow-drag',
       shapeColor,
@@ -350,7 +352,6 @@ export function useBookPageAnnotationLayer(
       getImagePastePlacement,
       onImagePasted,
       onTextPasted,
-      pdfTextRoutingEnabled = false,
   } = props
 
     const isSelect = mode === 'select'
@@ -371,6 +372,7 @@ export function useBookPageAnnotationLayer(
     const draftMarkerCanvasRef = useRef<HTMLCanvasElement | null>(null)
     const [commands, setCommands] = useState<AnnotationCommand[]>([])
     const commandsRef = useRef<AnnotationCommand[]>([])
+    const { annotationsStorageReady, annotationsStorageEpoch } = useBookAnnotationsStorageReady()
     const redoStackRef = useRef<AnnotationCommand[]>([])
     const snapshotUndoRef = useRef<AnnotationCommand[][]>([])
     const snapshotRedoRef = useRef<AnnotationCommand[][]>([])
@@ -487,6 +489,7 @@ export function useBookPageAnnotationLayer(
     const resolvedStoragePageKey = storagePageKey?.trim() || undefined
 
     useEffect(() => {
+      if (!annotationsStorageReady) return
       const raw = resolvedStoragePageKey
         ? getAnnotationsForStorageKey(studentId, bookId, unitId, resolvedStoragePageKey)
         : getAnnotationsForPage(studentId, bookId, unitId, pageNumber, storageChannel)
@@ -506,11 +509,16 @@ export function useBookPageAnnotationLayer(
       erasePreviewDeadKeyRef.current = null
       setFocusNewId(null)
       queueMicrotask(emitCapabilities)
-    }, [studentId, bookId, unitId, pageNumber, storageChannel, resolvedStoragePageKey, emitCapabilities, pageLayerPersistCtx])
+    }, [annotationsStorageEpoch, annotationsStorageReady, studentId, bookId, unitId, pageNumber, storageChannel, resolvedStoragePageKey, emitCapabilities, pageLayerPersistCtx])
 
     const persist = useCallback(
       (next: AnnotationCommand[]) => {
         commandsRef.current = next
+        // Empty writes before disk hydrate would delete last class's marks.
+        if (!annotationsStorageReady && next.length === 0) {
+          emitCapabilities()
+          return
+        }
         // Session flush owns storage projection; demoted page-layer saves would wipe text/ink.
         if (
           inkSessionPageLayerDemotionEnabled &&
@@ -551,6 +559,7 @@ export function useBookPageAnnotationLayer(
         whiteboardInkDelegated,
         whiteboardSessionStoreRef,
         pageLayerPersistCtx,
+        annotationsStorageReady,
       ],
     )
 
@@ -686,8 +695,6 @@ export function useBookPageAnnotationLayer(
         resolveClickTargetIds: resolveClickTargetForSelection,
         selectMoveIdsForDrag,
         clampMoveDelta: clampMoveDeltaForSelection,
-        pdfTextRoutingEnabled:
-          pdfTextRoutingEnabled && isSelect && !pageSelectViaSessionLayer,
         onGestureLiveChange: () => paintRef.current(null, null),
         onMoveCommitted: (dx, dy, moveIds) => {
           if (dx === 0 && dy === 0) return
@@ -2223,6 +2230,7 @@ export function useBookPageAnnotationLayer(
           straightFromHold: false,
           markerStraightStrokeEnabled: markerStraightStroke,
           penInkStyle: draft.tool === 'pen' ? penInkStyle : undefined,
+          penSmoothingLevel,
           straightStrokeAxis: straightStrokeAxisRef.current,
         })
         paint(draft, null, {
@@ -2373,6 +2381,7 @@ export function useBookPageAnnotationLayer(
             straightFromHold: false,
             markerStraightStrokeEnabled: markerStraightStroke,
             penInkStyle: draft.tool === 'pen' ? penInkStyle : undefined,
+            penSmoothingLevel,
             straightStrokeAxis: straightStrokeAxisRef.current,
           })
         }
@@ -2769,6 +2778,7 @@ export function useBookPageAnnotationLayer(
       !domToolsViaSessionLayer &&
       !writableDomTool &&
       !(isSelect && editingId != null)
+    const rootPointerEventsPassThrough = canvasSelectViaSessionLayer
 
     const textToolActive = mode === 'text' || writableDomTool
     const textInputEnabled =
@@ -2810,6 +2820,7 @@ export function useBookPageAnnotationLayer(
       pointerOverlayZ,
       domZBoost,
       pointerEventsOnOverlay,
+      rootPointerEventsPassThrough,
       overlayRef,
       overlayClass,
       effectiveOverlayCursor,

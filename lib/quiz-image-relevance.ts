@@ -213,6 +213,16 @@ export function scoreTextRelevance(
   if (imageStyle) {
     score += applyStyleRelevanceDelta(imageStyle, h)
   }
+
+  // Style/stock tags alone must not accept a hit that never mentions the search word.
+  const significantTokens = tokens.filter((t) => t.length >= 2)
+  if (significantTokens.length > 0) {
+    const hasWordMatch = significantTokens.some((t) => h.includes(t))
+    if (!hasWordMatch) {
+      return Math.min(score, STATIC_IMAGE_MIN_ACCEPT_SCORE - 1)
+    }
+  }
+
   return score
 }
 

@@ -2,7 +2,7 @@
   "storyId": "readingwriting-workshop-g2::unit-2-b7f10b10::lesson-aebce4bf::part-9e661594",
   "bookId": "readingwriting-workshop-g2",
   "unitId": "unit-2-b7f10b10",
-  "status": "approved",
+  "status": "draft",
   "stops": [
     {
       "id": "stop-01ed10ba",
@@ -111,6 +111,6 @@
       ]
     }
   ],
-  "updatedAt": "2026-08-10T00:05:31.528Z",
-  "approvedAt": "2026-08-10T00:05:31.528Z"
+  "updatedAt": "2026-09-11T11:32:59.817Z",
+  "approvedAt": null
 }

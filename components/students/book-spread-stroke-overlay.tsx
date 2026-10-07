@@ -479,6 +479,7 @@ export interface BookSpreadStrokeOverlayProps {
   strokeLineDashStyle?: AnnotationLineDashStyle
   markerStraightStroke?: boolean
   markerDecoratedEdge?: boolean
+  penSmoothingLevel?: number
   shapeColor: string
   shapeStrokeWidthScale: number
   shapeLineDashStyle?: AnnotationLineDashStyle
@@ -542,6 +543,7 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
       penStrokeProfile,
       strokeLineDashStyle = 'solid',
       markerStraightStroke = false,
+      penSmoothingLevel = 5,
       markerDecoratedEdge = false,
       shapeColor,
       shapeStrokeWidthScale,
@@ -1686,6 +1688,7 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
         straightFromHold: false,
         markerStraightStrokeEnabled: markerStraightStroke,
         penInkStyle: draft.tool === 'pen' ? penInkStyle : undefined,
+        penSmoothingLevel,
         straightStrokeAxis: straightStrokeAxisRef.current,
       })
 
@@ -1739,6 +1742,7 @@ export const BookSpreadStrokeOverlay = forwardRef<BookPageAnnotationHandle, Book
           straightFromHold: false,
           markerStraightStrokeEnabled: markerStraightStroke,
           penInkStyle: draft.tool === 'pen' ? penInkStyle : undefined,
+          penSmoothingLevel,
           straightStrokeAxis: straightStrokeAxisRef.current,
         })
       }

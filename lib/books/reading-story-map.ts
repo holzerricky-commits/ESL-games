@@ -2,6 +2,7 @@ import type { BookLessonPartRecord, BookLessonRecord, BookRecord, BookUnitRecord
 import { buildPageAlignmentRuntime, resolveEffectiveAnchorToPdfPage } from '@/lib/books/page-alignment-runtime'
 import { getFileAlignment, getUnitReaderBounds } from '@/lib/books/page-range'
 import { resolvePartStructureTag } from '@/lib/books/part-structure-tag'
+import { resolveTocExtractProfileForBook } from '@/lib/books/toc-extract-profile'
 import { pageRangeForIndex } from '@/lib/books/toc-page-range'
 
 /** Outline story kind for Stories tab labels. */
@@ -107,6 +108,11 @@ export function isManualReadingStoryId(storyId: string): boolean {
   return Boolean(parseManualReadingStoryId(storyId))
 }
 
+/** Manual stories are teacher-added ranges, not an outline part. */
+export function isManualReadingStory(story: Pick<ReadingStoryMap, 'id' | 'kind'>): boolean {
+  return story.kind === 'manual' || isManualReadingStoryId(story.id)
+}
+
 /**
  * First teachable story (same neighborhood as interactive vocab demo).
  * Outline part: Jump! · Lesson 11 · Unit 3 · Journeys G3.
@@ -134,13 +140,14 @@ export function listSeedStoriesForBook(bookId: string): ReadingStoryMap[] {
 /** Outline parts tagged main_story or paired_story across the book. */
 export function discoverOutlineStories(book: BookRecord): ReadingStoryMap[] {
   const out: ReadingStoryMap[] = []
+  const profile = resolveTocExtractProfileForBook(book)
   for (const unit of book.units ?? []) {
     for (const lesson of unit.lessons ?? []) {
       const parts = lesson.parts ?? []
       for (let i = 0; i < parts.length; i++) {
         const part = parts[i]
         if (!part?.id) continue
-        const tag = resolvePartStructureTag(part, i)
+        const tag = resolvePartStructureTag(part, i, profile)
         if (tag !== 'main_story' && tag !== 'paired_story') continue
         out.push({
           id: readingStoryPartKey(book.id, unit.id, lesson.id, part.id),
@@ -421,21 +428,38 @@ function storyUnitForSharedPdf(
   return storyUnit
 }
 
-export function findReadingStoryAtPdfPage(args: {
+/**
+ * Outline parts outrank a manual story on the same pages (a class unit's
+ * "New Lesson" must not hide the book part that owns the checks).
+ * Within that, the unit the reader is in wins over a sibling unit on the same PDF.
+ */
+function compareReadingStoriesOnSharedPage(
+  a: ReadingStoryMap,
+  b: ReadingStoryMap,
+  selectedUnitId: string,
+): number {
+  const aManual = isManualReadingStory(a) ? 1 : 0
+  const bManual = isManualReadingStory(b) ? 1 : 0
+  if (aManual !== bManual) return aManual - bManual
+  const aSame = a.unitId === selectedUnitId ? 0 : 1
+  const bSame = b.unitId === selectedUnitId ? 0 : 1
+  return aSame - bSame
+}
+
+export type ReadingStoryPageHit = { story: ReadingStoryMap; range: ReadingStoryPdfRange }
+
+/** Every story whose range contains this PDF page, best owner first. */
+export function listReadingStoriesAtPdfPage(args: {
   book: BookRecord
   unit: BookUnitRecord
   pdfPage: number
   totalPdfPages: number | null
   stories: ReadingStoryMap[]
   overridesByStoryId: Record<string, ReadingStoryRangeOverride>
-}): { story: ReadingStoryMap; range: ReadingStoryPdfRange } | null {
+}): ReadingStoryPageHit[] {
   const { book, unit, pdfPage, totalPdfPages, stories, overridesByStoryId } = args
-  const ranked = [...stories].sort((a, b) => {
-    const aSame = a.unitId === unit.id ? 0 : 1
-    const bSame = b.unitId === unit.id ? 0 : 1
-    return aSame - bSame
-  })
-  for (const story of ranked) {
+  const hits: ReadingStoryPageHit[] = []
+  for (const story of stories) {
     const storyUnit = storyUnitForSharedPdf(book, unit, story)
     if (!storyUnit) continue
     const range = resolveReadingStoryRange(
@@ -446,10 +470,29 @@ export function findReadingStoryAtPdfPage(args: {
       overridesByStoryId[story.id],
     )
     if (isPdfPageInReadingStory(pdfPage, range)) {
-      return { story, range }
+      hits.push({ story, range })
     }
   }
-  return null
+  return rankReadingStoryPageHits(hits, unit.id)
+}
+
+/** Best page owner first: outline part, then the unit the reader is in. */
+export function rankReadingStoryPageHits(
+  hits: readonly ReadingStoryPageHit[],
+  selectedUnitId: string,
+): ReadingStoryPageHit[] {
+  return [...hits].sort((a, b) => compareReadingStoriesOnSharedPage(a.story, b.story, selectedUnitId))
+}
+
+export function findReadingStoryAtPdfPage(args: {
+  book: BookRecord
+  unit: BookUnitRecord
+  pdfPage: number
+  totalPdfPages: number | null
+  stories: ReadingStoryMap[]
+  overridesByStoryId: Record<string, ReadingStoryRangeOverride>
+}): ReadingStoryPageHit | null {
+  return listReadingStoriesAtPdfPage(args)[0] ?? null
 }
 
 export function sanitizeReadingStoryRangeOverride(

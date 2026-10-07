@@ -11,8 +11,8 @@ import {
 } from '@/components/students/fullscreen-book-overlay/constants'
 import { cn } from '@/lib/utils'
 
-/** Tools that open in the shared class drawer (Translate, Pictures; more later). */
-export type ClassToolId = 'translate' | 'pictures'
+/** Tools that open in the shared class drawer (Translate, Pictures, Vault). */
+export type ClassToolId = 'translate' | 'pictures' | 'vault'
 
 type ClassToolDrawerShellProps = {
   open: boolean

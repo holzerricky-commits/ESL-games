@@ -1,12 +1,18 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { BookA } from 'lucide-react'
+import { BookA, Check, Loader2, MousePointer2, RefreshCw } from 'lucide-react'
 import { BookPartOutlineSpreadPreview } from '@/components/books/book-part-outline-spread-preview'
 import { BookPartPrepVocabStatusChip } from '@/components/books/book-part-prep-status-chips'
+import { DismissibleScanNotice } from '@/components/books/dismissible-scan-notice'
+import { SelectableJobStatus } from '@/components/books/selectable-job-status'
 import { ClassPrepVocabEditor } from '@/components/students/class-prep-vocab-editor'
+import { Button } from '@/components/ui/button'
 import { makeUnitFileUrl } from '@/lib/books/book-file-url'
+import { readingStoryPartKey } from '@/lib/books/reading-story-map'
 import type { BookLessonPartRecord, BookLessonRecord, BookRecord, BookUnitRecord } from '@/lib/books/types'
+import { useSearchablePdfJob } from '@/lib/books/use-searchable-pdf-job'
+import { useSearchablePdfStatus } from '@/lib/books/use-searchable-pdf-status'
 
 const VOCAB_DESK_BREAKPOINT_PX = 900
 const VOCAB_BOOK_MAX_WIDTH = 'max-w-7xl'
@@ -63,6 +69,27 @@ export function BookPartVocabPrep({
   const deskSideBySide = useMinWidth(VOCAB_DESK_BREAKPOINT_PX)
   const fileUrl = unit.filePath ? makeUnitFileUrl(unit.filePath) : null
   const [wordsReady, setWordsReady] = useState(false)
+
+  const selectableKey = readingStoryPartKey(book.id, unit.id, lesson.id, part.id)
+  const {
+    selectableRunning,
+    selectableProgress,
+    selectableNotice,
+    startSelectable,
+    stopSelectable,
+    dismissSelectableNotice,
+  } = useSearchablePdfJob(selectableKey)
+  const { status: selectableStatus } = useSearchablePdfStatus({
+    bookId: book.id,
+    unitId: unit.id,
+    storyId: selectableKey,
+    lessonId: lesson.id,
+    partId: part.id,
+    title: part.title,
+    totalPdfPages,
+    enabled: pdfReady,
+    refreshKey: selectableRunning ? 1 : 0,
+  })
 
   const sectionPath = useMemo(() => {
     const bits = [book.title, unit.title, lesson.title, part.title].map((s) => s?.trim()).filter(Boolean)
@@ -163,6 +190,75 @@ export function BookPartVocabPrep({
     </div>
   )
 
+  const selectableBlock = (
+    <div className="flex flex-wrap items-center gap-3">
+      {!selectableRunning && selectableNotice ? (
+        <DismissibleScanNotice notice={selectableNotice} onDismiss={dismissSelectableNotice} />
+      ) : null}
+      {selectableRunning && selectableProgress ? (
+        <SelectableJobStatus progress={selectableProgress} onStop={stopSelectable} />
+      ) : selectableStatus === 'stamped' ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 text-[13px] font-medium text-foreground">
+            <Check className="size-3.5 text-[var(--brand-blue)]" aria-hidden />
+            Pages are selectable
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="gap-1.5 rounded-full px-3"
+            disabled={selectableRunning || !pdfReady}
+            onClick={() =>
+              startSelectable({
+                bookId: book.id,
+                unitId: unit.id,
+                lessonId: lesson.id,
+                partId: part.id,
+                title: part.title,
+                totalPdfPages,
+                force: true,
+              })
+            }
+          >
+            <RefreshCw className="size-3.5" aria-hidden />
+            Redo
+          </Button>
+        </div>
+      ) : selectableStatus === 'native-text' ? (
+        <span className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground">
+          <Check className="size-3.5" aria-hidden />
+          Already in the book
+        </span>
+      ) : (
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          className="gap-1.5 rounded-full px-4"
+          disabled={selectableRunning || !pdfReady}
+          onClick={() =>
+            startSelectable({
+              bookId: book.id,
+              unitId: unit.id,
+              lessonId: lesson.id,
+              partId: part.id,
+              title: part.title,
+              totalPdfPages,
+            })
+          }
+        >
+          {selectableRunning ? (
+            <Loader2 className="size-3.5 animate-spin" aria-hidden />
+          ) : (
+            <MousePointer2 className="size-3.5" aria-hidden />
+          )}
+          Make pages selectable
+        </Button>
+      )}
+    </div>
+  )
+
   const wordsBlock = (
     <ClassPrepVocabEditor
       bookId={book.id}
@@ -193,6 +289,7 @@ export function BookPartVocabPrep({
             <div className={`relative space-y-8 ${bookPanelClass}`}>
               {previewMeta}
               {previewBlock}
+              {selectableBlock}
             </div>
 
             <div id="part-prep-vocab-words" className={wordsPanelClass}>
@@ -203,6 +300,7 @@ export function BookPartVocabPrep({
           <div className={`space-y-8 ${bookPanelClass}`}>
             {previewMeta}
             {previewBlock}
+            {selectableBlock}
             <div id="part-prep-vocab-words" className="min-w-0 border-t border-[var(--border)]/40 pt-8">
               {wordsBlock}
             </div>

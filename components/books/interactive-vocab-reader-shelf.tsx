@@ -1,12 +1,14 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { BookOpen, ChevronLeft } from 'lucide-react'
+import { BookOpen, ChevronLeft, ImageIcon, BookmarkPlus } from 'lucide-react'
 import type { InteractiveVocabPack, InteractiveVocabWord } from '@/lib/books/interactive-vocab'
+import { useSavedWords } from '@/components/students/fullscreen-book-overlay/hooks/useSavedWords'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
 
 interface InteractiveVocabReaderShelfProps {
   pack: InteractiveVocabPack
@@ -16,6 +18,12 @@ interface InteractiveVocabReaderShelfProps {
   onOpenChange?: (open: boolean) => void
   /** Hide the built-in Vocabulary button when another launcher owns the trigger. */
   hideTrigger?: boolean
+  /** Controlled active word (tap from page highlight). */
+  activeWordId?: string | null
+  onActiveWordIdChange?: (wordId: string | null) => void
+  studentId?: string
+  /** Open picture search with this headword. */
+  onFindPicture?: (word: string) => void
 }
 
 export function InteractiveVocabReaderShelf({
@@ -24,31 +32,71 @@ export function InteractiveVocabReaderShelf({
   open: openProp,
   onOpenChange,
   hideTrigger = false,
+  activeWordId: activeWordIdProp,
+  onActiveWordIdChange,
+  studentId = '',
+  onFindPicture,
 }: InteractiveVocabReaderShelfProps) {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
-  const [active, setActive] = useState<InteractiveVocabWord | null>(null)
+  const [uncontrolledActiveId, setUncontrolledActiveId] = useState<string | null>(null)
+  const [savingWord, setSavingWord] = useState(false)
   const isControlled = openProp !== undefined
   const open = isControlled ? openProp : uncontrolledOpen
+  const activeIdControlled = activeWordIdProp !== undefined
+  const activeWordId = activeIdControlled ? (activeWordIdProp ?? null) : uncontrolledActiveId
+
+  const { saveWord } = useSavedWords({
+    studentId,
+    onPersistenceError: (message) => toast.error(message),
+  })
 
   function setOpen(next: boolean) {
     if (!isControlled) setUncontrolledOpen(next)
     onOpenChange?.(next)
   }
 
+  function setActiveWordId(next: string | null) {
+    if (!activeIdControlled) setUncontrolledActiveId(next)
+    onActiveWordIdChange?.(next)
+  }
+
   useEffect(() => {
-    if (!open) setActive(null)
-  }, [open])
+    if (open) return
+    if (!activeIdControlled) setUncontrolledActiveId(null)
+    onActiveWordIdChange?.(null)
+  }, [open, activeIdControlled, onActiveWordIdChange])
+
+  const active: InteractiveVocabWord | null =
+    activeWordId != null ? (pack.words.find((w) => w.id === activeWordId) ?? null) : null
 
   function openWord(w: InteractiveVocabWord) {
-    setActive(w)
+    setActiveWordId(w.id)
   }
 
   function backToList() {
-    setActive(null)
+    setActiveWordId(null)
   }
 
   function handleOpenChange(next: boolean) {
     setOpen(next)
+  }
+
+  function handleSave() {
+    if (!active || !studentId.trim()) {
+      toast.error(studentId.trim() ? 'Nothing to save.' : 'Open a student session to save words.')
+      return
+    }
+    setSavingWord(true)
+    try {
+      const mode = saveWord({
+        source: active.word,
+        chinese: active.definition.trim() || '—',
+        exampleEn: active.examples[0] ?? '',
+      })
+      toast.success(mode === 'updated' ? 'Word updated in saved words.' : 'Word saved.')
+    } finally {
+      setSavingWord(false)
+    }
   }
 
   return (
@@ -70,7 +118,9 @@ export function InteractiveVocabReaderShelf({
           <SheetContent side="right" className="flex w-full max-w-md flex-col gap-0 p-0 sm:max-w-md">
             <SheetHeader className="border-b border-border px-4 py-3 text-left">
               <SheetTitle className="text-base font-semibold">{pack.sectionLabel}</SheetTitle>
-              <p className="text-xs font-normal text-muted-foreground">Tap a word, then use Back to return to the list.</p>
+              <p className="text-xs font-normal text-muted-foreground">
+                Tap a word on the page or in the list, then use Back to return.
+              </p>
             </SheetHeader>
 
             {!active ? (
@@ -107,6 +157,31 @@ export function InteractiveVocabReaderShelf({
                         ))}
                       </ul>
                     </div>
+                  ) : null}
+                </div>
+                <div className="mt-auto flex flex-wrap gap-2 border-t border-border pt-3">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className="gap-1.5"
+                    disabled={savingWord}
+                    onClick={handleSave}
+                  >
+                    <BookmarkPlus className="h-4 w-4" aria-hidden />
+                    Save
+                  </Button>
+                  {onFindPicture ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5"
+                      onClick={() => onFindPicture(active.word)}
+                    >
+                      <ImageIcon className="h-4 w-4" aria-hidden />
+                      Find picture
+                    </Button>
                   ) : null}
                 </div>
               </div>

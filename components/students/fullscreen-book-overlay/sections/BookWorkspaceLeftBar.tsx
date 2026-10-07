@@ -1,7 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { BookOpen, ImageIcon, Languages, ListChecks, Presentation, Settings, Smartphone, SquareDashedMousePointer, Volume2, Wrench, X } from 'lucide-react'
+import { BookOpen, ImageIcon, Languages, ListChecks, Presentation, Settings, Smartphone, SquareDashedMousePointer, Vault, Volume2, Wrench, X } from 'lucide-react'
 import { BookOverlayPageListButton } from '@/components/students/fullscreen-book-overlay/sections/BookOverlayPageListButton'
 import {
   FloatingSideToolbarButton,
@@ -22,6 +22,7 @@ interface BookWorkspaceLeftBarProps {
   isWhiteboardOpen: boolean
   isWhiteboardSessionOpen: boolean
   isWhiteboardMinimized: boolean
+  notebookFocus?: boolean
   onWhiteboardClick: () => void
   translateDockOpen: boolean
   onTranslateDockToggle: () => void
@@ -52,6 +53,10 @@ interface BookWorkspaceLeftBarProps {
   /** Workbook exercise boxes on the page. */
   bookExercisesOpen?: boolean
   onBookExercisesToggle?: () => void
+  /** Lesson vault drawer; count is for the lesson of the page on screen. */
+  vaultOpen?: boolean
+  vaultCount?: number
+  onVaultToggle?: () => void
 }
 
 function RailIconStack({ children }: { children: ReactNode }) {
@@ -66,8 +71,9 @@ export function BookWorkspaceLeftBar({
   isPageListOpen,
   onTogglePageList,
   isWhiteboardOpen,
-  isWhiteboardSessionOpen,
+  isWhiteboardSessionOpen: _isWhiteboardSessionOpen,
   isWhiteboardMinimized,
+  notebookFocus = false,
   onWhiteboardClick,
   translateDockOpen,
   onTranslateDockToggle,
@@ -91,6 +97,9 @@ export function BookWorkspaceLeftBar({
   onBookAudioToggle,
   bookExercisesOpen = false,
   onBookExercisesToggle,
+  vaultOpen = false,
+  vaultCount = 0,
+  onVaultToggle,
 }: BookWorkspaceLeftBarProps) {
   if (!bookPageNavigationChromeEnabled) return null
   if (!hasResolvedUnit || numPages == null) return null
@@ -124,20 +133,12 @@ export function BookWorkspaceLeftBar({
             isWhiteboardOpen && FLOATING_SIDE_TOOLBAR_BUTTON_ACTIVE,
             isWhiteboardMinimized && 'floating-side-toolbar__btn--active opacity-90',
           )}
-          aria-label={
-            !isWhiteboardSessionOpen
-              ? 'Open lesson board'
-              : isWhiteboardMinimized
-                ? 'Restore lesson board'
-                : 'Minimize lesson board'
-          }
-          aria-pressed={isWhiteboardSessionOpen}
+          aria-label={!isWhiteboardOpen || notebookFocus ? 'Pin notebook' : 'Hide notebook'}
+          aria-pressed={isWhiteboardOpen}
           title={
-            !isWhiteboardSessionOpen
-              ? `Lesson board (${SC.whiteboard})`
-              : isWhiteboardMinimized
-                ? `Restore lesson board (${SC.whiteboard})`
-                : `Minimize lesson board (${SC.whiteboard})`
+            !isWhiteboardOpen || notebookFocus
+              ? `Pin notebook (${SC.whiteboard})`
+              : `Hide notebook (${SC.whiteboard})`
           }
           onClick={onWhiteboardClick}
         >
@@ -163,6 +164,22 @@ export function BookWorkspaceLeftBar({
             onClick={onReadingChecksToggle}
           >
             <ListChecks className={FLOATING_SIDE_TOOLBAR_ICON} aria-hidden />
+          </FloatingSideToolbarButton>
+        ) : null}
+        {onVaultToggle ? (
+          <FloatingSideToolbarButton
+            className={cn(vaultOpen && FLOATING_SIDE_TOOLBAR_BUTTON_ACTIVE)}
+            aria-label={vaultOpen ? 'Close vault' : `Open vault (${vaultCount} words)`}
+            aria-pressed={vaultOpen}
+            title="Vault — words saved for this lesson"
+            onClick={onVaultToggle}
+          >
+            <Vault className={FLOATING_SIDE_TOOLBAR_ICON} aria-hidden />
+            {vaultCount > 0 ? (
+              <span className="pointer-events-none absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-sky-500 px-1 text-[10px] font-semibold leading-none text-white">
+                {vaultCount}
+              </span>
+            ) : null}
           </FloatingSideToolbarButton>
         ) : null}
       </RailIconStack>

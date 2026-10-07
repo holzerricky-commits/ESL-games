@@ -37,6 +37,7 @@ import {
   subscribeStoryTextScan,
 } from '@/lib/books/story-text-scan-manager'
 import { useSearchablePdfJob } from '@/lib/books/use-searchable-pdf-job'
+import { useSearchablePdfStatus } from '@/lib/books/use-searchable-pdf-status'
 import {
   READING_CHECK_HOTSPOT_PLACE_RESULT_EVENT,
   READING_CHECK_HOTSPOT_PLACE_UI_DISMISS_EVENT,
@@ -126,8 +127,14 @@ export function ReadingCheckPrepPanel({
   const [textById, setTextById] = useState<Record<string, ReadingStoryTextRecord>>({})
   const [packById, setPackById] = useState<Record<string, ReadingCheckPack>>({})
   const [storyId, setStoryId] = useState<string>('')
-  const { selectableRunning, selectableProgress, startSelectable, stopSelectable } =
-    useSearchablePdfJob(storyId)
+  const {
+    selectableRunning,
+    selectableProgress,
+    selectableNotice,
+    startSelectable,
+    stopSelectable,
+    dismissSelectableNotice,
+  } = useSearchablePdfJob(storyId)
   const [pack, setPack] = useState<ReadingCheckPack | null>(null)
   const [textRecord, setTextRecord] = useState<ReadingStoryTextRecord | null>(null)
   const [textDraft, setTextDraft] = useState('')
@@ -642,6 +649,17 @@ export function ReadingCheckPrepPanel({
       Number.isFinite(Number(editStart)) &&
       Number.isFinite(Number(editEnd)),
   )
+  const { status: selectableStatus } = useSearchablePdfStatus({
+    bookId: activeStory?.bookId ?? '',
+    unitId: activeStory?.unitId ?? '',
+    storyId,
+    lessonId: activeStory?.lessonId,
+    partId: activeStory?.partId,
+    title: editTitle.trim() || activeStory?.title,
+    totalPdfPages: unitPdfPages,
+    enabled: Boolean(activeStory && pagesReady && selectedUnit),
+    refreshKey: selectableRunning ? 1 : 0,
+  })
   const storyPicked = Boolean(activeStory) && !addingNew
   const textStepDone = hasStoryText
   const checksStepFocus = storyPicked && pagesReady && textStepDone
@@ -1083,9 +1101,28 @@ export function ReadingCheckPrepPanel({
                               totalPdfPages: unitPdfPages,
                             })
                           }}
+                          onRedoSelectable={() => {
+                            if (!activeStory || !selectedUnit) return
+                            if (!pagesReady) {
+                              toast.error('Set pages for this story first.')
+                              return
+                            }
+                            startSelectable({
+                              bookId: activeStory.bookId,
+                              unitId: activeStory.unitId,
+                              lessonId: activeStory.lessonId,
+                              partId: activeStory.partId,
+                              title: editTitle.trim() || activeStory.title,
+                              totalPdfPages: unitPdfPages,
+                              force: true,
+                            })
+                          }}
                           onStopMakeSelectable={stopSelectable}
                           selectableProgress={selectableProgress}
                           selectableRunning={selectableRunning}
+                          selectableNotice={selectableNotice}
+                          onDismissSelectableNotice={dismissSelectableNotice}
+                          selectableStatus={selectableStatus}
                           dialogOpen={textDialogOpen}
                           onDialogOpenChange={setTextDialogOpen}
                         />

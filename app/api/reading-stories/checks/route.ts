@@ -4,9 +4,11 @@ import { getLessonFrame } from '@/lib/books/lesson-frame-store'
 import { isLessonFrameReady } from '@/lib/books/lesson-frame'
 import {
   approveReadingCheckPack,
+  createReadingCheckHotspotPlacement,
   demoteReadingCheckPackToDraft,
   readingCheckPackCanApprove,
   sanitizeReadingCheckPack,
+  type ReadingCheckHotspotPlacement,
   type ReadingCheckPack,
 } from '@/lib/books/reading-check-pack'
 import { ensureReadingCheckPackPlacements } from '@/lib/books/reading-check-placement'
@@ -119,6 +121,7 @@ export async function POST(req: Request) {
         unitId,
         storyTitle: typeof body.title === 'string' ? body.title : undefined,
         storyText: textRecord.text,
+        startPdfPage: textRecord.startPdfPage,
         startDisplayPage: textRecord.startDisplayPage,
         endDisplayPage: textRecord.endDisplayPage,
         book,
@@ -198,6 +201,39 @@ export async function POST(req: Request) {
       }
       const draft = demoteReadingCheckPackToDraft(existing)
       const saved = await saveReadingCheckPack(draft)
+      return NextResponse.json({ ok: true, pack: saved })
+    }
+
+    if (action === 'place-hotspot') {
+      const existing = await getReadingCheckPack(storyId)
+      if (!existing) {
+        return NextResponse.json({ ok: false, error: 'No check pack to update.' }, { status: 404 })
+      }
+      const stopId = String(body.stopId ?? '').trim()
+      const raw = (body.hotspot ?? {}) as Partial<ReadingCheckHotspotPlacement>
+      const validRaw =
+        typeof raw.x === 'number' &&
+        Number.isFinite(raw.x) &&
+        typeof raw.y === 'number' &&
+        Number.isFinite(raw.y) &&
+        typeof raw.pdfPage === 'number' &&
+        raw.pdfPage >= 1
+      const hotspot = validRaw ? createReadingCheckHotspotPlacement(raw) : null
+      if (!stopId || !hotspot || !existing.stops.some((s) => s.id === stopId)) {
+        return NextResponse.json({ ok: false, error: 'Invalid pin position.' }, { status: 400 })
+      }
+      const displayPage =
+        typeof body.displayPage === 'number' && Number.isFinite(body.displayPage) && body.displayPage >= 1
+          ? Math.floor(body.displayPage)
+          : null
+      const updated: ReadingCheckPack = {
+        ...existing,
+        stops: existing.stops.map((s) =>
+          s.id === stopId ? { ...s, hotspot, displayPage: displayPage ?? s.displayPage } : s,
+        ),
+        updatedAt: new Date().toISOString(),
+      }
+      const saved = await saveReadingCheckPack(updated)
       return NextResponse.json({ ok: true, pack: saved })
     }
 

@@ -365,6 +365,8 @@ export interface BookAnnotationToolbarProps {
   setShapeFillColor: (c: string) => void
   shapeRoundedCorners?: boolean
   setShapeRoundedCorners?: (v: boolean) => void
+  penSmoothingLevel?: number
+  setPenSmoothingLevel?: (v: number) => void
   penAutoGroupConnected?: boolean
   setPenAutoGroupConnected?: (v: boolean) => void
   marqueeSelectRule?: MarqueeSelectRule
@@ -579,6 +581,8 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
     setShapeFillColor,
     shapeRoundedCorners = true,
     setShapeRoundedCorners,
+    penSmoothingLevel = 5,
+    setPenSmoothingLevel,
     penAutoGroupConnected = true,
     setPenAutoGroupConnected,
     marqueeSelectRule = 'follow-drag',
@@ -1061,6 +1065,27 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
                   ariaLabel="Pen thickness"
                   surface={isRailMode ? 'rail' : 'default'}
                 />
+                {setPenSmoothingLevel ? (
+                  <div className="flex flex-col gap-1">
+                    <div className={cn('flex justify-between', isRailMode ? 'text-[10px] text-[#a1a1aa]' : 'text-xs text-white/50')}>
+                      <span>Sharp</span>
+                      <span>Smooth</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={10}
+                      step={1}
+                      value={penSmoothingLevel}
+                      onChange={(e) => setPenSmoothingLevel(Number(e.target.value))}
+                      aria-label="Pen smoothing"
+                      className={cn(
+                        'h-1 w-full cursor-pointer appearance-none rounded-full',
+                        isRailMode ? 'accent-[#a1a1aa]' : 'accent-amber-400',
+                      )}
+                    />
+                  </div>
+                ) : null}
                 <LineDashStyleIconRow
                   value={penLineDashStyle}
                   onChange={pickAndClose(setPenLineDashStyle)}

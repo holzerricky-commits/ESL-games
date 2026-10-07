@@ -112,6 +112,8 @@ export type StudentAnnotationToolPrefs = {
   markerDecoratedEdge?: boolean
   /** Pen tool: auto-assign figureGroupId to touching pen strokes on commit. Default true when omitted. */
   penAutoGroupConnected?: boolean
+  /** Pen smoothing level 0 (sharp/raw) to 10 (very smooth). Default 5. */
+  penSmoothingLevel?: number
   /** Select marquee: follow drag direction, always touching, or always contained. */
   marqueeSelectRule?: MarqueeSelectRule
   eraserPixelThicknessStep?: AnnotationStrokeThicknessStep
@@ -163,6 +165,10 @@ const MARQUEE_SELECT_RULES: MarqueeSelectRule[] = ['follow-drag', 'crossing', 'w
 
 function isThicknessStep(v: unknown): v is AnnotationStrokeThicknessStep {
   return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= TEXT_THICKNESS_STEP_MAX
+}
+
+function isSmoothingLevel(v: unknown): v is number {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 10
 }
 
 /** Prefer dedicated step; fall back to legacy shared step (marker / pen). */
@@ -286,6 +292,7 @@ export function normalizeStudentAnnotationToolPrefs(raw: unknown): StudentAnnota
   } else if (typeof o.connectStrokesOnSelect === 'boolean') {
     out.penAutoGroupConnected = o.connectStrokesOnSelect
   }
+  if (isSmoothingLevel(o.penSmoothingLevel)) out.penSmoothingLevel = o.penSmoothingLevel
   if (isThicknessStep(o.eraserPixelThicknessStep)) out.eraserPixelThicknessStep = o.eraserPixelThicknessStep
   if (isThicknessStep(o.eraserLineThicknessStep)) out.eraserLineThicknessStep = o.eraserLineThicknessStep
   if (isThicknessStep(o.stampThicknessStep)) out.stampThicknessStep = o.stampThicknessStep
@@ -374,6 +381,7 @@ export function resolvePenToolPrefsFromStorage(studentId: string): {
   penCustomHex: string
   penThicknessStep: AnnotationStrokeThicknessStep
   penLineDashStyle: AnnotationLineDashStyle
+  penSmoothingLevel: number
 } {
   const saved = readStudentAnnotationToolPrefs(studentId)
   let penSwatchId = isValidPenSwatchId(saved.penSwatchId)
@@ -399,6 +407,7 @@ export function resolvePenToolPrefsFromStorage(studentId: string): {
     penCustomHex,
     penThicknessStep: isThicknessStep(saved.penThicknessStep) ? saved.penThicknessStep : 3,
     penLineDashStyle: isLineDash(saved.penLineDashStyle) ? saved.penLineDashStyle : 'solid',
+    penSmoothingLevel: isSmoothingLevel(saved.penSmoothingLevel) ? saved.penSmoothingLevel : 5,
   }
 }
 

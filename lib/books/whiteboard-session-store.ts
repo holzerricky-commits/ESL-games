@@ -3,12 +3,14 @@ import type { SelectionMoveClampContext } from '@/lib/books/annotation-scale'
 import { INK_SESSION_AUTOSAVE_MS } from '@/lib/books/ink-session-persist-config'
 import {
   appendLessonBoardPage,
+  applyLessonBoardPagePrimaryLinks,
   deleteLessonBoardPage,
   extendLessonBoardActivePageContentHeight,
   goToAdjacentLessonBoardPage,
   setLessonBoardActivePageContentHeight,
   setLessonBoardActivePageId,
   setLessonBoardPageBookPageHint,
+  setLessonBoardPagePrimaryLink,
   setLessonBoardPageTitle,
 } from '@/lib/books/lesson-board-session-ops'
 import {
@@ -17,11 +19,16 @@ import {
 } from '@/lib/books/lesson-board-types'
 import type { AnnotationCommand } from '@/lib/books/annotation-command-types'
 import {
+  loadStudentNotebookSession,
+  isStudentNotebookSessionKey,
+  type StudentNotebookMergeSource,
+} from '@/lib/books/student-notebook-merge'
+import {
   loadWhiteboardSessionBestMatch,
   saveWhiteboardSessionCheckpoint,
   type WhiteboardSessionStorageAdapter,
 } from '@/lib/books/whiteboard-session-storage'
-import type { LessonBoardPageOrientation } from '@/lib/books/lesson-board-types'
+import type { LessonBoardPageOrientation, LessonBoardPagePrimaryLink } from '@/lib/books/lesson-board-types'
 import type { WhiteboardSessionDocument, WhiteboardSessionKey } from '@/lib/books/whiteboard-session-types'
 
 export type WhiteboardSessionStore = InkSessionStore<WhiteboardSessionDocument> & {
@@ -38,6 +45,8 @@ export type WhiteboardSessionStore = InkSessionStore<WhiteboardSessionDocument> 
   extendActiveLessonBoardRunway: (viewportHeightPx: number) => void
   setLessonBoardPageTitle: (pageId: string, title: string | undefined) => boolean
   setLessonBoardPageBookPageHint: (pageId: string, bookPageHint: number) => boolean
+  setLessonBoardPagePrimaryLink: (pageId: string, link: LessonBoardPagePrimaryLink | null) => boolean
+  applyLessonBoardPagePrimaryLinks: (linksByPageId: ReadonlyMap<string, LessonBoardPagePrimaryLink>) => boolean
   deleteLessonBoardPage: (pageId: string) => boolean
 }
 
@@ -45,6 +54,8 @@ export type CreateWhiteboardSessionStoreOptions = {
   storage?: WhiteboardSessionStorageAdapter
   /** Try each key on load (class session + local fallback). */
   storageKeyCandidates?: readonly string[]
+  /** Book/unit boards to copy-merge on first student-notebook load. */
+  mergeSources?: readonly StudentNotebookMergeSource[]
   autosaveMs?: number
   now?: () => number
   getSelectionMoveClamp?: () => SelectionMoveClampContext | null
@@ -120,6 +131,18 @@ function withLessonBoardPageApi(
       applyDoc(next)
       return true
     },
+    setLessonBoardPagePrimaryLink: (pageId, link) => {
+      const next = setLessonBoardPagePrimaryLink(store.getState().doc, pageId, link)
+      if (!next) return false
+      applyDoc(next)
+      return true
+    },
+    applyLessonBoardPagePrimaryLinks: (linksByPageId) => {
+      const next = applyLessonBoardPagePrimaryLinks(store.getState().doc, linksByPageId)
+      if (!next) return false
+      applyDoc(next)
+      return true
+    },
     deleteLessonBoardPage: (pageId) => {
       const next = deleteLessonBoardPage(store.getState().doc, pageId)
       if (!next) return false
@@ -135,8 +158,12 @@ export function createWhiteboardSessionStore(
 ): WhiteboardSessionStore {
   const storage = options.storage
   const candidates = options.storageKeyCandidates ?? [key.storagePageKey]
+  const mergeSources = options.mergeSources ?? []
   const store = createInkSessionStore<WhiteboardSessionDocument>({
-    loadInitialDoc: () => loadWhiteboardSessionBestMatch(key, candidates, storage),
+    loadInitialDoc: () =>
+      isStudentNotebookSessionKey(key)
+        ? loadStudentNotebookSession(key.studentId, mergeSources, storage)
+        : loadWhiteboardSessionBestMatch(key, candidates, storage),
     saveCheckpoint: (doc) =>
       saveWhiteboardSessionCheckpoint(prepareLessonBoardSessionForPersist(doc), storage),
     autosaveMs: options.autosaveMs ?? INK_SESSION_AUTOSAVE_MS,

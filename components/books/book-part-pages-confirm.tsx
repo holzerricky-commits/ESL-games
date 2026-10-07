@@ -14,18 +14,28 @@ import {
   type ReadingStoryMap,
   type ReadingStoryRangeOverride,
 } from '@/lib/books/reading-story-map'
-import { effectivePartStructureTag } from '@/lib/books/part-structure-tag'
+import { resolvePartStoryKind } from '@/lib/books/part-structure-tag'
+import { resolveTocExtractProfileForBook } from '@/lib/books/toc-extract-profile'
 import type { BookLessonPartRecord, BookLessonRecord, BookRecord, BookUnitRecord } from '@/lib/books/types'
 import type { ReactNode } from 'react'
+import { cn } from '@/lib/utils'
 
 /** Large enough to read page content at a glance on the prep desk. */
 const CONFIRM_THUMB_WIDTH = 260
+
+export type BookPartPagesConfirmLayout = 'card' | 'controls'
+
+export interface BookPartPagesDisplayRange {
+  startDisplay: number
+  endDisplay: number
+}
 
 interface BookPartPagesConfirmProps {
   book: BookRecord
   unit: BookUnitRecord
   lesson: BookLessonRecord
   part: BookLessonPartRecord
+  partIndex?: number
   /** Quiet type label shown in the card header (e.g. Main story). */
   partTypeLabel?: string | null
   /** Story / part title shown in the card header. */
@@ -37,6 +47,19 @@ interface BookPartPagesConfirmProps {
   statusSlot?: ReactNode
   /** Open the workshop reader on these pages. */
   onOpenInBook?: () => void
+  /**
+   * `card` — thumbs + controls (legacy).
+   * `controls` — left desk column only (no inline thumbnails).
+   */
+  layout?: BookPartPagesConfirmLayout
+  /**
+   * When layout is controls: sit flush in the workbench rail
+   * (no card chrome; shell header already shows the title).
+   */
+  rail?: boolean
+  /** Notify parent when the display page range changes (for live right-panel preview). */
+  onDisplayRangeChange?: (range: BookPartPagesDisplayRange | null) => void
+  className?: string
 }
 
 export function BookPartPagesConfirm({
@@ -44,6 +67,7 @@ export function BookPartPagesConfirm({
   unit,
   lesson,
   part,
+  partIndex = 0,
   partTypeLabel,
   partTitle,
   pdfReady,
@@ -51,9 +75,14 @@ export function BookPartPagesConfirm({
   onPdfNumPages,
   statusSlot,
   onOpenInBook,
+  layout = 'card',
+  rail = false,
+  onDisplayRangeChange,
+  className,
 }: BookPartPagesConfirmProps) {
+  const controlsOnly = layout === 'controls'
   const story = useMemo<ReadingStoryMap>(() => {
-    const tag = effectivePartStructureTag(part)
+    const kind = resolvePartStoryKind(part, partIndex, resolveTocExtractProfileForBook(book))
     return {
       id: readingStoryPartKey(book.id, unit.id, lesson.id, part.id),
       bookId: book.id,
@@ -61,10 +90,10 @@ export function BookPartPagesConfirm({
       lessonId: lesson.id,
       partId: part.id,
       title: part.title?.trim() || 'Story',
-      kind: tag === 'paired_story' ? 'paired_story' : tag === 'main_story' ? 'main_story' : undefined,
+      kind,
       lessonTitle: lesson.title,
     }
-  }, [book.id, unit.id, lesson.id, lesson.title, part])
+  }, [book, unit.id, lesson.id, lesson.title, part, partIndex])
 
   const fileUrl = unit.filePath ? makeUnitFileUrl(unit.filePath) : null
   const [override, setOverride] = useState<ReadingStoryRangeOverride | null>(null)
@@ -206,6 +235,25 @@ export function BookPartPagesConfirm({
     draftStart >= 1 &&
     draftEnd >= 1
 
+  useEffect(() => {
+    if (!onDisplayRangeChange) return
+    if (loading || loadError || !hasDraftRange) {
+      onDisplayRangeChange(null)
+      return
+    }
+    onDisplayRangeChange({
+      startDisplay: Math.min(draftStart, draftEnd),
+      endDisplay: Math.max(draftStart, draftEnd),
+    })
+  }, [
+    onDisplayRangeChange,
+    loading,
+    loadError,
+    hasDraftRange,
+    draftStart,
+    draftEnd,
+  ])
+
   const livePdf = useMemo(() => {
     if (!hasDraftRange) return null
     return resolveStoryDisplayRangeToPdfPages(
@@ -229,9 +277,157 @@ export function BookPartPagesConfirm({
     ? `${Math.min(draftStart, draftEnd)}–${Math.max(draftStart, draftEnd)}`
     : '—'
 
+  const titleBlock = (
+    <div className="space-y-1">
+      {partTypeLabel ? (
+        <p className="text-[13px] font-medium text-muted-foreground">{partTypeLabel}</p>
+      ) : null}
+      <h3 className="text-[24px] font-semibold leading-snug tracking-tight text-foreground md:text-[28px]">
+        {partTitle}
+      </h3>
+    </div>
+  )
+
+  const pagesControls = (
+    <div className={cn('space-y-2', rail && 'space-y-1.5')}>
+      <p className={cn('font-medium text-muted-foreground', rail ? 'text-[12px]' : 'text-[13px]')}>
+        Pages
+      </p>
+      {!editing ? (
+        <div
+          className={cn(
+            'flex flex-wrap items-center gap-2',
+            !rail && !controlsOnly && 'justify-center gap-3 lg:justify-start',
+          )}
+        >
+          <p
+            className={cn(
+              'font-semibold tabular-nums tracking-tight text-foreground',
+              rail ? 'text-[18px]' : 'text-[22px]',
+            )}
+          >
+            {rangeLabel}
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            className={cn('rounded-full px-3', rail ? 'h-8' : 'h-9 px-4')}
+            disabled={!hasDraftRange}
+            onClick={() => setEditing(true)}
+          >
+            Edit
+          </Button>
+          {onOpenInBook ? (
+            <Button
+              type="button"
+              size="sm"
+              variant={rail ? 'outline' : 'default'}
+              className={cn('rounded-full px-3', rail ? 'h-8' : 'h-9 px-4')}
+              disabled={!hasDraftRange || !fileUrl}
+              onClick={onOpenInBook}
+            >
+              Open book
+            </Button>
+          ) : null}
+        </div>
+      ) : (
+        <div className={cn('w-full space-y-3', !controlsOnly && !rail && 'mx-auto max-w-sm space-y-4 lg:mx-0')}>
+          <div
+            className={cn(
+              'flex flex-wrap items-end gap-2',
+              !rail && !controlsOnly && 'justify-center gap-3 lg:justify-start',
+            )}
+          >
+            <div className="space-y-1">
+              <Label htmlFor={`part-shell-start-${part.id}`} className="text-[11px] text-muted-foreground">
+                Start
+              </Label>
+              <Input
+                id={`part-shell-start-${part.id}`}
+                className={cn(
+                  'w-20 border-0 bg-[var(--surface-3)] text-center font-semibold tabular-nums shadow-none',
+                  rail ? 'h-9 rounded-lg text-[14px]' : 'h-11 w-24 rounded-xl text-[16px]',
+                )}
+                inputMode="numeric"
+                value={startPage}
+                onChange={(e) => setStartPage(e.target.value)}
+              />
+            </div>
+            <span className={cn('text-muted-foreground', rail ? 'pb-2 text-[14px]' : 'pb-2.5 text-[16px]')} aria-hidden>
+              –
+            </span>
+            <div className="space-y-1">
+              <Label htmlFor={`part-shell-end-${part.id}`} className="text-[11px] text-muted-foreground">
+                End
+              </Label>
+              <Input
+                id={`part-shell-end-${part.id}`}
+                className={cn(
+                  'w-20 border-0 bg-[var(--surface-3)] text-center font-semibold tabular-nums shadow-none',
+                  rail ? 'h-9 rounded-lg text-[14px]' : 'h-11 w-24 rounded-xl text-[16px]',
+                )}
+                inputMode="numeric"
+                value={endPage}
+                onChange={(e) => setEndPage(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              className={cn('rounded-full px-4', rail ? 'h-8' : 'h-10 px-5')}
+              disabled={saving || !fileUrl}
+              onClick={() => void saveEdits()}
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className={cn('rounded-full px-3', rail ? 'h-8' : 'h-10')}
+              disabled={saving}
+              onClick={() => {
+                hydrateDraftFromResolved(resolved)
+                setEditing(false)
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+      <p className={cn('leading-relaxed text-muted-foreground', rail ? 'text-[12px]' : 'text-[14px]')}>
+        From the outline — edit if wrong
+      </p>
+    </div>
+  )
+
   if (loading) {
+    if (controlsOnly) {
+      return (
+        <div
+          className={cn(
+            rail
+              ? 'space-y-2'
+              : 'rounded-[28px] bg-[var(--surface-2)] p-6 shadow-[0_12px_40px_-24px_rgba(0,0,0,0.2)] sm:p-8',
+            className,
+          )}
+        >
+          {rail ? null : titleBlock}
+          <p className={cn('text-muted-foreground', rail ? 'text-[13px]' : 'mt-4 text-[14px]')}>
+            Loading pages…
+          </p>
+        </div>
+      )
+    }
     return (
-      <div className="rounded-[28px] bg-[var(--surface-2)] px-6 py-8 shadow-[0_12px_40px_-24px_rgba(0,0,0,0.2)] sm:px-8 lg:px-10">
+      <div
+        className={cn(
+          'rounded-[28px] bg-[var(--surface-2)] px-6 py-8 shadow-[0_12px_40px_-24px_rgba(0,0,0,0.2)] sm:px-8 lg:px-10',
+          className,
+        )}
+      >
         <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:gap-10">
           <div
             className="mx-auto shrink-0 animate-pulse rounded-2xl bg-[var(--surface-3)] lg:mx-0"
@@ -253,8 +449,28 @@ export function BookPartPagesConfirm({
   }
 
   if (loadError) {
+    if (controlsOnly) {
+      return (
+        <div
+          className={cn(
+            rail
+              ? 'space-y-2'
+              : 'rounded-[28px] bg-[var(--surface-2)] p-6 shadow-[0_12px_40px_-24px_rgba(0,0,0,0.2)] sm:p-8',
+            className,
+          )}
+        >
+          {rail ? null : titleBlock}
+          <p className={cn('text-destructive', rail ? 'text-[13px]' : 'mt-4 text-[14px]')}>{loadError}</p>
+        </div>
+      )
+    }
     return (
-      <div className="rounded-[28px] bg-[var(--surface-2)] px-6 py-8 shadow-[0_12px_40px_-24px_rgba(0,0,0,0.2)] sm:px-8 lg:px-10">
+      <div
+        className={cn(
+          'rounded-[28px] bg-[var(--surface-2)] px-6 py-8 shadow-[0_12px_40px_-24px_rgba(0,0,0,0.2)] sm:px-8 lg:px-10',
+          className,
+        )}
+      >
         <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:gap-10">
           <div
             className="mx-auto flex shrink-0 items-center justify-center rounded-2xl bg-[var(--surface-3)] text-[14px] text-muted-foreground lg:mx-0"
@@ -277,8 +493,37 @@ export function BookPartPagesConfirm({
     )
   }
 
+  if (controlsOnly) {
+    return (
+      <div
+        className={cn(
+          rail
+            ? 'flex flex-col gap-3'
+            : 'flex h-full flex-col gap-6 rounded-[28px] bg-[var(--surface-2)] p-6 shadow-[0_12px_40px_-24px_rgba(0,0,0,0.2)] sm:p-8',
+          className,
+        )}
+      >
+        {rail ? (
+          <div className="space-y-0.5">
+            <p className="text-[13px] font-semibold tracking-tight text-foreground">Page range</p>
+            <p className="text-[12px] text-muted-foreground">Confirm these pages match the story</p>
+          </div>
+        ) : (
+          titleBlock
+        )}
+        {pagesControls}
+        {statusSlot ? <div className="mt-auto pt-2">{statusSlot}</div> : null}
+      </div>
+    )
+  }
+
   return (
-    <div className="rounded-[28px] bg-[var(--surface-2)] shadow-[0_12px_40px_-24px_rgba(0,0,0,0.2)]">
+    <div
+      className={cn(
+        'rounded-[28px] bg-[var(--surface-2)] shadow-[0_12px_40px_-24px_rgba(0,0,0,0.2)]',
+        className,
+      )}
+    >
       <div className="flex flex-col gap-8 p-6 sm:p-8 lg:flex-row lg:items-stretch lg:gap-10 lg:p-10">
         <div className="mx-auto shrink-0 lg:mx-0">
           {fileUrl && hasDraftRange && livePdf ? (
@@ -317,104 +562,8 @@ export function BookPartPagesConfirm({
         </div>
 
         <div className="flex min-w-0 flex-1 flex-col gap-6 text-center lg:pt-1 lg:text-left">
-          <div className="space-y-1">
-            {partTypeLabel ? (
-              <p className="text-[13px] font-medium text-muted-foreground">{partTypeLabel}</p>
-            ) : null}
-            <h3 className="text-[24px] font-semibold leading-snug tracking-tight text-foreground md:text-[28px]">
-              {partTitle}
-            </h3>
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-[13px] font-medium text-muted-foreground">Pages</p>
-            {!editing ? (
-              <div className="flex flex-wrap items-center justify-center gap-3 lg:justify-start">
-                <p className="text-[22px] font-semibold tabular-nums tracking-tight text-foreground">
-                  {rangeLabel}
-                </p>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  className="h-9 rounded-full px-4"
-                  disabled={!hasDraftRange}
-                  onClick={() => setEditing(true)}
-                >
-                  Edit
-                </Button>
-                {onOpenInBook ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="h-9 rounded-full px-4"
-                    disabled={!hasDraftRange || !fileUrl}
-                    onClick={onOpenInBook}
-                  >
-                    Open book
-                  </Button>
-                ) : null}
-              </div>
-            ) : (
-              <div className="mx-auto w-full max-w-sm space-y-4 lg:mx-0">
-                <div className="flex flex-wrap items-end justify-center gap-3 lg:justify-start">
-                  <div className="space-y-1.5">
-                    <Label htmlFor={`part-shell-start-${part.id}`} className="text-[12px] text-muted-foreground">
-                      Start
-                    </Label>
-                    <Input
-                      id={`part-shell-start-${part.id}`}
-                      className="h-11 w-24 rounded-xl border-0 bg-[var(--surface-3)] text-center text-[16px] font-semibold tabular-nums shadow-none"
-                      inputMode="numeric"
-                      value={startPage}
-                      onChange={(e) => setStartPage(e.target.value)}
-                    />
-                  </div>
-                  <span className="pb-2.5 text-[16px] text-muted-foreground" aria-hidden>
-                    –
-                  </span>
-                  <div className="space-y-1.5">
-                    <Label htmlFor={`part-shell-end-${part.id}`} className="text-[12px] text-muted-foreground">
-                      End
-                    </Label>
-                    <Input
-                      id={`part-shell-end-${part.id}`}
-                      className="h-11 w-24 rounded-xl border-0 bg-[var(--surface-3)] text-center text-[16px] font-semibold tabular-nums shadow-none"
-                      inputMode="numeric"
-                      value={endPage}
-                      onChange={(e) => setEndPage(e.target.value)}
-                    />
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center justify-center gap-2 lg:justify-start">
-                  <Button
-                    type="button"
-                    className="h-10 rounded-full px-5"
-                    disabled={saving || !fileUrl}
-                    onClick={() => void saveEdits()}
-                  >
-                    {saving ? 'Saving…' : 'Save'}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="h-10 rounded-full px-3"
-                    disabled={saving}
-                    onClick={() => {
-                      hydrateDraftFromResolved(resolved)
-                      setEditing(false)
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            )}
-            <p className="text-[14px] leading-relaxed text-muted-foreground">
-              From the outline — edit if wrong
-            </p>
-          </div>
-
+          {titleBlock}
+          {pagesControls}
           {statusSlot ? <div className="mt-auto pt-4">{statusSlot}</div> : null}
         </div>
       </div>

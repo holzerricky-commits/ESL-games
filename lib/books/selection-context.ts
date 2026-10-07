@@ -224,6 +224,18 @@ export function commonTextFontWeight(
   return commonField(texts, (cmd) => cmd.fontWeight ?? DEFAULT_ANNOTATION_TEXT_FONT_WEIGHT)
 }
 
+export function commonTextItalic(
+  texts: readonly TextAnnotationCommand[],
+): CommonValue<boolean> {
+  return commonField(texts, (cmd) => cmd.italic === true)
+}
+
+export function commonTextUnderline(
+  texts: readonly TextAnnotationCommand[],
+): CommonValue<boolean> {
+  return commonField(texts, (cmd) => cmd.underline === true)
+}
+
 export function commonTextVisualStyle(
   texts: readonly TextAnnotationCommand[],
 ): CommonValue<TextAnnotationVisualStyle | undefined> {

@@ -11,6 +11,7 @@ import {
   setLessonBoardActivePageContentHeight,
   setLessonBoardActivePageId,
   setLessonBoardPageBookPageHint,
+  setLessonBoardPagePrimaryLink,
   setLessonBoardPageTitle,
 } from '@/lib/books/lesson-board-session-ops'
 
@@ -169,5 +170,24 @@ describe('lesson-board-session-ops', () => {
     expect(deleted?.activePageId).toBe(page1Id)
     expect(deleted?.commands).toHaveLength(1)
     expect(deleteLessonBoardPage(deleted!, page1Id)).toBeNull()
+  })
+
+  it('setLessonBoardPagePrimaryLink replaces and clears the one primary link', () => {
+    let doc = createEmptyWhiteboardSession(key)
+    const pageId = doc.activePageId
+    const linked = setLessonBoardPagePrimaryLink(doc, pageId, {
+      bookId: 'literature-anthology-g2',
+      pdfPage: 18,
+      center: [0.4, 0.6],
+    })
+    expect(linked?.pages[0]?.primaryLink).toEqual({
+      bookId: 'literature-anthology-g2',
+      pdfPage: 18,
+      center: [0.4, 0.6],
+    })
+    expect(linked?.pages[0]?.bookPageHint).toBe(18)
+    const cleared = setLessonBoardPagePrimaryLink(linked!, pageId, null)
+    expect(cleared?.pages[0]?.primaryLink).toBeUndefined()
+    expect(cleared?.pages[0]?.bookPageHint).toBe(18)
   })
 })

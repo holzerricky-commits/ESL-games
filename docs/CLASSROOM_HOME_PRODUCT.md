@@ -6,7 +6,7 @@ Last updated: 2026-08-19
 
 **UI names (teacher-facing):** Classroom home · Welcome · Class · Review
 
-Teacher prep is **Today’s class** (`CLASS_PREP_DESK_PRODUCT.md`) — not this yellow screen.
+Teacher prep is **Prepare** on the book spread (`CLASS_PREP_DESK_PRODUCT.md`) — not this yellow screen.
 
 **Source plan:** Turn the current book-selection screen into Tuto’s classroom home. It should feel like the beginning and end of a real lesson, not simply a PDF launcher.
 
@@ -26,7 +26,7 @@ The student on screen share should immediately know: **what we are doing today**
 
 - **You (the teacher)** operating the app on a call while screen-sharing.
 - The student **sees** Welcome and Review. They do not operate the app in v1.
-- **Prepare** opens **Today’s class** (teacher sheet), not this stage. Optional later Preview is this same Welcome, read-only.
+- **Prepare** opens the **book spread** (clock off), not this stage.
 - Not a learner-owned dashboard. Not a dense analytics page.
 
 ---
@@ -35,11 +35,11 @@ The student on screen share should immediately know: **what we are doing today**
 
 | State | Student-facing job | When |
 |-------|--------------------|------|
-| **Welcome** | Let’s begin. | After Start class / Enter / auto-start. Preview from Today’s class (later) is the same screen, read-only. |
+| **Welcome** | Let’s begin. | After Start class / Enter / auto-start. |
 | **Class** | Let’s teach. | Book / board open. Mid-class book shelf stays a picker, not a second product. |
 | **Review** | Look what we accomplished. | After you confirm End class, before Done returns you to the roster. |
 
-Prep is **not** a yellow state. Editing today’s lines and notes lives on **Today’s class**.
+Prep is **not** a yellow state. Prepare opens the book, clock off. Notes live on the student Classes tab.
 
 All three share the **same visual language** (warm yellow world, book covers, Tuto’s friendly identity). Class itself stays out of the way once the book is open.
 
@@ -106,7 +106,7 @@ Messages stay **secondary** to the lesson information. Alive, not the main attra
 
 ### Today’s lesson / learning goals
 
-A compact block of what this class is for. Glanceable. **You edit it on Today’s class**, not here. This screen only shows filled lines.
+A compact block of what this class is for. Glanceable. This screen only shows filled lines.
 
 Suggested lines (hide any that are empty):
 
@@ -187,7 +187,7 @@ Existing reading-check wrap counts stay. Expand them into this recap — do not 
 Once a book is open: **get out of the way**.
 
 - Book / board / split workspace with the usual thin classroom controls
-- Mid-class book shelf is for switching materials, not a second home redesign
+- Mid-class book shelf is for switching materials **after Close**; in-overlay book chips are `CLASS_SOURCE_STRIP_PRODUCT.md`
 - Do not hang celebrations, streak popups, or recap chrome over the open book
 
 ---
@@ -219,7 +219,7 @@ One product; adapt density and language. Do not fork into two designs.
 
 ## What NOT to do
 
-- Do not use this screen as the teaching-prep desk (that is Today’s class)
+- Do not use this screen as the teaching-prep desk (Prepare opens the book)
 - Do not put scan / generate / approve here
 - Do not turn Welcome into a generic SaaS dashboard
 - Do not cover the screen with analytics
@@ -256,7 +256,7 @@ One product; adapt density and language. Do not fork into two designs.
 | **Current welcome / wrap screen** | This *is* that screen, grown up. Evolve it; do not replace the route. |
 | **Lesson Hub** | Later, larger lobby (carousel, two-book Focus/Dock/Park). Do not build a second welcome popup. If Hub ships later, it should reuse this home’s greeting / streak / last-time — not fork them. |
 | **Student home** | Roster and teacher page per kid. Classroom home is the **live lesson** stage (Welcome / Wrap), not the roster. |
-| **Today’s class** | Prepare destination — teacher sheet, clock off. Not this yellow screen. |
+| **Prepare** | Opens the book spread, clock off. Not this yellow screen. |
 | **Reading checks / book exercises** | Feed honest “your answers” into Review. Do not merge those products into this screen. |
 | **Student knowledge (vocab bank)** | Unlocks richer “you learned / words to review.” Until then, Last time can use recap notes + the thin word-review list. |
 | **AI lesson prep** | Can later draft today’s goals. v1 goals are teacher-typed or pulled from saved prep. |
@@ -265,6 +265,7 @@ One product; adapt density and language. Do not fork into two designs.
 
 ## Changelog
 
+- **2026-09-16** — Prepare opens the book, not a teacher desk. Yellow stays Welcome / Wrap.
 - **2026-08-19** — Split: yellow home is Welcome / Wrap. Teacher desk is Today’s class (`CLASS_PREP_DESK_PRODUCT.md`).
 - **2026-08-19** — End-class Review recap on the yellow home (Phase 4). Compact scores; no teacher notes on the shared goodbye.
 - **2026-08-19** — Locked from classroom-home plan: Prep → Class → Review on the existing warm start/end screen.

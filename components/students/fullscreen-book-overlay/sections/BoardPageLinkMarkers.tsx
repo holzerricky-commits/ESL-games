@@ -23,6 +23,7 @@ type PageMarkerProps = {
   pageWidthPx: number
   pageHeightPx: number
   links: readonly LessonBoardPageLink[]
+  openBookId?: string | null
   boardPages: readonly LessonBoardPage[]
   placementActive: boolean
   markersInteractive: boolean
@@ -46,6 +47,7 @@ function PageBoardLinkMarkers({
   pageWidthPx,
   pageHeightPx,
   links,
+  openBookId,
   boardPages,
   placementActive,
   markersInteractive,
@@ -64,7 +66,7 @@ function PageBoardLinkMarkers({
     [onPlaceLink, pdfPage, placementActive],
   )
 
-  const pageLinks = listLessonBoardPageLinksForPdfPage(links, pdfPage)
+  const pageLinks = listLessonBoardPageLinksForPdfPage(links, pdfPage, openBookId)
 
   return (
     <div
@@ -93,7 +95,7 @@ function PageBoardLinkMarkers({
                   top: `${link.center[1] * 100}%`,
                 }}
                 title={label}
-                aria-label={`Open board: ${label}`}
+                aria-label={`Open notebook: ${label}`}
                 onPointerDown={(event) => {
                   if (!markersInteractive) return
                   event.preventDefault()
@@ -131,6 +133,7 @@ export type BoardPageLinkMarkersProps = {
   leftPageCaptureRef: RefObject<HTMLDivElement | null>
   rightPageCaptureRef: RefObject<HTMLDivElement | null>
   links: readonly LessonBoardPageLink[]
+  openBookId?: string | null
   boardPages: readonly LessonBoardPage[]
   placementActive: boolean
   markersInteractive: boolean
@@ -148,6 +151,7 @@ export function BoardPageLinkMarkers({
   leftPageCaptureRef: _leftPageCaptureRef,
   rightPageCaptureRef: _rightPageCaptureRef,
   links,
+  openBookId,
   boardPages,
   placementActive,
   markersInteractive,
@@ -172,6 +176,7 @@ export function BoardPageLinkMarkers({
           pageWidthPx={spreadPageWidthPx}
           pageHeightPx={pageCanvasHeightPx}
           links={links}
+          openBookId={openBookId}
           boardPages={boardPages}
           placementActive={placementActive}
           markersInteractive={markersInteractive}
@@ -189,6 +194,7 @@ export function BoardPageLinkMarkers({
             pageWidthPx={spreadPageWidthPx}
             pageHeightPx={pageCanvasHeightPx}
             links={links}
+            openBookId={openBookId}
             boardPages={boardPages}
             placementActive={placementActive}
             markersInteractive={markersInteractive}

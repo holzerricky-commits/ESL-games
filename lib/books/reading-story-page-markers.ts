@@ -12,6 +12,12 @@ export type ReadingStoryPageSection = {
   text: string
 }
 
+export type ReadingStoryPageRangeHint = {
+  startPdfPage: number
+  startDisplayPage: number | null
+  endDisplayPage: number | null
+}
+
 export function formatReadingStoryPageMarker(args: {
   displayPage: number | null
   pdfPage: number
@@ -41,6 +47,87 @@ export function displayPageForPdfInStoryRange(
     return display >= 1 ? display : null
   }
   return null
+}
+
+/** Legacy Gemini / PDF headings: `--- Page N ---` or `--- Pages A–B ---` (pdf indices). */
+const LEGACY_PAGE_HEADING_RE =
+  /---\s*Pages?\s+(\d+)(?:\s*[–—-]\s*(\d+))?\s*---/gi
+
+const NUMERIC_STORY_PAGE_MARKER_RE =
+  /<<<page\s+display="(\d+)"\s+pdf="(\d+)">>>/i
+
+function inferStoryPageRangeFromMarkers(text: string): ReadingStoryPageRangeHint | null {
+  const match = text.match(NUMERIC_STORY_PAGE_MARKER_RE)
+  if (!match) return null
+  const displayPage = Math.floor(Number(match[1]))
+  const pdfPage = Math.floor(Number(match[2]))
+  if (!Number.isFinite(displayPage) || !Number.isFinite(pdfPage) || displayPage < 1 || pdfPage < 1) {
+    return null
+  }
+  return {
+    startPdfPage: pdfPage,
+    startDisplayPage: displayPage,
+    endDisplayPage: null,
+  }
+}
+
+export function resolveReadingStoryPageRangeHint(
+  text: string,
+  range?: ReadingStoryPageRangeHint | null,
+): ReadingStoryPageRangeHint {
+  if (
+    range &&
+    typeof range.startDisplayPage === 'number' &&
+    range.startDisplayPage >= 1 &&
+    range.startPdfPage >= 1
+  ) {
+    return range
+  }
+  const inferred = inferStoryPageRangeFromMarkers(text)
+  if (inferred) {
+    return {
+      ...inferred,
+      endDisplayPage: range?.endDisplayPage ?? null,
+    }
+  }
+  return range ?? { startPdfPage: 1, startDisplayPage: null, endDisplayPage: null }
+}
+
+function markerForPdfPage(pdfPage: number, range: ReadingStoryPageRangeHint): string {
+  return formatReadingStoryPageMarker({
+    displayPage: displayPageForPdfInStoryRange(pdfPage, range),
+    pdfPage,
+  })
+}
+
+/** Drop back-to-back markers for the same PDF page (heading + Gemini illustration tag). */
+export function collapseAdjacentDuplicatePdfMarkers(text: string): string {
+  return text.replace(
+    /(<<<page\s+display="(?:\d+|·)"\s+pdf="(\d+)">>>)(?:\s*<<<page\s+display="(?:\d+|·)"\s+pdf="\2">>>)+/gi,
+    '$1',
+  )
+}
+
+/**
+ * Convert leftover `--- Page N ---` / `--- Pages A–B ---` headings to `<<<page>>>`
+ * markers. Range headings become the first PDF page (A). Display offset comes from
+ * `range` when present, otherwise from the first numeric marker already in the text.
+ */
+export function normalizeStoryTextPageMarkers(
+  rawText: string,
+  range?: ReadingStoryPageRangeHint | null,
+): string {
+  const text = typeof rawText === 'string' ? rawText : ''
+  if (!text.trim()) return text
+
+  const resolved = resolveReadingStoryPageRangeHint(text, range)
+  const headingRe = new RegExp(LEGACY_PAGE_HEADING_RE.source, 'gi')
+  const converted = text.replace(headingRe, (full, startRaw: string) => {
+    const start = Math.floor(Number(startRaw))
+    if (!Number.isFinite(start) || start < 1) return full
+    return markerForPdfPage(start, resolved)
+  })
+  return collapseAdjacentDuplicatePdfMarkers(converted)
 }
 
 /** True when a page section has no story prose (illustration-only placeholder). */
@@ -80,7 +167,8 @@ export function buildPlaceholderChunkForPdfPages(
 }
 
 /**
- * Convert legacy `--- Page N ---` headers (pdf index) and ensure markers for a scanned chunk.
+ * Convert `--- Page N ---` / `--- Pages A–B ---` and ensure this chunk starts on
+ * its first PDF page so prose is not glued to the previous spread.
  */
 export function tagScannedChunkText(
   rawText: string,
@@ -97,30 +185,38 @@ export function tagScannedChunkText(
   const trimmed = rawText.trim()
   if (!trimmed) return ''
 
-  if (/---\s*Page\s+\d+\s*---/i.test(trimmed)) {
-    return trimmed
-      .replace(/^---\s*Page\s+(\d+)\s*---\s*$/gim, (_m, pdfRaw: string) => {
-        const pdfPage = Math.floor(Number(pdfRaw))
-        if (!Number.isFinite(pdfPage) || pdfPage < 1) return _m
-        const displayPage = displayPageForPdfInStoryRange(pdfPage, args.range)
-        return formatReadingStoryPageMarker({ displayPage, pdfPage })
-      })
-      .trim()
+  const chunkStart = Math.max(1, Math.floor(args.chunkStartPdfPage))
+  const chunkEnd = Math.max(chunkStart, Math.floor(args.chunkEndPdfPage))
+  const range = resolveReadingStoryPageRangeHint(trimmed, args.range)
+  let text = normalizeStoryTextPageMarkers(trimmed, range)
+
+  const startMarker = markerForPdfPage(chunkStart, range)
+  const startsOnChunk = new RegExp(
+    `^<<<page\\s+display="(?:\\d+|·)"\\s+pdf="${chunkStart}">>>`,
+    'i',
+  )
+  if (!startsOnChunk.test(text)) {
+    text = `${startMarker}\n${text}`
   }
 
-  // Already tagged — leave as-is.
-  if (/<<<page\s+display="/i.test(trimmed)) return trimmed
-
-  // Unmarked multi-page chunk (e.g. Gemini): one marker at the start of the span.
-  const pdfPage = Math.max(1, Math.floor(args.chunkStartPdfPage))
-  const displayPage = displayPageForPdfInStoryRange(pdfPage, args.range)
-  return `${formatReadingStoryPageMarker({ displayPage, pdfPage })}\n${trimmed}`
+  const present = new Set(
+    [...text.matchAll(/<<<page\s+display="(?:\d+|·)"\s+pdf="(\d+)">>>/gi)].map((m) =>
+      Math.floor(Number(m[1])),
+    ),
+  )
+  const missing: string[] = []
+  for (let pdfPage = chunkStart; pdfPage <= chunkEnd; pdfPage += 1) {
+    if (!present.has(pdfPage)) missing.push(markerForPdfPage(pdfPage, range))
+  }
+  if (missing.length > 0) text = `${text.trim()}\n${missing.join('\n')}`
+  return collapseAdjacentDuplicatePdfMarkers(text).trim()
 }
 
 /** Split story text into page sections using markers (skips unmarked leading preamble). */
 export function parseReadingStoryPageSections(storyText: string): ReadingStoryPageSection[] {
-  const text = typeof storyText === 'string' ? storyText : ''
-  if (!text.trim()) return []
+  const raw = typeof storyText === 'string' ? storyText : ''
+  if (!raw.trim()) return []
+  const text = normalizeStoryTextPageMarkers(raw)
 
   const re = new RegExp(READING_STORY_PAGE_MARKER_RE.source, 'g')
   const matches = [...text.matchAll(re)]
@@ -145,10 +241,6 @@ export function parseReadingStoryPageSections(storyText: string): ReadingStoryPa
   }
   return sections
 }
-
-/** Legacy Gemini / PDF headings: `--- Page N ---` or `--- Pages A–B ---` (pdf indices). */
-const LEGACY_PAGE_HEADING_RE =
-  /---\s*Pages?\s+(\d+)(?:\s*[–-]\s*(\d+))?\s*---/gi
 
 /**
  * PDF pages already present in saved story text (markers + legacy page headings).

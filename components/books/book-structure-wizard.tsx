@@ -25,6 +25,10 @@ import {
   Trash2,
 } from 'lucide-react'
 import { BookCoverThumbnail } from '@/components/books/book-cover-thumbnail'
+import {
+  BOOK_WORKBENCH_LEFT_WIDTH_PX,
+  BookWorkbenchShell,
+} from '@/components/books/book-workbench-shell'
 import { StructureWizardDots } from '@/components/books/structure-wizard-dots'
 import { PdfPageThumbnail } from '@/components/students/pdf-page-thumbnail'
 import { bookHasCustomCover } from '@/lib/books/book-cover-display'
@@ -1700,17 +1704,6 @@ export function BookStructureWizard({
     (wizardStep === 'toc' || wizardStep === 'align' || wizardStep === 'extract')
   const workspaceBusy = aiExtracting || saving
 
-  useEffect(() => {
-    if (!isWorkspace || !open) return
-    function onKey(e: KeyboardEvent) {
-      if (e.key !== 'Escape' || workspaceBusy || unitMergeSelectMode) return
-      e.preventDefault()
-      setOpen(false)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [isWorkspace, open, workspaceBusy, unitMergeSelectMode, setOpen])
-
   const wizardHeader = (
         <div
           className={cn(
@@ -1926,10 +1919,11 @@ export function BookStructureWizard({
             className={cn(
               'min-h-0',
               isWorkspace &&
-                'flex w-[300px] shrink-0 flex-col overflow-hidden border-r border-[var(--border)] bg-[var(--surface-2)]',
+                'flex shrink-0 flex-col overflow-hidden border-r border-[var(--border)] bg-[var(--surface-2)]',
               isCenterPreviewLayout && 'shrink-0',
               isReviewLayout && !isWorkspace && 'flex flex-col overflow-hidden pr-1',
             )}
+            style={isWorkspace ? { width: BOOK_WORKBENCH_LEFT_WIDTH_PX } : undefined}
           >
             {isWorkspace ? wizardHeader : null}
             <div
@@ -3148,17 +3142,16 @@ export function BookStructureWizard({
   )
 
   if (isWorkspace) {
-    if (!open) return null
     return (
       <>
-        <div
-          className="fixed inset-0 z-[80] flex bg-[var(--surface-1,#0f1115)] text-foreground"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Outline book"
+        <BookWorkbenchShell
+          open={open}
+          onClose={() => setOpen(false)}
+          ariaLabel="Outline book"
+          busy={workspaceBusy || unitMergeSelectMode}
         >
           {wizardBody}
-        </div>
+        </BookWorkbenchShell>
         {reconcileDialog}
       </>
     )

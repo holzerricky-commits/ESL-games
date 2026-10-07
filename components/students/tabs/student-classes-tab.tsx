@@ -44,8 +44,10 @@ import {
   getStudentSectionOptions,
   getStudentProfileView,
   getStudentTeachingOpenPdfPageForBookUnit,
+  isClosedClassSessionStatus,
   recordStudentClassOutcome,
   resolveNextSectionForClass,
+  resolveUpNextSectionForStudent,
   transitionStudentClassStatus,
   updateStudentClassSelectedSection,
   updateStudentClassPrep,
@@ -466,9 +468,11 @@ export function StudentClassesTab({
 
   useEffect(() => {
     const next: Record<string, string> = {}
+    const upNext = resolveUpNextSectionForStudent(liveStudent.id, library)
     for (const session of sessions) {
+      const open = !isClosedClassSessionStatus(session.status)
       const fallback = resolveNextSectionForClass(liveStudent.id, session.id, library)
-      const selected = session.selectedSection?.id ?? fallback?.id
+      const selected = (open ? upNext?.id : undefined) ?? session.selectedSection?.id ?? fallback?.id
       if (selected) next[session.id] = selected
     }
     setSelectedSectionBySession((prev) => {
@@ -923,7 +927,8 @@ export function StudentClassesTab({
       toast.error(sectionResult.error)
       return
     }
-    if (chosen) {
+    const alreadyThere = chosen != null && resolveUpNextSectionForStudent(liveStudent.id, library)?.id === chosen.id
+    if (chosen && !alreadyThere) {
       const existingStart = getStudentCurriculumBookStart(liveStudent.id, chosen.bookId, library)
       let mappedPage: number | null = null
       if (existingStart?.sectionId === chosen.id && existingStart.mappedPage >= 1) {

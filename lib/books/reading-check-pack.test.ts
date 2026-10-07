@@ -6,6 +6,9 @@ import {
   demoteReadingCheckPackToDraft,
   getLiveEligibleReadingCheckPack,
   listReadingCheckLivePinsOnSpread,
+  pickStoryWithLiveReadingChecks,
+  READING_CHECK_PIN_ROW_Y,
+  readingCheckPinRowXs,
   readingCheckPackCanApprove,
   sanitizeReadingCheckPack,
 } from '@/lib/books/reading-check-pack'
@@ -180,7 +183,7 @@ describe('reading-check-pack', () => {
     })).toEqual([])
   })
 
-  it('staggers stacked default pins on the same page', () => {
+  it('lays default pins on the same page in one bottom row', () => {
     const pack = sanitizeReadingCheckPack({
       storyId: 's1',
       bookId: 'b1',
@@ -233,7 +236,53 @@ describe('reading-check-pack', () => {
       rightDisplayPage: 437,
     })
     expect(pins).toHaveLength(2)
-    expect(pins[0]?.y).not.toBe(pins[1]?.y)
+    expect(pins[0]?.y).toBe(READING_CHECK_PIN_ROW_Y)
+    expect(pins[1]?.y).toBe(READING_CHECK_PIN_ROW_Y)
+    expect(pins[0]!.x).toBeLessThan(pins[1]!.x)
+    expect((pins[0]!.x + pins[1]!.x) / 2).toBeCloseTo(0.5)
+  })
+
+  it('keeps teacher-moved pins where they were placed', () => {
+    const pack = sanitizeReadingCheckPack({
+      storyId: 's1',
+      bookId: 'b1',
+      unitId: 'u1',
+      stops: [
+        {
+          id: 'stop-1',
+          label: 'Moved',
+          displayPage: 436,
+          midPageNote: null,
+          hotspot: { pdfPage: 438, pageSide: 'left', x: 0.2, y: 0.4 },
+          questions: [
+            {
+              id: 'q1',
+              kind: 'true_false',
+              prompt: 'One',
+              choices: [],
+              correctIndex: null,
+              correctTrue: true,
+              evidenceSnippet: null,
+              evidenceHighlight: null,
+            },
+          ],
+        },
+      ],
+    })
+    const pins = listReadingCheckLivePinsOnSpread(pack?.stops ?? [], {
+      leftPdfPage: 438,
+      rightPdfPage: 439,
+      leftDisplayPage: 436,
+      rightDisplayPage: 437,
+    })
+    expect(pins[0]?.x).toBe(0.2)
+    expect(pins[0]?.y).toBe(0.4)
+  })
+
+  it('keeps a long row on the page', () => {
+    const xs = readingCheckPinRowXs(20)
+    expect(Math.min(...xs)).toBeGreaterThanOrEqual(0.06 - 1e-9)
+    expect(Math.max(...xs)).toBeLessThanOrEqual(0.94 + 1e-9)
   })
 
   it('keeps evidence highlight only when it appears in the snippet', () => {
@@ -368,5 +417,42 @@ describe('reading-check-pack', () => {
     const draftAgain = demoteReadingCheckPackToDraft(approved!)
     expect(draftAgain.status).toBe('draft')
     expect(getLiveEligibleReadingCheckPack(draftAgain)).toBeNull()
+  })
+
+  it('uses the first ranked story that has an approved pack', () => {
+    const outline = { id: 'outline' }
+    const manual = { id: 'manual' }
+    const approved = approveReadingCheckPack({
+      ...createEmptyReadingCheckPack({ storyId: 'outline', bookId: 'b', unitId: 'u' }),
+      stops: [
+        {
+          ...createEmptyReadingCheckStop(400),
+          questions: [
+            {
+              id: 'q1',
+              kind: 'true_false',
+              prompt: 'Is Beany worried?',
+              choices: [],
+              correctIndex: null,
+              correctTrue: true,
+              evidenceSnippet: null,
+              evidenceHighlight: null,
+            },
+          ],
+        },
+      ],
+    })
+    expect(approved).not.toBeNull()
+    const packs = new Map<string, typeof approved>([
+      ['outline', approved],
+      ['manual', null],
+    ])
+    expect(pickStoryWithLiveReadingChecks([outline, manual], packs)?.id).toBe('outline')
+
+    const onlyManual = new Map<string, typeof approved>([
+      ['outline', null],
+      ['manual', { ...approved!, storyId: 'manual' }],
+    ])
+    expect(pickStoryWithLiveReadingChecks([outline, manual], onlyManual)?.id).toBe('manual')
   })
 })

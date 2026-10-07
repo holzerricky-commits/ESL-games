@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  findReadingStoryAtPdfPage,
+  listReadingStoriesAtPdfPage,
   mergeStoriesForBook,
+  rankReadingStoryPageHits,
   type ReadingStoryMap,
-  type ReadingStoryPdfRange,
+  type ReadingStoryPageHit,
   type ReadingStoryRangeOverride,
 } from '@/lib/books/reading-story-map'
 import type { BookLibraryPayload } from '@/lib/books/types'
@@ -55,28 +56,28 @@ export function useReadingStoryAtPage({
     }
   }, [selectedBook])
 
-  const readingStoryHit = useMemo(() => {
-    if (!selectedBook || !selectedUnit) return null
+  const readingStoryHits = useMemo(() => {
+    if (!selectedBook || !selectedUnit) return [] as ReadingStoryPageHit[]
     const pages = [pageNumber]
     if (typeof spreadRightPage === 'number') pages.push(spreadRightPage)
+    const byId = new Map<string, ReadingStoryPageHit>()
     for (const pdfPage of pages) {
-      const hit = findReadingStoryAtPdfPage({
+      for (const hit of listReadingStoriesAtPdfPage({
         book: selectedBook,
         unit: selectedUnit,
         pdfPage,
         totalPdfPages: numPages,
         stories,
         overridesByStoryId: overridesById,
-      })
-      if (hit) return hit
+      })) {
+        if (!byId.has(hit.story.id)) byId.set(hit.story.id, hit)
+      }
     }
-    return null
+    return rankReadingStoryPageHits([...byId.values()], selectedUnit.id)
   }, [selectedBook, selectedUnit, pageNumber, spreadRightPage, numPages, stories, overridesById])
 
   return {
-    readingStoryHit: readingStoryHit as {
-      story: ReadingStoryMap
-      range: ReadingStoryPdfRange
-    } | null,
+    readingStoryHits,
+    readingStoryHit: readingStoryHits[0] ?? null,
   }
 }

@@ -38,8 +38,6 @@ export interface PageViewPoolProps {
   leftCaptureRef: MutableRefObject<HTMLDivElement | null>
   rightCaptureRef: MutableRefObject<HTMLDivElement | null>
   renderPageChrome: (ctx: PageViewPoolRenderContext) => ReactNode
-  bookTextSelectActive?: boolean
-  pageTextCapability?: ReadonlyMap<number, boolean | 'pending'>
   screenScale?: number
   /** When false, skip page bulge clip, fore-edge stacks, and page chrome shadows. */
   showBookFrame?: boolean
@@ -68,8 +66,6 @@ export function PageViewPool({
   leftCaptureRef,
   rightCaptureRef,
   renderPageChrome,
-  bookTextSelectActive = false,
-  pageTextCapability,
   screenScale = 1,
   showBookFrame = true,
 }: PageViewPoolProps) {
@@ -122,8 +118,6 @@ export function PageViewPool({
                 : undefined
             }
             className={elevated ? 'relative z-10' : undefined}
-            bookTextSelectActive={bookTextSelectActive}
-            pageHasSelectableText={pageTextCapability?.get(pageNumber) === true}
             screenScale={screenScale}
             showBookFrame={showBookFrame}
           >

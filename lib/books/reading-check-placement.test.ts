@@ -104,6 +104,69 @@ describe('reading-story-page-markers', () => {
     expect(isIllustrationOnlySectionText('')).toBe(true)
     expect(isIllustrationOnlySectionText('Tillie walked home.')).toBe(false)
   })
+
+  it('converts --- Pages A–B --- even when a later illustration <<<page>>> already exists', () => {
+    const tagged = tagScannedChunkText(
+      [
+        '--- Pages 42–43 ---',
+        'Hello from the story.',
+        formatReadingStoryPageMarker({ displayPage: 523, pdfPage: 43 }),
+        READING_STORY_ILLUSTRATION_ONLY_PLACEHOLDER,
+      ].join('\n'),
+      {
+        chunkStartPdfPage: 42,
+        chunkEndPdfPage: 43,
+        range: { startPdfPage: 40, startDisplayPage: 520, endDisplayPage: 530 },
+      },
+    )
+    const page42 = formatReadingStoryPageMarker({ displayPage: 522, pdfPage: 42 })
+    const page43 = formatReadingStoryPageMarker({ displayPage: 523, pdfPage: 43 })
+    expect(tagged).toContain(page42)
+    expect(tagged).toContain(page43)
+    expect(tagged.indexOf(page42)).toBeLessThan(tagged.indexOf('Hello from the story.'))
+    const sections = parseReadingStoryPageSections(tagged)
+    expect(sections.find((s) => s.pdfPage === 42)?.text).toContain('Hello from the story.')
+    expect(sections.find((s) => s.pdfPage === 43)?.text).toContain(
+      READING_STORY_ILLUSTRATION_ONLY_PLACEHOLDER,
+    )
+  })
+
+  it('does not glue Jump!-style energy prose onto the previous illustration page', () => {
+    const story = [
+      formatReadingStoryPageMarker({ displayPage: 367, pdfPage: 375 }),
+      READING_STORY_ILLUSTRATION_ONLY_PLACEHOLDER,
+      '--- Pages 376–377 ---',
+      "His name is Michael, and from the time he was a little boy, he always seemed to be in and out of mischief. But Michael? He just had a different kind of energy, and curiosity, too.",
+      formatReadingStoryPageMarker({ displayPage: 369, pdfPage: 377 }),
+      READING_STORY_ILLUSTRATION_ONLY_PLACEHOLDER,
+    ].join('\n')
+
+    const sections = parseReadingStoryPageSections(story)
+    const energy = sections.find((s) => s.text.includes('different kind of energy'))
+    expect(energy).toMatchObject({ displayPage: 368, pdfPage: 376 })
+    expect(resolvePageFromStoryEvidence(story, 'He just had a different kind of energy')).toEqual({
+      displayPage: 368,
+      pdfPage: 376,
+    })
+  })
+
+  it('resolves Jump! on-disk story text without rewriting the saved file', async () => {
+    const { readFile } = await import('node:fs/promises')
+    const { join } = await import('node:path')
+    const raw = await readFile(
+      join(
+        process.cwd(),
+        'data/reading-stories/text/journeys-g3-book-1_unit-3-3e7eaa87_lesson-2d6f0fe0_part-ab394f3e.json',
+      ),
+      'utf8',
+    )
+    const record = JSON.parse(raw) as { text: string }
+    expect(record.text).toContain('--- Pages 376–377 ---')
+    expect(resolvePageFromStoryEvidence(record.text, 'He just had a different kind of energy')).toEqual({
+      displayPage: 368,
+      pdfPage: 376,
+    })
+  })
 })
 
 describe('reading-check-placement', () => {
@@ -159,6 +222,29 @@ describe('reading-check-placement', () => {
     })
     expect(placed?.displayPage).toBe(15)
     expect(placed?.hotspot?.pdfPage).toBe(21)
+  })
+
+  it('moves Jump! energy pin off the previous illustration onto the evidence page', () => {
+    const story = [
+      formatReadingStoryPageMarker({ displayPage: 367, pdfPage: 375 }),
+      READING_STORY_ILLUSTRATION_ONLY_PLACEHOLDER,
+      '--- Pages 376–377 ---',
+      "His name is Michael, and from the time he was a little boy, he always seemed to be in and out of mischief. But Michael? He just had a different kind of energy, and curiosity, too.",
+      formatReadingStoryPageMarker({ displayPage: 369, pdfPage: 377 }),
+      READING_STORY_ILLUSTRATION_ONLY_PLACEHOLDER,
+    ].join('\n')
+    const stop = createEmptyReadingCheckStop(367)
+    stop.label = "Michael's energy"
+    stop.questions[0]!.prompt = 'What kind of energy did Michael have?'
+    stop.questions[0]!.evidenceSnippet =
+      "But Michael? He just had a different kind of energy, and curiosity, too."
+    stop.questions[0]!.evidenceHighlight = 'He just had a different kind of energy'
+    const [placed] = applyStoryEvidencePagesToStops([stop], story, {
+      startDisplayPage: 366,
+      endDisplayPage: 384,
+    })
+    expect(placed?.displayPage).toBe(368)
+    expect(placed?.hotspot?.pdfPage).toBe(376)
   })
 
   it('keeps AI page when evidence cannot be matched uniquely', () => {

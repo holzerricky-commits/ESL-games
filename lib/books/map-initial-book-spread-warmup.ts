@@ -18,6 +18,8 @@ import type { BookReaderCurriculumHistoryEntry } from '@/lib/books/resolve-initi
 import { resolveInitialBookReaderSelection } from '@/lib/books/resolve-initial-book-reader-selection'
 import { setMapAnchorSpreadContext } from '@/lib/books/map-anchor-spread-context'
 import { heuristicBookOverlaySpreadPageWidthPx } from '@/lib/books/spread-viewport-layout'
+import type { ClassSourceBookChip } from '@/lib/books/class-source-strip'
+import { listParkedClassSourceWarmTargets } from '@/lib/books/class-source-parked-reader'
 
 export interface WarmMapInitialBookSpreadPrefetchArgs {
   library: BookLibraryPayload
@@ -90,6 +92,58 @@ export async function warmMapInitialBookSpreadPrefetch(args: WarmMapInitialBookS
       unitId: unit.id,
       pages: idle,
       widthPx,
+    })
+  }
+}
+
+/** Keep the other assigned book's last spread in PDF.js + bitmap cache while teaching. */
+export async function warmParkedClassSourceSpreads(args: {
+  library: Pick<BookLibraryPayload, 'books'>
+  chips: readonly ClassSourceBookChip[]
+  focusedBookId: string | null
+  widthPx: number
+  shouldProceed?: () => boolean
+}): Promise<void> {
+  const widthPx = Math.floor(args.widthPx)
+  if (!(widthPx > 0)) return
+  const parked = listParkedClassSourceWarmTargets(args.chips, args.focusedBookId)
+  if (parked.length === 0) return
+
+  await ensureReactPdfWorker()
+  for (const chip of parked) {
+    if (args.shouldProceed && !args.shouldProceed()) return
+    const book = args.library.books.find((item) => item.id === chip.bookId)
+    const unit = book?.units.find((item) => item.id === chip.unitId)
+    if (!book || !unit) continue
+    const fileUrl = makeUnitFileUrl(unit.filePath)
+    const doc = await loadCachedPdfDocument(fileUrl)
+    if (args.shouldProceed && !args.shouldProceed()) return
+    const numPages = doc.numPages
+    const visiblePages = getVisiblePdfPages(unit, numPages, book)
+    const readerBounds = getUnitReaderBounds(unit, numPages, book)
+    const anchorPage =
+      chip.page != null && Number.isFinite(chip.page) && chip.page >= 1
+        ? Math.floor(chip.page)
+        : (visiblePages[0] ?? 1)
+    const { immediate } = splitReaderPrefetchPages({
+      anchorPage,
+      visiblePages,
+      readerBounds,
+      intent: 'map-warm',
+    })
+    queueReaderPrefetchPagesImmediate({
+      fileUrl,
+      unitId: unit.id,
+      pages: immediate,
+      widthPx,
+      shouldProceed: args.shouldProceed,
+    })
+    queueReaderPrefetchPagesLowRes({
+      fileUrl,
+      unitId: unit.id,
+      pages: immediate,
+      widthPx,
+      shouldProceed: args.shouldProceed,
     })
   }
 }

@@ -289,6 +289,20 @@ export interface StudentRecord {
       updatedAt: string
     }
   >
+  /**
+   * Where this student is in each assigned book (PDF page). The single source for where
+   * the next class opens; moved by page turns in class and by setting a starting place.
+   */
+  bookPlaces?: Record<
+    string,
+    {
+      unitId: string
+      pdfPage: number
+      updatedAt: string
+    }
+  >
+  /** Book whose place moved most recently in class (drives which book is up next). */
+  lastTaughtBookId?: string
   /** Per-session reading history entries captured from the Books reader when opened from a student context. */
   curriculumHistory?: Array<{
     id: string

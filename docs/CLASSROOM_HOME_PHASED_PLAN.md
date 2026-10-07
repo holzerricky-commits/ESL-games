@@ -15,7 +15,7 @@ Last updated: 2026-08-19
 
 Do **not** start Phase 1 code until this is the **active ship track** (you say so). Book exercises and other in-progress tracks stay first unless you switch.
 
-**Later split:** Tapping **Prepare** now opens **Today’s class** (`CLASS_PREP_DESK_PRODUCT.md`), not yellow-as-desk. This plan’s Phases 1–4 (hierarchy, goals, last time, Review) stay done on Welcome / Wrap. Teacher editing on yellow is superseded.
+**Later split:** Tapping **Prepare** opens the **book spread** (`CLASS_PREP_DESK_PRODUCT.md`), not yellow. This plan’s Phases 1–4 stay done on Welcome / Wrap.
 
 Do **not** start Phase 3 until Prep already shows today’s lesson without hunting. Do **not** start Phase 5 until Review feels like the same home as Prep.
 
@@ -207,7 +207,7 @@ What is **missing** (this track adds, in order):
 - [ ] Tighten empty states (no book, first class, no last time).
 - [ ] Subtle Prep ↔ Welcome ↔ Review transitions; respect reduced motion.
 - [ ] Optional slightly simpler copy when you mark a student as younger — only if you already have a place for age; otherwise skip.
-- [ ] Teacher vs student density: edit lives on Today’s class; live Welcome/Review stay student-facing.
+- [ ] Teacher vs student density: live Welcome/Review stay student-facing.
 
 ### Acceptance (you test)
 

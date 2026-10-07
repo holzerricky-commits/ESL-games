@@ -1,12 +1,13 @@
 'use client'
 
-import { useMemo, type ReactNode } from 'react'
+import { type ReactNode } from 'react'
 import { Lock } from 'lucide-react'
 import { getPenSwatch } from '@/lib/books/annotation-palettes'
 import { penSwatchIdToStrokeColor, shapeStrokeColorToSwatchId } from '@/lib/books/selection-context-color'
 import { ANNOTATION_FINE_INK_THICKNESS_PREVIEW_DOTS } from '@/lib/books/annotation-storage'
 import { inkThicknessPxOptions } from '@/lib/books/ink-thickness-pixel'
 import type { AnnotationLineDashStyle, ShapeFillMode } from '@/lib/books/annotation-command-types'
+import { shapeFillModeHasFill } from '@/lib/books/annotation-command-types'
 import type { NormRect } from '@/lib/books/annotation-select'
 import type { AnnotationStrokeThicknessStep } from '@/lib/books/annotation-storage'
 import type { SelectionBarPlacement } from '@/lib/books/selection-context-anchor'
@@ -34,7 +35,12 @@ import {
 } from '@/components/students/selection-context-bar/SelectionContextActionsWithArrange'
 import { SelectionContextBarDivider } from '@/components/students/selection-context-bar/SelectionContextBarDivider'
 import { SelectionContextBarGroup } from '@/components/students/selection-context-bar/SelectionContextBarGroup'
-import { SelectionContextColorSection } from '@/components/students/selection-context-bar/SelectionContextColorSection'
+import {
+  CONTEXT_SHAPE_FILL_COLORS,
+  CONTEXT_SOLID_PEN_SWATCHES,
+  SelectionContextHexColorControl,
+  SelectionContextPenColorControl,
+} from '@/components/students/selection-context-bar/SelectionContextColorButton'
 import { SelectionContextSizeStepper } from '@/components/students/selection-context-bar/SelectionContextSizeStepper'
 import {
   SELECTION_CONTEXT_BAR_ACTION_BTN,
@@ -136,26 +142,7 @@ export function ShapeSelectionContextBar({
       : activeFillColor
 
   const strokeSwatchId = shapeStrokeColorToSwatchId(strokeColorValue)
-
-  const strokePaletteExtras = useMemo(
-    () => ({
-      shapeStrokeSwatchId: strokeSwatchId,
-      pickShapeStrokeSwatch: (id: string) => onPatch({ strokeColor: penSwatchIdToStrokeColor(id) }),
-      shapeFillColor: fillColorValue,
-      shapeFillMode: fillModeValue,
-    }),
-    [strokeSwatchId, fillColorValue, fillModeValue, onPatch],
-  )
-
-  const fillPaletteExtras = useMemo(
-    () => ({
-      shapeStrokeSwatchId: strokeSwatchId,
-      shapeFillColor: fillColorValue,
-      pickShapeFillColor: (hex: string) => onPatch({ fillColor: hex }),
-      shapeFillMode: fillModeValue,
-    }),
-    [strokeSwatchId, fillColorValue, fillModeValue, onPatch],
-  )
+  const showFillColor = showFillControls && shapeFillModeHasFill(fillModeValue)
 
   return (
     <SelectionContextBar
@@ -166,21 +153,24 @@ export function ShapeSelectionContextBar({
       aria-label="Shape options"
     >
       <SelectionContextBarGroup aria-label="Shape colors">
-        <SelectionContextColorSection
-          kind="shape"
+        <SelectionContextPenColorControl
+          swatchId={strokeSwatchId}
+          swatches={CONTEXT_SOLID_PEN_SWATCHES}
+          recentKind="shape"
+          ariaLabel="Stroke color"
           idPrefix="ctx-shape-stroke"
-          activeValue={strokeSwatchId}
-          paletteTarget="shapes"
-          paletteExtras={strokePaletteExtras}
+          label="Stroke"
           onPick={(id) => onPatch({ strokeColor: penSwatchIdToStrokeColor(id) })}
         />
-        {showFillControls ? (
-          <SelectionContextColorSection
-            kind="marker"
+        {showFillColor ? (
+          <SelectionContextHexColorControl
+            role="fill"
+            color={fillColorValue}
+            colors={CONTEXT_SHAPE_FILL_COLORS}
+            recentKind="marker"
+            ariaLabel="Fill color"
             idPrefix="ctx-shape-fill"
-            activeValue={fillColorValue}
-            paletteTarget="shape-fill"
-            paletteExtras={fillPaletteExtras}
+            label="Fill"
             onPick={(hex) => onPatch({ fillColor: hex })}
           />
         ) : null}
@@ -230,19 +220,6 @@ export function ShapeSelectionContextBar({
 
       <SelectionContextBarDivider />
 
-      <SelectionContextBarGroup aria-label="Shape lock">
-        <ContextToggleButton
-          active={lockedOn}
-          label={lockedOn ? 'Unlock shape' : 'Lock shape'}
-          title="Lock"
-          onClick={() => onPatch({ locked: !lockedOn })}
-        >
-          <Lock className="h-4 w-4" strokeWidth={2} aria-hidden />
-        </ContextToggleButton>
-      </SelectionContextBarGroup>
-
-      <SelectionContextBarDivider />
-
       <SelectionContextActionsWithArrange
         showObjectArrange={showObjectArrange}
         onArrange={onArrange}
@@ -254,6 +231,16 @@ export function ShapeSelectionContextBar({
         deleteLabel="Delete selected shapes"
         actionsAriaLabel="Shape actions"
         arrangeIdPrefix="ctx-shape-arrange"
+        actionsPrefix={
+          <ContextToggleButton
+            active={lockedOn}
+            label={lockedOn ? 'Unlock shape' : 'Lock shape'}
+            title="Lock"
+            onClick={() => onPatch({ locked: !lockedOn })}
+          >
+            <Lock className="h-4 w-4" strokeWidth={2} aria-hidden />
+          </ContextToggleButton>
+        }
       />
     </SelectionContextBar>
   )

@@ -10,6 +10,10 @@ interface BookPartPrepStatusChipsProps {
   checksState: BookPartPrepChipState
   onTextClick: () => void
   onChecksClick: () => void
+  /** When true, Text chip shows as the open tool. */
+  textActive?: boolean
+  /** When true, Checks chip shows as the open tool. */
+  checksActive?: boolean
   className?: string
 }
 
@@ -24,11 +28,13 @@ function PrepVisualBadge({
   state,
   icon: Icon,
   onClick,
+  active = false,
 }: {
   label: string
   state: BookPartPrepChipState
   icon: LucideIcon
   onClick: () => void
+  active?: boolean
 }) {
   const ready = state === 'ready'
   const soon = state === 'soon'
@@ -37,6 +43,7 @@ function PrepVisualBadge({
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={active}
       aria-label={
         ready
           ? `${label} ready`
@@ -48,6 +55,7 @@ function PrepVisualBadge({
         'group flex w-[76px] flex-col items-center gap-2 rounded-2xl p-1 text-center transition',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)]/35 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-2)]',
         'active:scale-[0.96]',
+        active && 'ring-2 ring-[var(--brand-blue)]/30 ring-offset-2 ring-offset-[var(--surface-2)]',
       )}
     >
       <span className="relative inline-flex">
@@ -99,12 +107,26 @@ export function BookPartPrepStatusChips({
   checksState,
   onTextClick,
   onChecksClick,
+  textActive = false,
+  checksActive = false,
   className,
 }: BookPartPrepStatusChipsProps) {
   return (
     <div className={cn('flex flex-wrap items-start justify-center gap-3 lg:justify-start', className)}>
-      <PrepVisualBadge label="Text" state={textState} icon={ScrollText} onClick={onTextClick} />
-      <PrepVisualBadge label="Checks" state={checksState} icon={ListChecks} onClick={onChecksClick} />
+      <PrepVisualBadge
+        label="Text"
+        state={textState}
+        icon={ScrollText}
+        onClick={onTextClick}
+        active={textActive}
+      />
+      <PrepVisualBadge
+        label="Checks"
+        state={checksState}
+        icon={ListChecks}
+        onClick={onChecksClick}
+        active={checksActive}
+      />
     </div>
   )
 }

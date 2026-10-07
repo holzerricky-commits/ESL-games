@@ -4,6 +4,7 @@ import {
   lessonBoardCanvasViewportHeightPx,
   lessonBoardRunwayViewportHeightPx,
   lessonBoardWideDefaultContentHeightPx,
+  lessonBoardFocusStandardAnchorPx,
   lessonBoardWidePanelAnchorPx,
   lessonBoardWidePanelHeightPx,
   lessonBoardWideSpreadWidthPx,
@@ -43,6 +44,15 @@ describe('lesson-board-ink-layout', () => {
     const anchor = lessonBoardWidePanelAnchorPx(1000, 800, 976, 400, 12)
     expect(anchor.leftPx).toBe(12)
     expect(anchor.topPx).toBe(200)
+  })
+
+  it('lessonBoardFocusStandardAnchorPx centers the native slot without stretching width', () => {
+    const slotWidthPx = 400
+    const slotHeightPx = 776
+    const anchor = lessonBoardFocusStandardAnchorPx(1000, 800, slotWidthPx, slotHeightPx, 12)
+    expect(anchor.leftPx).toBe(300)
+    expect(anchor.topPx).toBe(12)
+    expect(slotWidthPx).toBeLessThan(1000 - 12 * 2)
   })
 
   it('lessonBoardWideDefaultContentHeightPx is 16:9 from inset spread width', () => {

@@ -237,6 +237,8 @@ export function BoardImageSearchPanel({
       q?: string
       style?: ImageStyleKey
       media?: BoardImageMediaType
+      /** Append new hits after existing ones (More). */
+      append?: boolean
     }): Promise<BoardImageSearchResult[]> => {
       const q = (opts?.q ?? query).trim()
       if (!q) {
@@ -260,9 +262,18 @@ export function BoardImageSearchPanel({
           searchHint: trimmedHint || undefined,
           mediaType: media,
         })
-        setResults(body.results)
-        setFallback(body.results.length > 0 ? undefined : body.fallback ?? 'no_results')
-        return body.results
+        const nextBatch = body.results
+        if (opts?.append) {
+          setResults((prev) => {
+            const seen = new Set(prev.map((hit) => hit.id))
+            const added = nextBatch.filter((hit) => !seen.has(hit.id))
+            return [...prev, ...added]
+          })
+        } else {
+          setResults(nextBatch)
+          setFallback(nextBatch.length > 0 ? undefined : body.fallback ?? 'no_results')
+        }
+        return nextBatch
       } finally {
         setLoading(false)
       }
@@ -337,9 +348,9 @@ export function BoardImageSearchPanel({
   }
 
   const handleRefresh = () => {
-    const nextVariant = searchVariant + 1
-    setSearchVariant(nextVariant)
-    void runSearch({ variant: nextVariant })
+    const nextPage = searchPage + 1
+    setSearchPage(nextPage)
+    void runSearch({ page: nextPage, append: true })
   }
 
   const handleThumbnailClick = (hit: BoardImageSearchResult, index: number) => {

@@ -1,5 +1,6 @@
-import { BOOK_LESSON_PART_TAG_LABELS, effectivePartStructureTag } from '@/lib/books/part-structure-tag'
+import { BOOK_LESSON_PART_TAG_LABELS, resolvePartStructureTag } from '@/lib/books/part-structure-tag'
 import { pageRangeForIndex } from '@/lib/books/toc-page-range'
+import type { TocExtractProfileId } from '@/lib/books/toc-extract-profile'
 import type {
   BookLessonPartRecord,
   BookLessonPartTag,
@@ -27,13 +28,14 @@ export function buildBookPartShelfCards(
   unit: BookUnitRecord,
   lesson: BookLessonRecord,
   lessonIndex: number,
+  profile: TocExtractProfileId = 'journeys',
 ): BookPartShelfCard[] {
   const lessons = unit.lessons ?? []
   const lessonRange = pageRangeForIndex(lessons, lessonIndex)
   const parts = lesson.parts ?? []
   return parts.map((part, partIndex) => {
     const range = pageRangeForIndex(parts, partIndex, lessonRange.start, lessonRange.end)
-    const tag = effectivePartStructureTag(part)
+    const tag = resolvePartStructureTag(part, partIndex, profile)
     return {
       id: part.id,
       title: part.title,

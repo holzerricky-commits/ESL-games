@@ -34,13 +34,8 @@ export function usePdfPageTextCapability(
     probeGenerationRef.current = generation
 
     const uniquePages = [...new Set(pageNumbers.filter((p) => p >= 1))]
-    setCapabilityByPage((prev) => {
-      const next = new Map(prev)
-      for (const pageNumber of uniquePages) {
-        if (!next.has(pageNumber)) next.set(pageNumber, 'pending')
-      }
-      return next
-    })
+    // Always re-probe when the PDF document or URL changes (e.g. after a stamp reload).
+    setCapabilityByPage(new Map(uniquePages.map((pageNumber) => [pageNumber, 'pending' as const])))
 
     let cancelled = false
 

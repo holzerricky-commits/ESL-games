@@ -80,8 +80,8 @@ function markerStrokeCmd(id: string): AnnotationCommand {
 }
 
 describe('resolveSelectionBarPlacement', () => {
-  it('places below when anchor is not near bottom edge', () => {
-    expect(resolveSelectionBarPlacement({ x: 0.2, y: 0.3, w: 0.2, h: 0.1 })).toBe('below')
+  it('places above by default', () => {
+    expect(resolveSelectionBarPlacement({ x: 0.2, y: 0.3, w: 0.2, h: 0.1 })).toBe('above')
   })
 
   it('places below when anchor is near top edge', () => {
@@ -90,6 +90,10 @@ describe('resolveSelectionBarPlacement', () => {
 
   it('places above when anchor is near bottom edge', () => {
     expect(resolveSelectionBarPlacement({ x: 0.2, y: 0.88, w: 0.2, h: 0.1 })).toBe('above')
+  })
+
+  it('places above at the flip threshold', () => {
+    expect(resolveSelectionBarPlacement({ x: 0.2, y: 0.08, w: 0.2, h: 0.05 })).toBe('above')
   })
 })
 

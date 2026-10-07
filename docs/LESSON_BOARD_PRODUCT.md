@@ -1,17 +1,19 @@
 # Lesson board — product decisions (locked)
 
-Last updated: 2026-06-03
+Last updated: 2026-09-18
 
-**Status:** Agreed direction. Replaces the “infinite vertical scroll = the product” framing in `INFINITE_WHITEBOARD_V1.md` for **structure and navigation**. Implementation phases live in **`LESSON_BOARD_PHASED_PLAN.md`**.
+**Status:** **Page model still stands** (Standard / Wide, New page, ink coordinates). **Ownership, teacher-facing name, and layout chrome** now live in **`NOTEBOOK_PRODUCT.md`** / **`NOTEBOOK_PHASED_PLAN.md`**.
 
-**UI name (teacher-facing):** Lesson board (code may still say `whiteboard` in places until rename passes).
+Replaces the “infinite vertical scroll = the product” framing in `INFINITE_WHITEBOARD_V1.md` for **structure and navigation**. Page-model implementation phases live in **`LESSON_BOARD_PHASED_PLAN.md`**.
+
+**UI name (teacher-facing):** **Notebook** (see `NOTEBOOK_PRODUCT.md`). Code may still say `whiteboard` / lesson board until a rename pass.
 
 ---
 
 ## What this is
 
-- **One lasting lesson board per student + book unit** — same ink across class sessions and when the **book** turns pages; the board does not reset when you start the next class or turn a PDF page.
-- **Book-first** — default view is the **spread + board in a slot** beside the active book page. The curriculum spine stays the PDF; the board is the session workspace.
+- **One lasting notebook per student** — see `NOTEBOOK_PRODUCT.md`. Same ink across class sessions and when the **book** turns pages or swaps. Do **not** keep a separate board per book unit.
+- **Book-first** — default view is the **spread + notebook Pin** beside the active book page. The curriculum spine stays the PDF; the notebook is the working paper.
 - **Not** a second app with “import from whiteboard into notebook.” Everything is **pages in one session document**, one table of contents (TOC).
 
 **Out of scope for this track**
@@ -58,28 +60,21 @@ Chosen **when the page is created**; **not** rotatable after content exists (dup
 - **Book page** = PDF page number in the reader.
 - **Board page** = index in the session board list.
 - UI must never imply they are the same index.
-- Optional metadata per board page: `bookPageHint` (PDF page you were on when you created or last edited) — for recap and future lesson prep, not for locking coordinates.
+- Optional metadata per board page: weak `bookPageHint` (PDF page you were on when you created or last edited) — for recap, not a folder. Explicit **book links** (book + page + spot) are defined in `NOTEBOOK_PRODUCT.md`.
 
 ---
 
 ## Layout & focus (replaces spread fullscreen)
 
-### Default: docked slot
+### Layout chrome → Notebook product
 
-- Board lives in **left or right spread slot** (opposite reader focus); drag header to swap sides — **keep current behavior**.
-- This is the **home** layout for live 1:1 teaching.
-
-### No fullscreen / focus zoom
+Pin (slot), Tab, Overlay (float), and Park, plus which control does what, are locked in **`NOTEBOOK_PRODUCT.md`**. This section only keeps the page-geometry rules:
 
 - **Do not** widen a Standard page to full spread width — that stretches ink.
-- There is **no** fullscreen or focus-zoom control on the board header (removed).
-- **Standard** pages stay in the docked slot; **Wide** pages still open across the spread automatically.
+- **Standard** pages keep native aspect in Pin, Tab, and Overlay.
+- **Wide** pages cover the spread when a book is focused; they are not a free Overlay window.
 
-### Floating panel (Phase 6)
-
-- **Float** (header button) detaches a **Standard** page above the book; **Dock** snaps back to the saved slot side.
-- Drag the header grip to move; **corner resize** scales uniformly (aspect locked).
-- **Wide** pages stay on the spread overlay — floating is not offered for them.
+Slot side swap and Overlay drag/resize stay as built.
 
 ---
 
@@ -87,7 +82,7 @@ Chosen **when the page is created**; **not** rotatable after content exists (dup
 
 - Commands stay **normalized 0–1** relative to that page’s **logical width × height**.
 - Switching **view** (slot, focus, float) only changes **scale/transform** of the viewport — not the stored aspect of the page.
-- **One lasting store key** per student/book/unit (`wb:session:local:{bookId}:{unitId}`); legacy per-class keys may still be read once to migrate ink. Document shape includes `pages[]` (see phased plan).
+- **One lasting store key per student** (`wb:session:local:student:{studentId}` — see `NOTEBOOK_PHASED_PLAN.md` Phase 2). Legacy `wb:session:local:{bookId}:{unitId}` and per-class keys may still be read once to merge. Document shape includes `pages[]` (see phased plan).
 
 ---
 
@@ -96,10 +91,10 @@ Chosen **when the page is created**; **not** rotatable after content exists (dup
 | Doc | Relationship |
 |-----|----------------|
 | `INFINITE_WHITEBOARD_V1.md` | Historical implementation plan; Phases 1–3 largely **built**. Scroll runway may remain **inside a page** but is not the product model going forward. |
-| `NOTEBOOK_REBUILD_PHASES.md` | Separate **class log / structured notebook** track; not the live lesson board. No “import whiteboard capture” required if board pages are the canonical session artifact. |
+| `NOTEBOOK_PRODUCT.md` | **Ownership, layouts, chrome, links.** Source of truth for those. |
+| `NOTEBOOK_REBUILD_PHASES.md` | Historical typed class log. Do not revive. |
 | `WHITEBOARD_INK_UNIFIED_PLAN.md` | Session ink layer — still valid; scope per **page** instead of one tall runway. |
-| `LESSON_BOARD_NAV_PRODUCT.md` | **Board finding & identity** (book name/color, unit picker, next-unit handoff). Does not replace this doc’s page/dock model. |
-| `LESSON_BOARD_NAV_PHASED_PLAN.md` | Implement nav/identity **phase by phase** (test after each). |
+| `LESSON_BOARD_NAV_PRODUCT.md` | Footer page nav still useful. Per-book storage and Boards-as-picker superseded by `NOTEBOOK_PRODUCT.md`. |
 
 ---
 
@@ -109,14 +104,13 @@ Chosen **when the page is created**; **not** rotatable after content exists (dup
 2. **Standard** and **Wide** pages coexist; thumbnails show orientation.
 3. **No** horizontal stretch when switching layout modes on the same page.
 4. Book page turns do not wipe or split board content.
-5. Board notes (and book→board links) survive into the next class for the same student + book unit.
+5. Notebook notes (and book↔notebook links) survive into the next class for **this student**.
 
 ---
 
 ## Open questions (resolve in implementation, not blockers for Phase 1)
 
-- Exact **wide page** aspect ratio constant (16∶9 vs 2∶1).
-- **Focus** for Standard pages: Phase 5 vs later zoom.
+- Exact **wide page** aspect ratio constant (16∶9 vs 2∶1) — 16∶9 is already in types.
 - **Page delete / reorder** in v1 or v2.
-- Export to class log: snapshot of page thumbnails vs full JSON.
-- Board **nav/identity** open questions live in `LESSON_BOARD_NAV_PRODUCT.md` (color assignment, next-unit trigger, Phase 4 vs hub).
+- Export snapshots vs full JSON — later.
+- Layout chrome / Tab / ownership → `NOTEBOOK_PRODUCT.md` (no longer open here).

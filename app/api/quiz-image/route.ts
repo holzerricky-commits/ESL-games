@@ -16,6 +16,7 @@ import {
   type ImageStyleKey,
 } from '@/lib/quiz-image-style'
 import { scoreGifMetadata, STATIC_IMAGE_MIN_ACCEPT_SCORE } from '@/lib/quiz-image-relevance'
+import { pickBestImageWithGemini } from '@/lib/quiz-image-vision-pick'
 
 const IMAGE_CACHE_TTL_MS = 30 * 60_000
 const IMAGE_CACHE_MAX_ENTRIES = 300
@@ -27,13 +28,15 @@ function buildImageCacheKey(
   variant: string,
   searchQueryExtra: string,
   styleKey: ImageStyleKey,
-  prevComparable: string
+  prevComparable: string,
+  pickMode: string,
 ): string {
   const sq = searchQueryExtra.trim().toLowerCase().slice(0, 120)
   const sqPart = sq ? `|${variantHash(sq)}` : ''
   const v = variant.trim().slice(0, 64)
   const pPart = prevComparable ? `|p${variantHash(prevComparable)}` : ''
-  return `${mediaType}|${query.toLowerCase().trim()}|${v}${sqPart}|${styleKey}${pPart}`
+  const pickPart = pickMode === 'vision' ? '|vision' : ''
+  return `${mediaType}|${query.toLowerCase().trim()}|${v}${sqPart}|${styleKey}${pPart}${pickPart}`
 }
 
 type ScoredUrl = { url: string; score: number }
@@ -201,12 +204,12 @@ function buildGifSearchTiers(
   const q = rawWord.toLowerCase().trim().slice(0, 100)
   const opts = imageSearchQuery?.trim() ? { imageSearchQuery } : undefined
   const tier1Base = buildGifSearchQuery(rawWord, opts)
-  const tier1 = applyStyleToGifSearchString(tier1Base, styleKey, variant, 0)
+  const tier1 = applyStyleToGifSearchString(tier1Base, styleKey, variant, 0, q)
   const tier2Base = q.length > 0 ? q : 'object'
-  const tier2 = applyStyleToGifSearchString(tier2Base, styleKey, variant, 1)
+  const tier2 = applyStyleToGifSearchString(tier2Base, styleKey, variant, 1, q)
   const tier3Base =
     variantHash(`${rawWord}\0gif-tier3\0${styleKey}`) % 2 === 0 ? `${tier2Base} loop` : `${tier2Base} simple`
-  const tier3 = applyStyleToGifSearchString(tier3Base, styleKey, variant, 2)
+  const tier3 = applyStyleToGifSearchString(tier3Base, styleKey, variant, 2, q)
   const tiers: string[] = [tier1]
   if (tier2 !== tier1) tiers.push(tier2)
   if (tier3 !== tier2 && tier3 !== tier1) tiers.push(tier3)
@@ -294,6 +297,7 @@ function selectBestGifUrl(
  * Keyword-relevant quiz media:
  * - type=static: Pixabay when `PIXABAY_API_KEY` is set (rejects low-score hits); otherwise SVG.
  * - type=gif: GIPHY search when `GIPHY_API_KEY` is set, otherwise SVG placeholder.
+ * - pick=vision: word-only Pixabay top hits, then Gemini chooses the best match (Translate).
  *
  * Query: q = vocabulary term, v = variant id (new seed per "Try another image"), type=static|gif.
  */
@@ -312,11 +316,22 @@ export async function GET(req: NextRequest) {
   const mediaType: 'static' | 'gif' = typeParam === 'gif' ? 'gif' : 'static'
   const prevRaw = req.nextUrl.searchParams.get('prev')?.trim().slice(0, 800) ?? ''
   const prevNorm = prevRaw ? normalizeComparableImageUrl(prevRaw) : null
+  const pickMode = req.nextUrl.searchParams.get('pick')?.trim().toLowerCase() === 'vision' ? 'vision' : ''
 
   const giphyApiKey = process.env.GIPHY_API_KEY?.trim()
   const pixabayApiKey = process.env.PIXABAY_API_KEY?.trim()
-  const queryOpts = imageSearchQuery ? { imageSearchQuery } : undefined
-  const cacheKey = buildImageCacheKey(q, mediaType, v, imageSearchQuery ?? '', styleKey, prevNorm ?? '')
+  // Vision pick uses word-only search; ignore phrase hints so "red flower" cannot become a red apple.
+  const queryOpts =
+    pickMode === 'vision' ? undefined : imageSearchQuery ? { imageSearchQuery } : undefined
+  const cacheKey = buildImageCacheKey(
+    q,
+    mediaType,
+    v,
+    pickMode === 'vision' ? '' : imageSearchQuery ?? '',
+    styleKey,
+    prevNorm ?? '',
+    pickMode,
+  )
   const cached = getCachedImageUrl(cacheKey)
   if (cached) {
     return NextResponse.redirect(cached, 302)
@@ -356,6 +371,21 @@ export async function GET(req: NextRequest) {
 
   if (pixabayApiKey) {
     try {
+      if (pickMode === 'vision') {
+        const visionUrl = await resolveStaticWithVisionPick({
+          word: q,
+          variant: v,
+          styleKey,
+          pixabayApiKey,
+          prevNorm,
+        })
+        if (visionUrl) {
+          cacheImageUrl(cacheKey, visionUrl)
+          return NextResponse.redirect(visionUrl, 302)
+        }
+        return svgResponse(noStaticFoundSvgMarkup(q))
+      }
+
       const baseStatic = buildStaticSearchQuery(q, queryOpts)
       const pxImageType = getPixabayImageType(styleKey)
       const scoreFloor = styleMinScoreForRetry(styleKey)
@@ -364,7 +394,7 @@ export async function GET(req: NextRequest) {
       const pxCandidates = new Map<string, ScoredUrl>()
 
       for (let qv = 0; qv < maxPxVariants; qv += 1) {
-        const searchQuery = applyStyleToStaticBaseQuery(baseStatic, styleKey, v, qv)
+        const searchQuery = applyStyleToStaticBaseQuery(baseStatic, styleKey, v, qv, q)
         const hits = await fetchPixabayHits(pixabayApiKey, searchQuery, {
           imageType: pxImageType,
           perPage: 18,
@@ -402,6 +432,70 @@ export async function GET(req: NextRequest) {
   }
 
   return svgResponse(noStaticFoundSvgMarkup(q))
+}
+
+/**
+ * Word-only Pixabay top hits, then Gemini vision picks the best match.
+ * Tag-score ranking is the fallback if vision is unavailable.
+ */
+async function resolveStaticWithVisionPick(args: {
+  word: string
+  variant: string
+  styleKey: ImageStyleKey
+  pixabayApiKey: string
+  prevNorm: string | null
+}): Promise<string | null> {
+  const { word, variant, styleKey, pixabayApiKey, prevNorm } = args
+  const pxImageType = getPixabayImageType(styleKey)
+  // Literal word first (Google-like), then curated/stock phrase as a second pool.
+  const curated = buildStaticSearchQuery(word)
+  const searchQueries = [word]
+  if (curated.toLowerCase() !== word.toLowerCase()) searchQueries.push(curated)
+
+  const byUrl = new Map<
+    string,
+    { id: string; score: number; fullUrl: string; thumbUrl: string }
+  >()
+
+  for (const searchQuery of searchQueries) {
+    const page = 1 + (variantHash(`${word}\0vision\0${variant}\0${searchQuery}`) % 3)
+    const hits = await fetchPixabayHits(pixabayApiKey, searchQuery, {
+      imageType: pxImageType,
+      perPage: 20,
+      page,
+    })
+    for (const scored of scoreAndMergePixabayHits(word, hits, styleKey)) {
+      const key = normalizeComparableImageUrl(scored.fullUrl)
+      if (!key) continue
+      if (prevNorm && key === prevNorm) continue
+      const existing = byUrl.get(key)
+      if (!existing || scored.score > existing.score) {
+        byUrl.set(key, {
+          id: scored.id,
+          score: scored.score,
+          fullUrl: scored.fullUrl,
+          thumbUrl: scored.thumbUrl,
+        })
+      }
+    }
+  }
+
+  const ranked = [...byUrl.values()].sort((a, b) => b.score - a.score)
+  if (ranked.length === 0) return null
+
+  // Soft pre-filter: keep a pool for vision (not only high tag scores).
+  const pool = ranked.slice(0, 20)
+  const vision = await pickBestImageWithGemini(
+    word,
+    pool.map((c) => ({ id: c.id, fullUrl: c.fullUrl, thumbUrl: c.thumbUrl })),
+    { maxCandidates: 10 },
+  )
+  if (vision.ok) return vision.fullUrl
+
+  // Fallback: best tag score that still clears the accept floor when possible.
+  const acceptFloor = STATIC_IMAGE_MIN_ACCEPT_SCORE
+  const good = pool.find((c) => c.score >= acceptFloor)
+  return (good ?? pool[0])?.fullUrl ?? null
 }
 
 function meetsAcceptFloor(

@@ -6,6 +6,7 @@ import {
   inferStructureTagFromTitle,
   normalizeLessonsStructureTags,
   resolvePartStructureTag,
+  resolvePartStoryKind,
   templateTagForPartIndex,
 } from '@/lib/books/part-structure-tag'
 import type { BookLessonPartRecord } from '@/lib/books/types'
@@ -96,5 +97,13 @@ describe('part-structure-tag', () => {
   it('resolvePartStructureTag prefers saved tag', () => {
     const part: BookLessonPartRecord = { id: 'p1', title: 'Part 9', structureTag: 'grammar' }
     expect(resolvePartStructureTag(part, 0)).toBe('grammar')
+  })
+
+  it('resolvePartStructureTag uses Journeys slot for bare selection titles', () => {
+    expect(resolvePartStructureTag({ id: 'p', title: 'Yonder Mountain' }, 2)).toBe('main_story')
+    expect(resolvePartStructureTag({ id: 'p', title: 'The Trail of Tears' }, 4)).toBe('paired_story')
+    expect(resolvePartStoryKind({ id: 'p', title: 'Yonder Mountain' }, 2)).toBe('main_story')
+    expect(resolvePartStoryKind({ id: 'p', title: 'The Trail of Tears' }, 4)).toBe('paired_story')
+    expect(resolvePartStoryKind({ id: 'p', title: 'Vocabulary in Context' }, 0)).toBeUndefined()
   })
 })

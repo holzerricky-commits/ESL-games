@@ -1,0 +1,203 @@
+{
+  "storyId": "journeys-g3-book-1::unit-3-3e7eaa87::lesson-f007ffa1::part-b83a25c3",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-3-3e7eaa87",
+  "status": "approved",
+  "stops": [
+    {
+      "id": "stop-81fabfc8",
+      "label": "Beany's worry",
+      "displayPage": 400,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 408,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-c42e24ae",
+          "kind": "mcq",
+          "prompt": "What is Beany worried about for the science fair?",
+          "choices": [
+            "That Kevin will not be a good partner.",
+            "That their experiment will not get a good grade.",
+            "That Ms. Babbitt will be angry with them.",
+            "That they will run out of supplies."
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "But Beany is worried that their experiment will not get a good grade. Some of the other students are making glittery posters. Others are going to play music. Kevin insists that all they need is good science. How can they compete without fancy props?",
+          "evidenceHighlight": "Beany is worried that their experiment will not get a good grade."
+        }
+      ]
+    },
+    {
+      "id": "stop-8979cef3",
+      "label": "Story Narrator",
+      "displayPage": 402,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 410,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-ac0eb2ba",
+          "kind": "mcq",
+          "prompt": "Who is telling the story?",
+          "choices": [
+            "A character in the story",
+            "Someone outside the story",
+            "Ms. Babbitt",
+            "Kevin"
+          ],
+          "correctIndex": 0,
+          "correctTrue": null,
+          "evidenceSnippet": "On the day of the science fair, I woke up early, before the alarm went off. I lay in bed hugging Jingle Bell and worrying.",
+          "evidenceHighlight": "I woke up early"
+        }
+      ]
+    },
+    {
+      "id": "stop-01f06afc",
+      "label": "Other students' attitudes",
+      "displayPage": 404,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 412,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-83a8de98",
+          "kind": "true_false",
+          "prompt": "True or False: Carol Ann and Stacy were worried about their science project.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "In the bus that morning, I saw that Carol Ann and Stacy were dressed alike. Carol Ann and Stacy didn't seem worried. They were talking nonstop about how much fun the science fair was going to be.",
+          "evidenceHighlight": "Carol Ann and Stacy didn't seem worried."
+        }
+      ]
+    },
+    {
+      "id": "stop-9ded8280",
+      "label": "Beany's comparisons",
+      "displayPage": 406,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 414,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-02bbf5bc",
+          "kind": "mcq",
+          "prompt": "What did Beany want to add to her project after seeing other projects?",
+          "choices": [
+            "A volcano",
+            "Streamers",
+            "A black tablecloth with stars",
+            "All of the above"
+          ],
+          "correctIndex": 3,
+          "correctTrue": null,
+          "evidenceSnippet": "When I saw the volcano, I ran back to our table. 'Kevin, you should see the volcano. It's huge. Why didn't we think of a volcano?' ... 'Carol Ann and Stacy have streamers all around the edge of their table. Why didn't we think of that?' ... 'Manuel and Boomer are doing a planet project, and they have a black tablecloth with stars all over it. Why didn't we use a cool tablecloth instead of a dumb white one with a gravy stain on it?'",
+          "evidenceHighlight": "Why didn't we think of a volcano?"
+        }
+      ]
+    },
+    {
+      "id": "stop-da970089",
+      "label": "Beany's feelings from dialogue",
+      "displayPage": 408,
+      "midPageNote": "This question refers to dialogue on pages 408-409.",
+      "hotspot": {
+        "pdfPage": 416,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-b827a8f5",
+          "kind": "mcq",
+          "prompt": "What do you learn about Beany's feelings from the dialogue on these pages?",
+          "choices": [
+            "She is calm and confident.",
+            "She is very worried and comparing her project to others.",
+            "She is excited to present her project.",
+            "She is annoyed with Kevin."
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "'Linda and Elaine have bubbles for their project, big ones!' I said, out of breath. 'Everybody loves bubbles. Why didn't we do bubbles?' ... 'Oh no,' I said to Kevin. 'Look at all those balloons! Balloons are better than bubbles! How come we only have one itsy-bitsy one in our project?'",
+          "evidenceHighlight": "Why didn't we do bubbles?"
+        }
+      ]
+    },
+    {
+      "id": "stop-f6e0e6b1",
+      "label": "The presentation",
+      "displayPage": 410,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 418,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-c9421719",
+          "kind": "true_false",
+          "prompt": "True or False: Beany and Kevin only showed how heat makes gases expand.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "Then he poked me with his elbow, and I said, 'We will now show how heat makes gases expand.' Then Kevin did the experiment with the balloon on the bottle and explained everything he was doing as he went along. Next I said, 'We will now show how heat makes liquids expand.' ... Then it was Kevin's turn to talk. He said, 'We will now show how heat makes solids expand.'",
+          "evidenceHighlight": "gases expand"
+        }
+      ]
+    },
+    {
+      "id": "stop-f90c3983",
+      "label": "Beany wins first prize",
+      "displayPage": 414,
+      "midPageNote": "This question refers to Beany's reaction on page 414.",
+      "hotspot": {
+        "pdfPage": 422,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-ad59f404",
+          "kind": "mcq",
+          "prompt": "How did Beany react when she found out she won first place?",
+          "choices": [
+            "She was quiet and shy.",
+            "She screamed and jumped up and down.",
+            "She started to cry.",
+            "She just smiled at Kevin."
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "'Go,' he said. 'We won.' 'We what?' 'We won.' I screamed and jumped up and down. I couldn't believe it!",
+          "evidenceHighlight": "I screamed and jumped up and down."
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-09-25T13:41:50.926Z",
+  "approvedAt": "2026-09-25T13:41:50.925Z"
+}

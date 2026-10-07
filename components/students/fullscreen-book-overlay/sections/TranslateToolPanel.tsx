@@ -23,10 +23,6 @@ import { toast } from 'sonner'
 import { focusBookOverlayCanvasSink } from '@/lib/books/book-overlay-keyboard-guards'
 import { ClassToolDrawerShell } from '@/components/students/fullscreen-book-overlay/sections/ClassToolDrawerShell'
 import { getReliableImageUrl } from '@/lib/helpers'
-import {
-  buildTranslateImageSearchHint,
-  getCuratedImageSearchOverride,
-} from '@/lib/quiz-image-queries'
 
 const ICON_BTN =
   'flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-[#71717a] transition-colors hover:bg-white/5 hover:text-[#f4f4f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#71717a] disabled:pointer-events-none disabled:opacity-40'
@@ -80,7 +76,6 @@ export function TranslateToolPanel({
   const [pickPulse, setPickPulse] = useState<string | null>(null)
   const pickPulseTimerRef = useRef<number | null>(null)
   const clientCacheRef = useRef<Map<string, TranslationResult>>(new Map())
-  const imagePhraseCacheRef = useRef<Map<string, string>>(new Map())
   const imageVariantRef = useRef(0)
   const { saveWord } = useSavedWords({
     studentId,
@@ -174,35 +169,15 @@ export function TranslateToolPanel({
       if (changing) imageVariantRef.current += 1
       else imageVariantRef.current = 0
 
-      const cacheKey = `${word.toLowerCase()}::${(result.exampleEn ?? '').trim().toLowerCase().slice(0, 80)}`
-      let searchQuery = imagePhraseCacheRef.current.get(cacheKey)
-      if (searchQuery == null) {
-        searchQuery = buildTranslateImageSearchHint(word, result.exampleEn) ?? ''
-        if (!searchQuery && !getCuratedImageSearchOverride(word)) {
-          try {
-            const res = await fetch('/api/image-search-phrase', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ words: [word] }),
-            })
-            if (res.ok) {
-              const data = (await res.json()) as { phrases?: Record<string, string> }
-              searchQuery = data.phrases?.[word.toLowerCase().trim()]?.trim() ?? ''
-            }
-          } catch {
-            /* fall back to the default stock query */
-          }
-        }
-        imagePhraseCacheRef.current.set(cacheKey, searchQuery)
-      }
-
+      // Word-only Pixabay pool + Gemini vision pick (no example-sentence search).
       const imageUrl = getReliableImageUrl(
         word,
         `translate-${imageVariantRef.current}`,
         'static',
-        searchQuery || undefined,
+        undefined,
         'Photo',
         changing ? resolvedImageUrl || undefined : undefined,
+        'vision',
       )
       setResultImageUrl(imageUrl)
     } catch {

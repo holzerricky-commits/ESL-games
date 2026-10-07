@@ -26,8 +26,8 @@ Your job:
   answer or tip text if printed (omit the <<<answer>>> line if none)
   <<</stop_check>>>
 - Do not invent text. If a word is unreadable, use [?] for that word.
-- If a page has no story prose (full-page illustration, title spread with no body), output a line exactly: --- Page N --- (use the PDF page number from the user message) followed by the exact line: ${READING_STORY_ILLUSTRATION_ONLY_PLACEHOLDER}
-- If a multi-page attachment mixes text and art, transcribe text pages normally and mark art-only pages with --- Page N --- and ${READING_STORY_ILLUSTRATION_ONLY_PLACEHOLDER}.
+- For EVERY attached PDF page, start that page with a line exactly: --- Page N --- (use the PDF page number from the user message). Then output that page’s story prose, or if the page has no story prose, the exact line: ${READING_STORY_ILLUSTRATION_ONLY_PLACEHOLDER}
+- Never merge two pages into one block. Never write --- Pages A–B ---. One --- Page N --- heading per page, even in a 2-page attachment.
 - Return plain text only — no JSON, no markdown fences, no commentary before or after the transcript.`
 
 async function callGeminiWithPdf(
@@ -111,9 +111,29 @@ async function callGeminiWithPdf(
   }
 }
 
-function pageHeading(start: number, end: number): string {
-  if (start === end) return `--- Page ${start} ---`
-  return `--- Pages ${start}–${end} ---`
+function pdfPageList(start: number, end: number): number[] {
+  const pages: number[] = []
+  for (let p = start; p <= end; p += 1) pages.push(p)
+  return pages
+}
+
+function transcribeUserMessage(start: number, end: number): string {
+  if (start === end) {
+    return [
+      `PDF page ${start} (1-based). The attachment contains ONLY this page.`,
+      `Start the page with --- Page ${start} --- then that page’s story prose, or ${READING_STORY_ILLUSTRATION_ONLY_PLACEHOLDER}.`,
+      '',
+      'Transcribe the story prose from this page.',
+    ].join('\n')
+  }
+  const pages = pdfPageList(start, end)
+  return [
+    `PDF pages ${start}–${end} (1-based, inclusive). The attachment contains ONLY these pages.`,
+    `For EACH page, start with --- Page N --- using these PDF page numbers in order: ${pages.join(', ')}. Then that page’s story prose, or ${READING_STORY_ILLUSTRATION_ONLY_PLACEHOLDER}.`,
+    'Never merge two pages without a --- Page N --- break.',
+    '',
+    'Transcribe the story prose from these pages.',
+  ].join('\n')
 }
 
 async function getPdfPageCount(absFilePath: string): Promise<number> {
@@ -177,15 +197,7 @@ export async function extractStoryTextChunkWithGemini(
     }
   }
 
-  const pageRangeLabel =
-    start === chunkEnd
-      ? `PDF page ${start} (1-based). The attachment contains ONLY this page.`
-      : `PDF pages ${start}–${chunkEnd} (1-based, inclusive). The attachment contains ONLY these pages.`
-
-  const gem = await callGeminiWithPdf(
-    `${pageRangeLabel}\n\nTranscribe the story prose from these pages.`,
-    pdfBytes,
-  )
+  const gem = await callGeminiWithPdf(transcribeUserMessage(start, chunkEnd), pdfBytes)
   if (!gem.ok) return gem
 
   const body = gem.text.trim()
@@ -195,7 +207,7 @@ export async function extractStoryTextChunkWithGemini(
 
   return {
     ok: true,
-    text: `${pageHeading(start, chunkEnd)}\n${body}`,
+    text: body,
     extractedPages: chunkEnd - start + 1,
   }
 }

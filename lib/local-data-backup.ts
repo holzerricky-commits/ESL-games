@@ -55,6 +55,7 @@ export async function buildBackupPayloadAsync(): Promise<LocalDataBackupPayload>
       savedWordsRes,
       boardLinksRes,
       readerProgressRes,
+      lessonVaultRes,
     ] = await Promise.all([
       fetch('/api/local-data/students', { cache: 'no-store' }),
       fetch('/api/local-data/student-progress', { cache: 'no-store' }),
@@ -64,6 +65,7 @@ export async function buildBackupPayloadAsync(): Promise<LocalDataBackupPayload>
       fetch('/api/local-data/saved-words', { cache: 'no-store' }),
       fetch('/api/local-data/lesson-board-links', { cache: 'no-store' }),
       fetch('/api/local-data/reader-progress', { cache: 'no-store' }),
+      fetch('/api/local-data/lesson-vault', { cache: 'no-store' }),
     ])
     if (studentsRes.ok) {
       const data = (await studentsRes.json()) as { students?: unknown[] }
@@ -130,6 +132,12 @@ export async function buildBackupPayloadAsync(): Promise<LocalDataBackupPayload>
       const data = (await readerProgressRes.json()) as { progress?: Record<string, unknown> }
       if (data.progress && typeof data.progress === 'object') {
         payload.localStorage.esl_book_reader_progress_v1 = JSON.stringify(data.progress)
+      }
+    }
+    if (lessonVaultRes.ok) {
+      const data = (await lessonVaultRes.json()) as { byStudent?: Record<string, unknown[]> }
+      if (data.byStudent && typeof data.byStudent === 'object') {
+        payload.localStorage.esl_lesson_vault_v1 = JSON.stringify({ byStudent: data.byStudent })
       }
     }
   } catch {
@@ -326,6 +334,19 @@ async function applyDiskStudentRecordsFromBackup(payload: LocalDataBackupPayload
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(parsed),
+      })
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const lessonVaultRaw = payload.localStorage.esl_lesson_vault_v1
+  if (lessonVaultRaw) {
+    try {
+      await fetch('/api/local-data/lesson-vault', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(JSON.parse(lessonVaultRaw) as unknown),
       })
     } catch {
       /* ignore */

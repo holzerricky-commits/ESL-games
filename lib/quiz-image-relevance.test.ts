@@ -51,4 +51,13 @@ describe('scoreTextRelevance classroom stock', () => {
     )
     expect(score).toBeGreaterThanOrEqual(STATIC_IMAGE_MIN_ACCEPT_SCORE)
   })
+
+  it('rejects stock-style tags when the search word never appears', () => {
+    const score = scoreTextRelevance(
+      'elephant',
+      'isolated white background clean background stock photo product studio',
+      'photo',
+    )
+    expect(score).toBeLessThan(STATIC_IMAGE_MIN_ACCEPT_SCORE)
+  })
 })

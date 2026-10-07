@@ -34,6 +34,9 @@ interface StoryCheckQuestionCardProps {
   onChange: (next: ReadingCheckStop) => void
   onDuplicate: () => void
   onDelete: () => void
+  /** Keep the editor open; the book is already visible beside this panel. */
+  keepBookVisible?: boolean
+  compact?: boolean
 }
 
 export function StoryCheckQuestionCard({
@@ -45,6 +48,8 @@ export function StoryCheckQuestionCard({
   onChange,
   onDuplicate,
   onDelete,
+  keepBookVisible = false,
+  compact = false,
 }: StoryCheckQuestionCardProps) {
   const [tryoutOpen, setTryoutOpen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
@@ -76,10 +81,14 @@ export function StoryCheckQuestionCard({
       unitId,
     })
     if (!started) {
-      toast.error('Open the student’s book first, then place the pin on the page.')
+      toast.error(
+        keepBookVisible
+          ? 'Turn to the check’s page on the right, then tap to place the pin.'
+          : 'Open the student’s book first, then place the pin on the page.',
+      )
       return
     }
-    dismissReadingCheckPlacementUi()
+    if (!keepBookVisible) dismissReadingCheckPlacementUi()
   }
 
   return (
@@ -124,7 +133,12 @@ export function StoryCheckQuestionCard({
           value={q.prompt}
           placeholder="Question"
           rows={2}
-          className="col-span-full max-h-[5.5rem] min-h-0 w-full resize-none overflow-y-auto border-0 bg-transparent p-0 text-[34px] font-bold leading-[1.15] tracking-tight text-foreground shadow-none placeholder:font-semibold placeholder:text-muted-foreground/40 focus-visible:ring-0 sm:max-h-[6.5rem] sm:text-[40px] md:text-[40px]"
+          className={cn(
+            'col-span-full min-h-0 w-full resize-none overflow-y-auto border-0 bg-transparent p-0 font-bold leading-[1.15] tracking-tight text-foreground shadow-none placeholder:font-semibold placeholder:text-muted-foreground/40 focus-visible:ring-0',
+            compact
+              ? 'max-h-[6.5rem] text-[22px]'
+              : 'max-h-[5.5rem] text-[34px] sm:max-h-[6.5rem] sm:text-[40px] md:text-[40px]',
+          )}
           onChange={(e) => patchQuestion({ prompt: e.target.value })}
         />
 

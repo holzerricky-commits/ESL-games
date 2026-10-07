@@ -6,10 +6,12 @@ import {
   getLessonBoardActivePage,
   lessonBoardMaxContentHeightPx,
   lessonBoardMinContentHeightPx,
+  normalizeLessonBoardPagePrimaryLink,
   syncLessonBoardActivePageToCommands,
   syncLessonBoardCommandsToActivePage,
   type LessonBoardPage,
   type LessonBoardPageOrientation,
+  type LessonBoardPagePrimaryLink,
 } from '@/lib/books/lesson-board-types'
 
 export function lessonBoardPageStorageKey(sessionStoragePageKey: string, pageId: string): string {
@@ -223,6 +225,53 @@ export function setLessonBoardPageBookPageHint(
     p.id === pageId ? { ...p, bookPageHint: hint } : p,
   )
   return { ...flushed, pages }
+}
+
+export function setLessonBoardPagePrimaryLink(
+  doc: WhiteboardSessionDocument,
+  pageId: string,
+  link: LessonBoardPagePrimaryLink | null,
+): WhiteboardSessionDocument | null {
+  const flushed = syncLessonBoardCommandsToActivePage(doc)
+  if (!flushed.pages.some((p) => p.id === pageId)) return null
+  const normalized = link ? normalizeLessonBoardPagePrimaryLink(link) : undefined
+  const current = flushed.pages.find((p) => p.id === pageId)
+  const currentLink = current?.primaryLink
+  const same =
+    (!normalized && !currentLink) ||
+    (normalized &&
+      currentLink &&
+      currentLink.bookId === normalized.bookId &&
+      currentLink.pdfPage === normalized.pdfPage &&
+      (currentLink.center?.[0] ?? null) === (normalized.center?.[0] ?? null) &&
+      (currentLink.center?.[1] ?? null) === (normalized.center?.[1] ?? null))
+  if (same) return null
+  const pages = flushed.pages.map((p) => {
+    if (p.id !== pageId) return p
+    if (!normalized) {
+      const { primaryLink: _removed, ...rest } = p
+      return rest
+    }
+    return {
+      ...p,
+      primaryLink: normalized,
+      bookPageHint: normalized.pdfPage,
+    }
+  })
+  return { ...flushed, pages }
+}
+
+export function applyLessonBoardPagePrimaryLinks(
+  doc: WhiteboardSessionDocument,
+  linksByPageId: ReadonlyMap<string, LessonBoardPagePrimaryLink>,
+): WhiteboardSessionDocument | null {
+  if (linksByPageId.size === 0) return null
+  let next: WhiteboardSessionDocument | null = null
+  for (const [pageId, link] of linksByPageId) {
+    const applied = setLessonBoardPagePrimaryLink(next ?? doc, pageId, link)
+    if (applied) next = applied
+  }
+  return next
 }
 
 export function lessonBoardPageDisplayLabel(page: LessonBoardPage, index: number): string {

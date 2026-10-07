@@ -59,8 +59,19 @@ export function clearThumbnailCacheForUnit(unitId: string): void {
   }
 }
 
+/** Drop cached docs for this URL and any cache-busted variants (`&v=` / `?v=`). */
 export function clearPdfLoadCacheForFileUrl(fileUrl: string): void {
   pdfLoadCache.delete(fileUrl)
+  for (const key of [...pdfLoadCache.keys()]) {
+    if (key.startsWith(fileUrl)) pdfLoadCache.delete(key)
+  }
+}
+
+/** Append a version query so the browser cannot reuse a pre-stamp PDF body. */
+export function withPdfFileCacheBust(fileUrl: string, epoch: number): string {
+  const safeEpoch = Number.isFinite(epoch) && epoch > 0 ? Math.floor(epoch) : 0
+  if (safeEpoch <= 0) return fileUrl
+  return fileUrl.includes('?') ? `${fileUrl}&v=${safeEpoch}` : `${fileUrl}?v=${safeEpoch}`
 }
 
 /**

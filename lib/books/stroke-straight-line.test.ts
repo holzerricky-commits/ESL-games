@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { smoothingLevelToBlend } from '@/lib/books/stroke-pointer-samples'
 import {
   extendStrokeDraftFromMove,
   finalizeStrokeDraftEndPoint,
@@ -87,18 +88,33 @@ describe('stroke-straight-line', () => {
 
   it('extendStrokeDraftFromMove appends all coalesced freehand samples', () => {
     const draft = { tool: 'pen' as const, points: [[0.1, 0.2]] as [number, number][] }
+    const blend = smoothingLevelToBlend(5)
     extendStrokeDraftFromMove(draft, [
       [0.15, 0.22],
       [0.3, 0.4],
     ], {
       shiftKey: false,
       markerStraightStrokeEnabled: false,
+      penSmoothingLevel: 5,
       straightStrokeAxis: null,
     })
     expect(draft.points[0]).toEqual([0.1, 0.2])
     expect(draft.points[1]).toEqual([0.15, 0.22])
-    expect(draft.points[2]![0]).toBeCloseTo(0.237, 3)
-    expect(draft.points[2]![1]).toBeCloseTo(0.3244, 3)
+    expect(draft.points[2]![0]).toBeCloseTo(0.15 + 0.15 * blend, 3)
+    expect(draft.points[2]![1]).toBeCloseTo(0.22 + 0.18 * blend, 3)
+  })
+
+  it('extendStrokeDraftFromMove uses sharper blend at level 0', () => {
+    const draft = { tool: 'pen' as const, points: [[0.1, 0.2], [0.15, 0.22]] as [number, number][] }
+    extendStrokeDraftFromMove(draft, [[0.3, 0.4]], {
+      shiftKey: false,
+      markerStraightStrokeEnabled: false,
+      penSmoothingLevel: 0,
+      straightStrokeAxis: null,
+    })
+    const blend = smoothingLevelToBlend(0)
+    expect(draft.points[2]![0]).toBeCloseTo(0.15 + 0.15 * blend, 5)
+    expect(draft.points[2]![1]).toBeCloseTo(0.22 + 0.18 * blend, 5)
   })
 
   it('does not smooth marker sample points', () => {

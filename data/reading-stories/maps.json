@@ -190,5 +190,89 @@
     "unitId": "other-g1-workshop-pdf",
     "lessonId": null,
     "partId": null
+  },
+  "readingwriting-workshop-g2::unit-2-b7f10b10::lesson-4ea83621::part-cb570962": {
+    "storyId": "readingwriting-workshop-g2::unit-2-b7f10b10::lesson-4ea83621::part-cb570962",
+    "startPage": 134,
+    "endPage": 139,
+    "rangeConfirmed": true,
+    "updatedAt": "2026-09-03T20:16:26.534Z",
+    "title": "Shared Read A Prairie Guard Dog",
+    "bookId": "readingwriting-workshop-g2",
+    "unitId": "unit-2-b7f10b10",
+    "lessonId": "lesson-4ea83621",
+    "partId": "part-cb570962"
+  },
+  "readingwriting-workshop-g2::unit-2-b7f10b10::lesson-a9f3bc46::part-d907401f": {
+    "storyId": "readingwriting-workshop-g2::unit-2-b7f10b10::lesson-a9f3bc46::part-d907401f",
+    "startPage": 150,
+    "endPage": 155,
+    "rangeConfirmed": true,
+    "updatedAt": "2026-09-03T17:26:32.093Z",
+    "title": "Shared Read Eagles and Eaglets",
+    "bookId": "readingwriting-workshop-g2",
+    "unitId": "unit-2-b7f10b10",
+    "lessonId": "lesson-a9f3bc46",
+    "partId": "part-d907401f"
+  },
+  "literature-anthology-g2::unit-1-bf98cecc::lesson-1cf5e01b::part-b4ef28b3": {
+    "storyId": "literature-anthology-g2::unit-1-bf98cecc::lesson-1cf5e01b::part-b4ef28b3",
+    "startPage": 10,
+    "endPage": 29,
+    "rangeConfirmed": true,
+    "updatedAt": "2026-09-03T19:46:00.124Z",
+    "title": "Help! A Story of Friendship",
+    "bookId": "literature-anthology-g2",
+    "unitId": "unit-1-bf98cecc",
+    "lessonId": "lesson-1cf5e01b",
+    "partId": "part-b4ef28b3"
+  },
+  "journeys-g3-book-1::unit-3-3e7eaa87::lesson-2d6f0fe0::part-9bc3fc39": {
+    "storyId": "journeys-g3-book-1::unit-3-3e7eaa87::lesson-2d6f0fe0::part-9bc3fc39",
+    "startPage": 386,
+    "endPage": 388,
+    "rangeConfirmed": true,
+    "updatedAt": "2026-09-04T13:58:01.702Z",
+    "title": "Science for Sports Fans",
+    "bookId": "journeys-g3-book-1",
+    "unitId": "unit-3-3e7eaa87",
+    "lessonId": "lesson-2d6f0fe0",
+    "partId": "part-9bc3fc39"
+  },
+  "manual::journeys-g3-book-1::unit-2-269922a3::smu1b58ns": {
+    "storyId": "manual::journeys-g3-book-1::unit-2-269922a3::smu1b58ns",
+    "startPage": 398,
+    "endPage": 417,
+    "rangeConfirmed": true,
+    "updatedAt": "2026-09-14T13:57:46.659Z",
+    "title": "New Lesson",
+    "bookId": "journeys-g3-book-1",
+    "unitId": "unit-2-269922a3",
+    "lessonId": null,
+    "partId": null
+  },
+  "journeys-g3-book-1::unit-3-3e7eaa87::lesson-f007ffa1::part-b83a25c3": {
+    "storyId": "journeys-g3-book-1::unit-3-3e7eaa87::lesson-f007ffa1::part-b83a25c3",
+    "startPage": 398,
+    "endPage": 416,
+    "rangeConfirmed": true,
+    "updatedAt": "2026-09-14T16:49:14.453Z",
+    "title": "The Science Fair",
+    "bookId": "journeys-g3-book-1",
+    "unitId": "unit-3-3e7eaa87",
+    "lessonId": "lesson-f007ffa1",
+    "partId": "part-b83a25c3"
+  },
+  "literature-anthology-g2::unit-1-040de00e::lesson-b214850c::part-aeae5255": {
+    "storyId": "literature-anthology-g2::unit-1-040de00e::lesson-b214850c::part-aeae5255",
+    "startPage": 164,
+    "endPage": 181,
+    "rangeConfirmed": true,
+    "updatedAt": "2026-09-15T12:55:58.567Z",
+    "title": "Turtle, Turtle, Watch Out!",
+    "bookId": "literature-anthology-g2",
+    "unitId": "unit-1-040de00e",
+    "lessonId": "lesson-b214850c",
+    "partId": "part-aeae5255"
   }
 }

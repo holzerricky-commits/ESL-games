@@ -12,6 +12,8 @@ export const BOOK_SPREAD_SESSION_LAYER_Z = 24
 export const BOOK_SPREAD_SESSION_LAYER_ELEVATED_Z = 40
 /** Lesson board / notebook panel in the spread overlay stack. */
 export const LESSON_BOARD_PANEL_Z = 38
+/** App-owned PDF text selection overlay above spread ink session (z-40). */
+export const BOOK_PDF_TEXT_SELECT_LAYER_Z = 45
 
 export function bookSpreadSessionLayerStackZ(options: {
   elevateForSelectionChrome: boolean

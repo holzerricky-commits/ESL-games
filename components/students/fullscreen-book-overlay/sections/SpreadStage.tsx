@@ -20,6 +20,8 @@ export interface SpreadStageProps extends PageViewPoolProps {
   showBookFrame?: boolean
   /** Dim cover + stacks + pages (Full board). Desk stays bright. */
   dimBook?: boolean
+  /** Hide the book while keeping PDF mounted (notebook Focus). */
+  hideBook?: boolean
   children?: ReactNode
   turnSlide?: SpreadTurnSlidePayload | null
   onTurnSlideComplete?: () => void
@@ -38,6 +40,7 @@ export function SpreadStage({
   showSpreadRightPage,
   showBookFrame = true,
   dimBook = false,
+  hideBook = false,
   spreadRightPage,
   children,
   anchorPage,
@@ -129,6 +132,7 @@ export function SpreadStage({
       className={cn(
         'relative shrink-0 grow-0 leading-none',
         twoPageSpread && 'overflow-visible',
+        hideBook && 'pointer-events-none opacity-0',
       )}
       style={{
         boxSizing: 'border-box',
@@ -199,6 +203,7 @@ export function SpreadStage({
       spreadPageWidthPx={spreadPageWidth}
       twoPage={twoPageSpread}
       dimBook={dimBook}
+      hideBook={hideBook}
       overlayChildren={children}
     >
       {stage}

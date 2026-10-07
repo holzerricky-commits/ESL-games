@@ -22,17 +22,19 @@ export function getReliableImageUrl(
   type: 'static' | 'gif' = 'static',
   imageSearchQuery?: string,
   imageStyle?: string,
-  previousResolvedUrl?: string
+  previousResolvedUrl?: string,
+  pick?: 'vision' | null,
 ): string {
   const q = (keyword.trim().toLowerCase() || 'object').slice(0, 120)
   const v = (id ?? String(Math.floor(Math.random() * 1e9))).slice(0, 64)
   const params = new URLSearchParams({ q, v, type })
   const sq = imageSearchQuery?.trim()
-  if (sq) params.set('sq', sq.slice(0, 300))
+  if (sq && pick !== 'vision') params.set('sq', sq.slice(0, 300))
   const st = imageStyle?.trim()
   if (st) params.set('style', st.slice(0, 48))
   const prev = previousResolvedUrl?.trim()
   if (prev && !prev.startsWith('/api/')) params.set('prev', prev.slice(0, 800))
+  if (pick === 'vision') params.set('pick', 'vision')
   return `/api/quiz-image?${params.toString()}`
 }
 

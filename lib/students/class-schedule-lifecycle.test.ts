@@ -203,6 +203,8 @@ describe('today teaching states (Phase 6)', () => {
     expect(todayClassPrimaryAction('missed')).toBe('reschedule')
     expect(todayClassPrimaryAction('done')).toBe('none')
     expect(todayClassStateLabel('grace')).toBe('Grace')
+    expect(todayClassStateLabel('starting')).toBe('Soon')
+    expect(todayClassStateLabel('live')).toBe('Live')
   })
 
   it('finds next student soon during grace', () => {

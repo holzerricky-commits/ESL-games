@@ -168,7 +168,7 @@ function LiveSessionCapsule({
       className={cn(
         'pointer-events-auto absolute z-[60] flex items-center gap-0.5 rounded-full px-1.5 py-0.5',
         bookOpen
-          ? cn(BOOK_OVERLAY_GLASS_CHROME, 'left-1/2 top-3 -translate-x-1/2 text-white')
+          ? cn(BOOK_OVERLAY_GLASS_CHROME, 'right-3 top-1.5 text-white')
           : cn(CLASS_LAUNCH_CHROME, 'left-1/2 top-4 -translate-x-1/2'),
         className,
       )}
@@ -242,7 +242,7 @@ export function PrepSessionCapsule(props: PrepSessionCapsuleProps) {
       className={cn(
         'pointer-events-auto absolute z-[60] flex items-center gap-0.5 rounded-full px-1.5 py-0.5',
         bookOpen
-          ? cn(BOOK_OVERLAY_GLASS_CHROME, 'left-1/2 top-3 -translate-x-1/2 text-white')
+          ? cn(BOOK_OVERLAY_GLASS_CHROME, 'right-3 top-1.5 text-white')
           : cn(CLASS_LAUNCH_CHROME, 'left-4 top-4'),
         className,
       )}

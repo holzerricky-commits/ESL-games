@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, type ReactNode } from 'react'
+import { type ReactNode } from 'react'
 import { ArrowDown, ArrowUp, Layers, Lock, Square } from 'lucide-react'
 import { getPenSwatch } from '@/lib/books/annotation-palettes'
 import { penSwatchIdToStrokeColor, shapeStrokeColorToSwatchId } from '@/lib/books/selection-context-color'
@@ -29,7 +29,10 @@ import {
 } from '@/components/students/selection-context-bar/SelectionContextActionsWithArrange'
 import { SelectionContextBarDivider } from '@/components/students/selection-context-bar/SelectionContextBarDivider'
 import { SelectionContextBarGroup } from '@/components/students/selection-context-bar/SelectionContextBarGroup'
-import { SelectionContextColorSection } from '@/components/students/selection-context-bar/SelectionContextColorSection'
+import {
+  CONTEXT_SOLID_PEN_SWATCHES,
+  SelectionContextPenColorControl,
+} from '@/components/students/selection-context-bar/SelectionContextColorButton'
 import { SelectionContextSizeStepper } from '@/components/students/selection-context-bar/SelectionContextSizeStepper'
 import { SelectionContextActionMenu } from '@/components/students/selection-context-bar/SelectionContextIconMenu'
 import {
@@ -120,14 +123,6 @@ export function ImageSelectionContextBar({
 
   const strokeSwatchId = shapeStrokeColorToSwatchId(strokeColorValue)
 
-  const strokePaletteExtras = useMemo(
-    () => ({
-      shapeStrokeSwatchId: strokeSwatchId,
-      pickShapeStrokeSwatch: (id: string) => onPatch({ strokeColor: penSwatchIdToStrokeColor(id) }),
-    }),
-    [strokeSwatchId, onPatch],
-  )
-
   return (
     <SelectionContextBar
       anchorRect={anchorRect}
@@ -155,12 +150,13 @@ export function ImageSelectionContextBar({
           <Square className="h-4 w-4" strokeWidth={2} aria-hidden />
         </ContextToggleButton>
         {borderOn ? (
-          <SelectionContextColorSection
-            kind="shape"
+          <SelectionContextPenColorControl
+            swatchId={strokeSwatchId}
+            swatches={CONTEXT_SOLID_PEN_SWATCHES}
+            recentKind="shape"
+            ariaLabel="Border color"
             idPrefix="ctx-image-stroke"
-            activeValue={strokeSwatchId}
-            paletteTarget="shapes"
-            paletteExtras={strokePaletteExtras}
+            label="Border"
             onPick={(id) => onPatch({ strokeColor: penSwatchIdToStrokeColor(id) })}
           />
         ) : null}

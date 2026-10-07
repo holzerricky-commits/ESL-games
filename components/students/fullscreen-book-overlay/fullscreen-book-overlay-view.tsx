@@ -27,6 +27,9 @@ import { AnnotationRail } from './sections/AnnotationRail'
 import { BookBottomChrome } from './sections/BookViewport'
 import { BookAudioNowPlayingPill } from './sections/BookAudioNowPlayingPill'
 import { BookWorkspaceLeftBar } from './sections/BookWorkspaceLeftBar'
+import { ClassSourceStrip } from './sections/ClassSourceStrip'
+import { classSourceBookForDigitKey } from '@/lib/books/class-source-strip'
+import { shouldDeferBookOverlayToolShortcuts } from '@/lib/books/book-overlay-keyboard-guards'
 import { ClassLessonSettingsPanel } from '@/components/students/class-lesson-settings-panel'
 import { ClassToolboxHost } from '@/components/students/class-toolbox/ClassToolboxHost'
 import type { ClassToolboxToolId } from '@/lib/class-toolbox/types'
@@ -38,6 +41,8 @@ import { useAudioTrackPlacement } from './hooks/useAudioTrackPlacement'
 import { useBookExerciseTasks } from './hooks/useBookExerciseTasks'
 import { TranslateToolPanel } from './sections/TranslateToolPanel'
 import { PictureSearchToolPanel } from './sections/PictureSearchToolPanel'
+import { LessonVaultPanel } from './sections/LessonVaultPanel'
+import { useLessonVault } from './hooks/useLessonVault'
 import { PlaceTranslationOverlay, type PlaceFromTranslateSurface } from './sections/PlaceTranslationOverlay'
 import { WritableTextTranslatePopover } from './sections/WritableTextTranslatePopover'
 import type { PinWritableTextGlossInput } from './sections/WritableTextTranslatePopover'
@@ -68,6 +73,7 @@ import { getUnitReaderBounds } from '@/lib/books/page-range'
 import {
   BOOK_BOTTOM_CHROME_HEIGHT,
   BOOK_OVERLAY_GLASS_CHROME,
+  FULLSCREEN_CLASS_SCOPE,
   bookWorkspaceDeskLeftCss,
   bookWorkspaceDeskLeftPx,
 } from './constants'
@@ -87,6 +93,7 @@ import {
 import { requestSpreadSessionFlush } from '@/lib/books/spread-session-events'
 import { requestWhiteboardSessionFlush } from '@/lib/books/whiteboard-session-events'
 import { flushPendingUnitPageSave } from '@/lib/books/progress'
+import { flushPendingStudentBookPlaceSave } from '@/lib/students/student-book-place-save'
 import { shouldShowSpreadLoadingHold } from '@/lib/books/spread-drawable-ready'
 import { isBookExerciseLiveEligible, isBookExerciseMultipleChoice, type BookExerciseKind } from '@/lib/books/book-exercises'
 
@@ -111,6 +118,7 @@ export function FullscreenBookOverlayView({
   deskRailOpen = false,
   onDeskRailOpenChange,
   preferOpenExercises = false,
+  onSwitchTeachingBook,
 }: {
   vm: FullscreenBookOverlayViewModel
   onClose: () => void
@@ -119,6 +127,7 @@ export function FullscreenBookOverlayView({
   deskRailOpen?: boolean
   onDeskRailOpenChange?: (open: boolean) => void
   preferOpenExercises?: boolean
+  onSwitchTeachingBook?: (bookId: string, unitId: string) => void
 }) {
   const overlayRootRef = vm.overlayRootRef
   const [bookTextSpreadCapability, setBookTextSpreadCapability] = useState({
@@ -167,6 +176,7 @@ export function FullscreenBookOverlayView({
     interactiveVocabPack,
     readingStoryHit,
     liveReadingCheckPack,
+    moveLiveReadingCheckPin,
     isAnnotationRailVisible,
     isAnnotationRailPinned,
     setIsAnnotationRailPinned,
@@ -265,6 +275,8 @@ export function FullscreenBookOverlayView({
     setMarkerStraightStroke,
     markerDecoratedEdge,
     setMarkerDecoratedEdge,
+    penSmoothingLevel,
+    setPenSmoothingLevel,
     penAutoGroupConnected,
     setPenAutoGroupConnected,
     marqueeSelectRule,
@@ -289,6 +301,11 @@ export function FullscreenBookOverlayView({
     runPdfPacketExport,
     selectedBook,
     selectedBookId,
+    classSourceBooks,
+    notebookFocus,
+    enterNotebookFocus,
+    parkNotebookFromFocus,
+    launchToggleNotebookPin,
     selectedUnit,
     setAnnotationMode,
     setAnnotationTargetPage,
@@ -395,6 +412,8 @@ export function FullscreenBookOverlayView({
     boardLinkPlacementActive,
     lessonBoardPageLinks,
     activeBoardPageLink,
+    activeBoardPageLinkGoToLabel,
+    jumpToNotebookBookLink,
     isPrepMode,
     startBoardLinkPlacement,
     cancelBoardLinkPlacement,
@@ -627,6 +646,28 @@ export function FullscreenBookOverlayView({
   const toggleClassToolTranslate = useCallback(() => {
     setClassToolId((prev) => {
       const next = prev === 'translate' ? null : 'translate'
+      if (next) {
+        setIsPageListOpen(false)
+        setBookAudioOpen(false)
+        setBookExercisesOpen(false)
+        setPlayExerciseTaskId(null)
+        audioPins.cancelAudioPinPlacement()
+        bookExercises.cancelBoxDraw()
+        onDeskRailOpenChange?.(false)
+      }
+      return next
+    })
+  }, [
+    setClassToolId,
+    setIsPageListOpen,
+    audioPins.cancelAudioPinPlacement,
+    bookExercises.cancelBoxDraw,
+    onDeskRailOpenChange,
+  ])
+
+  const toggleClassToolVault = useCallback(() => {
+    setClassToolId((prev) => {
+      const next = prev === 'vault' ? null : 'vault'
       if (next) {
         setIsPageListOpen(false)
         setBookAudioOpen(false)
@@ -973,6 +1014,8 @@ export function FullscreenBookOverlayView({
   const [coachSessionId, setCoachSessionId] = useState<string | null>(null)
   const [coachUrl, setCoachUrl] = useState<string | null>(null)
   const [interactiveVocabOpen, setInteractiveVocabOpen] = useState(false)
+  const [interactiveVocabActiveWordId, setInteractiveVocabActiveWordId] = useState<string | null>(null)
+  const [pictureSearchInitialQuery, setPictureSearchInitialQuery] = useState('')
   const [readingChecksOpen, setReadingChecksOpen] = useState(false)
   const [liveCheckStopId, setLiveCheckStopId] = useState<string | null>(null)
   const [liveCheckMarkEpoch, setLiveCheckMarkEpoch] = useState(0)
@@ -993,11 +1036,36 @@ export function FullscreenBookOverlayView({
 
   const closeOverlay = useCallback(() => {
     flushPendingUnitPageSave()
+    flushPendingStudentBookPlaceSave()
     requestSpreadSessionFlush()
     requestWhiteboardSessionFlush()
     clearToolbox()
     onClose()
   }, [clearToolbox, onClose])
+
+  const handleSelectSourceBook = useCallback(
+    (bookId: string, unitId: string) => {
+      const nextBook = bookId.trim()
+      const nextUnit = unitId.trim()
+      if (!nextBook || !nextUnit) return
+      if (notebookFocus) {
+        parkNotebookFromFocus()
+      }
+      if (nextBook === selectedBookId && nextUnit === (selectedUnit?.id ?? '')) return
+      flushPendingUnitPageSave()
+      flushPendingStudentBookPlaceSave()
+      requestSpreadSessionFlush()
+      requestWhiteboardSessionFlush()
+      onSwitchTeachingBook?.(nextBook, nextUnit)
+    },
+    [
+      notebookFocus,
+      onSwitchTeachingBook,
+      parkNotebookFromFocus,
+      selectedBookId,
+      selectedUnit?.id,
+    ],
+  )
 
   const toolboxChromeOpen = toolboxMenuOpen || activeToolboxTool != null
 
@@ -1019,8 +1087,24 @@ export function FullscreenBookOverlayView({
   }, [])
 
   useEffect(() => {
-    if (!interactiveVocabPack) setInteractiveVocabOpen(false)
+    if (!interactiveVocabPack) {
+      setInteractiveVocabOpen(false)
+      setInteractiveVocabActiveWordId(null)
+    }
   }, [interactiveVocabPack])
+
+  const openInteractiveVocabWord = useCallback((wordId: string) => {
+    setInteractiveVocabActiveWordId(wordId)
+    setInteractiveVocabOpen(true)
+  }, [])
+
+  const openPictureSearchForWord = useCallback(
+    (word: string) => {
+      setPictureSearchInitialQuery(word.trim())
+      setClassToolId('pictures')
+    },
+    [setClassToolId],
+  )
 
   useEffect(() => {
     if (!liveReadingCheckPack) {
@@ -1083,21 +1167,25 @@ export function FullscreenBookOverlayView({
   ])
 
   const handleWhiteboardRailClick = useCallback(() => {
-    if (!isWhiteboardSessionOpen) {
-      whiteboardLaunch.playEnter(openWhiteboard)
+    launchToggleNotebookPin()
+  }, [launchToggleNotebookPin])
+
+  const handleToggleNotebookSource = useCallback(() => {
+    if (notebookFocus) {
+      parkNotebookFromFocus()
       return
     }
-    if (isWhiteboardMinimized) {
-      whiteboardLaunch.playEnter(expandWhiteboard)
+    if (isWhiteboardSessionOpen && !isWhiteboardMinimized) {
+      enterNotebookFocus()
       return
     }
-    whiteboardLaunch.playExit(minimizeWhiteboard)
+    whiteboardLaunch.playEnter(enterNotebookFocus)
   }, [
-    isWhiteboardSessionOpen,
+    enterNotebookFocus,
     isWhiteboardMinimized,
-    openWhiteboard,
-    expandWhiteboard,
-    minimizeWhiteboard,
+    isWhiteboardSessionOpen,
+    notebookFocus,
+    parkNotebookFromFocus,
     whiteboardLaunch,
   ])
 
@@ -1112,6 +1200,17 @@ export function FullscreenBookOverlayView({
   const handleExpandWhiteboardAnimated = useCallback(() => {
     whiteboardLaunch.playEnter(expandWhiteboard)
   }, [expandWhiteboard, whiteboardLaunch])
+
+  const interactiveVocabTapSpots = useMemo(() => {
+    if (!interactiveVocabPack) return undefined
+    const spots: { wordId: string; word: string; pdfPage: number; x: number; y: number; w: number; h: number }[] = []
+    for (const w of interactiveVocabPack.words) {
+      if (w.tapSpot) {
+        spots.push({ wordId: w.id, word: w.word, ...w.tapSpot })
+      }
+    }
+    return spots.length > 0 ? spots : undefined
+  }, [interactiveVocabPack])
 
   const lessonWordsForAssist = useMemo(
     () =>
@@ -1176,10 +1275,41 @@ export function FullscreenBookOverlayView({
   ])
 
   const hideFocusPresentationChrome = suppressChrome || focusZoomActive
-  const showTopChrome = Boolean(topChrome) && !hideFocusPresentationChrome
+  const showSourceStrip =
+    Boolean(onSwitchTeachingBook) &&
+    userPresented &&
+    hasResolvedUnit &&
+    classSourceBooks.length > 0
+
+  useEffect(() => {
+    if (!open || !userPresented || !showSourceStrip) return
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.defaultPrevented || event.repeat) return
+      if (event.ctrlKey || event.metaKey || event.altKey) return
+      if (shouldDeferBookOverlayToolShortcuts()) return
+      const book = classSourceBookForDigitKey(classSourceBooks, event.key)
+      if (!book) return
+      event.preventDefault()
+      handleSelectSourceBook(book.bookId, book.unitId)
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [open, userPresented, showSourceStrip, classSourceBooks, handleSelectSourceBook])
+
+  const showTopChrome =
+    (Boolean(topChrome) || showSourceStrip) && !hideFocusPresentationChrome
   const hintTopClass = showTopChrome ? 'top-3' : isPrepMode ? 'top-14' : 'top-3'
   const classToolDrawerOpen =
     classToolId != null && !hideFocusPresentationChrome
+  const vaultDrawerOpen = classToolDrawerOpen && classToolId === 'vault'
+  const lessonVault = useLessonVault({
+    studentId,
+    selectedBook,
+    selectedUnit,
+    pageNumber,
+    numPages,
+    open: vaultDrawerOpen,
+  })
   const bookDeskLeft = bookWorkspaceDeskLeftCss({
     pageListOpen: isPageListOpen,
     audioPlaylistOpen: bookAudioOpen,
@@ -1219,6 +1349,7 @@ export function FullscreenBookOverlayView({
     <div
       ref={overlayRootRef}
       className={cn(
+        FULLSCREEN_CLASS_SCOPE,
         'absolute inset-0 z-50 bg-[var(--book-reading-mat)] p-0 transition-opacity duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]',
         userPresented
           ? isVisible
@@ -1262,6 +1393,7 @@ export function FullscreenBookOverlayView({
         isWhiteboardOpen={isWhiteboardSessionOpen}
         pageListRailTab={pageListRailTab}
         setPageListRailTab={setPageListRailTab}
+        lockToBoardTab={notebookFocus}
         whiteboardSessionDoc={whiteboardSessionDoc}
         onSelectLessonBoardPage={selectLessonBoardPage}
         onNewLessonBoardPage={createLessonBoardPage}
@@ -1348,18 +1480,36 @@ export function FullscreenBookOverlayView({
             : undefined
         }
       />
+      <LessonVaultPanel
+        open={vaultDrawerOpen}
+        onClose={() => setClassToolId(null)}
+        hasStudent={Boolean(studentId.trim())}
+        viewedLesson={lessonVault.viewedLesson}
+        cards={lessonVault.viewedCards}
+        pageLesson={lessonVault.pageLesson}
+        hasPreviousLesson={lessonVault.hasPreviousLesson}
+        hasNextLesson={lessonVault.hasNextLesson}
+        onPreviousLesson={lessonVault.showPreviousLesson}
+        onNextLesson={lessonVault.showNextLesson}
+        onShowPageLesson={lessonVault.showPageLesson}
+      />
       <PictureSearchToolPanel
         open={classToolDrawerOpen && classToolId === 'pictures'}
-        onClose={() => setClassToolId(null)}
+        onClose={() => {
+          setClassToolId(null)
+          setPictureSearchInitialQuery('')
+        }}
         studentId={studentId}
         wbAnnRef={wbAnnRef}
         boardVisible={isWhiteboardOpen}
+        initialQuery={pictureSearchInitialQuery}
         onPlacePicture={
           hasResolvedUnit
             ? (src, alt) => {
                 setPlaceTranslationText(null)
                 setPlaceTranslationImage({ src, alt })
                 setClassToolId(null)
+                setPictureSearchInitialQuery('')
               }
             : undefined
         }
@@ -1448,6 +1598,8 @@ export function FullscreenBookOverlayView({
         setMarkerLineDashStyle={setMarkerLineDashStyle}
         markerStraightStroke={markerStraightStroke}
         setMarkerStraightStroke={setMarkerStraightStroke}
+        penSmoothingLevel={penSmoothingLevel}
+        setPenSmoothingLevel={setPenSmoothingLevel}
         markerDecoratedEdge={markerDecoratedEdge}
         setMarkerDecoratedEdge={setMarkerDecoratedEdge}
         penAutoGroupConnected={penAutoGroupConnected}
@@ -1639,6 +1791,7 @@ export function FullscreenBookOverlayView({
             onDocumentLoadSuccess={onDocumentLoadSuccess}
             isWhiteboardOpen={isWhiteboardSessionOpen}
             isWhiteboardMinimized={isWhiteboardMinimized}
+            notebookFocus={notebookFocus}
             onMinimizeWhiteboard={handleMinimizeWhiteboardAnimated}
             whiteboardPanelAnchorRef={whiteboardLaunch.panelAnchorRef}
             whiteboardPanelAppearStyle={whiteboardLaunch.panelAppearStyle}
@@ -1693,6 +1846,7 @@ export function FullscreenBookOverlayView({
             strokeLineDashStyle={strokeLineDashStyleForInk}
             markerStraightStroke={markerStraightStroke}
             markerDecoratedEdge={markerDecoratedEdge}
+            penSmoothingLevel={penSmoothingLevel}
             penAutoGroupConnected={penAutoGroupConnected}
             marqueeSelectRule={marqueeSelectRule}
             shapeLineDashStyle={shapeLineDashStyle}
@@ -1743,7 +1897,9 @@ export function FullscreenBookOverlayView({
               startBoardLinkPlacement()
             }}
             removeActiveBoardPageLink={removeActiveBoardPageLink}
+            jumpToNotebookBookLink={jumpToNotebookBookLink}
             activeBoardPageLink={activeBoardPageLink}
+            activeBoardPageLinkGoToLabel={activeBoardPageLinkGoToLabel}
             boardLinkInHeader={isPrepMode}
             audioPinPlacementActive={audioPins.audioPinPlacementActive}
             audioPins={audioPins.audioPins}
@@ -1768,6 +1924,19 @@ export function FullscreenBookOverlayView({
             onReadingCheckHotspotPreviewClick={onReadingCheckHotspotPreviewClick}
             readingCheckLivePins={userPresented ? liveCheckPins : []}
             onReadingCheckLivePinClick={setLiveCheckStopId}
+            onReadingCheckLivePinMove={(move) => {
+              const displayPage =
+                selectedBook && selectedUnit
+                  ? parsePrintedPageLabel(
+                      mapPdfPageToDisplayLabel(move.pdfPage, selectedBook, selectedUnit, numPages),
+                    )
+                  : null
+              moveLiveReadingCheckPin({ ...move, displayPage })
+            }}
+            interactiveVocabWords={interactiveVocabPack?.words ?? []}
+            interactiveVocabHighlightsEnabled={!!interactiveVocabPack}
+            onInteractiveVocabHit={openInteractiveVocabWord}
+            interactiveVocabTapSpots={interactiveVocabTapSpots}
             exerciseBoxDrawActive={bookExercises.boxDrawActive}
             exerciseTasks={bookExercises.tasks}
             selectedExerciseTaskId={bookExercises.selectedTaskId}
@@ -1829,6 +1998,7 @@ export function FullscreenBookOverlayView({
             whiteboardSessionClear={whiteboardSessionClear}
             onWhiteboardOverlayCaps={onWhiteboardOverlayCaps}
             onBookTextSpreadCapabilityChange={onBookTextSpreadCapabilityChange}
+            onSaveTextToVault={lessonVault.saveFromPage}
             onEyedropperPick={onEyedropperPick}
             spreadTurnGridRef={spreadTurnGridRef}
             turnSlide={turnSlide}
@@ -1875,7 +2045,18 @@ export function FullscreenBookOverlayView({
           className="pointer-events-none fixed z-[56] top-0 left-[var(--book-workspace-left-inset)] right-0"
           style={{ '--book-workspace-left-inset': bookDeskLeft } as CSSProperties}
         >
-          <div className="pointer-events-auto">{topChrome}</div>
+          {showSourceStrip ? (
+            <ClassSourceStrip
+              books={classSourceBooks}
+              focusedBookId={selectedBookId}
+              notebookDocked={isWhiteboardSessionOpen && !isWhiteboardMinimized && !notebookFocus}
+              notebookFocus={notebookFocus}
+              ignorePointer={focusZoomDrawActive}
+              onSelectBook={handleSelectSourceBook}
+              onToggleNotebook={handleToggleNotebookSource}
+            />
+          ) : null}
+          {topChrome ? <div className="pointer-events-auto">{topChrome}</div> : null}
         </div>
       ) : null}
 
@@ -1978,6 +2159,7 @@ export function FullscreenBookOverlayView({
         isWhiteboardOpen={isWhiteboardOpen}
         isWhiteboardSessionOpen={isWhiteboardSessionOpen}
         isWhiteboardMinimized={isWhiteboardMinimized}
+        notebookFocus={notebookFocus}
         onWhiteboardClick={handleWhiteboardRailClick}
         translateDockOpen={classToolId === 'translate'}
         onTranslateDockToggle={toggleClassToolTranslate}
@@ -2005,6 +2187,9 @@ export function FullscreenBookOverlayView({
         onBookAudioToggle={toggleBookAudioRail}
         bookExercisesOpen={bookExercisesOpen}
         onBookExercisesToggle={toggleBookExercisesRail}
+        vaultOpen={classToolId === 'vault'}
+        vaultCount={lessonVault.pageLessonCount}
+        onVaultToggle={toggleClassToolVault}
       />
 
       {userPresented ? (
@@ -2027,6 +2212,10 @@ export function FullscreenBookOverlayView({
           hideTrigger
           open={interactiveVocabOpen}
           onOpenChange={setInteractiveVocabOpen}
+          activeWordId={interactiveVocabActiveWordId}
+          onActiveWordIdChange={setInteractiveVocabActiveWordId}
+          studentId={studentId}
+          onFindPicture={openPictureSearchForWord}
         />
       ) : null}
 

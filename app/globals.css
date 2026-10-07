@@ -3305,9 +3305,16 @@
   line-height: 1.25;
 }
 
-/* Fullscreen class session — mint text selection (book, notebook, map). */
+/* Fullscreen class session — mint selection background (book, notebook, map). */
 .fullscreen-class ::selection,
 .fullscreen-class ::-moz-selection {
+  background-color: #c6f6d5;
+}
+
+.fullscreen-class textarea[data-annotation-id]::selection,
+.fullscreen-class textarea[data-annotation-id] *::selection,
+.fullscreen-class textarea[data-annotation-id]::-moz-selection,
+.fullscreen-class textarea[data-annotation-id] *::-moz-selection {
   background-color: #c6f6d5;
   color: #1a202c !important;
   -webkit-text-fill-color: #1a202c;
@@ -3329,26 +3336,4 @@
 .fullscreen-class textarea[data-annotation-id]::placeholder {
   color: var(--annotation-placeholder-color, rgba(71, 85, 105, 0.62));
   opacity: 1;
-}
-
-/* PDF.js text layer — native book text selection in move (V) tool. */
-.fullscreen-class .book-pdf-text-select .react-pdf__Page__textContent {
-  user-select: text;
-  pointer-events: none;
-}
-
-.fullscreen-class .book-pdf-text-select .react-pdf__Page__textContent span {
-  color: transparent;
-  pointer-events: auto;
-  cursor: text;
-}
-
-/* Keep prefetch cache as the visible page art; text layer selects on top. */
-.fullscreen-class .book-pdf-text-select-over-cache .react-pdf__Page__canvas {
-  visibility: hidden;
-}
-
-/* Live PDF primary — high-res render scaled into layout slot (focus zoom). */
-.fullscreen-class .book-pdf-live-primary .react-pdf__Page__textContent span {
-  cursor: text;
 }

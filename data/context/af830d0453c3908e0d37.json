@@ -1,0 +1,89 @@
+{
+  "id": "af830d0453c3908e0d37",
+  "kind": "part",
+  "bookId": "readingwriting-workshop-g2",
+  "unitId": "unit-2-b7f10b10",
+  "lessonId": "lesson-4ea83621",
+  "partId": "part-b31ddc6f",
+  "partTitle": "Vocabulary",
+  "partGoals": [],
+  "activityNotes": [],
+  "languageFocus": {
+    "grammarNotes": [],
+    "writingNotes": []
+  },
+  "sourcePageRange": {
+    "startPage": 132,
+    "endPage": 133
+  },
+  "scanProfile": "balanced",
+  "contextVersion": "v1",
+  "createdAt": "2026-08-31T17:33:25.593Z",
+  "updatedAt": "2026-08-31T17:33:25.593Z",
+  "interactiveVocabulary": [
+    {
+      "id": "cc-1",
+      "word": "buried",
+      "definition": "covered completely by something, such as snow or dirt, so it cannot be seen.",
+      "examples": [
+        "The car was buried in the deep snow."
+      ]
+    },
+    {
+      "id": "cc-2",
+      "word": "escape",
+      "definition": "to get away from a place or a difficult situation, often by finding a way out.",
+      "examples": [
+        "The cat could escape through a hole in the fence."
+      ]
+    },
+    {
+      "id": "cc-3",
+      "word": "habitat",
+      "definition": "the natural home or environment where a particular animal or plant normally lives.",
+      "examples": [
+        "Prairie dogs live in a desert habitat."
+      ]
+    },
+    {
+      "id": "cc-4",
+      "word": "journey",
+      "definition": "a trip or travel from one place to another, often over a long distance.",
+      "examples": [
+        "Maya and her family went on a journey in the woods."
+      ]
+    },
+    {
+      "id": "cc-5",
+      "word": "nature",
+      "definition": "the natural world, including all the plants, animals, and landscapes not made by people.",
+      "examples": [
+        "We walk in the woods because we like to be in nature."
+      ]
+    },
+    {
+      "id": "cc-6",
+      "word": "peeks",
+      "definition": "looks quickly and secretly, especially from a hidden place or through a small opening.",
+      "examples": [
+        "While hiding, Kate peeks out from behind the tree."
+      ]
+    },
+    {
+      "id": "cc-7",
+      "word": "restless",
+      "definition": "unable to stay still or quiet, often because of boredom, worry, or excitement.",
+      "examples": [
+        "The child became restless during the long car ride."
+      ]
+    },
+    {
+      "id": "cc-8",
+      "word": "spies",
+      "definition": "sees or notices something, especially by looking carefully or secretly.",
+      "examples": [
+        "Carlos spies an eagle in the sky."
+      ]
+    }
+  ]
+}

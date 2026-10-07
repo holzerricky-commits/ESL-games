@@ -1,5 +1,6 @@
 import { isPresentationBook } from '@/lib/books/book-catalog-labels'
-import { effectivePartStructureTag } from '@/lib/books/part-structure-tag'
+import { resolvePartStructureTag } from '@/lib/books/part-structure-tag'
+import { resolveTocExtractProfileForBook, type TocExtractProfileId } from '@/lib/books/toc-extract-profile'
 import {
   bookHasMultipleVolumes,
   listBookVolumes,
@@ -77,6 +78,7 @@ export function bookNeedsLessonShelfOutline(book: BookRecord): boolean {
 
 function rowsForUnits(book: BookRecord, units: BookUnitRecord[]): BookLessonShelfRow[] {
   const rows: BookLessonShelfRow[] = []
+  const profile = resolveTocExtractProfileForBook(book)
   for (const unit of units) {
     const unitIndex = book.units.findIndex((u) => u.id === unit.id)
     const lessons = unit.lessons ?? []
@@ -87,7 +89,7 @@ function rowsForUnits(book: BookRecord, units: BookUnitRecord[]): BookLessonShel
       continue
     }
     const cards: BookLessonShelfCard[] = lessons.map((lesson, lessonIndex) =>
-      lessonToShelfCard(unit, lesson, lessonIndex),
+      lessonToShelfCard(unit, lesson, lessonIndex, profile),
     )
     rows.push({ unit, cards })
   }
@@ -166,17 +168,18 @@ export function resolveLessonShelfThumbPrintedStart(
   unit: BookUnitRecord,
   lesson: BookLessonRecord,
   lessonIndex: number,
+  profile: TocExtractProfileId = 'journeys',
 ): number | null {
   const lessons = unit.lessons ?? []
   const lessonRange = pageRangeForIndex(lessons, lessonIndex)
   const parts = lesson.parts ?? []
   if (parts.length > 0) {
-    const mainIdx = parts.findIndex((p) => effectivePartStructureTag(p) === 'main_story')
+    const mainIdx = parts.findIndex((p, i) => resolvePartStructureTag(p, i, profile) === 'main_story')
     if (mainIdx >= 0) {
       const start = pageRangeForIndex(parts, mainIdx, lessonRange.start, lessonRange.end).start
       if (start != null) return start
     }
-    const pairedIdx = parts.findIndex((p) => effectivePartStructureTag(p) === 'paired_story')
+    const pairedIdx = parts.findIndex((p, i) => resolvePartStructureTag(p, i, profile) === 'paired_story')
     if (pairedIdx >= 0) {
       const start = pageRangeForIndex(parts, pairedIdx, lessonRange.start, lessonRange.end).start
       if (start != null) return start
@@ -189,6 +192,7 @@ function lessonToShelfCard(
   unit: BookUnitRecord,
   lesson: BookLessonRecord,
   lessonIndex: number,
+  profile: TocExtractProfileId = 'journeys',
 ): BookLessonShelfCard {
   return {
     kind: 'lesson',
@@ -197,7 +201,7 @@ function lessonToShelfCard(
     indexLabel: `L${lessonIndex + 1}`,
     unitId: unit.id,
     lessonId: lesson.id,
-    printedStart: resolveLessonShelfThumbPrintedStart(unit, lesson, lessonIndex),
+    printedStart: resolveLessonShelfThumbPrintedStart(unit, lesson, lessonIndex, profile),
   }
 }
 

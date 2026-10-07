@@ -28,16 +28,46 @@ export function getSavedUnitPage(bookId: string, unitId: string): number {
   return Math.max(1, Math.floor(page))
 }
 
-/** Last saved page for this book+unit, or null when nothing was stored yet. */
-export function peekSavedUnitPage(bookId: string, unitId: string): number | null {
+export type SavedUnitPageEntry = {
+  bookId: string
+  unitId: string
+  page: number
+  updatedAt: string
+  atMs: number
+}
+
+function savedEntryFromMap(
+  bookId: string,
+  unitId: string,
+  entry: { page?: unknown; updatedAt?: unknown } | null | undefined,
+): SavedUnitPageEntry | null {
+  const bid = bookId.trim()
+  const uid = unitId.trim()
+  if (!bid || !uid || !entry) return null
+  const page = Number(entry.page)
+  if (!Number.isFinite(page) || page < 1) return null
+  const updatedAt = typeof entry.updatedAt === 'string' ? entry.updatedAt : ''
+  const parsed = updatedAt ? Date.parse(updatedAt) : Number.NaN
+  return {
+    bookId: bid,
+    unitId: uid,
+    page: Math.max(1, Math.floor(page)),
+    updatedAt: updatedAt || new Date(0).toISOString(),
+    atMs: Number.isFinite(parsed) ? parsed : 0,
+  }
+}
+
+/** Last saved page for this book+unit, with timestamp, or null when nothing was stored yet. */
+export function peekSavedUnitPageEntry(bookId: string, unitId: string): SavedUnitPageEntry | null {
   const bid = bookId.trim()
   const uid = unitId.trim()
   if (!bid || !uid) return null
-  const entry = getReaderProgressMap()[bid]?.[uid]
-  if (!entry) return null
-  const page = Number(entry.page)
-  if (!Number.isFinite(page) || page < 1) return null
-  return Math.max(1, Math.floor(page))
+  return savedEntryFromMap(bid, uid, getReaderProgressMap()[bid]?.[uid])
+}
+
+/** Last saved page for this book+unit, or null when nothing was stored yet. */
+export function peekSavedUnitPage(bookId: string, unitId: string): number | null {
+  return peekSavedUnitPageEntry(bookId, unitId)?.page ?? null
 }
 
 /** Most recently updated saved page for any unit in this book. */
@@ -48,24 +78,37 @@ export function getLatestSavedUnitPageForBook(
   if (!bid) return null
   const byUnit = getReaderProgressMap()[bid]
   if (!byUnit) return null
-  let best: { unitId: string; page: number; updatedAt: string; atMs: number } | null = null
+  let best: SavedUnitPageEntry | null = null
   for (const [unitId, entry] of Object.entries(byUnit)) {
-    const page = Number(entry.page)
-    if (!Number.isFinite(page) || page < 1) continue
-    const updatedAt = typeof entry.updatedAt === 'string' ? entry.updatedAt : ''
-    const atMs = updatedAt ? Date.parse(updatedAt) : Number.NaN
-    const t = Number.isFinite(atMs) ? atMs : 0
-    if (!best || t >= best.atMs) {
-      best = {
-        unitId,
-        page: Math.max(1, Math.floor(page)),
-        updatedAt: updatedAt || new Date(0).toISOString(),
-        atMs: t,
-      }
-    }
+    const hit = savedEntryFromMap(bid, unitId, entry)
+    if (!hit) continue
+    if (!best || hit.atMs >= best.atMs) best = hit
   }
   if (!best) return null
   return { unitId: best.unitId, page: best.page, updatedAt: best.updatedAt }
+}
+
+/** Most recently updated saved page among these books (any unit). */
+export function getLatestSavedUnitPageForBooks(bookIds: string[]): SavedUnitPageEntry | null {
+  let best: SavedUnitPageEntry | null = null
+  for (const raw of bookIds) {
+    const bookId = raw.trim()
+    if (!bookId) continue
+    const hit = getLatestSavedUnitPageForBook(bookId)
+    if (!hit) continue
+    const parsed = Date.parse(hit.updatedAt)
+    const atMs = Number.isFinite(parsed) ? parsed : 0
+    if (!best || atMs >= best.atMs) {
+      best = {
+        bookId,
+        unitId: hit.unitId,
+        page: hit.page,
+        updatedAt: hit.updatedAt,
+        atMs,
+      }
+    }
+  }
+  return best
 }
 
 export function saveUnitPage(bookId: string, unitId: string, page: number): void {

@@ -73,31 +73,12 @@ describe('resolveReaderPageShowSharpCache', () => {
 })
 
 describe('resolveReaderPageLayerVisibility', () => {
-  it('keeps sharp cache visible when text select is active', () => {
+  it('shows sharp cache and hides live PDF wrapper while cache is visible', () => {
     expect(
       resolveReaderPageLayerVisibility({
-        bookTextSelectActive: true,
-        pageHasSelectableText: true,
         showSharpCache: true,
       }),
     ).toEqual({
-      pdfTextLayerActive: true,
-      pdfTextOverCache: true,
-      pdfHiddenBehindCache: false,
-      showSharpCacheLayer: true,
-    })
-  })
-
-  it('hides PDF wrapper behind cache when text select is off', () => {
-    expect(
-      resolveReaderPageLayerVisibility({
-        bookTextSelectActive: false,
-        pageHasSelectableText: true,
-        showSharpCache: true,
-      }),
-    ).toEqual({
-      pdfTextLayerActive: false,
-      pdfTextOverCache: false,
       pdfHiddenBehindCache: true,
       showSharpCacheLayer: true,
     })
@@ -106,13 +87,9 @@ describe('resolveReaderPageLayerVisibility', () => {
   it('shows live PDF when cache handoff completed', () => {
     expect(
       resolveReaderPageLayerVisibility({
-        bookTextSelectActive: true,
-        pageHasSelectableText: true,
         showSharpCache: false,
       }),
     ).toEqual({
-      pdfTextLayerActive: true,
-      pdfTextOverCache: false,
       pdfHiddenBehindCache: false,
       showSharpCacheLayer: false,
     })
