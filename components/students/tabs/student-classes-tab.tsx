@@ -70,6 +70,7 @@ import {
 } from '@/lib/students/class-prep-outline'
 import { hasPrepExtras, prepExtrasFromAiSuggestion } from '@/lib/students/class-prep-extras'
 import { formatPrepContextLine } from '@/lib/students/class-prep-signals'
+import { prepSectionIdToPersist } from '@/lib/students/prep-section-save'
 
 interface StudentClassesTabProps {
   student: StudentProfileView
@@ -601,15 +602,26 @@ export function StudentClassesTab({
     onUpdated()
   }
 
-  function savePrepNotes(session: StudentClassSessionView) {
+  function persistPickerSection(session: StudentClassSessionView): { ok: true } | { ok: false; error: string } {
     const sectionOptions = getStudentSectionOptions(liveStudent.id, library)
-    const sectionId = selectedSectionBySession[session.id]
-    const chosenSection = sectionOptions.find((option) => option.id === sectionId)
-    const sectionResult = updateStudentClassSelectedSection(
+    const sectionId = prepSectionIdToPersist({
+      booksReady: Boolean(library?.books?.length),
+      pickerSectionId: selectedSectionBySession[session.id],
+      optionIds: sectionOptions.map((option) => option.id),
+    })
+    if (sectionId === undefined) return { ok: true }
+    const chosenSection = sectionId
+      ? sectionOptions.find((option) => option.id === sectionId)
+      : undefined
+    return updateStudentClassSelectedSection(
       liveStudent.id,
       session.id,
       chosenSection ? toStudentBookSectionRef(chosenSection) : null,
     )
+  }
+
+  function savePrepNotes(session: StudentClassSessionView) {
+    const sectionResult = persistPickerSection(session)
     if (!sectionResult.ok) {
       setError(sectionResult.error)
       return
@@ -626,14 +638,7 @@ export function StudentClassesTab({
   }
 
   function savePrepOutline(session: StudentClassSessionView) {
-    const sectionOptions = getStudentSectionOptions(liveStudent.id, library)
-    const sectionId = selectedSectionBySession[session.id]
-    const chosenSection = sectionOptions.find((option) => option.id === sectionId)
-    const sectionResult = updateStudentClassSelectedSection(
-      liveStudent.id,
-      session.id,
-      chosenSection ? toStudentBookSectionRef(chosenSection) : null,
-    )
+    const sectionResult = persistPickerSection(session)
     if (!sectionResult.ok) {
       setError(sectionResult.error)
       return
