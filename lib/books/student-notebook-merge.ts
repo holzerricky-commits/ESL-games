@@ -13,8 +13,10 @@ import {
   STUDENT_NOTEBOOK_UNIT_ID,
 } from '@/lib/books/whiteboard-storage'
 import {
+  listStoredWhiteboardStoragePageKeys,
   listWhiteboardSessionDocIds,
   peekWhiteboardSession,
+  scoreWhiteboardSessionRichness,
   type WhiteboardSessionStorageAdapter,
 } from '@/lib/books/whiteboard-session-storage'
 import { stampLegacyBoardLinksOntoPages } from '@/lib/books/lesson-board-page-links'
@@ -108,16 +110,32 @@ function peekLegacyBookUnitBoard(
   source: StudentNotebookMergeSource,
   adapter?: WhiteboardSessionStorageAdapter,
 ): WhiteboardSessionDocument | null {
-  const key: WhiteboardSessionKey = {
+  const scope = {
     studentId,
     bookId: source.bookId,
     unitId: source.unitId,
-    storagePageKey: annotationStorageLocalWhiteboardKey(source.bookId, source.unitId),
   }
-  return peekWhiteboardSession(key, adapter)
+  const localKey = annotationStorageLocalWhiteboardKey(source.bookId, source.unitId)
+  const local = peekWhiteboardSession({ ...scope, storagePageKey: localKey }, adapter)
+  // The lasting per-book board is canonical. An older class-session board must not replace it.
+  if (local && lessonBoardDocumentHasNotes(local)) return local
+
+  let best: WhiteboardSessionDocument | null = null
+  let bestScore = -1
+  for (const storagePageKey of listStoredWhiteboardStoragePageKeys(scope, adapter)) {
+    if (storagePageKey === localKey || isStudentNotebookStorageKey(storagePageKey)) continue
+    const doc = peekWhiteboardSession({ ...scope, storagePageKey }, adapter)
+    if (!doc || !lessonBoardDocumentHasNotes(doc)) continue
+    const score = scoreWhiteboardSessionRichness(doc)
+    if (score > bestScore) {
+      best = doc
+      bestScore = score
+    }
+  }
+  return best
 }
 
-/** Extra local book/unit boards for this student that were not in the assigned list. */
+/** Extra book/unit boards for this student that were not in the assigned list. */
 export function listAdditionalStudentLegacyNotebooks(
   studentId: string,
   already: readonly StudentNotebookMergeSource[],
@@ -131,9 +149,7 @@ export function listAdditionalStudentLegacyNotebooks(
     const parsed = parseWhiteboardSessionDocId(docId)
     if (!parsed || parsed.studentId !== id) continue
     if (isStudentNotebookSessionKey(parsed)) continue
-    if (parsed.storagePageKey !== annotationStorageLocalWhiteboardKey(parsed.bookId, parsed.unitId)) {
-      continue
-    }
+    if (!parsed.storagePageKey.startsWith('wb:session:')) continue
     const token = `${parsed.bookId}::${parsed.unitId}`
     if (seen.has(token)) continue
     seen.add(token)

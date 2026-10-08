@@ -19,6 +19,7 @@ import {
 } from '@/lib/books/whiteboard-session-types'
 import {
   annotationStorageLocalWhiteboardKey,
+  annotationStorageSessionKey,
   annotationStorageStudentWhiteboardKey,
   STUDENT_NOTEBOOK_BOOK_ID,
 } from '@/lib/books/whiteboard-storage'
@@ -281,6 +282,122 @@ describe('student-notebook-merge', () => {
     })
     expect(merged!.pages.map((p) => p.id)).toEqual(['assigned', 'leftover'])
     expect(merged!.pages[1]).toMatchObject({ sourceBookId: 'lit', sourceUnitId: 'u1' })
+  })
+
+  it('copy-merges a class-session board when the lasting local board was never saved', () => {
+    const storage = createMemoryWhiteboardSessionStorage()
+    const key = {
+      studentId: 'stu-1',
+      bookId: 'ws',
+      unitId: 'u1',
+      storagePageKey: annotationStorageSessionKey('class-9'),
+    }
+    const doc = createEmptyWhiteboardSession(key, 40)
+    doc.pages = [
+      createLessonBoardPage('standard', { id: 'class-page', commands: [stroke('class-ink')] }),
+    ]
+    doc.activePageId = 'class-page'
+    doc.commands = [...doc.pages[0]!.commands]
+    doc.meta = { revision: 1, dirty: false, updatedAt: 40 }
+    saveWhiteboardSessionCheckpoint(doc, storage)
+
+    const merged = mergeStudentNotebookFromBookUnitBoards({
+      studentId: 'stu-1',
+      sources: [{ bookId: 'ws', unitId: 'u1' }],
+      adapter: storage,
+    })
+    expect(merged!.pages.map((p) => p.id)).toEqual(['class-page'])
+    expect(merged!.pages[0]!.commands.map((c) => c.id)).toEqual(['class-ink'])
+  })
+
+  it('uses the class-session board when the lasting local board is an empty shell', () => {
+    const storage = createMemoryWhiteboardSessionStorage()
+    const localKey = {
+      studentId: 'stu-1',
+      bookId: 'ws',
+      unitId: 'u1',
+      storagePageKey: annotationStorageLocalWhiteboardKey('ws', 'u1'),
+    }
+    saveWhiteboardSessionCheckpoint(createEmptyWhiteboardSession(localKey, 5), storage)
+    const classKey = {
+      studentId: 'stu-1',
+      bookId: 'ws',
+      unitId: 'u1',
+      storagePageKey: annotationStorageSessionKey('class-9'),
+    }
+    const classDoc = createEmptyWhiteboardSession(classKey, 30)
+    classDoc.pages = [
+      createLessonBoardPage('standard', { id: 'class-page', commands: [stroke('class-ink')] }),
+    ]
+    classDoc.activePageId = 'class-page'
+    classDoc.commands = [...classDoc.pages[0]!.commands]
+    classDoc.meta = { revision: 1, dirty: false, updatedAt: 30 }
+    saveWhiteboardSessionCheckpoint(classDoc, storage)
+
+    const merged = mergeStudentNotebookFromBookUnitBoards({
+      studentId: 'stu-1',
+      sources: [{ bookId: 'ws', unitId: 'u1' }],
+      adapter: storage,
+    })
+    expect(merged!.pages.map((p) => p.id)).toEqual(['class-page'])
+  })
+
+  it('keeps the lasting local board when an older class board has more pages', () => {
+    const storage = createMemoryWhiteboardSessionStorage()
+    saveBookUnitBoard({
+      storage,
+      studentId: 'stu-1',
+      bookId: 'ws',
+      unitId: 'u1',
+      pages: [createLessonBoardPage('standard', { id: 'local-page', commands: [stroke('local-ink')] })],
+      updatedAt: 80,
+    })
+    const classKey = {
+      studentId: 'stu-1',
+      bookId: 'ws',
+      unitId: 'u1',
+      storagePageKey: annotationStorageSessionKey('class-9'),
+    }
+    const classDoc = createEmptyWhiteboardSession(classKey, 10)
+    classDoc.pages = [
+      createLessonBoardPage('standard', { id: 'old-a', commands: [stroke('old-a')] }),
+      createLessonBoardPage('standard', { id: 'old-b', commands: [stroke('old-b')] }),
+    ]
+    classDoc.activePageId = 'old-a'
+    classDoc.commands = [...classDoc.pages[0]!.commands]
+    classDoc.meta = { revision: 1, dirty: false, updatedAt: 10 }
+    saveWhiteboardSessionCheckpoint(classDoc, storage)
+
+    const merged = mergeStudentNotebookFromBookUnitBoards({
+      studentId: 'stu-1',
+      sources: [{ bookId: 'ws', unitId: 'u1' }],
+      adapter: storage,
+    })
+    expect(merged!.pages.map((p) => p.id)).toEqual(['local-page'])
+  })
+
+  it('copy-merges a class-session board that was not in the assigned list', () => {
+    const storage = createMemoryWhiteboardSessionStorage()
+    const key = {
+      studentId: 'stu-1',
+      bookId: 'lit',
+      unitId: 'u1',
+      storagePageKey: annotationStorageSessionKey('class-3'),
+    }
+    const doc = createEmptyWhiteboardSession(key, 20)
+    doc.pages = [createLessonBoardPage('standard', { id: 'leftover-class', commands: [stroke('c')] })]
+    doc.activePageId = 'leftover-class'
+    doc.commands = [...doc.pages[0]!.commands]
+    doc.meta = { revision: 1, dirty: false, updatedAt: 20 }
+    saveWhiteboardSessionCheckpoint(doc, storage)
+
+    const merged = mergeStudentNotebookFromBookUnitBoards({
+      studentId: 'stu-1',
+      sources: [],
+      adapter: storage,
+    })
+    expect(merged!.pages.map((p) => p.id)).toEqual(['leftover-class'])
+    expect(merged!.pages[0]).toMatchObject({ sourceBookId: 'lit', sourceUnitId: 'u1' })
   })
 
   it('does not write the student key during load', () => {
