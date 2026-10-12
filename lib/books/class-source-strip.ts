@@ -13,6 +13,12 @@ export type ClassSourceBookChip = {
   page: number | null
 }
 
+/** Last place the class was actually on in a book (any unit). */
+export type ClassSourceLastPlace = {
+  unitId: string
+  page: number
+}
+
 export type ClassSourceFocus = 'book' | 'notebook'
 
 /** How Notebook sits on the desk this class. `null` = not opened yet. */
@@ -155,6 +161,18 @@ function resolveUnitIdForBook(args: {
   return args.book.units[0]?.id ?? null
 }
 
+function parkedLastPlace(
+  book: BookLibraryPayload['books'][number],
+  last: ClassSourceLastPlace | null | undefined,
+): { unitId: string; page: number } | null {
+  if (!last) return null
+  const unitId = last.unitId.trim()
+  const page = Math.floor(Number(last.page))
+  if (!unitId || !Number.isFinite(page) || page < 1) return null
+  if (!book.units.some((unit) => unit.id === unitId)) return null
+  return { unitId, page }
+}
+
 /**
  * Assigned books (assignment order) as class source chips.
  * Always includes the currently open book even if it is not assigned.
@@ -167,6 +185,11 @@ export function listClassSourceBooks(args: {
   openUnitId?: string | null
   openPage?: number | null
   getSavedPage?: (bookId: string, unitId: string) => number | null
+  /**
+   * Where this book was last read, across units. Parked chips restore this
+   * place. The book that is Focus keeps the live unit and page.
+   */
+  getLastPlace?: (bookId: string) => ClassSourceLastPlace | null
 }): ClassSourceBookChip[] {
   const booksById = new Map(args.library.books.map((book) => [book.id, book]))
   const assignedUnitRefs = args.assignedUnitRefs ?? []
@@ -181,16 +204,19 @@ export function listClassSourceBooks(args: {
     if (!id || seen.has(id)) return
     const book = booksById.get(id)
     if (!book) return
-    const unitId = resolveUnitIdForBook({
-      book,
-      assignedUnitRefs,
-      openBookId,
-      openUnitId,
-    })
+    const isOpen = openBookId === id
+    const parked = isOpen ? null : parkedLastPlace(book, args.getLastPlace?.(id))
+    const unitId =
+      parked?.unitId ??
+      resolveUnitIdForBook({
+        book,
+        assignedUnitRefs,
+        openBookId,
+        openUnitId,
+      })
     if (!unitId) return
     seen.add(id)
-    const isOpen = openBookId === id
-    const saved = getSavedPage?.(id, unitId) ?? null
+    const saved = parked?.page ?? getSavedPage?.(id, unitId) ?? null
     const page = isOpen
       ? (args.openPage != null && Number.isFinite(args.openPage) && args.openPage >= 1
           ? Math.floor(args.openPage)

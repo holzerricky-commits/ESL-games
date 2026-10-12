@@ -45,7 +45,7 @@ import {
   resolveNextUnitInBook,
   type LessonBoardShelfEntry,
 } from '@/lib/books/lesson-board-nav'
-import { peekSavedUnitPage } from '@/lib/books/progress'
+import { getLatestSavedUnitPageForBook, peekSavedUnitPage } from '@/lib/books/progress'
 import {
   lessonBoardRunwayViewportHeightPx,
   lessonBoardWidePanelHeightPx,
@@ -117,7 +117,7 @@ import {
   formatNotebookBookLinkGoToLabel,
   removeLessonBoardPageLinksForBoardPageIds,
 } from '@/lib/books/lesson-board-page-links'
-import { getStudentTeachingOpenPdfPageForBookUnit } from '@/lib/students/selectors'
+import { getStudentBookPlaces, getStudentTeachingOpenPdfPageForBookUnit } from '@/lib/students/selectors'
 import type { FullscreenBookOverlayProps } from '../types'
 
 /** A4-style portrait default until PDF viewport is primed (see B3). */
@@ -494,8 +494,15 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
       openUnitId: selectedUnitId,
       openPage: pageNumber,
       getSavedPage: peekSavedUnitPage,
+      getLastPlace: (bookId) => {
+        const place = getStudentBookPlaces(studentId)[bookId]
+        if (place) return { unitId: place.unitId, page: place.pdfPage }
+        const latest = getLatestSavedUnitPageForBook(bookId)
+        if (!latest) return null
+        return { unitId: latest.unitId, page: latest.page }
+      },
     })
-  }, [assignedBookIds, assignedUnitRefs, library, pageNumber, selectedBookId, selectedUnitId])
+  }, [assignedBookIds, assignedUnitRefs, library, pageNumber, selectedBookId, selectedUnitId, studentId])
 
   const retainUnitIds = useMemo(
     () => classSourceRetainUnitIds(classSourceBooks),

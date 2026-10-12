@@ -69,6 +69,35 @@ describe('class-source-strip', () => {
     expect(chips[1]).toMatchObject({ bookId: 'ws', unitId: 'u1', page: 4 })
   })
 
+  it('restores a parked book to the last unit that was read', () => {
+    const chips = listClassSourceBooks({
+      library,
+      assignedBookIds: ['ws', 'lit'],
+      assignedUnitRefs: [
+        { bookId: 'ws', unitId: 'u1' },
+        { bookId: 'lit', unitId: 'u1' },
+      ],
+      openBookId: 'ws',
+      openUnitId: 'u1',
+      openPage: 42,
+      getSavedPage: (bookId, unitId) => (bookId === 'lit' && unitId === 'u1' ? 4 : 1),
+      getLastPlace: (bookId) => (bookId === 'lit' ? { unitId: 'u2', page: 18 } : null),
+    })
+    expect(chips[0]).toMatchObject({ bookId: 'ws', unitId: 'u1', page: 42 })
+    expect(chips[1]).toMatchObject({ bookId: 'lit', unitId: 'u2', page: 18 })
+  })
+
+  it('ignores a last place whose unit is no longer in the book', () => {
+    const chips = listClassSourceBooks({
+      library,
+      assignedBookIds: ['lit'],
+      assignedUnitRefs: [{ bookId: 'lit', unitId: 'u1' }],
+      getSavedPage: () => 4,
+      getLastPlace: () => ({ unitId: 'removed', page: 18 }),
+    })
+    expect(chips[0]).toMatchObject({ bookId: 'lit', unitId: 'u1', page: 4 })
+  })
+
   it('uses the live open page for the focused book', () => {
     const chips = listClassSourceBooks({
       library,
