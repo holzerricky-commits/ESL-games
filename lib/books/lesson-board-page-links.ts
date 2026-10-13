@@ -21,6 +21,8 @@ export type LessonBoardPageLinkBoardRef = {
 export type LessonBoardPageLink = {
   id: string
   bookId: string
+  /** Unit file that owns `pdfPage`, when the citation recorded one. */
+  unitId?: string
   pdfPage: number
   center: [number, number]
   boardPageRef: LessonBoardPageLinkBoardRef
@@ -124,9 +126,45 @@ export function listLessonBoardPageLinksForPdfPage(
   links: readonly LessonBoardPageLink[],
   pdfPage: number,
   bookId?: string,
+  unitId?: string,
 ): LessonBoardPageLink[] {
   const book = bookId?.trim()
-  return links.filter((link) => link.pdfPage === pdfPage && (!book || link.bookId === book))
+  const unit = unitId?.trim()
+  return links.filter((link) => {
+    if (link.pdfPage !== pdfPage) return false
+    if (book && link.bookId !== book) return false
+    if (unit && link.unitId && link.unitId !== unit) return false
+    return true
+  })
+}
+
+/**
+ * Unit to open for a notebook citation.
+ * The link's own unit wins, then the legacy per-unit link, then the strip chip.
+ * A candidate is skipped when the book no longer has that unit.
+ */
+export function resolveNotebookLinkUnitId(args: {
+  linkUnitId?: string | null
+  legacyUnitId?: string | null
+  chipUnitId?: string | null
+  openUnitId?: string | null
+  bookUnitIds?: readonly string[]
+}): string | null {
+  const allowed = (args.bookUnitIds ?? []).map((id) => id.trim()).filter(Boolean)
+  const allow = new Set(allowed)
+  const pick = (id?: string | null): string | null => {
+    const trimmed = id?.trim() ?? ''
+    if (!trimmed) return null
+    if (allow.size > 0 && !allow.has(trimmed)) return null
+    return trimmed
+  }
+  return (
+    pick(args.linkUnitId) ??
+    pick(args.legacyUnitId) ??
+    pick(args.chipUnitId) ??
+    pick(args.openUnitId) ??
+    null
+  )
 }
 
 export function upsertLessonBoardPageLink(
@@ -236,6 +274,7 @@ export function notebookPageToBoardLink(
   return {
     id: `nb-link:${page.id}`,
     bookId: primary.bookId,
+    ...(primary.unitId?.trim() ? { unitId: primary.unitId.trim() } : {}),
     pdfPage: primary.pdfPage,
     center: clampLinkCenter(primary.center),
     boardPageRef: {
@@ -307,12 +346,16 @@ export function stampLegacyBoardLinksOntoPages(
       const pdfPage = typeof o.pdfPage === 'number' ? Math.floor(o.pdfPage) : Number.NaN
       if (!pageId || !Number.isFinite(pdfPage) || pdfPage < 1) continue
       const bookId = (typeof o.bookId === 'string' && o.bookId.trim()) || scope.bookId
+      const unitId = scope.unitId.trim()
       const center = Array.isArray(o.center) && o.center.length >= 2
         ? clampLinkCenter([Number(o.center[0]), Number(o.center[1])])
         : undefined
-      const stamped: LessonBoardPagePrimaryLink = center
-        ? { bookId, pdfPage, center }
-        : { bookId, pdfPage }
+      const stamped: LessonBoardPagePrimaryLink = {
+        bookId,
+        pdfPage,
+        ...(unitId ? { unitId } : {}),
+        ...(center ? { center } : {}),
+      }
       const list = candidates.get(pageId) ?? []
       list.push(stamped)
       candidates.set(pageId, list)
@@ -320,15 +363,61 @@ export function stampLegacyBoardLinksOntoPages(
   }
   let changed = false
   const next = pages.map((page) => {
-    if (page.primaryLink) return page
     const options = candidates.get(page.id)
-    if (!options?.length) return page
-    const preferred =
-      (page.sourceBookId
-        ? options.find((item) => item.bookId === page.sourceBookId)
-        : undefined) ?? options[0]!
+    const preferred = pickLegacyLinkForPage(page, options)
+    if (!page.primaryLink) {
+      if (!preferred) return page
+      changed = true
+      return { ...page, primaryLink: preferred }
+    }
+    if (page.primaryLink.unitId?.trim()) return page
+    const unitId = preferred?.unitId?.trim()
+    if (!unitId || !preferred) return page
+    if (preferred.bookId !== page.primaryLink.bookId || preferred.pdfPage !== page.primaryLink.pdfPage) {
+      return page
+    }
     changed = true
-    return { ...page, primaryLink: preferred }
+    return { ...page, primaryLink: { ...page.primaryLink, unitId } }
   })
   return { pages: next, changed }
+}
+
+function pickLegacyLinkForPage(
+  page: LessonBoardPage,
+  options: LessonBoardPagePrimaryLink[] | undefined,
+): LessonBoardPagePrimaryLink | null {
+  if (!options?.length) return null
+  return (
+    (page.sourceBookId ? options.find((item) => item.bookId === page.sourceBookId) : undefined) ??
+    options[0]!
+  )
+}
+
+/** Unit stored on the old per-book-unit link for this notebook page, if the page and spot still match. */
+export function findLegacyBoardLinkUnitId(
+  studentId: string,
+  boardPageId: string,
+  link: Pick<LessonBoardPagePrimaryLink, 'bookId' | 'pdfPage'>,
+  adapter: LessonBoardPageLinksStorageAdapter = browserLinksStorageAdapter(),
+): string | null {
+  const id = studentId.trim()
+  const pageId = boardPageId.trim()
+  const bookId = link.bookId.trim()
+  if (!id || !pageId || !bookId || link.pdfPage < 1) return null
+  const root = adapter.readRoot()
+  for (const [docId, rawLinks] of Object.entries(root)) {
+    const scope = parseLessonBoardPageLinksDocId(docId)
+    if (!scope || scope.studentId !== id || scope.bookId !== bookId) continue
+    if (!Array.isArray(rawLinks)) continue
+    for (const raw of rawLinks) {
+      if (!raw || typeof raw !== 'object') continue
+      const o = raw as Partial<LessonBoardPageLink>
+      if (o.boardPageRef?.pageId?.trim() !== pageId) continue
+      const pdfPage = typeof o.pdfPage === 'number' ? Math.floor(o.pdfPage) : Number.NaN
+      if (pdfPage !== link.pdfPage) continue
+      const unitId = scope.unitId.trim()
+      if (unitId) return unitId
+    }
+  }
+  return null
 }

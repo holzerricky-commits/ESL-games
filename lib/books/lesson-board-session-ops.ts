@@ -242,6 +242,7 @@ export function setLessonBoardPagePrimaryLink(
     (normalized &&
       currentLink &&
       currentLink.bookId === normalized.bookId &&
+      (currentLink.unitId ?? '') === (normalized.unitId ?? '') &&
       currentLink.pdfPage === normalized.pdfPage &&
       (currentLink.center?.[0] ?? null) === (normalized.center?.[0] ?? null) &&
       (currentLink.center?.[1] ?? null) === (normalized.center?.[1] ?? null))

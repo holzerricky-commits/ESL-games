@@ -114,9 +114,15 @@ import type { WhiteboardSessionStore } from '@/lib/books/whiteboard-session-stor
 import { setAnnotationsForStorageKey } from '@/lib/books/annotation-storage'
 import { lessonBoardPageStorageKey } from '@/lib/books/lesson-board-session-ops'
 import {
+  findLegacyBoardLinkUnitId,
   formatNotebookBookLinkGoToLabel,
   removeLessonBoardPageLinksForBoardPageIds,
+  resolveNotebookLinkUnitId,
 } from '@/lib/books/lesson-board-page-links'
+import {
+  flushPendingStudentBookPlaceSave,
+  scheduleSaveStudentBookPlace,
+} from '@/lib/students/student-book-place-save'
 import { getStudentTeachingOpenPdfPageForBookUnit } from '@/lib/students/selectors'
 import type { FullscreenBookOverlayProps } from '../types'
 
@@ -1624,6 +1630,7 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
   } = useBoardLinkPlacement({
     studentId,
     openBookId: selectedBookId,
+    openUnitId: selectedUnitId,
     library,
     whiteboardSessionDoc,
     minimizeWhiteboard: launchMinimizeWhiteboard,
@@ -1727,12 +1734,33 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     null,
   )
 
+  const rememberNotebookLinkPlace = useCallback(
+    (bookId: string, unitId: string, pdfPage: number) => {
+      if (isPrepMode) return
+      const sid = studentId.trim()
+      if (!sid || pdfPage < 1) return
+      scheduleSaveStudentBookPlace({ studentId: sid, bookId, unitId, pdfPage })
+      flushPendingStudentBookPlaceSave()
+    },
+    [isPrepMode, studentId],
+  )
+
   const jumpToNotebookBookLink = useCallback(() => {
     const link = activePrimaryLink
     if (!link) return
     if (notebookFocus) parkNotebookFromFocus()
     const chip = classSourceBooks.find((item) => item.bookId === link.bookId)
-    const unitId = chip?.unitId ?? (selectedBookId === link.bookId ? selectedUnitId : null)
+    const book = library?.books.find((item) => item.id === link.bookId)
+    const legacyUnitId = lessonBoardActivePage
+      ? findLegacyBoardLinkUnitId(studentId, lessonBoardActivePage.id, link)
+      : null
+    const unitId = resolveNotebookLinkUnitId({
+      linkUnitId: link.unitId,
+      legacyUnitId,
+      chipUnitId: chip?.unitId,
+      openUnitId: selectedBookId === link.bookId ? selectedUnitId : null,
+      bookUnitIds: book?.units.map((unit) => unit.id) ?? [],
+    })
     if (!unitId) {
       toast.error('That book isn’t in this class.')
       return
@@ -1743,7 +1771,9 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
       pdfPage: link.pdfPage,
     }
     if (selectedBookId === link.bookId && selectedUnitId === unitId) {
+      const pageUnchanged = pageNumber === link.pdfPage
       goToPage(link.pdfPage)
+      if (pageUnchanged) rememberNotebookLinkPlace(link.bookId, unitId, link.pdfPage)
       pendingNotebookLinkJumpRef.current = null
       return
     }
@@ -1751,26 +1781,37 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
       onSwitchTeachingBook(link.bookId, unitId)
       return
     }
+    const pageUnchanged = pageNumber === link.pdfPage
     goToPage(link.pdfPage)
+    if (pageUnchanged) rememberNotebookLinkPlace(link.bookId, unitId, link.pdfPage)
     pendingNotebookLinkJumpRef.current = null
   }, [
     activePrimaryLink,
     classSourceBooks,
     goToPage,
+    lessonBoardActivePage,
+    library,
     notebookFocus,
     onSwitchTeachingBook,
+    pageNumber,
     parkNotebookFromFocus,
+    rememberNotebookLinkPlace,
     selectedBookId,
     selectedUnitId,
+    studentId,
   ])
 
   useEffect(() => {
     const pending = pendingNotebookLinkJumpRef.current
     if (!pending) return
     if (selectedBookId !== pending.bookId || selectedUnitId !== pending.unitId) return
+    const pageUnchanged = pageNumber === pending.pdfPage
     goToPage(pending.pdfPage)
+    if (pageUnchanged) {
+      rememberNotebookLinkPlace(pending.bookId, pending.unitId, pending.pdfPage)
+    }
     pendingNotebookLinkJumpRef.current = null
-  }, [goToPage, pageNumber, selectedBookId, selectedUnitId])
+  }, [goToPage, pageNumber, rememberNotebookLinkPlace, selectedBookId, selectedUnitId])
 
   const activeBoardPageLinkGoToLabel = useMemo(
     () => formatNotebookBookLinkGoToLabel(activePrimaryLink, library),

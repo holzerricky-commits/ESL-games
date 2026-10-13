@@ -186,7 +186,22 @@ describe('lesson-board-session-ops', () => {
       center: [0.4, 0.6],
     })
     expect(linked?.pages[0]?.bookPageHint).toBe(18)
-    const cleared = setLessonBoardPagePrimaryLink(linked!, pageId, null)
+    const withUnit = setLessonBoardPagePrimaryLink(linked!, pageId, {
+      bookId: 'literature-anthology-g2',
+      unitId: 'unit-2',
+      pdfPage: 18,
+      center: [0.4, 0.6],
+    })
+    expect(withUnit?.pages[0]?.primaryLink?.unitId).toBe('unit-2')
+    expect(
+      setLessonBoardPagePrimaryLink(withUnit!, pageId, {
+        bookId: 'literature-anthology-g2',
+        unitId: 'unit-2',
+        pdfPage: 18,
+        center: [0.4, 0.6],
+      }),
+    ).toBeNull()
+    const cleared = setLessonBoardPagePrimaryLink(withUnit!, pageId, null)
     expect(cleared?.pages[0]?.primaryLink).toBeUndefined()
     expect(cleared?.pages[0]?.bookPageHint).toBe(18)
   })

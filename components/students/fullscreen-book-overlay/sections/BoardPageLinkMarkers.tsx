@@ -24,6 +24,7 @@ type PageMarkerProps = {
   pageHeightPx: number
   links: readonly LessonBoardPageLink[]
   openBookId?: string | null
+  openUnitId?: string | null
   boardPages: readonly LessonBoardPage[]
   placementActive: boolean
   markersInteractive: boolean
@@ -48,6 +49,7 @@ function PageBoardLinkMarkers({
   pageHeightPx,
   links,
   openBookId,
+  openUnitId,
   boardPages,
   placementActive,
   markersInteractive,
@@ -66,7 +68,7 @@ function PageBoardLinkMarkers({
     [onPlaceLink, pdfPage, placementActive],
   )
 
-  const pageLinks = listLessonBoardPageLinksForPdfPage(links, pdfPage, openBookId)
+  const pageLinks = listLessonBoardPageLinksForPdfPage(links, pdfPage, openBookId ?? undefined, openUnitId ?? undefined)
 
   return (
     <div
@@ -134,6 +136,7 @@ export type BoardPageLinkMarkersProps = {
   rightPageCaptureRef: RefObject<HTMLDivElement | null>
   links: readonly LessonBoardPageLink[]
   openBookId?: string | null
+  openUnitId?: string | null
   boardPages: readonly LessonBoardPage[]
   placementActive: boolean
   markersInteractive: boolean
@@ -152,6 +155,7 @@ export function BoardPageLinkMarkers({
   rightPageCaptureRef: _rightPageCaptureRef,
   links,
   openBookId,
+  openUnitId,
   boardPages,
   placementActive,
   markersInteractive,
@@ -177,6 +181,7 @@ export function BoardPageLinkMarkers({
           pageHeightPx={pageCanvasHeightPx}
           links={links}
           openBookId={openBookId}
+          openUnitId={openUnitId}
           boardPages={boardPages}
           placementActive={placementActive}
           markersInteractive={markersInteractive}
@@ -195,6 +200,7 @@ export function BoardPageLinkMarkers({
             pageHeightPx={pageCanvasHeightPx}
             links={links}
             openBookId={openBookId}
+            openUnitId={openUnitId}
             boardPages={boardPages}
             placementActive={placementActive}
             markersInteractive={markersInteractive}
