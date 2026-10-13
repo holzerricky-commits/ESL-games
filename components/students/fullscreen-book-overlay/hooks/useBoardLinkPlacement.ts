@@ -22,6 +22,8 @@ export type UseBoardLinkPlacementArgs = {
   studentId: string
   /** Currently focused PDF book — new links cite this book. */
   openBookId: string | null
+  /** Currently focused unit — new links cite this file. */
+  openUnitId: string | null
   library: BookLibraryPayload | null
   whiteboardSessionDoc: WhiteboardSessionDocument | null
   minimizeWhiteboard: () => void
@@ -40,6 +42,7 @@ export type UseBoardLinkPlacementArgs = {
 export function useBoardLinkPlacement({
   studentId,
   openBookId,
+  openUnitId,
   library,
   whiteboardSessionDoc,
   minimizeWhiteboard,
@@ -66,8 +69,13 @@ export function useBoardLinkPlacement({
     for (const page of stamped.pages) {
       if (!page.primaryLink) continue
       const current = doc.pages.find((p) => p.id === page.id)?.primaryLink
-      if (current) continue
-      byPageId.set(page.id, page.primaryLink)
+      if (!current) {
+        byPageId.set(page.id, page.primaryLink)
+        continue
+      }
+      if (current.unitId?.trim() || !page.primaryLink.unitId) continue
+      if (current.bookId !== page.primaryLink.bookId || current.pdfPage !== page.primaryLink.pdfPage) continue
+      byPageId.set(page.id, { ...current, unitId: page.primaryLink.unitId })
     }
     if (byPageId.size === 0) return
     applyLessonBoardPagePrimaryLinks(byPageId)
@@ -119,12 +127,13 @@ export function useBoardLinkPlacement({
   const placeBoardLinkAt = useCallback(
     (pdfPage: number, center: [number, number]) => {
       const bookId = openBookId?.trim()
-      if (!bookId || !activeBoardPage) {
+      const unitId = openUnitId?.trim()
+      if (!bookId || !unitId || !activeBoardPage) {
         toast.error('Could not place link — open a book and try again.')
         setPlacementActive(false)
         return false
       }
-      const next: LessonBoardPagePrimaryLink = { bookId, pdfPage, center }
+      const next: LessonBoardPagePrimaryLink = { bookId, unitId, pdfPage, center }
       const saved = setLessonBoardPagePrimaryLink(activeBoardPage.id, next)
       setPlacementActive(false)
       if (!saved) {
@@ -134,7 +143,7 @@ export function useBoardLinkPlacement({
       toast.success(`Linked to ${formatNotebookBookLinkLabel(next, library)}`)
       return true
     },
-    [activeBoardPage, library, openBookId, setLessonBoardPagePrimaryLink],
+    [activeBoardPage, library, openBookId, openUnitId, setLessonBoardPagePrimaryLink],
   )
 
   const removeActiveBoardPageLink = useCallback(() => {

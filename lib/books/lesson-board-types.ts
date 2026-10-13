@@ -22,6 +22,8 @@ export type LessonBoardPageOrientation = 'standard' | 'wide'
 /** Intentional citation: this notebook page points at a place in a book. */
 export type LessonBoardPagePrimaryLink = {
   bookId: string
+  /** Unit whose PDF contains `pdfPage`. Required to reopen the right file. */
+  unitId?: string
   pdfPage: number
   /** Normalized page center. Omitted = jump to the page, no marker spot. */
   center?: [number, number]
@@ -33,6 +35,7 @@ export function normalizeLessonBoardPagePrimaryLink(
   if (!raw || typeof raw !== 'object') return undefined
   const o = raw as Record<string, unknown>
   const bookId = typeof o.bookId === 'string' ? o.bookId.trim() : ''
+  const unitId = typeof o.unitId === 'string' ? o.unitId.trim() : ''
   const pdfPage = typeof o.pdfPage === 'number' ? Math.floor(o.pdfPage) : Number.NaN
   if (!bookId || !Number.isFinite(pdfPage) || pdfPage < 1) return undefined
   const centerRaw = o.center
@@ -48,7 +51,12 @@ export function normalizeLessonBoardPagePrimaryLink(
       Math.max(0, Math.min(1, centerRaw[1])),
     ]
   }
-  return center ? { bookId, pdfPage, center } : { bookId, pdfPage }
+  return {
+    bookId,
+    pdfPage,
+    ...(unitId ? { unitId } : {}),
+    ...(center ? { center } : {}),
+  }
 }
 
 export type LessonBoardPage = {

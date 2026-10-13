@@ -2375,6 +2375,7 @@ export function BookCanvasStage({
           rightPageCaptureRef={rightPageCaptureRef}
           links={lessonBoardPageLinks}
           openBookId={selectedBookId}
+          openUnitId={selectedUnitId}
           boardPages={whiteboardSessionDoc?.pages ?? []}
           placementActive={boardLinkPlacementActive}
           markersInteractive={boardLinkMarkersInteractive}

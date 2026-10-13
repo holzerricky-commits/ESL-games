@@ -3,6 +3,7 @@ import { createEmptyWhiteboardSession } from '@/lib/books/whiteboard-session-typ
 import { appendLessonBoardStandardPage } from '@/lib/books/lesson-board-session-ops'
 import {
   createMemoryLessonBoardPageLinksStorage,
+  findLegacyBoardLinkUnitId,
   findLessonBoardPageLinkForBoardPage,
   formatNotebookBookLinkGoToLabel,
   listBoardLinksFromNotebookPages,
@@ -10,6 +11,7 @@ import {
   loadLessonBoardPageLinks,
   removeLessonBoardPageLink,
   resolveLessonBoardPageIdFromLink,
+  resolveNotebookLinkUnitId,
   stampLegacyBoardLinksOntoPages,
   upsertLessonBoardPageLink,
 } from '@/lib/books/lesson-board-page-links'
@@ -175,12 +177,91 @@ describe('lesson-board-page-links', () => {
     expect(stamped.changed).toBe(true)
     expect(stamped.pages[0]?.primaryLink).toEqual({
       bookId: 'workshop',
+      unitId: 'u1',
       pdfPage: 18,
       center: [0.2, 0.8],
     })
     expect(stamped.pages[1]?.primaryLink).toBeUndefined()
     const again = stampLegacyBoardLinksOntoPages('s1', stamped.pages, storage)
     expect(again.changed).toBe(false)
+  })
+
+  it('fills a missing unit onto a notebook link that already cites the same page', () => {
+    const storage = createMemoryLessonBoardPageLinksStorage()
+    upsertLessonBoardPageLink(
+      { studentId: 's1', bookId: 'workshop', unitId: 'unit-2' },
+      {
+        pdfPage: 14,
+        center: [0.3, 0.4],
+        boardPage: { id: 'page-a', orientation: 'standard' },
+        ordinal: 0,
+      },
+      storage,
+    )
+    const pages = [
+      createLessonBoardPage('standard', {
+        id: 'page-a',
+        primaryLink: { bookId: 'workshop', pdfPage: 14, center: [0.3, 0.4] },
+      }),
+    ]
+    const stamped = stampLegacyBoardLinksOntoPages('s1', pages, storage)
+    expect(stamped.changed).toBe(true)
+    expect(stamped.pages[0]?.primaryLink?.unitId).toBe('unit-2')
+    expect(findLegacyBoardLinkUnitId('s1', 'page-a', { bookId: 'workshop', pdfPage: 14 }, storage)).toBe(
+      'unit-2',
+    )
+  })
+
+  it('resolveNotebookLinkUnitId prefers the cited unit over the class-strip unit', () => {
+    const bookUnitIds = ['unit-1', 'unit-2']
+    expect(
+      resolveNotebookLinkUnitId({
+        linkUnitId: 'unit-2',
+        chipUnitId: 'unit-1',
+        bookUnitIds,
+      }),
+    ).toBe('unit-2')
+    expect(
+      resolveNotebookLinkUnitId({
+        legacyUnitId: 'unit-2',
+        chipUnitId: 'unit-1',
+        bookUnitIds,
+      }),
+    ).toBe('unit-2')
+    expect(
+      resolveNotebookLinkUnitId({
+        linkUnitId: 'deleted-unit',
+        chipUnitId: 'unit-1',
+        bookUnitIds,
+      }),
+    ).toBe('unit-1')
+  })
+
+  it('hides a link marker that cites a different unit of the same book', () => {
+    const links = [
+      {
+        id: 'a',
+        bookId: 'lit',
+        unitId: 'unit-2',
+        pdfPage: 14,
+        center: [0.2, 0.2] as [number, number],
+        boardPageRef: { pageId: 'p', ordinal: 0 },
+        createdAt: '',
+      },
+      {
+        id: 'b',
+        bookId: 'lit',
+        pdfPage: 14,
+        center: [0.8, 0.2] as [number, number],
+        boardPageRef: { pageId: 'q', ordinal: 1 },
+        createdAt: '',
+      },
+    ]
+    expect(listLessonBoardPageLinksForPdfPage(links, 14, 'lit', 'unit-1').map((link) => link.id)).toEqual(['b'])
+    expect(listLessonBoardPageLinksForPdfPage(links, 14, 'lit', 'unit-2').map((link) => link.id)).toEqual([
+      'a',
+      'b',
+    ])
   })
 
   it('lists notebook-derived links only for the cited book', () => {
