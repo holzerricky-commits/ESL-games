@@ -23,7 +23,11 @@ import type { BookRecord, BookUnitRecord } from '@/lib/books/types'
 import { resolveUnitPdfAbsolutePath } from '@/lib/context/resolve-unit-pdf-path'
 import {
   buildPlaceholderChunkForPdfPages,
+  joinReadingStoryPageSections,
+  parseReadingStoryPageSections,
+  planStoryChunkReads,
   tagScannedChunkText,
+  type ReadingStoryPageSection,
 } from '@/lib/books/reading-story-page-markers'
 
 function displayLabelForPdfPage(
@@ -227,21 +231,12 @@ export async function POST(req: Request) {
       const chunkEnd = Math.min(rangeEnd, Math.max(chunkStart, Math.floor(chunkEndRaw)))
       const reset = body.reset === true
 
-      let chunkText = ''
-      let source: 'pdf' | 'gemini' = 'pdf'
-
       const pdfExtract = await extractPdfPageRangeText(ctx.absPath, chunkStart, chunkEnd)
-      if (pdfExtract.text.trim()) {
-        chunkText = pdfExtract.text.trim()
-        source = 'pdf'
-      } else {
-        const gemini = await extractStoryTextChunkWithGemini(ctx.absPath, chunkStart, chunkEnd)
-        if (!gemini.ok) {
-          return NextResponse.json({ ok: false, error: gemini.error }, { status: 422 })
-        }
-        chunkText = gemini.text.trim()
-        source = 'gemini'
-      }
+      const readPlan = planStoryChunkReads({
+        chunkStartPdfPage: chunkStart,
+        chunkEndPdfPage: chunkEnd,
+        pdfExtractText: pdfExtract.text,
+      })
 
       const existing = reset ? null : await getReadingStoryText(storyId)
       const previousText = existing?.text?.trim() ?? ''
@@ -249,6 +244,65 @@ export async function POST(req: Request) {
         startPdfPage: ctx.range.startPdfPage,
         startDisplayPage: ctx.range.startDisplayPage,
         endDisplayPage: ctx.range.endDisplayPage,
+      }
+
+      let chunkText = ''
+      let source: 'pdf' | 'gemini' = 'pdf'
+
+      if (readPlan.length === 1 && readPlan[0]!.source === 'pdf') {
+        chunkText = pdfExtract.text.trim()
+        source = 'pdf'
+      } else if (readPlan.length === 1 && readPlan[0]!.source === 'gemini') {
+        const gemini = await extractStoryTextChunkWithGemini(ctx.absPath, chunkStart, chunkEnd)
+        if (!gemini.ok) {
+          return NextResponse.json({ ok: false, error: gemini.error }, { status: 422 })
+        }
+        chunkText = gemini.text.trim()
+        source = 'gemini'
+      } else {
+        // One side of the spread has a text layer and the other is a flattened
+        // scan. Read the missing pages from the image before saving, or that
+        // page is stored blank and later treated as finished.
+        source = 'gemini'
+        const sections: ReadingStoryPageSection[] = []
+        const pdfTagged = pdfExtract.text.trim()
+          ? tagScannedChunkText(pdfExtract.text, {
+              chunkStartPdfPage: chunkStart,
+              chunkEndPdfPage: chunkEnd,
+              range: rangeArgs,
+            })
+          : ''
+        for (const span of readPlan) {
+          if (span.source === 'pdf') {
+            for (const section of parseReadingStoryPageSections(pdfTagged)) {
+              if (section.pdfPage < span.startPdfPage || section.pdfPage > span.endPdfPage) continue
+              if (!section.text.trim()) continue
+              sections.push(section)
+            }
+            continue
+          }
+          const gemini = await extractStoryTextChunkWithGemini(
+            ctx.absPath,
+            span.startPdfPage,
+            span.endPdfPage,
+          )
+          if (!gemini.ok) {
+            return NextResponse.json({ ok: false, error: gemini.error }, { status: 422 })
+          }
+          const tagged = gemini.text.trim()
+            ? tagScannedChunkText(gemini.text, {
+                chunkStartPdfPage: span.startPdfPage,
+                chunkEndPdfPage: span.endPdfPage,
+                range: rangeArgs,
+              })
+            : buildPlaceholderChunkForPdfPages(span.startPdfPage, span.endPdfPage, rangeArgs)
+          for (const section of parseReadingStoryPageSections(tagged)) {
+            if (section.pdfPage < span.startPdfPage || section.pdfPage > span.endPdfPage) continue
+            if (!section.text.trim()) continue
+            sections.push(section)
+          }
+        }
+        chunkText = joinReadingStoryPageSections(sections)
       }
       const taggedChunk = chunkText.trim()
         ? tagScannedChunkText(chunkText, {

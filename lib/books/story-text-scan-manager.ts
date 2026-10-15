@@ -72,7 +72,9 @@ function finishToasts(
   if (result.ok) {
     if (result.interrupted) {
       toast.message(
-        `Scan stopped for “${label}” — finished pages were kept. Use Continue scan to finish.`,
+        result.unfinished
+          ? `Some pages of “${label}” were not read. Use Continue scan to finish.`
+          : `Scan stopped for “${label}” — finished pages were kept. Use Continue scan to finish.`,
       )
     } else {
       toast.success(
