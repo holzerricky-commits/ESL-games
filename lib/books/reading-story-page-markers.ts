@@ -169,6 +169,7 @@ export function buildPlaceholderChunkForPdfPages(
 /**
  * Convert `--- Page N ---` / `--- Pages A–B ---` and ensure this chunk starts on
  * its first PDF page so prose is not glued to the previous spread.
+ * Pages the transcript never mentioned are left out so a later Continue scan can read them.
  */
 export function tagScannedChunkText(
   rawText: string,
@@ -186,7 +187,6 @@ export function tagScannedChunkText(
   if (!trimmed) return ''
 
   const chunkStart = Math.max(1, Math.floor(args.chunkStartPdfPage))
-  const chunkEnd = Math.max(chunkStart, Math.floor(args.chunkEndPdfPage))
   const range = resolveReadingStoryPageRangeHint(trimmed, args.range)
   let text = normalizeStoryTextPageMarkers(trimmed, range)
 
@@ -199,17 +199,57 @@ export function tagScannedChunkText(
     text = `${startMarker}\n${text}`
   }
 
-  const present = new Set(
-    [...text.matchAll(/<<<page\s+display="(?:\d+|·)"\s+pdf="(\d+)">>>/gi)].map((m) =>
-      Math.floor(Number(m[1])),
-    ),
-  )
-  const missing: string[] = []
-  for (let pdfPage = chunkStart; pdfPage <= chunkEnd; pdfPage += 1) {
-    if (!present.has(pdfPage)) missing.push(markerForPdfPage(pdfPage, range))
-  }
-  if (missing.length > 0) text = `${text.trim()}\n${missing.join('\n')}`
+  // Pages the transcript never mentioned stay unscanned. An empty marker would
+  // mark them finished, and Continue scan would skip a page that still needs OCR.
   return collapseAdjacentDuplicatePdfMarkers(text).trim()
+}
+
+export type StoryChunkReadSpan = {
+  startPdfPage: number
+  endPdfPage: number
+  source: 'pdf' | 'gemini'
+}
+
+/**
+ * How to read one scan chunk. Pages with a text layer stay on the PDF extract.
+ * Pages missing from that extract (flattened scans on the same spread) are read
+ * from the page image. Spans stay in page order.
+ */
+export function planStoryChunkReads(args: {
+  chunkStartPdfPage: number
+  chunkEndPdfPage: number
+  pdfExtractText: string
+}): StoryChunkReadSpan[] {
+  const start = Math.max(1, Math.floor(args.chunkStartPdfPage))
+  const end = Math.max(start, Math.floor(args.chunkEndPdfPage))
+  const covered = coveredPdfPagesFromStoryText(args.pdfExtractText)
+  const spans: StoryChunkReadSpan[] = []
+  let page = start
+  while (page <= end) {
+    const source: StoryChunkReadSpan['source'] = covered.has(page) ? 'pdf' : 'gemini'
+    let last = page
+    while (last + 1 <= end && covered.has(last + 1) === (source === 'pdf')) last += 1
+    spans.push({ startPdfPage: page, endPdfPage: last, source })
+    page = last + 1
+  }
+  return spans
+}
+
+/** Rebuild tagged story text from page sections, first body per page, in page order. */
+export function joinReadingStoryPageSections(sections: readonly ReadingStoryPageSection[]): string {
+  const byPage = new Map<number, ReadingStoryPageSection>()
+  for (const section of sections) {
+    if (!section.text.trim()) continue
+    if (!byPage.has(section.pdfPage)) byPage.set(section.pdfPage, section)
+  }
+  return [...byPage.values()]
+    .sort((a, b) => a.pdfPage - b.pdfPage)
+    .map(
+      (section) =>
+        `${formatReadingStoryPageMarker({ displayPage: section.displayPage, pdfPage: section.pdfPage })}\n${section.text}`,
+    )
+    .join('\n\n')
+    .trim()
 }
 
 /** Split story text into page sections using markers (skips unmarked leading preamble). */
@@ -252,6 +292,8 @@ export function coveredPdfPagesFromStoryText(storyText: string): Set<number> {
   if (!text.trim()) return covered
 
   for (const section of parseReadingStoryPageSections(text)) {
+    // A marker with no body is not a finished page. Continue scan can still read it.
+    if (!section.text.trim()) continue
     covered.add(section.pdfPage)
   }
 

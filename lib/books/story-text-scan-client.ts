@@ -39,7 +39,7 @@ export interface StoryScanPlan {
 
 export type ChunkedStoryScanResult =
   | { ok: true; text: ReadingStoryTextRecord; interrupted: false }
-  | { ok: true; text: ReadingStoryTextRecord; interrupted: true }
+  | { ok: true; text: ReadingStoryTextRecord; interrupted: true; unfinished?: boolean }
   | { ok: false; error: string; text: ReadingStoryTextRecord | null }
 
 export type StoryTextScanMode = 'full' | 'continue'
@@ -282,16 +282,34 @@ export async function runChunkedStoryTextScan(
     lastText = chunkData.text
     onChunkSaved?.(chunkData.text)
 
-    pages = pages.map((p) =>
-      p.pdfPage >= chunkStart && p.pdfPage <= chunkEnd ? { ...p, status: 'done' } : p,
+    const coveredNow = coveredPdfPagesFromStoryText(chunkData.text.text ?? '')
+    pages = pages.map((p) => {
+      if (p.pdfPage < chunkStart || p.pdfPage > chunkEnd) return p
+      return coveredNow.has(p.pdfPage) ? { ...p, status: 'done' as const } : { ...p, status: 'pending' as const }
+    })
+    const chunkOpen = pages.some(
+      (p) => p.pdfPage >= chunkStart && p.pdfPage <= chunkEnd && p.status !== 'done',
     )
     onProgress?.(
       buildProgress(
         pages,
-        `Saved page${chunkStart === chunkEnd ? '' : 's'} ${activeLabel}.`,
+        chunkOpen
+          ? `Saved the pages that were read. ${activeLabel} still has a gap.`
+          : `Saved page${chunkStart === chunkEnd ? '' : 's'} ${activeLabel}.`,
         null,
       ),
     )
+  }
+
+  const unfinished = pages.filter((p) => p.status !== 'done')
+  if (unfinished.length > 0 && lastText) {
+    onProgress?.(
+      buildProgress(
+        pages,
+        `Saved ${pages.length - unfinished.length} of ${pages.length} pages. Continue scan to finish.`,
+      ),
+    )
+    return { ok: true, text: lastText, interrupted: true, unfinished: true }
   }
 
   onProgress?.(

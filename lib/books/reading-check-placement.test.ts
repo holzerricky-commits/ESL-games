@@ -12,7 +12,9 @@ import {
   coveredPdfPagesFromStoryText,
   formatReadingStoryPageMarker,
   isIllustrationOnlySectionText,
+  joinReadingStoryPageSections,
   parseReadingStoryPageSections,
+  planStoryChunkReads,
   READING_STORY_ILLUSTRATION_ONLY_PLACEHOLDER,
   remainingScanPdfPages,
   resolvePageFromStoryEvidence,
@@ -148,6 +150,71 @@ describe('reading-story-page-markers', () => {
       displayPage: 368,
       pdfPage: 376,
     })
+  })
+
+  it('does not mark an unread facing page finished when only one page has text', () => {
+    const range = { startPdfPage: 4, startDisplayPage: 4, endDisplayPage: 5 }
+    const tagged = tagScannedChunkText('--- Page 4 ---\nOnce upon a time the story began.', {
+      chunkStartPdfPage: 4,
+      chunkEndPdfPage: 5,
+      range,
+    })
+    expect(tagged).toContain('pdf="4"')
+    expect(tagged).not.toContain('pdf="5"')
+    const savedWithEmptyFacingPage = [
+      tagged,
+      formatReadingStoryPageMarker({ displayPage: 5, pdfPage: 5 }),
+    ].join('\n')
+    const covered = coveredPdfPagesFromStoryText(savedWithEmptyFacingPage)
+    expect([...covered]).toEqual([4])
+    expect(
+      storyTextScanCanContinue({ text: savedWithEmptyFacingPage, startPdfPage: 4, endPdfPage: 5 }),
+    ).toBe(true)
+    expect(
+      planStoryChunkReads({
+        chunkStartPdfPage: 4,
+        chunkEndPdfPage: 5,
+        pdfExtractText: '--- Page 4 ---\nOnce upon a time the story began.',
+      }),
+    ).toEqual([
+      { startPdfPage: 4, endPdfPage: 4, source: 'pdf' },
+      { startPdfPage: 5, endPdfPage: 5, source: 'gemini' },
+    ])
+  })
+
+  it('keeps a fully text-backed spread on the pdf extract and a scan-only spread on images', () => {
+    expect(
+      planStoryChunkReads({
+        chunkStartPdfPage: 4,
+        chunkEndPdfPage: 5,
+        pdfExtractText: '--- Page 4 ---\nLeft\n\n--- Page 5 ---\nRight',
+      }),
+    ).toEqual([{ startPdfPage: 4, endPdfPage: 5, source: 'pdf' }])
+    expect(
+      planStoryChunkReads({
+        chunkStartPdfPage: 4,
+        chunkEndPdfPage: 5,
+        pdfExtractText: '',
+      }),
+    ).toEqual([{ startPdfPage: 4, endPdfPage: 5, source: 'gemini' }])
+  })
+
+  it('joins a text page and an image-page transcript in page order', () => {
+    const joined = joinReadingStoryPageSections([
+      {
+        displayPage: 5,
+        pdfPage: 5,
+        text: 'The story continues on the scanned page.',
+      },
+      {
+        displayPage: 4,
+        pdfPage: 4,
+        text: 'Once upon a time the story began.',
+      },
+    ])
+    expect(joined.indexOf('pdf="4"')).toBeLessThan(joined.indexOf('pdf="5"'))
+    expect(joined).toContain('Once upon a time the story began.')
+    expect(joined).toContain('The story continues on the scanned page.')
   })
 
   it('resolves Jump! on-disk story text without rewriting the saved file', async () => {
