@@ -3,6 +3,7 @@ import { access, constants, readFile, rename, writeFile } from 'node:fs/promises
 import {
   applyDiskCleanupPlanToBook,
   planBookDiskCleanup,
+  remapCleanupLibraryPath,
   type BookDiskCleanupPlan,
 } from '@/lib/books/book-disk-naming'
 import { getBookLibraryRoot, loadBookLibrary, saveBookLibraryManifest } from '@/lib/books/server'
@@ -79,6 +80,36 @@ async function rewriteMaterialsIndexPaths(
     }
   } catch {
     // Supporting index is best-effort; book PDF paths are the critical rewrite.
+  }
+}
+
+/** Listening tracks store a full library path. Folder rename moves the files; the index must follow. */
+async function rewriteAudioIndexPaths(bookFolder: string, plan: BookDiskCleanupPlan): Promise<void> {
+  if (!plan.currentFolder) return
+  const indexAbs = path.resolve(getBookLibraryRoot(), bookFolder, 'audio', 'audio-index.json')
+  if (!(await pathExists(indexAbs))) return
+
+  try {
+    const raw = await readFile(indexAbs, 'utf8')
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return
+
+    let changed = false
+    const next = parsed.map((item) => {
+      if (!item || typeof item !== 'object') return item
+      const row = item as { filePath?: unknown }
+      if (typeof row.filePath !== 'string') return item
+      const rewritten = remapCleanupLibraryPath(row.filePath, plan)
+      if (rewritten === row.filePath.replaceAll('\\', '/')) return item
+      changed = true
+      return { ...row, filePath: rewritten }
+    })
+
+    if (changed) {
+      await writeFile(indexAbs, `${JSON.stringify(next, null, 2)}\n`, 'utf8')
+    }
+  } catch {
+    // Audio index is best-effort; the book PDF paths are the critical rewrite.
   }
 }
 
@@ -189,6 +220,7 @@ export async function runBookDiskCleanup(options: {
       }
       if (folderMoved || completedFileRenames.length > 0) {
         await rewriteMaterialsIndexPaths(activeFolder, partialPlan)
+        await rewriteAudioIndexPaths(activeFolder, partialPlan)
         const patchedBook = applyDiskCleanupPlanToBook(book, partialPlan)
         const nextLibrary: BookLibraryPayload = {
           books: library.books.map((entry) => (entry.id === book.id ? patchedBook : entry)),
@@ -225,8 +257,9 @@ export async function runBookDiskCleanup(options: {
         : completedFileRenames,
   }
 
-  // 3) Rewrite supporting materials-index paths (best effort).
+  // 3) Rewrite supporting materials-index and listening-track paths (best effort).
   await rewriteMaterialsIndexPaths(activeFolder, finalPlan)
+  await rewriteAudioIndexPaths(activeFolder, finalPlan)
 
   // 4) Rewrite book manifest paths and save (id unchanged).
   const nextBook = applyDiskCleanupPlanToBook(book, finalPlan)

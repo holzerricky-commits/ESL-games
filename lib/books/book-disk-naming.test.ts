@@ -5,8 +5,10 @@ import {
   buildCanonicalMainPdfFileName,
   planBookDiskCleanup,
   planBookUploadFromFileName,
+  remapCleanupLibraryPath,
   slugifyDiskSegment,
 } from '@/lib/books/book-disk-naming'
+import { migrateBookVolumes } from '@/lib/books/book-volumes'
 import type { BookRecord } from '@/lib/books/types'
 
 describe('slugifyDiskSegment', () => {
@@ -172,5 +174,56 @@ describe('applyDiskCleanupPlanToBook', () => {
         notCountedPdfPages: [2],
       },
     })
+  })
+
+  it('keeps each volume on the renamed files so reload does not point units at the old folder', () => {
+    const book: BookRecord = {
+      id: 'wonders-g3-workshop',
+      title: 'Wonders G3 Workshop',
+      series: 'Wonders',
+      grade: 'G3',
+      role: 'Workshop',
+      volumes: [
+        {
+          id: 'vol-a',
+          title: 'Book A',
+          filePath: 'book-library/Wonders G3 Workshop/book-a.pdf',
+        },
+        {
+          id: 'vol-b',
+          title: 'Book B',
+          filePath: 'book-library/Wonders G3 Workshop/book-b.pdf',
+        },
+      ],
+      units: [
+        {
+          id: 'u1',
+          title: 'Unit 1',
+          volumeId: 'vol-a',
+          filePath: 'book-library/Wonders G3 Workshop/book-a.pdf',
+        },
+        {
+          id: 'u2',
+          title: 'Unit 2',
+          volumeId: 'vol-b',
+          filePath: 'book-library/Wonders G3 Workshop/book-b.pdf',
+        },
+      ],
+    }
+    const plan = planBookDiskCleanup(book)
+    const next = applyDiskCleanupPlanToBook(book, plan)
+    const reloaded = migrateBookVolumes(next)
+
+    expect(reloaded.volumes?.map((volume) => volume.filePath)).toEqual([
+      'book-library/wonders-g3-workshop/unit-01.pdf',
+      'book-library/wonders-g3-workshop/unit-02.pdf',
+    ])
+    expect(reloaded.units.map((unit) => unit.filePath)).toEqual([
+      'book-library/wonders-g3-workshop/unit-01.pdf',
+      'book-library/wonders-g3-workshop/unit-02.pdf',
+    ])
+    expect(
+      remapCleanupLibraryPath('book-library/Wonders G3 Workshop/audio/track-1.mp3', plan),
+    ).toBe('book-library/wonders-g3-workshop/audio/track-1.mp3')
   })
 })
