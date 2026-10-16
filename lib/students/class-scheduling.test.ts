@@ -860,6 +860,37 @@ describe('weekly schedule slots and rolling generation', () => {
     expect(result.ok).toBe(true)
   })
 
+  it('does not wipe weekly slots when the roster has not loaded yet', () => {
+    saveTeacherWeeklyScheduleConfig({
+      workingDays: [1],
+      startMinute: 9 * 60,
+      endMinute: 12 * 60,
+      slotMinutes: 30,
+    })
+    localStorage.setItem(
+      'esl_weekly_slot_assignments',
+      JSON.stringify([
+        {
+          id: 'slot-while-roster-loading',
+          dayOfWeek: 1,
+          startMinute: 10 * 60,
+          durationMinutes: 30,
+          studentId: 'stu_abc123',
+          createdAt: '2026-04-20T10:00:00.000Z',
+          updatedAt: '2026-04-20T10:00:00.000Z',
+        },
+      ]),
+    )
+
+    expect(getStudents()).toHaveLength(0)
+    expect(pruneOrphanWeeklySlots()).toBe(0)
+    expect(getWeeklySlotAssignments().map((slot) => slot.id)).toEqual(['slot-while-roster-loading'])
+
+    saveStudents([seedStudent({ id: 'stu_abc123' })])
+    expect(pruneOrphanWeeklySlots()).toBe(0)
+    expect(getWeeklySlotAssignments()).toHaveLength(1)
+  })
+
   it('putStudentOnBreak frees weekly times and hides from active list', () => {
     saveStudents([
       seedStudent({ id: 'student-1' }),

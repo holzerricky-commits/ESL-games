@@ -12,9 +12,11 @@ import { hydrateWeeklyScheduleFromDisk } from '@/lib/local-data/weekly-schedule-
 /** Loads teacher local data from disk when running `npm run dev` / `npm run start`. */
 export function LocalStudentDataHydrator() {
   useEffect(() => {
-    void hydrateStudentRecordsFromDisk()
+    void (async () => {
+      await hydrateStudentRecordsFromDisk()
+      await hydrateWeeklyScheduleFromDisk()
+    })()
     void hydrateBookAnnotationsFromDisk()
-    void hydrateWeeklyScheduleFromDisk()
     void hydrateChallengeDataFromDisk()
     void hydrateSavedWordsFromDisk()
     void hydrateLessonBoardLinksFromDisk()

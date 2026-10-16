@@ -215,6 +215,16 @@ export async function hydrateStudentRecordsFromDisk(): Promise<boolean> {
       diskActive = true
       notifyStudentRecordsHydrated()
 
+      // Weekly hydrate can finish first and skip orphan pruning until the roster
+      // exists. Re-run now that student ids are known.
+      void import('@/lib/students/selectors')
+        .then((mod) => {
+          if (typeof mod.pruneOrphanWeeklySlots === 'function') {
+            mod.pruneOrphanWeeklySlots()
+          }
+        })
+        .catch(() => {})
+
       if (!avatarBackfillStarted && students.length > 0) {
         avatarBackfillStarted = true
         void import('@/lib/students/student-avatar-client').then(({ backfillStudentAvatarsOnServer }) => {
