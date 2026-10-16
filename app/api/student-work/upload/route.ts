@@ -1,13 +1,16 @@
 import { access, constants, mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
 import {
   isSafeExportBaseName,
   isSafeStudentIdSegment,
   resolveStudentWorkUploadPath,
   type StudentWorkUploadCategory,
 } from '@/lib/students/student-work-path'
+import {
+  parseStudentWorkUploadMeta,
+  type StudentWorkUploadMeta,
+} from '@/lib/students/student-work-upload-meta'
 
 export const runtime = 'nodejs'
 
@@ -19,22 +22,6 @@ const CATEGORY_VALUES = [
   'audio',
   'lesson-notes',
 ] as const satisfies readonly StudentWorkUploadCategory[]
-
-const uploadMetaSchema = z
-  .object({
-    bookId: z.string().max(200).optional(),
-    unitId: z.string().max(200).optional(),
-    page: z.number().int().positive().optional(),
-    pageFrom: z.number().int().positive().optional(),
-    pageTo: z.number().int().positive().optional(),
-    captureKind: z.string().max(64).optional(),
-    format: z.string().max(32).optional(),
-    watermarked: z.boolean().optional(),
-    caption: z.string().max(2000).optional(),
-    exportedAt: z.string().max(64).optional(),
-    studentName: z.string().max(200).optional(),
-  })
-  .strict()
 
 const ALLOWED_MIME: Record<string, string> = {
   'image/png': '.png',
@@ -99,7 +86,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unsupported file type.' }, { status: 400 })
   }
 
-  let metaParsed: z.infer<typeof uploadMetaSchema> | undefined
+  let metaParsed: StudentWorkUploadMeta | undefined
   if (metaRaw != null && metaRaw !== '') {
     if (typeof metaRaw !== 'string') {
       return NextResponse.json({ error: 'meta must be a JSON string.' }, { status: 400 })
@@ -110,8 +97,8 @@ export async function POST(req: NextRequest) {
     } catch {
       return NextResponse.json({ error: 'meta must be valid JSON.' }, { status: 400 })
     }
-    const parsed = uploadMetaSchema.safeParse(json)
-    if (!parsed.success) {
+    const parsed = parseStudentWorkUploadMeta(json)
+    if (!parsed.ok) {
       return NextResponse.json({ error: 'Invalid meta shape.', details: parsed.error.flatten() }, { status: 400 })
     }
     metaParsed = parsed.data

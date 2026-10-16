@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { NextResponse } from 'next/server'
+import { resolveBookLibraryFolderName } from '@/lib/books/manifest-validation'
 import { getBookLibraryRoot, loadBookLibrary } from '@/lib/books/server'
 import type { BookContextMaterialRecord } from '@/lib/context/types'
 
@@ -50,9 +51,8 @@ interface DownloadTask {
 const downloadTasks = new Map<string, DownloadTask>()
 
 function resolveBookFolderFromUnitPath(filePath: string): string | null {
-  const normalized = filePath.replaceAll('\\', '/')
-  const match = normalized.match(/^book-library\/([^/]+)\//)
-  return match?.[1] ?? null
+  const cwd = /* turbopackIgnore: true */ process.cwd()
+  return resolveBookLibraryFolderName(filePath, cwd, getBookLibraryRoot())
 }
 
 function materialsIndexPath(bookFolder: string): string {
@@ -191,7 +191,12 @@ async function performDownload(taskId: string): Promise<void> {
     if (received <= 0) throw new Error('Downloaded file is empty.')
     const data = Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)))
 
-    const supportingDir = path.resolve(getBookLibraryRoot(), bookFolder, 'supporting')
+    const libraryRoot = getBookLibraryRoot()
+    const libraryPrefix = libraryRoot.endsWith(path.sep) ? libraryRoot : `${libraryRoot}${path.sep}`
+    const supportingDir = path.resolve(libraryRoot, bookFolder, 'supporting')
+    if (!supportingDir.startsWith(libraryPrefix)) {
+      throw new Error('Book folder could not be resolved.')
+    }
     await mkdir(supportingDir, { recursive: true })
     const requestedName = inferFileName(parsedUrl.toString(), task.title, contentType)
     const parsedRequested = path.parse(requestedName)

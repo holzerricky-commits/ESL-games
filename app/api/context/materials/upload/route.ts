@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { NextResponse } from 'next/server'
+import { resolveBookLibraryFolderName } from '@/lib/books/manifest-validation'
 import { getBookLibraryRoot, loadBookLibrary } from '@/lib/books/server'
 import type { BookContextMaterialRecord } from '@/lib/context/types'
 
@@ -22,9 +23,8 @@ interface StoredBookMaterial {
 }
 
 function resolveBookFolderFromUnitPath(filePath: string): string | null {
-  const normalized = filePath.replaceAll('\\', '/')
-  const match = normalized.match(/^book-library\/([^/]+)\//)
-  return match?.[1] ?? null
+  const cwd = /* turbopackIgnore: true */ process.cwd()
+  return resolveBookLibraryFolderName(filePath, cwd, getBookLibraryRoot())
 }
 
 function materialsIndexPath(bookFolder: string): string {
@@ -103,7 +103,12 @@ export async function POST(req: Request) {
     const bookFolder = resolveBookFolderFromUnitPath(unitPath)
     if (!bookFolder) return NextResponse.json({ ok: false, error: 'Book folder could not be resolved.' }, { status: 400 })
 
-    const supportingDir = path.resolve(getBookLibraryRoot(), bookFolder, 'supporting')
+    const libraryRoot = getBookLibraryRoot()
+    const libraryPrefix = libraryRoot.endsWith(path.sep) ? libraryRoot : `${libraryRoot}${path.sep}`
+    const supportingDir = path.resolve(libraryRoot, bookFolder, 'supporting')
+    if (!supportingDir.startsWith(libraryPrefix)) {
+      return NextResponse.json({ ok: false, error: 'Book folder could not be resolved.' }, { status: 400 })
+    }
     await mkdir(supportingDir, { recursive: true })
 
     const parsedName = path.parse(sanitizeFileName(file.name || 'material'))
