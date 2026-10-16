@@ -1,6 +1,11 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { resolveGeminiApiKey } from '@/lib/gemini'
+import {
+  lessonScanHasUsableModelFields,
+  unitScanHasUsableModelFields,
+  type ContextScanOutcome,
+} from '@/lib/context/scan-persist'
 import { DEFAULT_BOOK_FOCUS_AREAS } from '@/lib/context/types'
 import type {
   BookContextDraftRecord,
@@ -439,7 +444,7 @@ Rules:
   }
 }
 
-export async function scanUnitContext(input: UnitContextScanInput): Promise<UnitContextRecord> {
+export async function scanUnitContext(input: UnitContextScanInput): Promise<ContextScanOutcome<UnitContextRecord>> {
   const pageRange = clampPageRange(input.sourcePageRange)
   const scanProfile = normalizeScanProfile(input.scanProfile)
   const now = new Date().toISOString()
@@ -480,28 +485,32 @@ export async function scanUnitContext(input: UnitContextScanInput): Promise<Unit
 
   try {
     const text = await callGemini(systemPrompt, userPrompt)
-    if (!text) return fallback
+    if (!text) return { source: 'fallback', record: fallback }
     const parsed = parseJson(text) as {
       theme?: unknown
       bigIdeas?: unknown
       crossCurricularLinks?: unknown
       targetLanguageDomains?: unknown
     }
+    if (!unitScanHasUsableModelFields(parsed)) return { source: 'fallback', record: fallback }
     return {
-      ...fallback,
-      theme: String(parsed.theme ?? fallback.theme).trim() || fallback.theme,
-      bigIdeas: trimList(parsed.bigIdeas, 6),
-      crossCurricularLinks: trimList(parsed.crossCurricularLinks, 6),
-      targetLanguageDomains: trimList(parsed.targetLanguageDomains, 8),
-      updatedAt: new Date().toISOString(),
+      source: 'model',
+      record: {
+        ...fallback,
+        theme: String(parsed.theme ?? fallback.theme).trim() || fallback.theme,
+        bigIdeas: trimList(parsed.bigIdeas, 6),
+        crossCurricularLinks: trimList(parsed.crossCurricularLinks, 6),
+        targetLanguageDomains: trimList(parsed.targetLanguageDomains, 8),
+        updatedAt: new Date().toISOString(),
+      },
     }
   } catch (err) {
     console.warn('[ContextScan] unit parse fallback:', err)
-    return fallback
+    return { source: 'fallback', record: fallback }
   }
 }
 
-export async function scanLessonContext(input: LessonContextScanInput): Promise<LessonContextRecord> {
+export async function scanLessonContext(input: LessonContextScanInput): Promise<ContextScanOutcome<LessonContextRecord>> {
   const pageRange = clampPageRange(input.sourcePageRange)
   const scanProfile = normalizeScanProfile(input.scanProfile)
   const now = new Date().toISOString()
@@ -554,7 +563,7 @@ export async function scanLessonContext(input: LessonContextScanInput): Promise<
 
   try {
     const text = await callGemini(systemPrompt, userPrompt)
-    if (!text) return fallback
+    if (!text) return { source: 'fallback', record: fallback }
     const parsed = parseJson(text) as {
       textType?: unknown
       lessonGoals?: unknown
@@ -563,22 +572,26 @@ export async function scanLessonContext(input: LessonContextScanInput): Promise<
       essentialQuestions?: unknown
       languageFocus?: { grammarNotes?: unknown; writingNotes?: unknown }
     }
+    if (!lessonScanHasUsableModelFields(parsed)) return { source: 'fallback', record: fallback }
     return {
-      ...fallback,
-      textType: String(parsed.textType ?? fallback.textType).trim() || fallback.textType,
-      lessonGoals: trimList(parsed.lessonGoals, 8),
-      comprehensionSkill:
-        String(parsed.comprehensionSkill ?? fallback.comprehensionSkill).trim() || fallback.comprehensionSkill,
-      strategy: String(parsed.strategy ?? fallback.strategy).trim() || fallback.strategy,
-      essentialQuestions: trimList(parsed.essentialQuestions, 5),
-      languageFocus: {
-        grammarNotes: trimList(parsed.languageFocus?.grammarNotes, 6),
-        writingNotes: trimList(parsed.languageFocus?.writingNotes, 6),
+      source: 'model',
+      record: {
+        ...fallback,
+        textType: String(parsed.textType ?? fallback.textType).trim() || fallback.textType,
+        lessonGoals: trimList(parsed.lessonGoals, 8),
+        comprehensionSkill:
+          String(parsed.comprehensionSkill ?? fallback.comprehensionSkill).trim() || fallback.comprehensionSkill,
+        strategy: String(parsed.strategy ?? fallback.strategy).trim() || fallback.strategy,
+        essentialQuestions: trimList(parsed.essentialQuestions, 5),
+        languageFocus: {
+          grammarNotes: trimList(parsed.languageFocus?.grammarNotes, 6),
+          writingNotes: trimList(parsed.languageFocus?.writingNotes, 6),
+        },
+        updatedAt: new Date().toISOString(),
       },
-      updatedAt: new Date().toISOString(),
     }
   } catch (err) {
     console.warn('[ContextScan] lesson parse fallback:', err)
-    return fallback
+    return { source: 'fallback', record: fallback }
   }
 }
