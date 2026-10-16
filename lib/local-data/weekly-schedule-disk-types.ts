@@ -22,6 +22,23 @@ export function normalizeWeeklyScheduleDiskPayload(raw: unknown): WeeklySchedule
   return { config, assignments, exceptions }
 }
 
+/**
+ * Apply a PUT body onto the current disk schedule.
+ * Omitted `exceptions` keep existing cancelled dates so a partial write cannot
+ * resurrect classes the teacher already cancelled.
+ */
+export function mergeWeeklySchedulePutBody(
+  incoming: unknown,
+  current: WeeklyScheduleDiskPayload,
+): WeeklyScheduleDiskPayload {
+  if (!incoming || typeof incoming !== 'object') return current
+  const o = incoming as Record<string, unknown>
+  return normalizeWeeklyScheduleDiskPayload({
+    ...o,
+    exceptions: Array.isArray(o.exceptions) ? o.exceptions : current.exceptions,
+  })
+}
+
 export function isWeeklyScheduleDiskPayloadEmpty(payload: WeeklyScheduleDiskPayload): boolean {
   return payload.config == null && payload.assignments.length === 0 && payload.exceptions.length === 0
 }
