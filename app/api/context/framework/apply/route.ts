@@ -6,6 +6,7 @@ import type {
   PartContextRecord,
   UnitContextRecord,
 } from '@/lib/context/types'
+import { preservePartContextTeacherFields } from '@/lib/context/framework-apply'
 import { CONTEXT_VERSION, stableId, trimList } from '@/lib/context/utils'
 
 interface FrameworkRowInput {
@@ -331,7 +332,7 @@ export async function POST(req: Request) {
       for (const scratch of partScratch.values()) {
         if (!scratch.notes.length && !scratch.goals.length && !scratch.grammar.length && !scratch.writing.length) continue
         const existingPart = await store.getPartContext(parsed.bookId, row.unitId, lessonId, scratch.partId)
-        const partRecord: PartContextRecord = {
+        const partRecord: PartContextRecord = preservePartContextTeacherFields({
           id: stableId(`part:${parsed.bookId}:${row.unitId}:${lessonId}:${scratch.partId}`),
           kind: 'part',
           bookId: parsed.bookId,
@@ -350,7 +351,7 @@ export async function POST(req: Request) {
           contextVersion: CONTEXT_VERSION,
           createdAt: existingPart?.createdAt ?? now,
           updatedAt: now,
-        }
+        }, existingPart)
         partRecords.push(partRecord)
         if (!dryRun) await store.savePartContext(partRecord)
       }
