@@ -3183,6 +3183,71 @@ describe('class sessions and outcomes', () => {
     expect(getStudentTeachingOpenPdfPageForBookUnit('student-1', 'book-a', 'unit-1', miniLibraryForHeadline)).toBe(22)
   })
 
+  it('resolveNextSectionForClass keeps the unit of the saved PDF page when printed numbers overlap', () => {
+    const library: BookLibraryPayload = {
+      books: [
+        {
+          id: 'book-a',
+          title: 'Two files',
+          units: [
+            {
+              id: 'unit-1',
+              title: 'Unit 1',
+              filePath: '/u1.pdf',
+              lessons: [
+                {
+                  id: 'lesson-1',
+                  title: 'Lesson 1',
+                  parts: [{ id: 'part-story', title: 'The River Story', startPageHint: 10, endPageHint: 25 }],
+                },
+              ],
+            },
+            {
+              id: 'unit-2',
+              title: 'Unit 2',
+              filePath: '/u2.pdf',
+              lessons: [
+                {
+                  id: 'lesson-2',
+                  title: 'Lesson 2',
+                  parts: [{ id: 'part-writing', title: 'Writing', startPageHint: 12, endPageHint: 18 }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    }
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-18T12:21:00.000Z'))
+    saveUnitPage('book-a', 'unit-1', 15)
+    vi.useRealTimers()
+    saveStudents([
+      seedStudent({
+        assignedBookIds: ['book-a'],
+        assignedUnitRefs: [
+          { bookId: 'book-a', unitId: 'unit-1' },
+          { bookId: 'book-a', unitId: 'unit-2' },
+        ],
+        scheduledClasses: [
+          sessionBase({
+            id: 'class-next',
+            title: 'Upcoming',
+            scheduledFor: '2026-09-19T12:00:00.000Z',
+            status: 'planned',
+          }),
+        ],
+      }),
+    ])
+    expect(resolveNextSectionForClass('student-1', 'class-next', library)?.id).toBe(
+      'part:book-a:unit-1:lesson-1:part-story',
+    )
+    expect(resolveClassTeachingBookUnit('student-1', 'class-next', library)).toMatchObject({
+      bookId: 'book-a',
+      unitId: 'unit-1',
+    })
+  })
+
   it('resolveNextSectionForClass stays on the last selected section instead of skipping ahead', () => {
     const prior = sessionBase({
       id: 'class-done',

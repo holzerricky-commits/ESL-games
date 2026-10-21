@@ -3276,10 +3276,13 @@ function getStudentLastViewedAcrossAssignedBooks(
     const start = getStudentCurriculumBookStart(studentId, bid, library)
     if (!start) continue
     const startMs = Date.parse(start.updatedAt)
+    const pdfPage =
+      pdfPageFromCurriculumBookStart(start, bid, library, null) ??
+      Math.max(1, Math.floor(start.mappedPage))
     best = newerLastViewedPlace(best, {
       bookId: bid,
       unitId: start.unitId,
-      pdfPage: Math.max(1, Math.floor(start.mappedPage)),
+      pdfPage,
       atMs: Number.isFinite(startMs) ? startMs : 0,
     })
   }
@@ -3291,7 +3294,16 @@ function sectionOptionForLastViewedPlace(
   library: BookLibraryPayload | null,
   view: StudentLastViewedPlace,
 ): StudentSectionOption | null {
-  const atPage = resolveStudentSectionAtMappedBookPage(studentId, library, view.bookId, view.pdfPage)
+  // view.pdfPage is a PDF index in this unit, not a book-wide printed page.
+  // A later unit can reuse the same printed numbers; matching those would
+  // start the next class in the wrong book file.
+  const atPage = resolveStudentSectionAtPdfPage(
+    studentId,
+    library,
+    view.bookId,
+    view.unitId,
+    view.pdfPage,
+  )
   if (atPage) return atPage
   const options = getStudentSectionOptions(studentId, library)
   for (let i = options.length - 1; i >= 0; i--) {
