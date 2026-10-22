@@ -2978,12 +2978,15 @@ export function mappedPageInSectionOptionRange(
 /**
  * Find the curriculum section for a **book-wide mapped page** (printed page from TOC).
  * Searches all units in the book; walks options newest-to-oldest for specificity.
+ * When `preferUnitId` is set, a section in that unit wins even if a later unit
+ * reuses the same printed page numbers.
  */
 export function resolveStudentSectionAtMappedBookPage(
   studentId: string,
   library: BookLibraryPayload | null,
   bookId: string,
   mappedPage: number,
+  preferUnitId?: string | null,
 ): StudentSectionOption | null {
   if (!library?.books?.length) return null
   const page = Math.floor(mappedPage)
@@ -2992,6 +2995,14 @@ export function resolveStudentSectionAtMappedBookPage(
   if (!bid) return null
 
   const options = getStudentSectionOptions(studentId, library)
+  const preferred = preferUnitId?.trim() ?? ''
+  if (preferred) {
+    for (let i = options.length - 1; i >= 0; i--) {
+      const o = options[i]!
+      if (o.bookId !== bid || o.unitId !== preferred) continue
+      if (mappedPageInSectionOptionRange(o, page)) return o
+    }
+  }
   for (let i = options.length - 1; i >= 0; i--) {
     const o = options[i]!
     if (o.bookId !== bid) continue

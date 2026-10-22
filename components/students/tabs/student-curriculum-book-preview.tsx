@@ -57,11 +57,13 @@ function resolveInitialUnitId(
   initialPage: number | undefined,
 ): string {
   const units = book.units ?? []
+  // The opener already knows which file this page belongs to. A later unit can
+  // reuse the same printed numbers; do not let that search replace the file.
+  if (initialUnitId && units.some((u) => u.id === initialUnitId)) return initialUnitId
   if (initialPage != null) {
     const section = resolveStudentSectionAtMappedBookPage(studentId, library, book.id, initialPage)
     if (section?.unitId) return section.unitId
   }
-  if (initialUnitId && units.some((u) => u.id === initialUnitId)) return initialUnitId
   return units[0]?.id ?? ''
 }
 
@@ -121,6 +123,12 @@ export function StudentCurriculumBookPreview({
 
   useEffect(() => {
     initialMappedPageRef.current = initialPage
+    const units = book.units ?? []
+    if (initialUnitId && units.some((u) => u.id === initialUnitId)) {
+      setUnitId(initialUnitId)
+      if (initialPage != null) pendingMappedPageRef.current = initialPage
+      return
+    }
     if (initialPage != null) {
       const section = resolveStudentSectionAtMappedBookPage(studentId, library, book.id, initialPage)
       if (section?.unitId) {
@@ -128,7 +136,9 @@ export function StudentCurriculumBookPreview({
         pendingMappedPageRef.current = initialPage
       }
     }
-  }, [initialPage, studentId, library, book.id])
+    // book.id covers a different book; units are read from the current book object.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- do not reset the open file on unrelated renders
+  }, [initialPage, initialUnitId, studentId, library, book.id])
 
   const unit = units.find((u) => u.id === unitId) ?? units[0] ?? null
   const numPages = unit ? (numPagesByUnit[unit.id] ?? null) : null
@@ -214,7 +224,13 @@ export function StudentCurriculumBookPreview({
 
   const goToMappedBookPage = useCallback(
     (mappedPage: number) => {
-      const section = resolveStudentSectionAtMappedBookPage(studentId, library, book.id, mappedPage)
+      const section = resolveStudentSectionAtMappedBookPage(
+        studentId,
+        library,
+        book.id,
+        mappedPage,
+        unitId,
+      )
       const targetUnitId = section?.unitId ?? unitId
       const targetUnit = units.find((u) => u.id === targetUnitId) ?? unit
       if (!targetUnit) return
@@ -416,8 +432,17 @@ export function StudentCurriculumBookPreview({
       let section = null
       let mappedPage: number | null = null
       for (const candidate of candidates) {
-        section = resolveStudentSectionAtMappedBookPage(studentId, library, book.id, candidate)
-        if (section) {
+        const hit = resolveStudentSectionAtMappedBookPage(
+          studentId,
+          library,
+          book.id,
+          candidate,
+          unit.id,
+        )
+        // The page on screen belongs to this file. A later unit with the same
+        // printed numbers must not become the saved start or replace bookPlaces.
+        if (hit?.unitId === unit.id) {
+          section = hit
           mappedPage = candidate
           break
         }

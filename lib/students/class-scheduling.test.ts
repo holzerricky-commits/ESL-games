@@ -2291,6 +2291,60 @@ describe('class sessions and outcomes', () => {
     ).toBeNull()
   })
 
+  it('resolveStudentSectionAtMappedBookPage keeps the open unit when printed pages overlap', () => {
+    const library: BookLibraryPayload = {
+      books: [
+        {
+          id: 'book-a',
+          title: 'Two files',
+          units: [
+            {
+              id: 'unit-1',
+              title: 'Unit 1',
+              filePath: '/u1.pdf',
+              lessons: [
+                {
+                  id: 'lesson-1',
+                  title: 'Lesson 1',
+                  parts: [{ id: 'part-story', title: 'The River Story', startPageHint: 10, endPageHint: 25 }],
+                },
+              ],
+            },
+            {
+              id: 'unit-2',
+              title: 'Unit 2',
+              filePath: '/u2.pdf',
+              lessons: [
+                {
+                  id: 'lesson-2',
+                  title: 'Lesson 2',
+                  parts: [{ id: 'part-writing', title: 'Writing', startPageHint: 12, endPageHint: 18 }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    }
+    saveStudents([
+      seedStudent({
+        assignedBookIds: ['book-a'],
+        assignedUnitRefs: [
+          { bookId: 'book-a', unitId: 'unit-1' },
+          { bookId: 'book-a', unitId: 'unit-2' },
+        ],
+      }),
+    ])
+    expect(resolveStudentSectionAtMappedBookPage('student-1', library, 'book-a', 15)?.unitId).toBe('unit-2')
+    expect(
+      resolveStudentSectionAtMappedBookPage('student-1', library, 'book-a', 15, 'unit-1')?.id,
+    ).toBe('part:book-a:unit-1:lesson-1:part-story')
+    expect(
+      resolveStudentSectionAtMappedBookPage('student-1', library, 'book-a', 20, 'unit-2')?.unitId,
+    ).toBe('unit-1')
+    expect(resolveStudentSectionAtMappedBookPage('student-1', library, 'book-a', 71, 'unit-1')).toBeNull()
+  })
+
   it('resolveNextSectionForClass prefers curriculum anchor when no completed class with a selected section precedes the planned class', () => {
     const planned = sessionBase({
       id: 'class-planned',
