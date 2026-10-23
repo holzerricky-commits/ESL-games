@@ -1,6 +1,7 @@
 import type { BookRecord, BookUnitRecord } from '@/lib/books/types'
 import {
   buildPageAlignmentRuntime,
+  mapEffectivePageToPdfPage,
   resolveEffectiveAnchorToPdfPage,
   type PageAlignmentRuntime,
 } from '@/lib/books/page-alignment-runtime'
@@ -84,6 +85,11 @@ export function resolveAlignedAnchorPage(
   if (mode === 'original' || !book || !unit) return rounded
   const { notCountedPdfPages, hiddenPdfPages } = getFileAlignment(book, unit.filePath)
   if (!notCountedPdfPages.length && !hiddenPdfPages.length) return rounded
+  // File length is unknown on dashboard reopen. Still apply alignment; otherwise
+  // printed hints are compared to saved PDF indexes and a mid-lesson page looks finished.
+  if (totalPdfPages == null || totalPdfPages < 1) {
+    return mapEffectivePageToPdfPage(rounded, hiddenPdfPages, notCountedPdfPages)
+  }
   const runtime = buildPageAlignmentRuntime(totalPdfPages, hiddenPdfPages, notCountedPdfPages)
   return resolveEffectiveAnchorToPdfPage(rounded, runtime) ?? rounded
 }
