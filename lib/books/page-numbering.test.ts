@@ -65,5 +65,11 @@ describe('page-numbering helpers', () => {
     expect(resolveMappedPageToPdfPage(3, book, unit, 10)).toBe(4)
     expect(resolveMappedPageToPdfPage(3, book, unit, 10)).toBe(resolveAlignedAnchorPage(3, book, unit, 10))
   })
+
+  it('converts printed pages when the PDF length is not loaded yet', () => {
+    expect(resolveMappedPageToPdfPage(3, book, unit, null)).toBe(4)
+    expect(resolveMappedPageToPdfPage(4, book, unit, null)).toBe(6)
+    expect(resolveAlignedAnchorPage(4, book, unit, null)).toBe(resolveAlignedAnchorPage(4, book, unit, 10))
+  })
 })
 

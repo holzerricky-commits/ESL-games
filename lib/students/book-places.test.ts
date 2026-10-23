@@ -173,6 +173,44 @@ describe('resolveUpNextBookId', () => {
   })
 })
 
+describe('aligned books without a loaded page count', () => {
+  const aligned: BookRecord = {
+    id: 'aligned',
+    title: 'Aligned',
+    pageAlignmentByFile: {
+      '/a.pdf': { notCountedPdfPages: [3], hiddenPdfPages: [1, 5] },
+    },
+    units: [
+      {
+        id: 'a-u1',
+        title: 'Unit 1',
+        filePath: '/a.pdf',
+        lessons: [
+          { id: 'a-l1', title: 'Lesson 1', startPageHint: 2, endPageHint: 4 },
+          { id: 'a-l2', title: 'Lesson 2', startPageHint: 5, endPageHint: 6 },
+        ],
+      },
+    ],
+  }
+
+  it('keeps printed lesson hints on their PDF pages', () => {
+    expect(listBookLessonSpans(aligned)).toEqual([
+      { unitId: 'a-u1', lessonId: 'a-l1', startPdf: 2, endPdf: 6 },
+      { unitId: 'a-u1', lessonId: 'a-l2', startPdf: 7, endPdf: 8 },
+    ])
+  })
+
+  it('does not finish a lesson while the reader is still in the middle', () => {
+    expect(isPlaceAtLessonEnd(aligned, at('a-u1', 4))).toBe(false)
+    expect(resolveOpenTargetForPlace(aligned, at('a-u1', 4))).toEqual({ unitId: 'a-u1', pdfPage: 4 })
+  })
+
+  it('still moves on once the spread shows the real last PDF page', () => {
+    expect(isPlaceAtLessonEnd(aligned, at('a-u1', 6))).toBe(true)
+    expect(resolveOpenTargetForPlace(aligned, at('a-u1', 6))).toEqual({ unitId: 'a-u1', pdfPage: 7 })
+  })
+})
+
 describe('sanitizeStudentBookPlaces', () => {
   it('drops invalid entries', () => {
     expect(

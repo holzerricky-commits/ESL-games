@@ -69,3 +69,31 @@ export function resolveEffectiveAnchorToPdfPage(
   const rounded = Math.max(1, Math.round(anchorPage))
   return runtime.pdfPageByEffective.get(rounded) ?? rounded
 }
+
+/**
+ * Printed/effective page → PDF index when the file length is not loaded yet.
+ * Same skip rules as `buildPageAlignmentRuntime`: PDF page 1 stays in the
+ * numbering chain; other hidden pages and not-counted pages do not advance it.
+ */
+export function mapEffectivePageToPdfPage(
+  anchorPage: number,
+  hiddenPagesInput: number[],
+  ghostPagesInput: number[],
+): number {
+  const rounded = Math.max(1, Math.round(anchorPage))
+  const hiddenPages = new Set(normalizeUniquePages(hiddenPagesInput))
+  hiddenPages.delete(1)
+  const ghostPages = new Set(normalizeUniquePages(ghostPagesInput))
+  ghostPages.delete(1)
+  if (hiddenPages.size === 0 && ghostPages.size === 0) return rounded
+
+  let effective = 0
+  const maxPage = rounded + hiddenPages.size + ghostPages.size
+  for (let page = 1; page <= maxPage; page++) {
+    if (hiddenPages.has(page)) continue
+    if (ghostPages.has(page)) continue
+    effective += 1
+    if (effective === rounded) return page
+  }
+  return rounded
+}
