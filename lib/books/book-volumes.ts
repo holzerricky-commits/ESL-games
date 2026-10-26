@@ -29,6 +29,63 @@ export function newBookVolumeId(filePath: string, index: number): string {
   return `vol-${slugFromFilePath(filePath, index)}`
 }
 
+/**
+ * File-name slugs are only the first 32 characters, so
+ * "…Volume 1.pdf" and "…Volume 2.pdf" share one id.
+ * A shared id makes later saves point every unit at one of the PDFs.
+ */
+function claimVolumeId(preferred: string, used: Set<string>): string {
+  const base = preferred.trim() || 'volume'
+  let id = base
+  let n = 2
+  while (used.has(id)) {
+    id = `${base}-${n}`
+    n += 1
+  }
+  used.add(id)
+  return id
+}
+
+function volumesWithUniqueIds(volumes: BookVolumeRecord[]): BookVolumeRecord[] {
+  const used = new Set<string>()
+  return volumes.map((volume, index) => {
+    const filePath = normalizeBookFilePath(volume.filePath)
+    const preferred =
+      typeof volume.id === 'string' && volume.id.trim()
+        ? volume.id.trim()
+        : newBookVolumeId(filePath, index)
+    return {
+      ...volume,
+      id: claimVolumeId(preferred, used),
+      title: volume.title.trim() || `Volume ${index + 1}`,
+      filePath,
+    }
+  })
+}
+
+/**
+ * Attach each unit to the volume that owns its PDF.
+ * Path wins over volumeId so a duplicated id cannot retarget the file.
+ */
+function linkUnitsToUniqueVolumes(book: BookRecord, volumes: BookVolumeRecord[]): BookRecord {
+  const unique = volumesWithUniqueIds(volumes)
+  const byPath = new Map(unique.map((volume) => [volume.filePath, volume]))
+  const byId = new Map(unique.map((volume) => [volume.id, volume]))
+  const units = book.units.map((unit) => {
+    const path = normalizeBookFilePath(unit.filePath ?? '')
+    const fromPath = path ? byPath.get(path) : undefined
+    const fromId = unit.volumeId?.trim() ? byId.get(unit.volumeId.trim()) : undefined
+    const vol = fromPath ?? fromId
+    if (!vol) {
+      if (!unit.volumeId) return path ? { ...unit, filePath: path } : unit
+      const { volumeId: _drop, ...rest } = unit
+      return { ...rest, filePath: path || unit.filePath }
+    }
+    return { ...unit, volumeId: vol.id, filePath: vol.filePath }
+  })
+  return { ...book, volumes: unique, units }
+}
+
 /** Distinct non-empty unit file paths in book order (first-seen). */
 export function distinctUnitFilePaths(book: Pick<BookRecord, 'units'>): string[] {
   const seen = new Set<string>()
@@ -75,12 +132,13 @@ export function synthesizeVolumesFromUnits(book: BookRecord): {
 } {
   const paths = distinctUnitFilePaths(book)
   const bookUnitIndexById = new Map(book.units.map((u, i) => [u.id, i]))
+  const usedVolumeIds = new Set<string>()
   const volumes: BookVolumeRecord[] = paths.map((filePath, index) => {
     const unitsOnPath = book.units.filter(
       (u) => normalizeBookFilePath(u.filePath ?? '') === filePath,
     )
     return {
-      id: newBookVolumeId(filePath, index),
+      id: claimVolumeId(newBookVolumeId(filePath, index), usedVolumeIds),
       title: volumeTitleForPath(filePath, unitsOnPath, bookUnitIndexById),
       filePath,
     }
@@ -102,15 +160,7 @@ export function synthesizeVolumesFromUnits(book: BookRecord): {
 export function syncUnitFilePathsFromVolumes(book: BookRecord): BookRecord {
   const volumes = book.volumes
   if (!volumes?.length) return book
-  const byId = new Map(volumes.map((v) => [v.id, v]))
-  return {
-    ...book,
-    units: book.units.map((unit) => {
-      const vol = unit.volumeId ? byId.get(unit.volumeId) : undefined
-      if (!vol) return unit
-      return { ...unit, filePath: normalizeBookFilePath(vol.filePath) }
-    }),
-  }
+  return linkUnitsToUniqueVolumes(book, volumes)
 }
 
 /**
@@ -158,21 +208,16 @@ export function ensureVolumesForFilePaths(book: BookRecord, filePaths: string[])
     }
   }
 
-  const volumeIdByPath = new Map(
-    existing.map((v) => [normalizeBookFilePath(v.filePath), v.id]),
+  return linkUnitsToUniqueVolumes(
+    {
+      ...book,
+      units: book.units.map((unit) => {
+        const path = normalizeBookFilePath(unit.filePath ?? '')
+        return path ? { ...unit, filePath: path } : unit
+      }),
+    },
+    existing,
   )
-  const units = book.units.map((unit) => {
-    const path = normalizeBookFilePath(unit.filePath ?? '')
-    const volumeId = path ? volumeIdByPath.get(path) : unit.volumeId
-    if (!volumeId) return unit
-    return { ...unit, volumeId, filePath: path || unit.filePath }
-  })
-
-  return syncUnitFilePathsFromVolumes({
-    ...book,
-    volumes: existing,
-    units,
-  })
 }
 
 /**
@@ -189,23 +234,7 @@ export function migrateBookVolumes(book: BookRecord): BookRecord {
       title: typeof v.title === 'string' && v.title.trim() ? v.title.trim() : `Volume ${i + 1}`,
       filePath: normalizeBookFilePath(v.filePath),
     }))
-    const volumeIdByPath = new Map(volumes.map((v) => [v.filePath, v.id]))
-    const units = book.units.map((unit) => {
-      const path = normalizeBookFilePath(unit.filePath ?? '')
-      const existingVolumeId = typeof unit.volumeId === 'string' ? unit.volumeId.trim() : ''
-      const fromVolume =
-        (existingVolumeId
-          ? volumes.find((v) => v.id === existingVolumeId)
-          : undefined) ?? (path ? volumes.find((v) => v.filePath === path) : undefined)
-      const volumeId = fromVolume?.id ?? (path ? volumeIdByPath.get(path) : undefined)
-      if (!volumeId) return { ...unit, filePath: path || unit.filePath }
-      return {
-        ...unit,
-        volumeId,
-        filePath: (fromVolume?.filePath ?? path) || unit.filePath,
-      }
-    })
-    return syncUnitFilePathsFromVolumes({ ...book, volumes, units })
+    return linkUnitsToUniqueVolumes(book, volumes)
   }
 
   if (paths.length < 2) {
