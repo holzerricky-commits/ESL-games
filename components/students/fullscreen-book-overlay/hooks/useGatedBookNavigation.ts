@@ -15,7 +15,11 @@ import {
   type ReaderPrefetchP0Intent,
   splitReaderPrefetchPages,
 } from '@/lib/books/reader-prefetch-priority'
-import { shouldSkipAdjacentStepEnqueue } from '@/lib/books/reader-adjacent-step-queue'
+import {
+  bookUnitTurnToken,
+  shouldDiscardAdjacentTurnQueue,
+  shouldSkipAdjacentStepEnqueue,
+} from '@/lib/books/reader-adjacent-step-queue'
 import {
   READER_ADJACENT_TURN_MIN_STEP_MS,
   resolveAdjacentAnchorPage,
@@ -78,6 +82,9 @@ export function useGatedBookNavigation({
   const lastBookUnitRef = useRef<{ bookId: string; unitId: string } | null>(null)
   /** Latest anchor for burst taps (React state may lag one frame). */
   const anchorRef = useRef(pageNumber)
+  /** Book+unit the queued steps belong to. Updated during render so a late drain sees the switch. */
+  const bookUnitTokenRef = useRef('')
+  bookUnitTokenRef.current = bookUnitTurnToken(selectedBookId, selectedUnitId)
   const stepQueueRef = useRef<number[]>([])
   const drainingRef = useRef(false)
   const drainTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -156,8 +163,14 @@ export function useGatedBookNavigation({
   )
 
   const scheduleDrainAfterStep = useCallback(() => {
+    const scheduledToken = bookUnitTokenRef.current
     const run = () => {
       drainTimerRef.current = null
+      if (shouldDiscardAdjacentTurnQueue(scheduledToken, bookUnitTokenRef.current)) {
+        stepQueueRef.current = []
+        drainingRef.current = false
+        return
+      }
       const next = stepQueueRef.current.shift()
       if (next == null) {
         drainingRef.current = false
@@ -219,6 +232,12 @@ export function useGatedBookNavigation({
     if (!selectedBookId || !selectedUnitId) return
     const prev = lastBookUnitRef.current
     if (prev && (prev.bookId !== selectedBookId || prev.unitId !== selectedUnitId)) {
+      stepQueueRef.current = []
+      drainingRef.current = false
+      if (drainTimerRef.current != null) {
+        clearTimeout(drainTimerRef.current)
+        drainTimerRef.current = null
+      }
       flushPendingUnitPageSave()
       flushPendingStudentBookPlaceSave()
     }

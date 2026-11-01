@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { shouldSkipAdjacentStepEnqueue } from '@/lib/books/reader-adjacent-step-queue'
+import {
+  bookUnitTurnToken,
+  shouldDiscardAdjacentTurnQueue,
+  shouldSkipAdjacentStepEnqueue,
+} from '@/lib/books/reader-adjacent-step-queue'
 
 describe('shouldSkipAdjacentStepEnqueue', () => {
   it('skips when next equals anchor', () => {
@@ -32,5 +36,30 @@ describe('shouldSkipAdjacentStepEnqueue', () => {
         nextPage: 8,
       }),
     ).toBe(false)
+  })
+})
+
+describe('shouldDiscardAdjacentTurnQueue', () => {
+  it('keeps steps while the same book and unit are on screen', () => {
+    const token = bookUnitTurnToken('anthology', 'unit-2')
+    expect(shouldDiscardAdjacentTurnQueue(token, token)).toBe(false)
+  })
+
+  it('drops steps when the class switches to another book', () => {
+    expect(
+      shouldDiscardAdjacentTurnQueue(
+        bookUnitTurnToken('anthology', 'unit-2'),
+        bookUnitTurnToken('workshop', 'unit-1'),
+      ),
+    ).toBe(true)
+  })
+
+  it('drops steps when the class switches to another unit of the same book', () => {
+    expect(
+      shouldDiscardAdjacentTurnQueue(
+        bookUnitTurnToken('anthology', 'unit-2'),
+        bookUnitTurnToken('anthology', 'unit-3'),
+      ),
+    ).toBe(true)
   })
 })
