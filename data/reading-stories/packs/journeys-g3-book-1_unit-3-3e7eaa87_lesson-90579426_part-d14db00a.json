@@ -1,0 +1,117 @@
+{
+  "storyId": "journeys-g3-book-1::unit-3-3e7eaa87::lesson-90579426::part-d14db00a",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-3-3e7eaa87",
+  "status": "approved",
+  "stops": [
+    {
+      "id": "stop-13837dd0",
+      "label": "What is 4-H?",
+      "displayPage": 478,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 486,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-c49810eb",
+          "kind": "true_false",
+          "prompt": "4-H is a program for boys and girls who are nine to nineteen years old.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": true,
+          "evidenceSnippet": "4-H is a program for boys and girls ages nine to nineteen.",
+          "evidenceHighlight": "ages nine to nineteen"
+        }
+      ]
+    },
+    {
+      "id": "stop-c669c013",
+      "label": "Rabbit Care",
+      "displayPage": 479,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 487,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-8eaf2797",
+          "kind": "mcq",
+          "prompt": "What does a rabbit need to be happy?",
+          "choices": [
+            "Special skills and a big cage",
+            "Lots of toys and a small house",
+            "Love, food, water, and a clean place to live",
+            "Only food and water"
+          ],
+          "correctIndex": 2,
+          "correctTrue": null,
+          "evidenceSnippet": "You don't need any special skill or ability to care for a rabbit. Just give your pet plenty of love, food, and water, and a clean, cozy place to live.",
+          "evidenceHighlight": "Just give your pet plenty of love, food, and water, and a clean, cozy place to live."
+        }
+      ]
+    },
+    {
+      "id": "stop-a2c9a609",
+      "label": "Helping Animals",
+      "displayPage": 480,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 488,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-13faee25",
+          "kind": "true_false",
+          "prompt": "4-H members can help animals by volunteering at an animal shelter.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": true,
+          "evidenceSnippet": "Maybe you can use what you learn about animals to work a shift in a local animal shelter.",
+          "evidenceHighlight": "work a shift in a local animal shelter"
+        }
+      ]
+    },
+    {
+      "id": "stop-d4bb0967",
+      "label": "Summer Fair Events",
+      "displayPage": 480,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 488,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-e7ad12d2",
+          "kind": "mcq",
+          "prompt": "What can you show off at the Summer Fair?",
+          "choices": [
+            "Only animals",
+            "Only vegetables",
+            "Animals, vegetables, or handicrafts",
+            "Only things you have made"
+          ],
+          "correctIndex": 2,
+          "correctTrue": null,
+          "evidenceSnippet": "Blue ribbons in these groups:\nAnimals\nVegetables\nHandicrafts",
+          "evidenceHighlight": "Animals\nVegetables\nHandicrafts"
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-10-16T12:46:34.204Z",
+  "approvedAt": "2026-10-16T12:46:34.204Z",
+  "autoApprovedAt": "2026-10-16T12:46:34.204Z"
+}

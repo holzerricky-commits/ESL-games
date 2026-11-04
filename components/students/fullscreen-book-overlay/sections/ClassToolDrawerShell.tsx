@@ -23,6 +23,8 @@ type ClassToolDrawerShellProps = {
   children: ReactNode
   /** Optional sticky block under the title (e.g. Translate search). */
   headerExtra?: ReactNode
+  /** Optional controls before the close button (e.g. story filter). */
+  headerActions?: ReactNode
 }
 
 /**
@@ -37,6 +39,7 @@ export function ClassToolDrawerShell({
   ariaLabel,
   children,
   headerExtra,
+  headerActions,
 }: ClassToolDrawerShellProps) {
   return (
     <div
@@ -54,7 +57,7 @@ export function ClassToolDrawerShell({
       aria-label={ariaLabel}
       aria-hidden={!open}
     >
-      <header className="flex shrink-0 flex-col gap-3 px-4 pt-3 pb-3">
+      <header className={cn('flex shrink-0 flex-col px-4 pt-3', headerExtra ? 'gap-2 pb-2' : 'pb-3')}>
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
             <Icon className="h-3.5 w-3.5 shrink-0 text-white/50" aria-hidden />
@@ -62,19 +65,22 @@ export function ClassToolDrawerShell({
               {title}
             </p>
           </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 shrink-0 cursor-pointer rounded-md text-[#71717a] hover:bg-white/5 hover:text-[#f4f4f5]"
-            onClick={onClose}
-            aria-label={`Close ${title}`}
-          >
-            <X className="h-3.5 w-3.5" />
-          </Button>
+          <div className="flex shrink-0 items-center gap-0.5">
+            {headerActions}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 shrink-0 cursor-pointer rounded-md text-[#71717a] hover:bg-white/5 hover:text-[#f4f4f5]"
+              onClick={onClose}
+              aria-label={`Close ${title}`}
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         </div>
         {headerExtra ? (
-          <div className="border-b border-white/[0.08] pb-3">{headerExtra}</div>
+          <div className="border-b border-white/[0.08] pb-2">{headerExtra}</div>
         ) : null}
       </header>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>

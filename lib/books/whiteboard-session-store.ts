@@ -28,16 +28,14 @@ import {
   saveWhiteboardSessionCheckpoint,
   type WhiteboardSessionStorageAdapter,
 } from '@/lib/books/whiteboard-session-storage'
-import type { LessonBoardPageOrientation, LessonBoardPagePrimaryLink } from '@/lib/books/lesson-board-types'
+import type { LessonBoardPagePrimaryLink } from '@/lib/books/lesson-board-types'
 import type { WhiteboardSessionDocument, WhiteboardSessionKey } from '@/lib/books/whiteboard-session-types'
 
 export type WhiteboardSessionStore = InkSessionStore<WhiteboardSessionDocument> & {
   appendLessonBoardPage: (options?: {
-    orientation?: LessonBoardPageOrientation
     bookPageHint?: number
     viewportHeightPx?: number
     slotWidthPx?: number
-    spreadWidthPx?: number
   }) => void
   setActiveLessonBoardPage: (pageId: string) => boolean
   goToAdjacentLessonBoardPage: (delta: -1 | 1) => boolean
@@ -93,10 +91,9 @@ function withLessonBoardPageApi(
     appendLessonBoardPage: (opts) => {
       const doc = store.getState().doc
       applyDoc(
-        appendLessonBoardPage(doc, opts?.orientation ?? 'standard', {
+        appendLessonBoardPage(doc, {
           viewportHeightPx: opts?.viewportHeightPx,
           slotWidthPx: opts?.slotWidthPx,
-          spreadWidthPx: opts?.spreadWidthPx,
           bookPageHint: opts?.bookPageHint,
         }),
       )

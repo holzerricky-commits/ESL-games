@@ -9,8 +9,8 @@ import { Input } from '@/components/ui/input'
 import { makeUnitFileUrl } from '@/lib/books/book-file-url'
 import { ensureReactPdfWorker } from '@/lib/books/ensure-react-pdf-worker'
 import {
-  computePageGridLayout,
-  PAGE_GRID_THUMB_RENDER_WIDTH,
+  computeCutPageGridLayout,
+  CUT_PAGE_GRID_THUMB_RENDER_WIDTH,
 } from '@/lib/books/page-grid-layout'
 import { loadCachedPdfDocument } from '@/lib/books/pdf-thumbnail-cache'
 import {
@@ -50,7 +50,7 @@ function clampPage(page: number, total: number | null): number {
 }
 
 /**
- * Full-viewport Cut into units: left control strip + right page-grid canvas.
+ * Full-viewport Cut into volumes: left control strip + right page-grid canvas.
  * Not a dialog — uses the whole screen so the grid can breathe.
  */
 export function BookCutUnitsWorkspace({
@@ -67,13 +67,13 @@ export function BookCutUnitsWorkspace({
   const [cutting, setCutting] = useState(false)
   const [pageAspectRatio, setPageAspectRatio] = useState(DEFAULT_PAGE_ASPECT_RATIO)
   const [cuts, setCuts] = useState<CutRow[]>(() => [
-    { key: makeKey(), title: 'Unit 1', startPage: 1 },
+    { key: makeKey(), title: 'Volume 1', startPage: 1 },
   ])
 
   const canvasRootRef = useRef<HTMLDivElement | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const [scrollRoot, setScrollRoot] = useState<HTMLDivElement | null>(null)
-  const [layout, setLayout] = useState(() => computePageGridLayout(1200))
+  const [layout, setLayout] = useState(() => computeCutPageGridLayout(1200))
   const [focusPage, setFocusPage] = useState(1)
 
   const fileUrl = useMemo(() => makeUnitFileUrl(sourceFilePath), [sourceFilePath])
@@ -89,7 +89,7 @@ export function BookCutUnitsWorkspace({
     setPdfReady(false)
     setPageAspectRatio(DEFAULT_PAGE_ASPECT_RATIO)
     setFocusPage(1)
-    setCuts([{ key: makeKey(), title: 'Unit 1', startPage: 1 }])
+    setCuts([{ key: makeKey(), title: 'Volume 1', startPage: 1 }])
   }, [sourceFilePath])
 
   useEffect(() => {
@@ -124,7 +124,7 @@ export function BookCutUnitsWorkspace({
     const el = canvasRootRef.current
     if (!el) return
     const measure = () => {
-      const next = computePageGridLayout(el.clientWidth)
+      const next = computeCutPageGridLayout(el.clientWidth)
       setLayout((prev) =>
         prev.cols === next.cols && prev.pageWidthPx === next.pageWidthPx ? prev : next,
       )
@@ -192,7 +192,7 @@ export function BookCutUnitsWorkspace({
 
   function togglePageCut(pdfPage: number) {
     if (pdfPage <= 1) {
-      toast.message('Unit 1 already starts on page 1.')
+      toast.message('Volume 1 already starts on page 1.')
       setFocusPage(1)
       return
     }
@@ -202,13 +202,13 @@ export function BookCutUnitsWorkspace({
       return
     }
     setCuts((prev) => {
-      const nextTitle = `Unit ${prev.length + 1}`
+      const nextTitle = `Volume ${prev.length + 1}`
       const next = [...prev, { key: makeKey(), title: nextTitle, startPage: pdfPage }]
       next.sort((a, b) => a.startPage - b.startPage)
       return next.map((row, i) =>
         i === 0
-          ? { ...row, title: row.title.trim() || 'Unit 1', startPage: 1 }
-          : { ...row, title: row.title.trim() || `Unit ${i + 1}` },
+          ? { ...row, title: row.title.trim() || 'Volume 1', startPage: 1 }
+          : { ...row, title: row.title.trim() || `Volume ${i + 1}` },
       )
     })
     setFocusPage(pdfPage)
@@ -233,7 +233,7 @@ export function BookCutUnitsWorkspace({
 
   async function runCut() {
     if (cuts.length < 2) {
-      toast.error('Mark where Unit 2 starts (and any later units).')
+      toast.error('Mark where Volume 2 starts (and any later volumes).')
       return
     }
     if (numPages == null) {
@@ -272,7 +272,7 @@ export function BookCutUnitsWorkspace({
       if (!res.ok || !data?.ok || !data.library || !data.bookId || !data.units) {
         throw new Error(data?.error || 'Could not cut this PDF.')
       }
-      toast.success(`Split into ${data.units.length} unit files.`)
+      toast.success(`Split into ${data.units.length} volume files.`)
       onSplitComplete({
         library: data.library,
         bookId: data.bookId,
@@ -291,7 +291,7 @@ export function BookCutUnitsWorkspace({
       className="fixed inset-0 z-[80] flex bg-[var(--surface-1,#0f1115)] text-foreground"
       role="dialog"
       aria-modal="true"
-      aria-label="Cut into units"
+      aria-label="Cut into volumes"
     >
       {/* Left control strip */}
       <aside className="flex w-[280px] shrink-0 flex-col border-r border-[var(--border)] bg-[var(--surface-2)]">
@@ -308,7 +308,7 @@ export function BookCutUnitsWorkspace({
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div className="min-w-0 flex-1">
-            <p className="text-[15px] font-semibold tracking-tight">Cut into units</p>
+            <p className="text-[15px] font-semibold tracking-tight">Cut into volumes</p>
             <p className="mt-0.5 truncate text-[12px] text-muted-foreground" title={bookTitle}>
               {bookTitle || 'Book'}
             </p>
@@ -339,13 +339,13 @@ export function BookCutUnitsWorkspace({
             </span>
           </div>
           <p className="text-[12px] leading-snug text-muted-foreground">
-            Tap a page on the right to mark (or unmark) where a unit starts. Unit 1 is always page 1.
+            Tap a page on the right to mark (or unmark) where a volume starts. Volume 1 is always page 1.
           </p>
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col px-3 py-3">
           <p className="mb-2 shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            Unit cuts · {cuts.length}
+            Volume cuts · {cuts.length}
           </p>
           <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5">
             {cuts.map((cut, index) => {
@@ -364,7 +364,7 @@ export function BookCutUnitsWorkspace({
                       value={cut.title}
                       disabled={cutting}
                       onChange={(e) => updateTitle(cut.key, e.target.value)}
-                      aria-label={`Title for unit starting on page ${cut.startPage}`}
+                      aria-label={`Title for volume starting on page ${cut.startPage}`}
                     />
                     <button
                       type="button"
@@ -390,7 +390,7 @@ export function BookCutUnitsWorkspace({
                     </Button>
                   ) : (
                     <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center text-[10px] font-medium text-muted-foreground">
-                      U1
+                      V1
                     </span>
                   )}
                 </li>
@@ -455,7 +455,7 @@ export function BookCutUnitsWorkspace({
                   gap: layout.gapPx,
                 }}
                 role="list"
-                aria-label="PDF pages — tap to mark unit starts"
+                aria-label="PDF pages — tap to mark volume starts"
               >
                 {pageNumbers.map((p) => {
                   const isCut = cutStarts.has(p)
@@ -471,21 +471,21 @@ export function BookCutUnitsWorkspace({
                       aria-pressed={isCut}
                       aria-label={
                         p === 1
-                          ? 'Unit 1 starts on page 1'
+                          ? 'Volume 1 starts on page 1'
                           : isCut
-                            ? `Remove unit start on page ${p}`
-                            : `Mark page ${p} as unit start`
+                            ? `Remove volume start on page ${p}`
+                            : `Mark page ${p} as volume start`
                       }
                       title={
                         p === 1
-                          ? 'Unit 1 starts here'
+                          ? 'Volume 1 starts here'
                           : isCut
-                            ? 'Tap to remove this unit start'
-                            : 'Tap to mark unit start'
+                            ? 'Tap to remove this volume start'
+                            : 'Tap to mark volume start'
                       }
                       onClick={() => togglePageCut(p)}
                       className={cn(
-                        'group flex w-full flex-col gap-1.5 rounded-lg p-1.5 text-left outline-none transition-colors',
+                        'group flex w-full flex-col gap-1 rounded-md p-1 text-left outline-none transition-colors',
                         'focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)]/50',
                         isCut
                           ? 'bg-[var(--brand-blue)]/15 ring-1 ring-[var(--brand-blue)]/50'
@@ -495,30 +495,30 @@ export function BookCutUnitsWorkspace({
                       )}
                     >
                       <div
-                        className="w-full overflow-hidden rounded-md border border-white/10 bg-[#fcf9f4] shadow-sm"
+                        className="w-full overflow-hidden rounded border border-white/10 bg-[#fcf9f4] shadow-sm"
                         style={{ aspectRatio: aspect }}
                       >
                         <PdfPageThumbnail
                           fileUrl={fileUrl}
                           unitId={thumbUnitId}
                           pageNumber={p}
-                          width={PAGE_GRID_THUMB_RENDER_WIDTH}
+                          width={CUT_PAGE_GRID_THUMB_RENDER_WIDTH}
                           fitHeight
                           objectFit="contain"
                           scrollRoot={scrollRoot}
                           pdfReady={pdfReady}
                           label={`Page ${p}`}
-                          className="h-full w-full rounded-md border-0"
+                          className="h-full w-full rounded border-0"
                         />
                       </div>
                       <span
                         className={cn(
-                          'truncate px-0.5 text-center text-[11px] tabular-nums leading-none',
+                          'truncate px-0.5 text-center text-[10px] tabular-nums leading-none',
                           isCut ? 'font-semibold text-white' : 'font-medium text-white/55',
                         )}
                       >
                         {p}
-                        {unitIndex != null ? ` · U${unitIndex + 1}` : ''}
+                        {unitIndex != null ? ` · V${unitIndex + 1}` : ''}
                       </span>
                     </button>
                   )

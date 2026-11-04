@@ -1,5 +1,5 @@
 import type { BookLessonPartRecord } from '@/lib/books/types'
-import { resolvePartStructureTag } from '@/lib/books/part-structure-tag'
+import { isOwnSectionTitle, resolvePartStructureTag } from '@/lib/books/part-structure-tag'
 
 /** Visual bucket for icons / story emphasis (structure wizard + books TOC). */
 export type BookPartVisualKind =
@@ -49,6 +49,7 @@ export function partVisualKindFromStructureTag(
   const tag = resolvePartStructureTag(part, partIndex)
   switch (tag) {
     case 'unspecified':
+      if (isOwnSectionTitle(title)) return 'other'
       return classifyPartKind(title, partIndex)
     case 'vocabulary_in_context':
     case 'vocabulary_background':
@@ -69,6 +70,10 @@ export function partVisualKindFromStructureTag(
     case 'vocabulary_strategy':
     case 'literary_element':
       return 'grammarWrite'
+    case 'phonics':
+    case 'fluency':
+    case 'structural_analysis':
+      return 'other'
     default:
       return 'other'
   }

@@ -65,5 +65,31 @@ describe('page-numbering helpers', () => {
     expect(resolveMappedPageToPdfPage(3, book, unit, 10)).toBe(4)
     expect(resolveMappedPageToPdfPage(3, book, unit, 10)).toBe(resolveAlignedAnchorPage(3, book, unit, 10))
   })
+
+  it('resolveMappedPageToPdfPage still aligns when PDF length is unknown', () => {
+    expect(resolveMappedPageToPdfPage(3, book, unit, null)).toBe(4)
+    expect(resolveAlignedAnchorPage(3, book, unit, null)).toBe(4)
+  })
+
+  it('maps Journeys-style ghost pages without a page count', () => {
+    const journeysUnit: BookUnitRecord = {
+      id: 'u1',
+      title: 'Unit 1',
+      filePath: 'book-library/journeys/book.pdf',
+    }
+    const journeysBook: BookRecord = {
+      id: 'journeys',
+      title: 'Journeys',
+      pageAlignmentByFile: {
+        [journeysUnit.filePath]: {
+          notCountedPdfPages: [2, 3, 10, 11],
+          hiddenPdfPages: [1],
+        },
+      },
+      units: [journeysUnit],
+    }
+    expect(resolveMappedPageToPdfPage(14, journeysBook, journeysUnit, null)).toBe(18)
+    expect(mapPdfPageToDisplayLabel(18, journeysBook, journeysUnit, null)).toBe('14')
+  })
 })
 

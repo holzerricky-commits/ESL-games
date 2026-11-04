@@ -18,6 +18,15 @@ export function smoothingLevelToBlend(level: number): number {
 }
 
 /**
+ * Freehand arrow live blend (lower = smoother than pen max ~0.3).
+ * More lag toward prior point → fluid note-app curves.
+ */
+export const FREEHAND_ARROW_SMOOTH_BLEND = 0.18
+
+/** Freehand arrow commit RDP epsilon (higher than pen max ~0.0004). */
+export const FREEHAND_ARROW_RDP_EPSILON = 0.00085
+
+/**
  * Map penSmoothingLevel (0–10) to an RDP simplification epsilon
  * in normalized coords. Level 0 → 0 (no simplification),
  * level 10 → ~0.0004.

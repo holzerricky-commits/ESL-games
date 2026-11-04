@@ -21,7 +21,10 @@ import {
   type LiveStrokeDraft,
 } from '@/components/students/book-page-annotation-layer'
 import { BookSpreadStrokeOverlay } from '@/components/students/book-spread-stroke-overlay'
-import { BookSpreadPageMarkerLayer } from '@/components/students/book-spread-page-marker-layer'
+import {
+  BookSpreadPageMarkerLayer,
+  type BookSpreadPageMarkerHandle,
+} from '@/components/students/book-spread-page-marker-layer'
 import { BookSpreadMarkerSpreadOverlay } from '@/components/students/book-spread-marker-spread-overlay'
 import { BookSpreadSessionLayer } from '@/components/students/book-spread-session-layer'
 import type { AnnotationLineDashStyle, ShapeFillMode } from '@/lib/books/annotation-command-types'
@@ -71,6 +74,7 @@ import type { BookExerciseTask, PageNormRect } from '@/lib/books/book-exercises'
 import { seamClientX } from '@/lib/books/spread-stroke-split'
 import {
   loadCachedPdfDocument,
+  peekCachedPdfDocument,
   clearPdfLoadCacheForFileUrl,
   withPdfFileCacheBust,
 } from '@/lib/books/pdf-thumbnail-cache'
@@ -81,6 +85,7 @@ import {
   spreadPdfTextCapabilityPending,
   usePdfPageTextCapability,
 } from '@/components/students/fullscreen-book-overlay/hooks/usePdfPageTextCapability'
+import { usePdfPageTextGeometry } from '@/components/students/fullscreen-book-overlay/hooks/usePdfPageTextGeometry'
 import {
   bookSpreadHardcoverGutterOnlyForFrameTuning,
   bookSpreadPageArtHiddenForFrameTuning,
@@ -139,10 +144,7 @@ import {
 } from '@/components/students/fullscreen-book-overlay/constants'
 import {
   getLessonBoardActivePage,
-  lessonBoardAspectHeightPx,
   lessonBoardLogicalWidthPx,
-  lessonBoardUsesSpreadPresentation,
-  type LessonBoardPageOrientation,
 } from '@/lib/books/lesson-board-types'
 import type { WhiteboardSlotMotionApi } from '@/components/students/fullscreen-book-overlay/hooks/useWhiteboardSlotMotion'
 import type {
@@ -150,12 +152,7 @@ import type {
   WhiteboardSlotSide,
 } from '@/components/students/fullscreen-book-overlay/hooks/useWhiteboardPlacement'
 import { useWhiteboardFloatMotion } from '@/components/students/fullscreen-book-overlay/hooks/useWhiteboardFloatMotion'
-import {
-  lessonBoardFocusStandardAnchorPx,
-  lessonBoardWidePanelAnchorPx,
-  lessonBoardWidePanelHeightPx,
-  lessonBoardWideSpreadWidthPx as resolveLessonBoardWideSpreadWidthPx,
-} from '@/lib/books/lesson-board-ink-layout'
+import { lessonBoardFocusStandardAnchorPx } from '@/lib/books/lesson-board-ink-layout'
 import {
   defaultLessonBoardFloatRect,
   lessonBoardFloatDisplayMetrics,
@@ -318,7 +315,9 @@ interface BookCanvasStageProps {
   commitWhiteboardFloatRect: (rect: LessonBoardFloatRect) => void
   whiteboardContentHeightPx: number
   ensureWhiteboardRunwayBelowView: (scrollTopPx: number) => void
-  createLessonBoardPage?: (orientation: LessonBoardPageOrientation) => void
+  createLessonBoardPage?: () => void
+  selectLessonBoardPage?: (pageId: string) => void
+  renameLessonBoardPage?: (pageId: string, title: string | undefined) => void
   saveLessonBoardNow?: () => void
   deleteActiveLessonBoardPage?: () => void
   canDeleteActiveLessonBoardPage?: boolean
@@ -419,6 +418,12 @@ interface BookCanvasStageProps {
   onBookTextSpreadCapabilityChange?: (state: { hasSelectable: boolean; pending: boolean }) => void
   /** Shows Save to vault on page text selections when set. */
   onSaveTextToVault?: (input: BookTextVaultSaveInput) => void
+  /** Shows Save to grammar on page text selections when set. */
+  onSaveTextToGrammar?: (input: BookTextVaultSaveInput) => void
+  /** Word of the vault card waiting for a box cut from the page; null when not cutting. */
+  vaultCutWord?: string | null
+  onVaultCutCancel?: () => void
+  onVaultCutConfirm?: (rect: { x: number; y: number; width: number; height: number }) => void
   /** Hide object style bar while text-range translate/review is active. */
   hideSelectionContextBar?: boolean
   /** Close rail tool settings when the user starts using a tool on the spread. */
@@ -541,11 +546,12 @@ export function BookCanvasStage({
   whiteboardFloatRect,
   floatWhiteboard,
   dockWhiteboardToSlot,
-  forceDockWhiteboard,
   commitWhiteboardFloatRect,
   whiteboardContentHeightPx,
   ensureWhiteboardRunwayBelowView,
   createLessonBoardPage,
+  selectLessonBoardPage,
+  renameLessonBoardPage,
   saveLessonBoardNow,
   deleteActiveLessonBoardPage,
   canDeleteActiveLessonBoardPage,
@@ -626,6 +632,10 @@ export function BookCanvasStage({
   onWhiteboardOverlayCaps,
   onBookTextSpreadCapabilityChange,
   onSaveTextToVault,
+  onSaveTextToGrammar,
+  vaultCutWord = null,
+  onVaultCutCancel,
+  onVaultCutConfirm,
   hideSelectionContextBar = false,
   onAnnotationToolUseOnSpread,
 }: BookCanvasStageProps) {
@@ -715,6 +725,35 @@ export function BookCanvasStage({
     }
     const requestPath = selectedUnitFilePath
     const fileUrl = withPdfFileCacheBust(makeUnitFileUrl(requestPath), pdfFileEpoch)
+    const applyDoc = (doc: PDFDocumentProxy, gen: number) => {
+      if (gen !== pdfLoadGenRef.current) return
+      if (selectedUnitFilePathRef.current !== requestPath) return
+      onDocumentLoadSuccessRef.current({ numPages: doc.numPages })
+      setSharedPdf(doc)
+      setLivePdfFilePath(requestPath)
+      setSwapHold(null)
+      setUnitPdfLoading(false)
+      setUnitPdfError(null)
+      const p = Math.min(Math.max(1, pageNumber), doc.numPages || 1)
+      if (!(doc.numPages > 0)) return
+      void doc.getPage(p).then((page) => {
+        if (gen !== pdfLoadGenRef.current) return
+        const v = page.getViewport({ scale: 1 })
+        const r = v.width / v.height
+        if (Number.isFinite(r) && r > 0) {
+          onDocumentLoadSuccessRef.current({ numPages: doc.numPages, pageAspectRatio: r })
+        }
+      })
+    }
+    // Warm strip tab: already-loaded unit — swap synchronously, no loading flash.
+    const warmDoc = peekCachedPdfDocument(fileUrl)
+    if (warmDoc) {
+      const gen = ++pdfLoadGenRef.current
+      applyDoc(warmDoc, gen)
+      return () => {
+        pdfLoadGenRef.current += 1
+      }
+    }
     const previousVisual = prevSwapVisualRef.current
     if (previousVisual && previousVisual.filePath !== requestPath) {
       setSwapHold(previousVisual)
@@ -724,23 +763,7 @@ export function BookCanvasStage({
     setUnitPdfError(null)
     void loadCachedPdfDocument(fileUrl)
       .then((doc) => {
-        if (gen !== pdfLoadGenRef.current) return
-        if (selectedUnitFilePathRef.current !== requestPath) return
-        onDocumentLoadSuccessRef.current({ numPages: doc.numPages })
-        setSharedPdf(doc)
-        setLivePdfFilePath(requestPath)
-        setSwapHold(null)
-        setUnitPdfLoading(false)
-        const p = Math.min(Math.max(1, pageNumber), doc.numPages || 1)
-        if (!(doc.numPages > 0)) return
-        return doc.getPage(p).then((page) => {
-          if (gen !== pdfLoadGenRef.current) return
-          const v = page.getViewport({ scale: 1 })
-          const r = v.width / v.height
-          if (Number.isFinite(r) && r > 0) {
-            onDocumentLoadSuccessRef.current({ numPages: doc.numPages, pageAspectRatio: r })
-          }
-        })
+        applyDoc(doc, gen)
       })
       .catch((e) => {
         if (gen !== pdfLoadGenRef.current) return
@@ -883,6 +906,24 @@ export function BookCanvasStage({
     !whiteboardActive &&
     !focusZoomDrawActive &&
     !exerciseBoxDrawActive
+  const markerTextSnapGeometryActive =
+    bookPdfTextSelectionEnabled &&
+    annotationMode === 'marker' &&
+    !whiteboardActive &&
+    !focusZoomDrawActive &&
+    !exerciseBoxDrawActive
+  const leftMarkerTextGeometry = usePdfPageTextGeometry(
+    sharedPdf,
+    pageNumber,
+    markerTextSnapGeometryActive,
+    { unitFilePath: selectedUnitFilePath, boxesEpoch: pdfFileEpoch },
+  )
+  const rightMarkerTextGeometry = usePdfPageTextGeometry(
+    sharedPdf,
+    spreadRightPage ?? 0,
+    markerTextSnapGeometryActive && showSpreadRightPage && spreadRightPage != null,
+    { unitFilePath: selectedUnitFilePath, boxesEpoch: pdfFileEpoch },
+  )
   const unitFileUrl = useMemo(
     () =>
       selectedUnitFilePath
@@ -951,11 +992,7 @@ export function BookCanvasStage({
   const lessonBoardActivePage = whiteboardSessionDoc
     ? getLessonBoardActivePage(whiteboardSessionDoc.pages, whiteboardSessionDoc.activePageId)
     : null
-  const lessonBoardWideActive = lessonBoardUsesSpreadPresentation(
-    lessonBoardActivePage?.orientation ?? 'standard',
-  )
-  const whiteboardWideSpreadPresented = whiteboardActive && lessonBoardWideActive
-  const whiteboardStandardActive = whiteboardActive && !lessonBoardWideActive
+  const whiteboardStandardActive = whiteboardActive
   /** Clickable when the board is minimized/closed — sit above ink, under an open board. */
   const boardLinkMarkersInteractive =
     !boardLinkPlacementActive &&
@@ -991,40 +1028,14 @@ export function BookCanvasStage({
   const boardOnLeft = whiteboardSlotSide === 'left'
   const whiteboardSlotPanelWidthPx = Math.max(1, spreadPageWidth - WHITEBOARD_SLOT_INSET_PX * 2)
   const whiteboardSlotPanelHeightPx = Math.max(1, pageCanvasHeightPx - WHITEBOARD_SLOT_INSET_PX * 2)
-  const wideSpreadLogicalWidthPx = resolveLessonBoardWideSpreadWidthPx(
-    spreadOverlayWidthPx,
-    WHITEBOARD_SLOT_INSET_PX,
-  )
-  const widePasteImageSizingWidthPx = wideSpreadLogicalWidthPx
-  const widePasteImageSizingViewportHeightPx = lessonBoardAspectHeightPx(
-    widePasteImageSizingWidthPx,
-    'wide',
-  )
   const lessonBoardLogicalCanvasWidthPx = lessonBoardActivePage
     ? lessonBoardLogicalWidthPx(lessonBoardActivePage, {
         slotWidthPx: whiteboardSlotPanelWidthPx,
-        spreadWidthPx: wideSpreadLogicalWidthPx,
       })
     : whiteboardSlotPanelWidthPx
 
-  const lessonBoardNaturalPanelWidthPx = lessonBoardWideActive
-    ? lessonBoardLogicalCanvasWidthPx
-    : whiteboardSlotPanelWidthPx
-  const lessonBoardNaturalPanelHeightPx = lessonBoardWideActive
-    ? lessonBoardWidePanelHeightPx(
-        whiteboardContentHeightPx,
-        WHITEBOARD_CHROME_HEIGHT_PX,
-      )
-    : whiteboardSlotPanelHeightPx
-  const lessonBoardWideAnchorPx = lessonBoardWideActive
-    ? lessonBoardWidePanelAnchorPx(
-        spreadOverlayWidthPx,
-        pageCanvasHeightPx,
-        lessonBoardNaturalPanelWidthPx,
-        lessonBoardNaturalPanelHeightPx,
-        WHITEBOARD_SLOT_INSET_PX,
-      )
-    : null
+  const lessonBoardNaturalPanelWidthPx = whiteboardSlotPanelWidthPx
+  const lessonBoardNaturalPanelHeightPx = whiteboardSlotPanelHeightPx
   const notebookFocusStandard =
     notebookFocus && whiteboardStandardActive && whiteboardInSlot
   const lessonBoardFocusStandardAnchorPxValue = notebookFocusStandard
@@ -1054,12 +1065,6 @@ export function BookCanvasStage({
         WHITEBOARD_CHROME_HEIGHT_PX,
       )
     : null
-
-  useEffect(() => {
-    if (lessonBoardWideActive && whiteboardLayoutMode === 'floating') {
-      forceDockWhiteboard()
-    }
-  }, [forceDockWhiteboard, lessonBoardWideActive, whiteboardLayoutMode])
 
   const {
     onFloatDragPointerDown,
@@ -1101,8 +1106,6 @@ export function BookCanvasStage({
         unitId={boardUnitId}
         widthPx={whiteboardPanelWidthPx}
         logicalCanvasWidthPx={lessonBoardLogicalCanvasWidthPx}
-        widePasteImageSizingWidthPx={widePasteImageSizingWidthPx}
-        widePasteImageSizingViewportHeightPx={widePasteImageSizingViewportHeightPx}
         viewportHeightPx={whiteboardPanelHeightPx}
         contentHeightPx={whiteboardContentHeightPx}
         storagePageKey={whiteboardStorageKey}
@@ -1136,6 +1139,8 @@ export function BookCanvasStage({
         onCapabilitiesChange={onWhiteboardCaps}
         onEnsureRunwayBelowView={ensureWhiteboardRunwayBelowView}
         onNewLessonBoardPage={createLessonBoardPage}
+        onSelectLessonBoardPage={selectLessonBoardPage}
+        onRenameLessonBoardPage={renameLessonBoardPage}
         onSaveLessonBoard={saveLessonBoardNow}
         onDeleteLessonBoardPage={deleteActiveLessonBoardPage}
         canDeleteLessonBoardPage={canDeleteActiveLessonBoardPage}
@@ -1209,29 +1214,6 @@ export function BookCanvasStage({
     )
   }
 
-  const renderWhiteboardWideSpreadOverlay = () => {
-    if (!whiteboardWideSpreadPresented || !lessonBoardWideAnchorPx) return null
-    return (
-      <div className="pointer-events-none absolute inset-0 z-[38]">
-        <div
-          ref={whiteboardPanelAnchorRef}
-          className={cn(
-            'pointer-events-auto absolute',
-            whiteboardPanelAppearBlocking && 'pointer-events-none',
-          )}
-          style={{
-            left: lessonBoardWideAnchorPx.leftPx,
-            top: lessonBoardWideAnchorPx.topPx,
-            ...whiteboardPanelAppearStyle,
-          }}
-          onTransitionEnd={onWhiteboardPanelTransitionEnd}
-        >
-          {renderWhiteboardPanel()}
-        </div>
-      </div>
-    )
-  }
-
   const renderWhiteboardStandardAnchor = () => {
     if (!whiteboardStandardActive) return null
 
@@ -1294,7 +1276,10 @@ export function BookCanvasStage({
   const localSpreadSessionStoreRef = useRef<ReturnType<typeof createSpreadSessionStore> | null>(null)
   const spreadSessionStoreRef = spreadSessionStoreRefProp ?? localSpreadSessionStoreRef
   const [spreadEraserLineDraft, setSpreadEraserLineDraft] = useState<LiveEraserLineDraft | null>(null)
+  /** Only used when `spreadMarkerSpreadOverlayFallbackEnabled` (spread-level multiply band). */
   const [spreadMarkerStrokeDraft, setSpreadMarkerStrokeDraft] = useState<LiveStrokeDraft | null>(null)
+  const leftPageMarkerRef = useRef<BookSpreadPageMarkerHandle | null>(null)
+  const rightPageMarkerRef = useRef<BookSpreadPageMarkerHandle | null>(null)
   const [spreadSessionDoc, setSpreadSessionDoc] = useState<SpreadSessionDocument | null>(null)
   const spreadSessionDocRef = useRef<SpreadSessionDocument | null>(null)
   const [spreadSessionReady, setSpreadSessionReady] = useState(false)
@@ -1446,8 +1431,11 @@ export function BookCanvasStage({
           ? { leftPage: pageNumber, rightPage: spreadRightPage }
           : { leftPage: pageNumber, rightPage: pageNumber })
       if (!doc || !selectedBookId || !selectedUnitId || !pages || !annotationsStorageReady) return
+      // Canonical session first — markClean-before-checkpoint made checkpointNow a no-op.
+      store?.checkpointNow()
+      const checkpointed = store?.getState().doc ?? doc
       flushSpreadSessionDocumentToPageStorage({
-        doc,
+        doc: checkpointed,
         key: pages,
         layout: spreadInkLayoutRef.current,
         studentId,
@@ -1455,8 +1443,6 @@ export function BookCanvasStage({
         unitId: selectedUnitId,
         storageReady: annotationsStorageReady,
       })
-      store?.markClean()
-      store?.checkpointNow()
     },
     [annotationsStorageReady, pageNumber, selectedBookId, selectedUnitId, spreadRightPage, studentId],
   )
@@ -1836,9 +1822,7 @@ export function BookCanvasStage({
 
   const spreadDomToolsDelegated =
     spreadInkDelegated &&
-    (annotationMode === 'text' ||
-      annotationMode === 'sticky' ||
-      isWritableStickerInteraction(annotationMode, stickerKind))
+    (annotationMode === 'text' || isWritableStickerInteraction(annotationMode, stickerKind))
   const delegatePointerToSpreadPageLayer =
     spreadStrokeCaptureEnabled || spreadDomToolsDelegated
 
@@ -2123,6 +2107,7 @@ export function BookCanvasStage({
       if (!spreadSessionModeEnabled || !spreadSessionLive || !spreadInkDelegated) return null
       return (
         <BookSpreadPageMarkerLayer
+          ref={side === 'left' ? leftPageMarkerRef : rightPageMarkerRef}
           side={side}
           widthPx={spreadPageWidth}
           heightPx={pageCanvasHeightPx}
@@ -2131,7 +2116,6 @@ export function BookCanvasStage({
           layoutMeasureRevision={spreadInkLayoutRevision}
           leftPageCaptureRef={leftPageCaptureRef}
           rightPageCaptureRef={rightPageCaptureRef}
-          trailingMarkerStrokeDraft={spreadMarkerStrokeDraft}
         />
       )
     },
@@ -2142,7 +2126,6 @@ export function BookCanvasStage({
       spreadPageWidth,
       pageCanvasHeightPx,
       spreadSessionCommandsSnapshot,
-      spreadMarkerStrokeDraft,
       spreadInkLayout,
       spreadInkLayoutRevision,
       leftPageCaptureRef,
@@ -2316,6 +2299,7 @@ export function BookCanvasStage({
         leftPageCaptureRef={leftPageCaptureRef}
         rightPageCaptureRef={rightPageCaptureRef}
         onSaveToVault={onSaveTextToVault}
+        onSaveToGrammar={onSaveTextToGrammar}
       />
     ) : null
 
@@ -2474,6 +2458,11 @@ export function BookCanvasStage({
           rightPageCaptureRef={rightPageCaptureRef}
           leftAnnRef={leftAnnRef}
           rightAnnRef={rightAnnRef}
+          leftPageMarkerRef={leftPageMarkerRef}
+          rightPageMarkerRef={rightPageMarkerRef}
+          markerTextSnapLeftRuns={leftMarkerTextGeometry.runs}
+          markerTextSnapRightRuns={rightMarkerTextGeometry.runs}
+          markerTextSnapPageHeightPx={pageCanvasHeightPx}
           annotationMode={annotationMode}
           strokeWidthScale={strokeWidthScale}
           eraserLineStrokeWidthScale={eraserLineStrokeWidthScale}
@@ -2511,7 +2500,9 @@ export function BookCanvasStage({
           spreadSessionRedo={spreadSessionRedo}
           spreadSessionClear={spreadSessionClear}
         onSpreadEraserLineDraftChange={setSpreadEraserLineDraft}
-        onSpreadMarkerStrokeDraftChange={setSpreadMarkerStrokeDraft}
+        onSpreadMarkerStrokeDraftChange={
+          spreadMarkerSpreadOverlayFallbackEnabled ? setSpreadMarkerStrokeDraft : undefined
+        }
         onAnnotationToolUseOnSpread={onAnnotationToolUseOnSpread}
       />
       ) : null}
@@ -2529,7 +2520,6 @@ export function BookCanvasStage({
         style={lessonBoardHostStyle}
       >
         {renderWhiteboardStandardAnchor()}
-        {renderWhiteboardWideSpreadOverlay()}
       </div>
     ) : null
 
@@ -2585,7 +2575,7 @@ export function BookCanvasStage({
     spreadOverlayWidthPx,
     showSpreadRightPage,
     showBookFrame: showBookFrameInReader,
-    dimBook: whiteboardWideSpreadPresented && !notebookFocus,
+    dimBook: false,
     hideBook: notebookFocus,
     screenScale: spreadScreenScale,
   } as const
@@ -2794,7 +2784,7 @@ export function BookCanvasStage({
                   spreadPageWidthPx={spreadPageWidth}
                   gutterPullPx={gutterPullPx}
                   showBookFrame={showBookFrameInReader}
-                  dimBook={whiteboardWideSpreadPresented && !notebookFocus}
+                  dimBook={false}
                   hideBook={notebookFocus}
                   leftPage={
                       selectedUnitId ? (
@@ -3041,6 +3031,11 @@ export function BookCanvasStage({
                         rightPageCaptureRef={rightPageCaptureRef}
                         leftAnnRef={leftAnnRef}
                         rightAnnRef={rightAnnRef}
+                        leftPageMarkerRef={leftPageMarkerRef}
+                        rightPageMarkerRef={rightPageMarkerRef}
+                        markerTextSnapLeftRuns={leftMarkerTextGeometry.runs}
+                        markerTextSnapRightRuns={rightMarkerTextGeometry.runs}
+                        markerTextSnapPageHeightPx={pageCanvasHeightPx}
                         annotationMode={annotationMode}
                         strokeWidthScale={strokeWidthScale}
                         eraserLineStrokeWidthScale={eraserLineStrokeWidthScale}
@@ -3078,7 +3073,11 @@ export function BookCanvasStage({
                         spreadSessionRedo={spreadSessionRedo}
                         spreadSessionClear={spreadSessionClear}
                         onSpreadEraserLineDraftChange={setSpreadEraserLineDraft}
-                        onSpreadMarkerStrokeDraftChange={setSpreadMarkerStrokeDraft}
+                        onSpreadMarkerStrokeDraftChange={
+                          spreadMarkerSpreadOverlayFallbackEnabled
+                            ? setSpreadMarkerStrokeDraft
+                            : undefined
+                        }
                         onAnnotationToolUseOnSpread={onAnnotationToolUseOnSpread}
                       />
                     ) : null}
@@ -3096,6 +3095,13 @@ export function BookCanvasStage({
             setRegionSelectOpen(false)
             void runImageCapture({ kind: 'region', regionCss: rect })
           }}
+        />
+        <BookCaptureRegionOverlay
+          open={vaultCutWord != null}
+          onCancel={() => onVaultCutCancel?.()}
+          onConfirm={(rect) => onVaultCutConfirm?.(rect)}
+          confirmLabel="Use for card"
+          hint={`Drag around the picture for “${vaultCutWord ?? ''}”. Enter to confirm, Esc to cancel.`}
         />
         {focusLayout ? <BookFocusHoleFrame holeRect={focusLayout.holeRect} /> : null}
         {focusZoomDrawActive && onFocusDrawCancel && onFocusDrawConfirm ? (

@@ -108,6 +108,22 @@ function releaseCachedPdfDocument(absPdfPath: string) {
 }
 
 /**
+ * Run `fn` with the shared pdf.js document for this file (parsed once, kept warm 30s idle).
+ * Do not destroy the document inside `fn`.
+ */
+export async function withCachedPdfDocument<T>(
+  absPdfPath: string,
+  fn: (doc: PDFDocumentProxy) => Promise<T>,
+): Promise<T> {
+  const doc = await acquireCachedPdfDocument(absPdfPath)
+  try {
+    return await fn(doc)
+  } finally {
+    releaseCachedPdfDocument(absPdfPath)
+  }
+}
+
+/**
  * Renders one PDF page to a JPEG buffer (server-side, for saved covers and thumbs).
  */
 export async function renderPdfPageToJpegBuffer(
@@ -147,11 +163,49 @@ export async function renderPdfPageToJpegBuffer(
 }
 
 /** Renders one PDF page to PNG for OCR (returns pixel size for box mapping). */
+/** Luminance histogram tails ignored when stretching contrast (stray specks, pure white paper). */
+const CONTRAST_CLIP_FRACTION = 0.01
+
+/** In-place RGBA → grayscale with a linear contrast stretch between the 1st and 99th percentiles. */
+function grayscaleAndStretchContrast(data: Uint8ClampedArray): void {
+  const histogram = new Uint32Array(256)
+  for (let i = 0; i < data.length; i += 4) {
+    const luma = Math.round(0.299 * data[i]! + 0.587 * data[i + 1]! + 0.114 * data[i + 2]!)
+    data[i] = luma
+    histogram[luma]!++
+  }
+  const pixels = data.length / 4
+  const clip = pixels * CONTRAST_CLIP_FRACTION
+  let low = 0
+  for (let seen = 0; low < 255 && seen + histogram[low]! <= clip; low++) seen += histogram[low]!
+  let high = 255
+  for (let seen = 0; high > 0 && seen + histogram[high]! <= clip; high--) seen += histogram[high]!
+  const range = high - low
+  for (let i = 0; i < data.length; i += 4) {
+    const luma = data[i]!
+    const value = range > 16 ? Math.round(((luma - low) * 255) / range) : luma
+    data[i] = value
+    data[i + 1] = value
+    data[i + 2] = value
+    data[i + 3] = 255
+  }
+}
+
 export async function renderPdfPageToPngBuffer(
   absPdfPath: string,
   pageNumber: number,
   width: number,
-): Promise<{ buffer: Buffer; width: number; height: number }> {
+  options?: {
+    /** Grayscale + contrast stretch so faint or colored text stands out for OCR. */
+    ocrPreprocess?: boolean
+  },
+): Promise<{
+  buffer: Buffer
+  width: number
+  height: number
+  /** JPEG of the same render (smaller upload for cloud OCR). */
+  encodeJpeg: (quality?: number) => Promise<Buffer>
+}> {
   const pageIndex = Math.max(1, Math.floor(pageNumber))
   const { createCanvas, Path2D, DOMMatrix, DOMPoint, DOMRect } = await import('@napi-rs/canvas')
   ensureNapiCanvasDomGlobals({ Path2D, DOMMatrix, DOMPoint, DOMRect })
@@ -178,8 +232,19 @@ export async function renderPdfPageToPngBuffer(
     })
     await renderTask.promise
 
+    if (options?.ocrPreprocess) {
+      const image = ctx.getImageData(0, 0, pixelWidth, pixelHeight)
+      grayscaleAndStretchContrast(image.data)
+      ctx.putImageData(image, 0, 0)
+    }
+
     const buffer = Buffer.from(await canvas.encode('png'))
-    return { buffer, width: pixelWidth, height: pixelHeight }
+    return {
+      buffer,
+      width: pixelWidth,
+      height: pixelHeight,
+      encodeJpeg: async (quality = 80) => Buffer.from(await canvas.encode('jpeg', quality)),
+    }
   } finally {
     releaseCachedPdfDocument(absPdfPath)
   }

@@ -2,22 +2,23 @@ import type { AnnotationCommand } from '@/lib/books/annotation-command-types'
 import type { InkSessionMeta } from '@/lib/books/ink-session-types'
 import type { WhiteboardSessionKey } from '@/lib/books/whiteboard-session-types'
 
-/** Width ÷ height for a portrait lesson-board page (taller than wide). */
+/** Width ÷ height for a notebook page (taller than wide). */
 export const LESSON_BOARD_STANDARD_ASPECT = 3 / 4
 
-/** Width ÷ height for a wide / diagram page (16∶9). */
-export const LESSON_BOARD_WIDE_ASPECT = 16 / 9
+/** @deprecated Wide pages removed — all pages are standard. Kept so old imports compile during cleanup. */
+export const LESSON_BOARD_WIDE_ASPECT = LESSON_BOARD_STANDARD_ASPECT
 
 /** Fallback page height when viewport is unknown (before layout). ~two teaching screens. */
 export const LESSON_BOARD_DEFAULT_CONTENT_HEIGHT_PX = 1600
 
-/** Soft cap: standard pages stop growing past this many viewports (use New page instead). */
+/** Soft cap: pages stop growing past this many viewports (use New page instead). */
 export const LESSON_BOARD_MAX_RUNWAY_VIEWPORTS = 8
 
 /** Always keep this many viewports of runway below the top of the current view (current + one blank). */
 export const LESSON_BOARD_VIEWPORTS_BELOW_VIEW_TOP = 2
 
-export type LessonBoardPageOrientation = 'standard' | 'wide'
+/** @deprecated Always `'standard'`. Wide pages are migrated on load. */
+export type LessonBoardPageOrientation = 'standard'
 
 /** Intentional citation: this notebook page points at a place in a book. */
 export type LessonBoardPagePrimaryLink = {
@@ -53,6 +54,7 @@ export function normalizeLessonBoardPagePrimaryLink(
 
 export type LessonBoardPage = {
   id: string
+  /** Always `'standard'`. Legacy `'wide'` is coerced on normalize. */
   orientation: LessonBoardPageOrientation
   title?: string
   /** Optional PDF page number when this board page was created or last edited. */
@@ -63,7 +65,7 @@ export type LessonBoardPage = {
   sourceUnitId?: string
   /** One primary book link. Not a folder. Not auto-created on page turn. */
   primaryLink?: LessonBoardPagePrimaryLink
-  /** Locked logical canvas width (slot for standard, spread for wide). */
+  /** Locked logical canvas width (slot width). */
   logicalWidthPx?: number
   contentHeightPx: number
   commands: AnnotationCommand[]
@@ -71,7 +73,8 @@ export type LessonBoardPage = {
 
 export type LessonBoardWidthFallbacks = {
   slotWidthPx: number
-  spreadWidthPx: number
+  /** @deprecated Ignored — pages no longer use spread width. */
+  spreadWidthPx?: number
 }
 
 export type LessonBoardDocumentFields = {
@@ -84,7 +87,7 @@ export function newLessonBoardPageId(): string {
 }
 
 /**
- * Empty / new standard page ≈ two viewports: the screen you see + one clean screen to scroll into.
+ * Empty / new page ≈ two viewports: the screen you see + one clean screen to scroll into.
  */
 export function defaultLessonBoardContentHeightPx(viewportHeightPx?: number): number {
   if (viewportHeightPx != null && viewportHeightPx > 0) {
@@ -118,7 +121,6 @@ export function lessonBoardHeightToKeepOneViewportBelowView(
 }
 
 export function createLessonBoardPage(
-  orientation: LessonBoardPageOrientation = 'standard',
   options: {
     id?: string
     title?: string
@@ -134,7 +136,7 @@ export function createLessonBoardPage(
   const primaryLink = normalizeLessonBoardPagePrimaryLink(options.primaryLink)
   return {
     id: options.id ?? newLessonBoardPageId(),
-    orientation,
+    orientation: 'standard',
     ...(options.title != null ? { title: options.title } : {}),
     ...(options.bookPageHint != null ? { bookPageHint: options.bookPageHint } : {}),
     ...(options.sourceBookId?.trim() ? { sourceBookId: options.sourceBookId.trim() } : {}),
@@ -149,80 +151,73 @@ export function createLessonBoardPage(
 }
 
 export function lessonBoardLogicalWidthPx(
-  page: Pick<LessonBoardPage, 'orientation' | 'logicalWidthPx'>,
+  page: Pick<LessonBoardPage, 'logicalWidthPx'>,
   fallbacks: LessonBoardWidthFallbacks,
 ): number {
   if (page.logicalWidthPx != null && page.logicalWidthPx > 0) return page.logicalWidthPx
-  return page.orientation === 'wide'
-    ? Math.max(1, fallbacks.spreadWidthPx)
-    : Math.max(1, fallbacks.slotWidthPx)
+  return Math.max(1, fallbacks.slotWidthPx)
 }
 
-/** Wide pages present across the spread; standard stays in the docked slot. */
-export function lessonBoardUsesSpreadPresentation(orientation: LessonBoardPageOrientation): boolean {
-  return orientation === 'wide'
+/** @deprecated Always false — wide spread pages removed. */
+export function lessonBoardUsesSpreadPresentation(_orientation?: LessonBoardPageOrientation): boolean {
+  return false
 }
 
-export function lessonBoardPageAspect(orientation: LessonBoardPageOrientation): number {
-  return orientation === 'wide' ? LESSON_BOARD_WIDE_ASPECT : LESSON_BOARD_STANDARD_ASPECT
+export function lessonBoardPageAspect(): number {
+  return LESSON_BOARD_STANDARD_ASPECT
 }
 
-/** Height from locked width ÷ aspect (wide ≈ 16∶9, standard portrait min slice). */
-export function lessonBoardAspectHeightPx(
-  logicalWidthPx: number,
-  orientation: LessonBoardPageOrientation,
-): number {
+/** Height from locked width ÷ portrait aspect. */
+export function lessonBoardAspectHeightPx(logicalWidthPx: number): number {
   if (logicalWidthPx <= 0) return 1
-  return Math.max(1, Math.round(logicalWidthPx / lessonBoardPageAspect(orientation)))
+  return Math.max(1, Math.round(logicalWidthPx / lessonBoardPageAspect()))
 }
 
 /** Default stored runway height when a page is created or reset. */
 export function lessonBoardMinContentHeightPx(
-  orientation: LessonBoardPageOrientation,
   logicalWidthPx: number,
   viewportHeightPx?: number,
 ): number {
-  const aspectHeight = lessonBoardAspectHeightPx(logicalWidthPx, orientation)
-  if (orientation === 'wide') return aspectHeight
+  const aspectHeight = lessonBoardAspectHeightPx(logicalWidthPx)
   return Math.max(aspectHeight, defaultLessonBoardContentHeightPx(viewportHeightPx))
 }
 
-/** Wide pages stay at fixed aspect height; standard pages may grow beyond stored min. */
+/** Pages may grow beyond stored min as content needs it. */
 export function lessonBoardResolveContentHeightPx(
-  orientation: LessonBoardPageOrientation,
   logicalWidthPx: number,
   storedContentHeightPx: number,
   viewportHeightPx?: number,
 ): number {
-  const minHeightPx = lessonBoardMinContentHeightPx(orientation, logicalWidthPx, viewportHeightPx)
-  if (orientation === 'wide') return minHeightPx
+  const minHeightPx = lessonBoardMinContentHeightPx(logicalWidthPx, viewportHeightPx)
   return Math.max(minHeightPx, storedContentHeightPx > 0 ? storedContentHeightPx : minHeightPx)
 }
 
-/** Wide diagram pages do not use infinite vertical runway growth. */
-export function lessonBoardAllowsRunwayGrowth(orientation: LessonBoardPageOrientation): boolean {
-  return orientation !== 'wide'
+/** @deprecated Always true — wide fixed-height pages removed. */
+export function lessonBoardAllowsRunwayGrowth(_orientation?: LessonBoardPageOrientation): boolean {
+  return true
 }
 
-/** TOC preview box size (portrait vs landscape) inside the left rail. */
-export function lessonBoardThumbDimensions(
-  orientation: LessonBoardPageOrientation,
-  maxBoxPx = 120,
-): { widthPx: number; heightPx: number } {
-  const aspect = lessonBoardPageAspect(orientation)
-  if (orientation === 'wide') {
-    const widthPx = maxBoxPx
-    return { widthPx, heightPx: Math.max(1, Math.round(maxBoxPx / aspect)) }
-  }
+/** TOC preview box size (portrait). */
+export function lessonBoardThumbDimensions(maxBoxPx = 120): { widthPx: number; heightPx: number } {
+  const aspect = lessonBoardPageAspect()
   const heightPx = maxBoxPx
   return { widthPx: Math.max(1, Math.round(maxBoxPx * aspect)), heightPx }
 }
 
+/** Coerce legacy wide pages to standard; drop spread-locked width so they rebind to the slot. */
 export function normalizeLessonBoardPageOrientation(
-  page: LessonBoardPage,
+  page: LessonBoardPage | (Omit<LessonBoardPage, 'orientation'> & { orientation?: string }),
 ): LessonBoardPage {
   const primaryLink = normalizeLessonBoardPagePrimaryLink(page.primaryLink)
-  const next: LessonBoardPage = { ...page, orientation: page.orientation ?? 'standard' }
+  const rawOrientation = String((page as { orientation?: string }).orientation ?? 'standard')
+  const wasWide = rawOrientation === 'wide'
+  const next: LessonBoardPage = {
+    ...page,
+    orientation: 'standard',
+  }
+  if (wasWide) {
+    delete next.logicalWidthPx
+  }
   if (primaryLink) next.primaryLink = primaryLink
   else delete next.primaryLink
   return next
@@ -262,13 +257,15 @@ export function hasLessonBoardPages(doc: { pages?: readonly LessonBoardPage[] | 
 
 /**
  * Upgrade pre–Phase-1 docs (flat `commands` only) to `pages[]` + `activePageId`.
- * Idempotent when `pages` already exist.
+ * Idempotent when `pages` already exist. Coerces legacy wide pages to standard.
  */
 export function migrateLessonBoardDocument<
   T extends { commands: AnnotationCommand[]; meta?: InkSessionMeta } & Partial<LessonBoardDocumentFields>,
 >(doc: T, options: { defaultContentHeightPx?: number } = {}): T & LessonBoardDocumentFields {
   if (hasLessonBoardPages(doc)) {
-    const pages = doc.pages!.map(normalizeLessonBoardPageOrientation)
+    const pages = doc.pages!.map((p) =>
+      normalizeLessonBoardPageOrientation(p as LessonBoardPage & { orientation?: string }),
+    )
     const activePageId =
       doc.activePageId && pages.some((p) => p.id === doc.activePageId)
         ? doc.activePageId
@@ -278,7 +275,7 @@ export function migrateLessonBoardDocument<
 
   const contentHeightPx =
     options.defaultContentHeightPx ?? defaultLessonBoardContentHeightPx()
-  const page = createLessonBoardPage('standard', {
+  const page = createLessonBoardPage({
     contentHeightPx,
     commands: [...doc.commands],
   })

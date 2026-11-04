@@ -7,15 +7,11 @@ import {
   LESSON_BOARD_THUMB_WIDTH_PX,
   paintLessonBoardPageThumbnail,
 } from '@/lib/books/lesson-board-page-thumbnail'
-import {
-  lessonBoardThumbDimensions,
-  type LessonBoardPageOrientation,
-} from '@/lib/books/lesson-board-types'
+import { lessonBoardThumbDimensions } from '@/lib/books/lesson-board-types'
 import { cn } from '@/lib/utils'
 
 export interface LessonBoardPageThumbnailProps {
   commands: readonly AnnotationCommand[]
-  orientation?: LessonBoardPageOrientation
   width?: number
   scrollRoot?: HTMLElement | null
   label: string
@@ -24,7 +20,6 @@ export interface LessonBoardPageThumbnailProps {
 
 export function LessonBoardPageThumbnail({
   commands,
-  orientation = 'standard',
   width = LESSON_BOARD_THUMB_WIDTH_PX,
   scrollRoot,
   label,
@@ -34,12 +29,12 @@ export function LessonBoardPageThumbnail({
   const inkRef = useRef<HTMLCanvasElement | null>(null)
   const markerRef = useRef<HTMLCanvasElement | null>(null)
   const paintedRef = useRef(false)
-  const { widthPx, heightPx } = lessonBoardThumbDimensions(orientation, width)
+  const { widthPx, heightPx } = lessonBoardThumbDimensions(width)
   const hasInk = lessonBoardPageHasCanvasInk(commands)
 
   useEffect(() => {
     paintedRef.current = false
-  }, [commands, heightPx, orientation, widthPx])
+  }, [commands, heightPx, widthPx])
 
   useEffect(() => {
     const el = containerRef.current

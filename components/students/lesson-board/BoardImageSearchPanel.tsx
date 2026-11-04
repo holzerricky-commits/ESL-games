@@ -68,6 +68,10 @@ export type BoardImageSearchPanelProps = {
    * Closes search after calling.
    */
   onPlacePicture?: (payload: { fullUrl: string; word: string }) => void
+  /** Overrides the place button label (e.g. “Use for card”). */
+  placeButtonLabel?: string
+  /** Overrides the hint above the place button. */
+  placeHint?: string
 }
 
 const MEDIA_OPTIONS: {
@@ -158,6 +162,8 @@ export function BoardImageSearchPanel({
   onOpenChange,
   canAddToBoard = true,
   onPlacePicture,
+  placeButtonLabel,
+  placeHint,
 }: BoardImageSearchPanelProps) {
   const isDrawer = variant === 'drawer'
   const dark = isDrawer
@@ -727,7 +733,7 @@ export function BoardImageSearchPanel({
             </div>
           ) : onPlacePicture ? (
             <p className={cn('text-[10px] leading-snug', labelMuted)}>
-              Tap the book to place. Open the lesson board to add flashcards.
+              {placeHint ?? 'Tap the book to place. Open the lesson board to add flashcards.'}
             </p>
           ) : null}
 
@@ -739,7 +745,7 @@ export function BoardImageSearchPanel({
                 onClick={handlePlacePicture}
                 className={cn('w-full', primaryBtn)}
               >
-                {canAddToBoard ? 'Place on book or board' : 'Place on book'}
+                {placeButtonLabel ?? (canAddToBoard ? 'Place on book or board' : 'Place on book')}
               </button>
             ) : null}
             {canAddToBoard ? (

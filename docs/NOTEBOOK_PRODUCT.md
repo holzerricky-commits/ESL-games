@@ -8,7 +8,7 @@ Last updated: 2026-09-18
 
 **Code may still say** `whiteboard` / `lesson board` until a later rename pass. Do not block teaching work on that rename.
 
-**Related:** `LESSON_BOARD_PRODUCT.md` (page model: Standard / Wide, New page, ink — still stands), `CLASS_SOURCE_STRIP_PRODUCT.md` (book chips + Notebook as a source), `PROJECT_CONTEXT.md` (book-first, 1:1 screen share).
+**Related:** `LESSON_BOARD_PRODUCT.md` (page model: one Standard page kind, New page, ink — still stands), `CLASS_SOURCE_STRIP_PRODUCT.md` (book chips + Notebook as a source), `PROJECT_CONTEXT.md` (book-first, 1:1 screen share).
 
 **Supersedes for Notebook ownership and chrome:** book-scoped storage and “PDF change swaps the board” in `LESSON_BOARD_NAV_PRODUCT.md` and `CLASS_SOURCE_STRIP_PRODUCT.md`; dock/float/minimize naming as the teacher-facing model in `LESSON_BOARD_PRODUCT.md`. Typed class-log notebook in `NOTEBOOK_REBUILD_PHASES.md` stays dead.
 
@@ -55,10 +55,10 @@ Existing per-book / per-unit boards **merge by copy** into that student notebook
 
 Park is hide, not a teaching layout. Do not add more window states.
 
-### Page kinds (unchanged from lesson board)
+### Page kind
 
-- **Standard** pages can Pin, Tab, or Overlay. Never stretch to spread width.
-- **Wide** pages cannot Overlay as a free window. With a book focused, a Wide page covers the spread. In Tab, it is just the stage.
+- One page kind (**Standard**). Can Pin, Tab, or Overlay. Never stretch to spread width.
+- Legacy Wide pages are migrated to Standard on load.
 
 ---
 
@@ -68,11 +68,13 @@ No control cycles Pin → Tab → Overlay → Park.
 
 | Surface | Job |
 |---------|-----|
-| **Source strip** Notebook chip | **Tab.** Where we are. |
+| **Source strip** Notebook chip | **Tab.** Pinned workspace destination (not a peer book tab). |
 | **Left rail** | **Pin / Park.** Put the notebook on the desk / take it off. |
-| **Notebook header** | **Pin ↔ Overlay** (Standard pages only), or **Hide** (Park). Swap Pin side. |
+| **Notebook header** | **Pin ↔ Overlay**, or **Hide** (Park). Swap Pin side. |
 
 ### Strip
+
+The strip’s **book chips** are the document tablist. **Notebook** sits after a divider as a fixed workspace control. **Review** (when present) is a separate mode shortcut — not a Notebook peer and not a book tab. See `CLASS_SOURCE_STRIP_PRODUCT.md`.
 
 | From | Tap Notebook chip |
 |------|-------------------|
@@ -85,9 +87,10 @@ Tap a **book** chip from Tab → that book Focus, notebook **Parks**.
 
 Visual:
 
-- **Park** — chip looks off (not selected)
-- **Pin / Overlay** — notebook looks present; the **book** chip stays the selected source
-- **Tab** — Notebook is the only selected source; book chips are not selected
+- **Park** — chip looks off (not pressed)
+- **Pin / Overlay** — notebook looks present; the **book** chip stays the selected tab
+- **Tab** — Notebook is pressed / owns the desk; book chips are not selected
+- **Review mode on** — material controls look paused (Notebook not pressed as desk owner)
 
 Strip never Pins. Want notes beside the book → rail.
 
@@ -113,7 +116,7 @@ Teacher-facing label: **Notebook** (not “lesson board”).
 | Minimize | **Hide notebook** |
 | Move board to other side | Keep, **Pin only** |
 
-Overlay is only for Standard pages while a book is visible. Overlay from Tab is not offered: Tab already owns the desk. Choosing Overlay exits Tab (book visible under the sheet).
+Overlay is available while a book is visible. Overlay from Tab is not offered: Tab already owns the desk. Choosing Overlay exits Tab (book visible under the sheet).
 
 ---
 
@@ -198,8 +201,8 @@ After the merge, finding is a **page** problem:
 
 | Doc | Relationship |
 |-----|----------------|
-| `LESSON_BOARD_PRODUCT.md` | **Page model** (Standard / Wide, New page, coordinates) still stands. Layout chrome and ownership → this doc. |
+| `LESSON_BOARD_PRODUCT.md` | **Page model** (one Standard page kind, New page, coordinates) still stands. Layout chrome and ownership → this doc. |
 | `LESSON_BOARD_NAV_PRODUCT.md` | Footer page nav still stands. Per-book storage, PDF-syncs-board, and Boards-as-notebook-picker → superseded. |
-| `CLASS_SOURCE_STRIP_PRODUCT.md` | Book chips and strip height still stand. Notebook chip / rail jobs and storage → this doc. |
+| `CLASS_SOURCE_STRIP_PRODUCT.md` | Book tabs, strip height, and Review-as-mode still stand. Notebook chip / rail jobs and storage → this doc. |
 | `NOTEBOOK_REBUILD_PHASES.md` | Historical typed class log. Do not revive. |
 | `INFINITE_WHITEBOARD_V1.md` | Historical runway. Pages live in lesson-board types. |

@@ -7,6 +7,11 @@ import { InteractiveVocabReaderShelf } from '@/components/books/interactive-voca
 import { ReadingCheckLiveShelf } from '@/components/books/reading-check-live-shelf'
 import type { ReadingCheckLivePin } from '@/components/students/fullscreen-book-overlay/sections/ReadingCheckHotspotPlacementLayer'
 import type { ReadingCheckQuestionPinTone } from '@/components/books/reading-check-question-pin'
+import type {
+  BookReaderSpread,
+  PrepReadingCheckPins,
+} from '@/components/students/fullscreen-book-overlay/types'
+import { dispatchReadingCheckHotspotPlaceResult } from '@/lib/books/reading-check-hotspot-placement-events'
 import { latestReadingCheckLiveMarkForStop } from '@/lib/books/reading-check-live-marks'
 import { mapPdfPageToDisplayLabel } from '@/lib/books/page-numbering'
 import {
@@ -41,8 +46,18 @@ import { useAudioTrackPlacement } from './hooks/useAudioTrackPlacement'
 import { useBookExerciseTasks } from './hooks/useBookExerciseTasks'
 import { TranslateToolPanel } from './sections/TranslateToolPanel'
 import { PictureSearchToolPanel } from './sections/PictureSearchToolPanel'
+import { LessonVaultMotionLayer } from './sections/LessonVaultMotionLayer'
 import { LessonVaultPanel } from './sections/LessonVaultPanel'
+import { useLessonGrammar, useLessonGrammarHints } from './hooks/useLessonGrammar'
 import { useLessonVault } from './hooks/useLessonVault'
+import { LessonVaultReviewStage, type ReviewSection } from './sections/LessonVaultReviewStage'
+import {
+  cardsForStory,
+  defaultStoryPartId,
+  showStoryScopeChips,
+  storyScopes,
+} from '@/lib/lesson-vault/story-scope'
+import { pictureWordKey, type LessonVaultCard } from '@/lib/lesson-vault/types'
 import { PlaceTranslationOverlay, type PlaceFromTranslateSurface } from './sections/PlaceTranslationOverlay'
 import { WritableTextTranslatePopover } from './sections/WritableTextTranslatePopover'
 import type { PinWritableTextGlossInput } from './sections/WritableTextTranslatePopover'
@@ -117,6 +132,10 @@ export function FullscreenBookOverlayView({
   deskRail,
   deskRailOpen = false,
   onDeskRailOpenChange,
+  deskRailWidthPx,
+  focusPdfPage = null,
+  prepReadingCheckPins = null,
+  onSpreadChange,
   preferOpenExercises = false,
   onSwitchTeachingBook,
 }: {
@@ -126,6 +145,10 @@ export function FullscreenBookOverlayView({
   deskRail?: ReactNode
   deskRailOpen?: boolean
   onDeskRailOpenChange?: (open: boolean) => void
+  deskRailWidthPx?: number
+  focusPdfPage?: number | null
+  prepReadingCheckPins?: PrepReadingCheckPins | null
+  onSpreadChange?: (spread: BookReaderSpread) => void
   preferOpenExercises?: boolean
   onSwitchTeachingBook?: (bookId: string, unitId: string) => void
 }) {
@@ -185,7 +208,6 @@ export function FullscreenBookOverlayView({
     annotationRailKeyboardOpenAt,
     isPageListOpen,
     syncWorkspaceDeskLeftPx,
-    pageListRailTab,
     exportCaptureLayoutActive,
     showBookFrame,
     setShowBookFrame,
@@ -298,9 +320,15 @@ export function FullscreenBookOverlayView({
     readerPresentationReady,
     rightPageCaptureRef,
     runImageCapture,
+    captureRegionToBlob,
+    vaultCutTarget,
+    setVaultCutTarget,
     runPdfPacketExport,
+    library,
     selectedBook,
     selectedBookId,
+    applyTeachingBookSwitch,
+    jumpToTeachingUnitPage,
     classSourceBooks,
     notebookFocus,
     enterNotebookFocus,
@@ -318,7 +346,6 @@ export function FullscreenBookOverlayView({
     setIsAnnotationRailVisible,
     setIsPageListOpen,
     togglePageListRail,
-    setPageListRailTab,
     setIsWhiteboardOpen,
     setJpegQuality,
     markerColorSource,
@@ -408,7 +435,6 @@ export function FullscreenBookOverlayView({
     saveLessonBoardNow,
     deleteActiveLessonBoardPage,
     canDeleteActiveLessonBoardPage,
-    lessonBoardActivePageRowRef,
     boardLinkPlacementActive,
     lessonBoardPageLinks,
     activeBoardPageLink,
@@ -1056,11 +1082,11 @@ export function FullscreenBookOverlayView({
       flushPendingStudentBookPlaceSave()
       requestSpreadSessionFlush()
       requestWhiteboardSessionFlush()
-      onSwitchTeachingBook?.(nextBook, nextUnit)
+      applyTeachingBookSwitch(nextBook, nextUnit)
     },
     [
+      applyTeachingBookSwitch,
       notebookFocus,
-      onSwitchTeachingBook,
       parkNotebookFromFocus,
       selectedBookId,
       selectedUnit?.id,
@@ -1112,6 +1138,36 @@ export function FullscreenBookOverlayView({
       setLiveCheckStopId(null)
     }
   }, [liveReadingCheckPack])
+
+  const prepCheckStops = prepReadingCheckPins?.stops ?? null
+  const prepCheckPins = useMemo((): ReadingCheckLivePin[] => {
+    if (!prepCheckStops) return []
+    const leftDisplayPage =
+      selectedBook && selectedUnit
+        ? parsePrintedPageLabel(
+            mapPdfPageToDisplayLabel(pageNumber, selectedBook, selectedUnit, numPages),
+          )
+        : null
+    const rightDisplayPage =
+      selectedBook && selectedUnit && spreadRightPage != null
+        ? parsePrintedPageLabel(
+            mapPdfPageToDisplayLabel(spreadRightPage, selectedBook, selectedUnit, numPages),
+          )
+        : null
+    return listReadingCheckLivePinsOnSpread(prepCheckStops, {
+      leftPdfPage: pageNumber,
+      rightPdfPage: spreadRightPage,
+      leftDisplayPage,
+      rightDisplayPage,
+    }).map((pin) => ({
+      id: pin.stop.id,
+      pdfPage: pin.pdfPage,
+      x: pin.x,
+      y: pin.y,
+      label: readingCheckStopLinkLabel(pin.stop, pin.index),
+      tone: 'default',
+    }))
+  }, [numPages, pageNumber, prepCheckStops, selectedBook, selectedUnit, spreadRightPage])
 
   const liveCheckPins = useMemo((): ReadingCheckLivePin[] => {
     if (!liveReadingCheckPack) return []
@@ -1302,20 +1358,164 @@ export function FullscreenBookOverlayView({
   const classToolDrawerOpen =
     classToolId != null && !hideFocusPresentationChrome
   const vaultDrawerOpen = classToolDrawerOpen && classToolId === 'vault'
+  const recentPicturesRef = useRef(new Map<string, string>())
+  useEffect(() => {
+    recentPicturesRef.current.clear()
+  }, [studentId])
+  const rememberPictureForWord = useCallback((word: string, src: string) => {
+    const key = pictureWordKey(word)
+    if (key && src) recentPicturesRef.current.set(key, src)
+  }, [])
+  const getRecentPictureFor = useCallback(
+    (word: string) => recentPicturesRef.current.get(pictureWordKey(word)) ?? null,
+    [],
+  )
   const lessonVault = useLessonVault({
     studentId,
+    library,
     selectedBook,
     selectedUnit,
     pageNumber,
     numPages,
     open: vaultDrawerOpen,
+    getRecentPictureFor,
   })
+  const [vaultReviewLessonId, setVaultReviewLessonId] = useState<string | null>(null)
+  const [vaultReviewPartId, setVaultReviewPartId] = useState<string | null>(null)
+  const [vaultReviewOpen, setVaultReviewOpen] = useState(false)
+  const vaultReviewIndex = vaultReviewLessonId
+    ? lessonVault.lessons.findIndex((l) => l.id === vaultReviewLessonId)
+    : -1
+  const vaultReviewLesson = vaultReviewIndex >= 0 ? lessonVault.lessons[vaultReviewIndex]! : null
+  const vaultReviewAllCards = lessonVault.lessonCards(vaultReviewLessonId)
+  const vaultReviewStoryScopes = useMemo(
+    () => storyScopes(vaultReviewAllCards, vaultReviewLesson?.parts ?? []),
+    [vaultReviewAllCards, vaultReviewLesson?.parts],
+  )
+  const vaultReviewShowStoryChips = showStoryScopeChips(vaultReviewStoryScopes)
+  const vaultReviewPartIdEffective = vaultReviewShowStoryChips ? vaultReviewPartId : null
+  const vaultReviewCards = useMemo(
+    () => cardsForStory(vaultReviewAllCards, vaultReviewPartIdEffective),
+    [vaultReviewAllCards, vaultReviewPartIdEffective],
+  )
+  useEffect(() => {
+    if (!vaultReviewOpen) return
+    const sid = studentId.trim()
+    if (!sid || vaultReviewCards.length === 0) return
+    lessonVault.queueAutoChinese(sid, vaultReviewCards)
+  }, [vaultReviewOpen, studentId, vaultReviewCards, lessonVault.queueAutoChinese])
+  useEffect(() => {
+    if (vaultReviewPartId == null) return
+    if (!vaultReviewStoryScopes.some((scope) => scope.partId === vaultReviewPartId)) {
+      setVaultReviewPartId(null)
+    }
+  }, [vaultReviewStoryScopes, vaultReviewPartId])
+  const lessonGrammar = useLessonGrammar({ studentId, library, selectedBook, selectedUnit, numPages })
+  const vaultReviewGrammarItems = lessonGrammar.lessonItems(vaultReviewLessonId)
+  const vaultReviewGrammarHints = useLessonGrammarHints(
+    vaultReviewOpen && selectedBook && selectedUnit && vaultReviewLessonId
+      ? { bookId: selectedBook.id, unitId: selectedUnit.id, lessonId: vaultReviewLessonId }
+      : null,
+  )
+  const [vaultReviewSection, setVaultReviewSection] = useState<ReviewSection>('words')
+  const reviewEntryLessonId =
+    (vaultDrawerOpen ? lessonVault.viewedLesson?.id : lessonVault.pageLesson?.id) ?? lessonVault.pageLesson?.id ?? null
+  const reviewEntryWordCount = lessonVault.lessonCards(reviewEntryLessonId).length
+  const reviewEntryGrammarCount = lessonGrammar.lessonItems(reviewEntryLessonId).length
+  /** Keeps the last section unless it is empty and the other one is not. */
+  const reviewEntrySection: ReviewSection =
+    vaultReviewSection === 'words' && reviewEntryWordCount === 0 && reviewEntryGrammarCount > 0
+      ? 'grammar'
+      : vaultReviewSection === 'grammar' && reviewEntryGrammarCount === 0 && reviewEntryWordCount > 0
+        ? 'words'
+        : vaultReviewSection
+  const openVaultReview = useCallback(() => {
+    setVaultReviewLessonId(reviewEntryLessonId)
+    if (vaultDrawerOpen) {
+      setVaultReviewPartId(lessonVault.viewedPartId)
+    } else {
+      const lesson = lessonVault.lessons.find((l) => l.id === reviewEntryLessonId) ?? null
+      const scopes = storyScopes(lessonVault.lessonCards(reviewEntryLessonId), lesson?.parts ?? [])
+      setVaultReviewPartId(defaultStoryPartId(scopes, lessonVault.pagePartId))
+    }
+    setVaultReviewSection(reviewEntrySection)
+    setVaultReviewOpen(true)
+    if (classToolId === 'vault') setClassToolId(null)
+  }, [
+    reviewEntryLessonId,
+    reviewEntrySection,
+    classToolId,
+    setClassToolId,
+    vaultDrawerOpen,
+    lessonVault.viewedPartId,
+    lessonVault.lessons,
+    lessonVault.lessonCards,
+    lessonVault.pagePartId,
+  ])
+  const closeVaultReview = useCallback(() => setVaultReviewOpen(false), [])
+  const [vaultReviewHomeTick, setVaultReviewHomeTick] = useState(0)
+  /** Open review, or return to its overview if already open (does not close back to the book). */
+  const activateVaultReview = useCallback(() => {
+    if (vaultReviewOpen) {
+      setVaultReviewHomeTick((tick) => tick + 1)
+      return
+    }
+    openVaultReview()
+  }, [vaultReviewOpen, openVaultReview])
+  useEffect(() => {
+    setVaultReviewOpen(false)
+  }, [open, studentId, selectedBookId, selectedUnit?.id])
+  const [vaultPictureTarget, setVaultPictureTarget] = useState<{ cardId: string; word: string } | null>(null)
+  const { keepViewOnReopen: keepVaultViewOnReopen, setCardPicture: setVaultCardPicture } = lessonVault
+  useEffect(() => {
+    if (classToolId === 'pictures') return
+    if (vaultPictureTarget) setVaultPictureTarget(null)
+    if (classToolId !== 'vault') keepVaultViewOnReopen(false)
+  }, [classToolId, vaultPictureTarget, keepVaultViewOnReopen])
+  const requestVaultCardPicture = useCallback(
+    (card: LessonVaultCard) => {
+      keepVaultViewOnReopen(true)
+      setVaultPictureTarget({ cardId: card.id, word: card.word })
+      setPictureSearchInitialQuery(card.word)
+      setClassToolId('pictures')
+    },
+    [keepVaultViewOnReopen, setClassToolId],
+  )
+  const { setCardPictureFromFile: setVaultCardPictureFromFile } = lessonVault
+  const startVaultCardCut = useCallback(
+    (card: LessonVaultCard) => setVaultCutTarget({ cardId: card.id, word: card.word }),
+    [setVaultCutTarget],
+  )
+  const confirmVaultCardCut = useCallback(
+    async (rect: { x: number; y: number; width: number; height: number }) => {
+      const target = vaultCutTarget
+      setVaultCutTarget(null)
+      if (!target) return
+      const blob = await captureRegionToBlob(rect)
+      if (blob) await setVaultCardPictureFromFile(target.cardId, blob)
+    },
+    [vaultCutTarget, setVaultCutTarget, captureRegionToBlob, setVaultCardPictureFromFile],
+  )
+  const pickVaultCardPicture = useCallback(
+    (src: string) => {
+      if (!vaultPictureTarget) return
+      const { cardId, word } = vaultPictureTarget
+      rememberPictureForWord(word, src)
+      void setVaultCardPicture(cardId, src)
+      setVaultPictureTarget(null)
+      setPictureSearchInitialQuery('')
+      // Edit cards lives in Review; otherwise return to the vault drawer.
+      setClassToolId(vaultReviewOpen ? null : 'vault')
+    },
+    [vaultPictureTarget, setVaultCardPicture, rememberPictureForWord, setClassToolId, vaultReviewOpen],
+  )
   const bookDeskLeft = bookWorkspaceDeskLeftCss({
     pageListOpen: isPageListOpen,
     audioPlaylistOpen: bookAudioOpen,
     exerciseRailOpen: bookExercisesOpen,
     classToolDrawerOpen,
     deskRailOpen,
+    deskRailWidthPx,
   })
   const bookDeskLeftPx = bookWorkspaceDeskLeftPx({
     pageListOpen: isPageListOpen,
@@ -1323,12 +1523,33 @@ export function FullscreenBookOverlayView({
     exerciseRailOpen: bookExercisesOpen,
     classToolDrawerOpen,
     deskRailOpen,
+    deskRailWidthPx,
   })
 
   useLayoutEffect(() => {
     if (!open) return
     syncWorkspaceDeskLeftPx(bookDeskLeftPx)
   }, [open, bookDeskLeftPx, syncWorkspaceDeskLeftPx])
+
+  const appliedFocusPdfPageRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (focusPdfPage == null || !Number.isFinite(focusPdfPage)) {
+      appliedFocusPdfPageRef.current = null
+      return
+    }
+    if (!open || !hasResolvedUnit || !(numPages != null && numPages > 0)) return
+    const target = Math.min(numPages, Math.max(1, Math.floor(focusPdfPage)))
+    if (appliedFocusPdfPageRef.current === target) return
+    appliedFocusPdfPageRef.current = target
+    if (target === pageNumber || target === spreadRightPage) return
+    goToPage(target)
+  }, [focusPdfPage, open, hasResolvedUnit, numPages, pageNumber, spreadRightPage, goToPage])
+
+  const spreadReportRightPage = showSpreadRightPage ? (spreadRightPage ?? null) : null
+  useEffect(() => {
+    if (!onSpreadChange || !open || !hasResolvedUnit) return
+    onSpreadChange({ leftPdfPage: pageNumber, rightPdfPage: spreadReportRightPage })
+  }, [onSpreadChange, open, hasResolvedUnit, pageNumber, spreadReportRightPage])
 
   useEffect(() => {
     if (!hideFocusPresentationChrome) return
@@ -1389,16 +1610,8 @@ export function FullscreenBookOverlayView({
         numberingMode={numberingMode}
         activePageRowRef={activePageRowRef}
         goToPage={goToPage}
+        onJumpToUnitPage={jumpToTeachingUnitPage}
         setIsPageListOpen={setIsPageListOpen}
-        isWhiteboardOpen={isWhiteboardSessionOpen}
-        pageListRailTab={pageListRailTab}
-        setPageListRailTab={setPageListRailTab}
-        lockToBoardTab={notebookFocus}
-        whiteboardSessionDoc={whiteboardSessionDoc}
-        onSelectLessonBoardPage={selectLessonBoardPage}
-        onNewLessonBoardPage={createLessonBoardPage}
-        onRenameLessonBoardPage={renameLessonBoardPage}
-        lessonBoardActivePageRowRef={lessonBoardActivePageRowRef}
       />
       <BookAudioPlaylistRail
         open={bookAudioOpen}
@@ -1480,25 +1693,42 @@ export function FullscreenBookOverlayView({
             : undefined
         }
       />
+      <LessonVaultMotionLayer />
       <LessonVaultPanel
         open={vaultDrawerOpen}
         onClose={() => setClassToolId(null)}
         hasStudent={Boolean(studentId.trim())}
         viewedLesson={lessonVault.viewedLesson}
         cards={lessonVault.viewedCards}
+        lessonAllCards={lessonVault.lessonAllCards}
+        storyScopes={lessonVault.storyScopes}
+        viewedPartId={lessonVault.viewedPartId}
+        onViewedStoryChange={lessonVault.setViewedStory}
+        pagePartId={lessonVault.pagePartId}
         pageLesson={lessonVault.pageLesson}
         hasPreviousLesson={lessonVault.hasPreviousLesson}
         hasNextLesson={lessonVault.hasNextLesson}
         onPreviousLesson={lessonVault.showPreviousLesson}
         onNextLesson={lessonVault.showNextLesson}
         onShowPageLesson={lessonVault.showPageLesson}
+        onOpenReview={openVaultReview}
+        onPictureFile={(card, file) => lessonVault.setCardPictureFromFile(card.id, file)}
+        findingIds={lessonVault.findingPictureIds}
       />
       <PictureSearchToolPanel
         open={classToolDrawerOpen && classToolId === 'pictures'}
         onClose={() => {
-          setClassToolId(null)
           setPictureSearchInitialQuery('')
+          if (vaultPictureTarget) {
+            setVaultPictureTarget(null)
+            setClassToolId(vaultReviewOpen ? null : 'vault')
+            return
+          }
+          setClassToolId(null)
         }}
+        onPictureChosen={rememberPictureForWord}
+        vaultCardWord={vaultPictureTarget?.word ?? null}
+        onPickForVaultCard={pickVaultCardPicture}
         studentId={studentId}
         wbAnnRef={wbAnnRef}
         boardVisible={isWhiteboardOpen}
@@ -1531,7 +1761,7 @@ export function FullscreenBookOverlayView({
         hasResolvedUnit={hasResolvedUnit}
         numPages={numPages}
         selectedBookId={selectedBookId}
-        suppressChrome={suppressChrome || readerLayoutMode === 'pageGrid'}
+        suppressChrome={suppressChrome || readerLayoutMode === 'pageGrid' || vaultReviewOpen}
         pageCanvasHeightPx={pageCanvasHeightPx}
         isAnnotationRailVisible={isAnnotationRailVisible}
         setIsAnnotationRailVisible={setIsAnnotationRailVisible}
@@ -1737,6 +1967,65 @@ export function FullscreenBookOverlayView({
         ) : null}
 
         <div className="absolute inset-0 overscroll-none">
+          {vaultReviewOpen ? (
+            <LessonVaultReviewStage
+              lessonId={vaultReviewLesson?.id ?? null}
+              lessonTitle={vaultReviewLesson?.title ?? null}
+              section={vaultReviewSection}
+              onSectionChange={setVaultReviewSection}
+              cards={vaultReviewCards}
+              lessonAllCards={vaultReviewAllCards}
+              storyScopes={vaultReviewStoryScopes}
+              selectedPartId={vaultReviewPartIdEffective}
+              onStoryChange={setVaultReviewPartId}
+              grammarItems={vaultReviewGrammarItems}
+              grammarRule={lessonGrammar.lessonRule(vaultReviewLessonId)}
+              grammarHints={vaultReviewGrammarHints}
+              onSetGrammarRule={(text) => lessonGrammar.setRule(vaultReviewLessonId, text)}
+              onUpdateGrammarItem={lessonGrammar.updateItem}
+              onDeleteGrammarItem={lessonGrammar.deleteItem}
+              onGenerateGrammar={() =>
+                void lessonGrammar.generateFromPages({
+                  lessonId: vaultReviewLessonId,
+                  pdfPages: showSpreadRightPage && spreadRightPage != null ? [pageNumber, spreadRightPage] : [pageNumber],
+                  grammarNotes: vaultReviewGrammarHints,
+                })
+              }
+              generatingGrammar={
+                lessonGrammar.generatingLessonId != null && lessonGrammar.generatingLessonId === vaultReviewLessonId
+              }
+              hasPreviousLesson={vaultReviewIndex > 0}
+              hasNextLesson={vaultReviewIndex >= 0 && vaultReviewIndex < lessonVault.lessons.length - 1}
+              onPreviousLesson={() => {
+                if (vaultReviewIndex > 0) {
+                  setVaultReviewLessonId(lessonVault.lessons[vaultReviewIndex - 1]!.id)
+                  setVaultReviewPartId(null)
+                }
+              }}
+              onNextLesson={() => {
+                const next = lessonVault.lessons[vaultReviewIndex + 1]
+                if (vaultReviewIndex >= 0 && next) {
+                  setVaultReviewLessonId(next.id)
+                  setVaultReviewPartId(null)
+                }
+              }}
+              onClose={closeVaultReview}
+              onSaveReview={lessonVault.saveReviewStatuses}
+              homeTick={vaultReviewHomeTick}
+              lessons={lessonVault.lessons}
+              onUpdateCardText={lessonVault.updateCardText}
+              onGenerateCardText={lessonVault.generateCardText}
+              onSearchPicture={requestVaultCardPicture}
+              onCutPicture={startVaultCardCut}
+              onPictureFile={(card, file) => lessonVault.setCardPictureFromFile(card.id, file)}
+              onDeleteCard={lessonVault.deleteCard}
+              onMoveCard={lessonVault.moveCard}
+              findingIds={lessonVault.findingPictureIds}
+              onFindMissingPictures={lessonVault.findMissingPictures}
+              onRetryAutoPicture={lessonVault.retryAutoPicture}
+              onChooseCardPicture={lessonVault.chooseCardPicture}
+            />
+          ) : null}
           {readerLayoutMode === 'pageGrid' && hasResolvedUnit && selectedUnit ? (
             <PageGridStage
               pageNumbers={visiblePages}
@@ -1756,9 +2045,9 @@ export function FullscreenBookOverlayView({
           <div
             className={cn(
               'absolute inset-0',
-              readerLayoutMode === 'pageGrid' && 'invisible pointer-events-none',
+              (readerLayoutMode === 'pageGrid' || vaultReviewOpen) && 'invisible pointer-events-none',
             )}
-            aria-hidden={readerLayoutMode === 'pageGrid'}
+            aria-hidden={readerLayoutMode === 'pageGrid' || vaultReviewOpen}
           >
           <WritableTextGlossReviewProvider openReview={writableTranslateSelection.openFromGloss}>
           <BookCanvasStage
@@ -1884,6 +2173,8 @@ export function FullscreenBookOverlayView({
             whiteboardContentHeightPx={whiteboardContentHeightPx}
             ensureWhiteboardRunwayBelowView={ensureWhiteboardRunwayBelowView}
             createLessonBoardPage={createLessonBoardPage}
+            selectLessonBoardPage={selectLessonBoardPage}
+            renameLessonBoardPage={renameLessonBoardPage}
             saveLessonBoardNow={saveLessonBoardNow}
             deleteActiveLessonBoardPage={deleteActiveLessonBoardPage}
             canDeleteActiveLessonBoardPage={canDeleteActiveLessonBoardPage}
@@ -1922,8 +2213,14 @@ export function FullscreenBookOverlayView({
             readingCheckHotspotPreviewCenter={readingCheckHotspotPreviewCenter}
             readingCheckHotspotPreviewLabel={readingCheckHotspotPreviewLabel}
             onReadingCheckHotspotPreviewClick={onReadingCheckHotspotPreviewClick}
-            readingCheckLivePins={userPresented ? liveCheckPins : []}
-            onReadingCheckLivePinClick={setLiveCheckStopId}
+            readingCheckLivePins={
+              !userPresented ? [] : prepReadingCheckPins ? prepCheckPins : liveCheckPins
+            }
+            onReadingCheckLivePinClick={
+              prepReadingCheckPins
+                ? (stopId) => prepReadingCheckPins.onSelectStop?.(stopId)
+                : setLiveCheckStopId
+            }
             onReadingCheckLivePinMove={(move) => {
               const displayPage =
                 selectedBook && selectedUnit
@@ -1931,6 +2228,21 @@ export function FullscreenBookOverlayView({
                       mapPdfPageToDisplayLabel(move.pdfPage, selectedBook, selectedUnit, numPages),
                     )
                   : null
+              if (prepReadingCheckPins) {
+                if (!selectedBookId || !selectedUnit) return
+                dispatchReadingCheckHotspotPlaceResult({
+                  stopId: move.stopId,
+                  storyId: prepReadingCheckPins.storyId,
+                  bookId: selectedBookId,
+                  unitId: selectedUnit.id,
+                  pdfPage: move.pdfPage,
+                  x: move.center[0],
+                  y: move.center[1],
+                  pageSide: move.pageSide,
+                  displayPage,
+                })
+                return
+              }
               moveLiveReadingCheckPin({ ...move, displayPage })
             }}
             interactiveVocabWords={interactiveVocabPack?.words ?? []}
@@ -1999,6 +2311,10 @@ export function FullscreenBookOverlayView({
             onWhiteboardOverlayCaps={onWhiteboardOverlayCaps}
             onBookTextSpreadCapabilityChange={onBookTextSpreadCapabilityChange}
             onSaveTextToVault={lessonVault.saveFromPage}
+            onSaveTextToGrammar={lessonGrammar.saveFromPage}
+            vaultCutWord={vaultCutTarget?.word ?? null}
+            onVaultCutCancel={() => setVaultCutTarget(null)}
+            onVaultCutConfirm={confirmVaultCardCut}
             onEyedropperPick={onEyedropperPick}
             spreadTurnGridRef={spreadTurnGridRef}
             turnSlide={turnSlide}
@@ -2052,8 +2368,30 @@ export function FullscreenBookOverlayView({
               notebookDocked={isWhiteboardSessionOpen && !isWhiteboardMinimized && !notebookFocus}
               notebookFocus={notebookFocus}
               ignorePointer={focusZoomDrawActive}
-              onSelectBook={handleSelectSourceBook}
-              onToggleNotebook={handleToggleNotebookSource}
+              onSelectBook={(bookId, unitId) => {
+                setVaultReviewOpen(false)
+                handleSelectSourceBook(bookId, unitId)
+              }}
+              onToggleNotebook={() => {
+                setVaultReviewOpen(false)
+                handleToggleNotebookSource()
+              }}
+              review={
+                studentId.trim()
+                  ? {
+                      count: vaultReviewOpen
+                        ? vaultReviewSection === 'grammar'
+                          ? vaultReviewGrammarItems.length
+                          : vaultReviewCards.length
+                        : reviewEntrySection === 'grammar'
+                          ? reviewEntryGrammarCount
+                          : reviewEntryWordCount,
+                      noun: (vaultReviewOpen ? vaultReviewSection : reviewEntrySection) === 'grammar' ? 'sentences' : 'words',
+                      active: vaultReviewOpen,
+                      onSelect: activateVaultReview,
+                    }
+                  : null
+              }
             />
           ) : null}
           {topChrome ? <div className="pointer-events-auto">{topChrome}</div> : null}
@@ -2064,7 +2402,11 @@ export function FullscreenBookOverlayView({
         deskLeft={bookDeskLeft}
         hasResolvedUnit={hasResolvedUnit}
         numPages={numPages}
-        suppressChrome={hideFocusPresentationChrome}
+        suppressChrome={
+          hideFocusPresentationChrome ||
+          vaultReviewOpen ||
+          (isWhiteboardSessionOpen && !isWhiteboardMinimized)
+        }
         visiblePages={visiblePages}
         pageNumber={pageNumber}
         goToAdjacentPage={goToAdjacentPage}

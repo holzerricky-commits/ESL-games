@@ -45,42 +45,32 @@ const stroke = {
 }
 
 describe('lesson-board-types', () => {
-  it('lessonBoardThumbDimensions differs for standard vs wide', () => {
-    const standard = lessonBoardThumbDimensions('standard', 120)
-    const wide = lessonBoardThumbDimensions('wide', 120)
+  it('lessonBoardThumbDimensions is portrait', () => {
+    const standard = lessonBoardThumbDimensions(120)
     expect(standard.widthPx).toBeLessThan(standard.heightPx)
-    expect(wide.widthPx).toBeGreaterThan(wide.heightPx)
-    expect(wide.widthPx).toBe(120)
   })
 
-  it('lessonBoardMinContentHeightPx wide matches aspect height', () => {
-    expect(lessonBoardMinContentHeightPx('wide', 640)).toBe(Math.round(640 / (16 / 9)))
+  it('lessonBoardMinContentHeightPx uses portrait aspect and viewport runway', () => {
+    expect(lessonBoardMinContentHeightPx(320, 500)).toBe(1000)
   })
 
-  it('lessonBoardLogicalWidthPx prefers stored width then orientation fallback', () => {
+  it('lessonBoardLogicalWidthPx prefers stored width then slot fallback', () => {
     expect(
       lessonBoardLogicalWidthPx(
-        { orientation: 'wide', logicalWidthPx: 700 },
-        { slotWidthPx: 300, spreadWidthPx: 640 },
+        { logicalWidthPx: 700 },
+        { slotWidthPx: 300 },
       ),
     ).toBe(700)
-    expect(
-      lessonBoardLogicalWidthPx({ orientation: 'wide' }, { slotWidthPx: 300, spreadWidthPx: 640 }),
-    ).toBe(640)
-    expect(
-      lessonBoardLogicalWidthPx({ orientation: 'standard' }, { slotWidthPx: 300, spreadWidthPx: 640 }),
-    ).toBe(300)
+    expect(lessonBoardLogicalWidthPx({}, { slotWidthPx: 300 })).toBe(300)
   })
 
-  it('lessonBoardUsesSpreadPresentation is true only for wide', () => {
-    expect(lessonBoardUsesSpreadPresentation('wide')).toBe(true)
-    expect(lessonBoardUsesSpreadPresentation('standard')).toBe(false)
+  it('lessonBoardUsesSpreadPresentation is always false', () => {
+    expect(lessonBoardUsesSpreadPresentation()).toBe(false)
   })
 
-  it('lessonBoardResolveContentHeightPx clamps wide to aspect height', () => {
-    expect(lessonBoardResolveContentHeightPx('wide', 640, 2400)).toBe(Math.round(640 / (16 / 9)))
-    expect(lessonBoardResolveContentHeightPx('standard', 320, 2000)).toBe(2000)
-    expect(lessonBoardResolveContentHeightPx('standard', 320, 100, 500)).toBe(1000)
+  it('lessonBoardResolveContentHeightPx grows with stored height', () => {
+    expect(lessonBoardResolveContentHeightPx(320, 2000)).toBe(2000)
+    expect(lessonBoardResolveContentHeightPx(320, 100, 500)).toBe(1000)
   })
 
   it('defaultLessonBoardContentHeightPx is view plus one blank screen', () => {
@@ -95,9 +85,8 @@ describe('lesson-board-types', () => {
     expect(lessonBoardHeightToKeepOneViewportBelowView(600, 500, 1000, 1500)).toBe(1500)
   })
 
-  it('lessonBoardAllowsRunwayGrowth is false for wide only', () => {
-    expect(lessonBoardAllowsRunwayGrowth('wide')).toBe(false)
-    expect(lessonBoardAllowsRunwayGrowth('standard')).toBe(true)
+  it('lessonBoardAllowsRunwayGrowth is always true', () => {
+    expect(lessonBoardAllowsRunwayGrowth()).toBe(true)
   })
 
   it('createEmptyWhiteboardSession starts with one standard page', () => {
@@ -123,8 +112,24 @@ describe('lesson-board-types', () => {
     expect(migrated.activePageId).toBe(migrated.pages[0]?.id)
   })
 
+  it('migrateLessonBoardDocument coerces legacy wide pages to standard', () => {
+    const base = createLessonBoardPage({ commands: [stroke], logicalWidthPx: 900 })
+    const page = { ...base, orientation: 'wide' }
+    const doc = {
+      docId: whiteboardSessionDocId(key),
+      key,
+      pages: [page as typeof base],
+      activePageId: page.id,
+      commands: [stroke],
+      meta: { revision: 1, dirty: false, updatedAt: 2 },
+    }
+    const again = migrateLessonBoardDocument(doc)
+    expect(again.pages[0]?.orientation).toBe('standard')
+    expect(again.pages[0]?.logicalWidthPx).toBeUndefined()
+  })
+
   it('migrateLessonBoardDocument is idempotent when pages exist', () => {
-    const page = createLessonBoardPage('standard', { commands: [stroke] })
+    const page = createLessonBoardPage({ commands: [stroke] })
     const doc = {
       docId: whiteboardSessionDocId(key),
       key,
@@ -139,7 +144,7 @@ describe('lesson-board-types', () => {
   })
 
   it('createLessonBoardPage stamps optional source book/unit hints', () => {
-    const page = createLessonBoardPage('standard', {
+    const page = createLessonBoardPage({
       sourceBookId: ' ws ',
       sourceUnitId: 'u1',
     })
@@ -148,7 +153,7 @@ describe('lesson-board-types', () => {
   })
 
   it('syncLessonBoardCommandsToActivePage copies root commands into active page', () => {
-    const page = createLessonBoardPage('standard', { commands: [] })
+    const page = createLessonBoardPage({ commands: [] })
     const doc = {
       pages: [page],
       activePageId: page.id,
@@ -160,7 +165,7 @@ describe('lesson-board-types', () => {
   })
 
   it('syncLessonBoardActivePageToCommands copies active page to root', () => {
-    const page = createLessonBoardPage('standard', { commands: [stroke] })
+    const page = createLessonBoardPage({ commands: [stroke] })
     const doc = {
       pages: [page],
       activePageId: page.id,

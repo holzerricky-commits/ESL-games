@@ -1,0 +1,64 @@
+{
+  "storyId": "literature-anthology-g2::unit-1-dfffe65d::lesson-b60eb8cd::part-63dd9dbf",
+  "bookId": "literature-anthology-g2",
+  "unitId": "unit-1-dfffe65d",
+  "status": "approved",
+  "stops": [
+    {
+      "id": "stop-aad1b9c7",
+      "label": "The broken crayon",
+      "displayPage": 33,
+      "midPageNote": "After line 4",
+      "hotspot": {
+        "pdfPage": 35,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-e55f911c",
+          "kind": "mcq",
+          "prompt": "What happened when the friend used the red crayon?",
+          "choices": [
+            "It broke in two.",
+            "It got lost.",
+            "It stayed shiny and new.",
+            "It turned into two colors."
+          ],
+          "correctIndex": 0,
+          "correctTrue": null,
+          "evidenceSnippet": "I lent a friend the red one,\nAnd — oops — it broke in two!",
+          "evidenceHighlight": "it broke in two"
+        }
+      ]
+    },
+    {
+      "id": "stop-573999e9",
+      "label": "Sharing the crayon",
+      "displayPage": 33,
+      "midPageNote": "End of poem",
+      "hotspot": {
+        "pdfPage": 35,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-03d95ba0",
+          "kind": "true_false",
+          "prompt": "The speaker is angry because the crayon broke.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "My friend said she was sorry,\nBut I said \"I don't care,\n\n'Cause now we both can color\nWith one crayon — we can share!\"",
+          "evidenceHighlight": "I said \"I don't care"
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-10-20T13:02:37.995Z",
+  "approvedAt": "2026-10-20T13:02:37.995Z",
+  "autoApprovedAt": "2026-10-20T13:02:37.995Z"
+}

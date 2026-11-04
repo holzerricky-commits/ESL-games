@@ -8,6 +8,9 @@ import {
 
 const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest'] as const
 
+/** One cloud read must not hold the page queue longer than this. */
+const CLOUD_OCR_TIMEOUT_MS = 30_000
+
 const SYSTEM_INSTRUCTION = `You read one scanned textbook page and return word boxes for invisible text placement.
 
 Return JSON only:
@@ -24,16 +27,27 @@ Rules:
 - Copy the printed spelling. Do not invent words. If a word is unreadable, omit it.
 - Return ONLY JSON (no markdown fences).`
 
+function generationConfigFor(model: string) {
+  return {
+    temperature: 0.1,
+    responseMimeType: 'application/json',
+    maxOutputTokens: 16384,
+    // 2.5 models think by default; word boxes do not need it and it adds tens of seconds.
+    ...(model.startsWith('gemini-2.5') ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+  }
+}
+
 /**
  * Ask Gemini for word boxes when local OCR is too unsure to stamp.
- * Returns null when the key is missing, the call fails, or no words come back.
+ * Returns null when the key is missing, the call fails or times out, or no words come back.
  */
 export async function recognizePageWordsWithCloudOcr(args: {
-  pngBuffer: Buffer
+  imageBuffer: Buffer
+  mimeType: 'image/jpeg' | 'image/png'
   imageWidth: number
   imageHeight: number
 }): Promise<ScoredOcrWord[] | null> {
-  if (args.imageWidth <= 0 || args.imageHeight <= 0 || args.pngBuffer.length === 0) return null
+  if (args.imageWidth <= 0 || args.imageHeight <= 0 || args.imageBuffer.length === 0) return null
 
   const key = await resolveGeminiApiKey()
   if (!key) {
@@ -41,17 +55,20 @@ export async function recognizePageWordsWithCloudOcr(args: {
     return null
   }
 
-  const base64 = args.pngBuffer.toString('base64')
+  const base64 = args.imageBuffer.toString('base64')
   const userText = `This page image is ${args.imageWidth} by ${args.imageHeight} pixels. Return every printed word with a box.`
   const failures: string[] = []
 
   for (const model of GEMINI_MODELS) {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), CLOUD_OCR_TIMEOUT_MS)
     try {
       const res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
             contents: [
@@ -59,15 +76,11 @@ export async function recognizePageWordsWithCloudOcr(args: {
                 role: 'user',
                 parts: [
                   { text: userText },
-                  { inlineData: { mimeType: 'image/png', data: base64 } },
+                  { inlineData: { mimeType: args.mimeType, data: base64 } },
                 ],
               },
             ],
-            generationConfig: {
-              temperature: 0.1,
-              responseMimeType: 'application/json',
-              maxOutputTokens: 16384,
-            },
+            generationConfig: generationConfigFor(model),
           }),
         },
       )
@@ -93,12 +106,16 @@ export async function recognizePageWordsWithCloudOcr(args: {
       if (words.length > 0) return words
       failures.push(`${model}: no word boxes`)
     } catch (err) {
+      if (controller.signal.aborted) {
+        failures.push(`${model}: timed out after ${CLOUD_OCR_TIMEOUT_MS / 1000}s`)
+        break
+      }
       failures.push(`${model}: ${err instanceof Error ? err.message : 'network error'}`)
+    } finally {
+      clearTimeout(timeout)
     }
   }
 
-  console.warn(
-    `[searchable-pdf] cloud OCR failed (${failures[0] ?? 'unknown error'})`,
-  )
+  console.warn(`[searchable-pdf] cloud OCR failed (${failures.join('; ') || 'unknown error'})`)
   return null
 }

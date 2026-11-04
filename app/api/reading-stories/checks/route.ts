@@ -186,7 +186,7 @@ export async function POST(req: Request) {
           { status: 400 },
         )
       }
-      const approved = approveReadingCheckPack(withBody)
+      const approved = approveReadingCheckPack(withBody, { auto: body.auto === true })
       if (!approved) {
         return NextResponse.json({ ok: false, error: 'Could not approve pack.' }, { status: 400 })
       }

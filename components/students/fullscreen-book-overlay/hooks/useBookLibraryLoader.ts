@@ -1,14 +1,19 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { fetchBooksLibraryCached, getBooksLibraryCached } from '@/lib/books/fetch-books-library-cached'
 import type { BookLibraryPayload } from '@/lib/books/types'
+import { nextNumPagesAfterSelectionChange } from '@/lib/books/book-reader-selection-num-pages'
 import {
   resolveInitialBookReaderSelection,
   shouldApplyInitialReaderSelection,
   type BookReaderCurriculumHistoryEntry,
 } from '@/lib/books/resolve-initial-book-reader-selection'
-import { getStudentOpenTargetForBook, getStudentTeachingOpenPdfPageForBookUnit } from '@/lib/students/selectors'
+import {
+  getStudentOpenTargetForBook,
+  getStudentTeachingOpenPdfPageForBookUnit,
+} from '@/lib/students/selectors'
 
 export type { BookReaderCurriculumHistoryEntry as CurriculumHistoryEntry } from '@/lib/books/resolve-initial-book-reader-selection'
+export { nextNumPagesAfterSelectionChange } from '@/lib/books/book-reader-selection-num-pages'
 
 interface UseBookLibraryLoaderArgs {
   open: boolean
@@ -20,6 +25,7 @@ interface UseBookLibraryLoaderArgs {
   preferUnitId?: string | null
   /** Optional precomputed page; teaching open is recomputed with the loaded library when student+book+unit are set. */
   preferResumePage?: number | null
+  getCachedNumPages?: (unitId: string) => number | null | undefined
   setLoading: (v: boolean) => void
   setError: (v: string | null) => void
   setLibrary: (v: BookLibraryPayload | null) => void
@@ -38,6 +44,7 @@ export function useBookLibraryLoader({
   preferBookId,
   preferUnitId,
   preferResumePage,
+  getCachedNumPages,
   setLoading,
   setError,
   setLibrary,
@@ -48,11 +55,20 @@ export function useBookLibraryLoader({
 }: UseBookLibraryLoaderArgs) {
   /** Avoid clearing `numPages` / reseeding page on every reopen when book/unit unchanged — keeps spread model + live page stable (see reopen UX). */
   const lastAppliedSelectionRef = useRef<{ bookId: string | null; unitId: string | null } | null>(null)
+  const getCachedNumPagesRef = useRef(getCachedNumPages)
+  getCachedNumPagesRef.current = getCachedNumPages
   const assignedBookIdsKey = assignedBookIds.join('\u001f')
   const assignedUnitRefsKey = assignedUnitRefs.map((ref) => `${ref.bookId}:${ref.unitId}`).join('\u001f')
   const curriculumHistoryKey = curriculumHistory
     .map((entry) => `${entry.id}:${entry.bookId}:${entry.unitId}:${entry.page}:${entry.openedAt}`)
     .join('\u001f')
+
+  const markSelectionApplied = useCallback((bookId: string | null, unitId: string | null) => {
+    lastAppliedSelectionRef.current = {
+      bookId: bookId?.trim() || null,
+      unitId: unitId?.trim() || null,
+    }
+  }, [])
 
   useEffect(() => {
     if (!open) return
@@ -68,15 +84,11 @@ export function useBookLibraryLoader({
         setLibrary(lib)
         const sid = studentId?.trim() ?? ''
         const bid = preferBookId?.trim() ?? ''
-        let uid = preferUnitId?.trim() ?? ''
-        let teachingPage: number | null = null
-        if (sid && bid && !uid) {
-          const openTarget = getStudentOpenTargetForBook(sid, bid, lib)
-          if (openTarget) {
-            uid = openTarget.unitId
-            teachingPage = openTarget.pdfPage
-          }
-        }
+        const preferredUnit = preferUnitId?.trim() ?? ''
+        // Student place for this book wins unit + page (chip preferUnitId is only a fallback).
+        const openTarget = sid && bid ? getStudentOpenTargetForBook(sid, bid, lib) : null
+        let uid = openTarget?.unitId ?? preferredUnit
+        let teachingPage: number | null = openTarget?.pdfPage ?? null
         if (teachingPage == null && sid && bid && uid) {
           teachingPage = getStudentTeachingOpenPdfPageForBookUnit(sid, bid, uid, lib)
         }
@@ -87,7 +99,8 @@ export function useBookLibraryLoader({
           curriculumHistory,
           preferBookId: bid || preferBookId,
           preferUnitId: uid || preferUnitId,
-          preferResumePage: teachingPage ?? preferResumePage,
+          // Explicit resume (session memory) beats stored place when returning to a book this visit.
+          preferResumePage: preferResumePage ?? teachingPage,
         })
         const nextBookId = selectedBookId ?? null
         const nextUnitId = selectedUnitId ?? null
@@ -103,7 +116,10 @@ export function useBookLibraryLoader({
         setSelectedBookId(selectedBookId)
         setSelectedUnitId(selectedUnitId)
         setPageNumber(pageNumber)
-        setNumPages(null)
+        const nextNumPages = nextNumPagesAfterSelectionChange(nextUnitId, getCachedNumPagesRef.current)
+        if (nextNumPages !== 'keep') {
+          setNumPages(nextNumPages)
+        }
       } catch (e) {
         if (!active) return
         setError(e instanceof Error ? e.message : 'Could not load books.')
@@ -127,4 +143,6 @@ export function useBookLibraryLoader({
     preferResumePage,
     studentId,
   ])
+
+  return { markSelectionApplied }
 }

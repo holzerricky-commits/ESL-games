@@ -13,6 +13,7 @@ import {
   isManualReadingStoryId,
   readingStoryManualKey,
   readingStoryPartKey,
+  resolveLessonPdfRange,
   resolveOutlineDisplayRange,
   resolveReadingStoryRange,
   resolveStoryDisplayRangeToPdfPages,
@@ -474,5 +475,63 @@ describe('reading-story-map', () => {
     const range = resolveReadingStoryRange(story, book, unit, 500, null)
     expect(range.startDisplayPage).toBe(14)
     expect(range.startPdfPage).toBe(18)
+  })
+})
+
+describe('resolveLessonPdfRange', () => {
+  function makeLessonUnit(): BookUnitRecord {
+    return {
+      id: 'u1',
+      title: 'Unit 1',
+      filePath: 'book-library/b/u1.pdf',
+      lessons: [
+        {
+          id: 'l1',
+          title: 'Lesson 1',
+          startPageHint: 10,
+          parts: [
+            { id: 'p-vocab', title: 'Vocabulary', startPageHint: 10 },
+            { id: 'p-story', title: 'Story', startPageHint: 14 },
+          ],
+        },
+        { id: 'l2', title: 'Lesson 2', startPageHint: 30 },
+      ],
+    }
+  }
+
+  it('spans the lesson outline up to the next lesson', () => {
+    const unit = makeLessonUnit()
+    const book: BookRecord = { id: 'b', title: 'Book', units: [unit] }
+    expect(resolveLessonPdfRange(book, unit, unit.lessons![0]!, null)).toEqual({
+      startPdfPage: 10,
+      endPdfPage: 29,
+    })
+  })
+
+  it('widens to a saved story range that runs past the outline', () => {
+    const unit = makeLessonUnit()
+    const book: BookRecord = { id: 'b', title: 'Book', units: [unit] }
+    const storyId = readingStoryPartKey('b', 'u1', 'l1', 'p-story')
+    const override = sanitizeReadingStoryRangeOverride({
+      storyId,
+      startPage: 14,
+      endPage: 32,
+      rangeConfirmed: true,
+    })!
+    expect(resolveLessonPdfRange(book, unit, unit.lessons![0]!, null, { [storyId]: override })).toEqual({
+      startPdfPage: 10,
+      endPdfPage: 32,
+    })
+  })
+
+  it('returns null when the lesson has no pages', () => {
+    const unit: BookUnitRecord = {
+      id: 'u1',
+      title: 'Unit 1',
+      filePath: 'book-library/b/u1.pdf',
+      lessons: [{ id: 'l1', title: 'Lesson 1', parts: [{ id: 'p1', title: 'Part' }] }],
+    }
+    const book: BookRecord = { id: 'b', title: 'Book', units: [unit] }
+    expect(resolveLessonPdfRange(book, unit, unit.lessons![0]!, null)).toBeNull()
   })
 })

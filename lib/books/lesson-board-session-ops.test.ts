@@ -37,17 +37,16 @@ describe('lesson-board-session-ops', () => {
     expect(lessonBoardPageStorageKey('wb-lesson-1', 'page-a')).toBe('wb-lesson-1::lb-page::page-a')
   })
 
-  it('appendLessonBoardPage wide uses spread width and 16:9 height', () => {
+  it('appendLessonBoardPage uses slot width and standard runway height', () => {
     let doc = createEmptyWhiteboardSession(key)
-    doc = appendLessonBoardPage(doc, 'wide', {
+    doc = appendLessonBoardPage(doc, {
       slotWidthPx: 320,
-      spreadWidthPx: 640,
       viewportHeightPx: 400,
     })
     const page = doc.pages[doc.pages.length - 1]
-    expect(page?.orientation).toBe('wide')
-    expect(page?.logicalWidthPx).toBe(640)
-    expect(page?.contentHeightPx).toBe(Math.round(640 / (16 / 9)))
+    expect(page?.orientation).toBe('standard')
+    expect(page?.logicalWidthPx).toBe(320)
+    expect(page?.contentHeightPx).toBe(800)
     expect(doc.activePageId).toBe(page?.id)
   })
 

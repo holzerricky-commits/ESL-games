@@ -5,8 +5,8 @@ import { STICKER_QUICK_VARIANTS } from '@/lib/books/sticker-tool'
 /** Max gap between repeated key presses to count as cycling variants. */
 export const BOOK_OVERLAY_SHORTCUT_TAP_MAX_MS = 450
 
-/** Shape tools in toolbar / M shortcut cycle order. */
-export const BOOK_OVERLAY_SHAPE_MODES = ['line', 'rect', 'ellipse', 'triangle', 'arrow'] as const
+/** Closed shapes in the shapes tool / M shortcut cycle. */
+export const BOOK_OVERLAY_SHAPE_MODES = ['rect', 'ellipse', 'triangle'] as const
 
 export type BookOverlayShapeMode = (typeof BOOK_OVERLAY_SHAPE_MODES)[number]
 
@@ -14,12 +14,33 @@ export function isBookOverlayShapeMode(mode: BookAnnotationInteractionMode): mod
   return (BOOK_OVERLAY_SHAPE_MODES as readonly string[]).includes(mode)
 }
 
+/** Straight / freehand / arrow in the lines tool / shortcut cycle. */
+export const BOOK_OVERLAY_LINE_MODES = ['line', 'freehand-line', 'arrow'] as const
+
+export type BookOverlayLineMode = (typeof BOOK_OVERLAY_LINE_MODES)[number]
+
+export function isBookOverlayLineMode(mode: BookAnnotationInteractionMode): mode is BookOverlayLineMode {
+  return (BOOK_OVERLAY_LINE_MODES as readonly string[]).includes(mode)
+}
+
+/** Modes that share shape stroke thickness / dash prefs (lines tool + shapes cluster). */
+export function isBookOverlayShapeStrokeMode(mode: BookAnnotationInteractionMode): boolean {
+  return isBookOverlayLineMode(mode) || isBookOverlayShapeMode(mode)
+}
+
 export const BOOK_OVERLAY_DEFAULT_SHAPE_MODE: BookOverlayShapeMode = 'rect'
+export const BOOK_OVERLAY_DEFAULT_LINE_MODE: BookOverlayLineMode = 'line'
 
 export function cycleBookOverlayShapeMode(current: BookOverlayShapeMode): BookOverlayShapeMode {
   const idx = BOOK_OVERLAY_SHAPE_MODES.indexOf(current)
   const next = idx < 0 ? 0 : (idx + 1) % BOOK_OVERLAY_SHAPE_MODES.length
   return BOOK_OVERLAY_SHAPE_MODES[next]!
+}
+
+export function cycleBookOverlayLineMode(current: BookOverlayLineMode): BookOverlayLineMode {
+  const idx = BOOK_OVERLAY_LINE_MODES.indexOf(current)
+  const next = idx < 0 ? 0 : (idx + 1) % BOOK_OVERLAY_LINE_MODES.length
+  return BOOK_OVERLAY_LINE_MODES[next]!
 }
 
 /** Quick sticker symbols in toolbar / S shortcut cycle order. */
@@ -100,15 +121,16 @@ export const BOOK_OVERLAY_SHORTCUT_LABELS = {
   shapeCycle: 'M again',
   shapeRect: 'R',
   shapeEllipse: 'O',
+  lines: '/',
+  lineCycle: '/ again',
   shapeArrow: 'A',
-  shapeLineAndTriangle: 'M again to cycle',
+  shapeLine: '/',
+  shapeTriangle: 'M again to cycle',
   stamp: 'S',
   stampVariants: 'S again, Alt+1–5',
   sticker: 'S',
   stickerVariants: 'S again, Alt+1–5',
   text: 'T',
-  sticky: 'N',
-  stickyWritable: 'N',
   callout: 'K',
   eraserStroke: 'E',
   eraserRub: 'E again',

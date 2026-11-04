@@ -13,7 +13,6 @@ import {
   ChevronRight,
   Combine,
   Ghost,
-  HelpCircle,
   Languages,
   Link2,
   MoreHorizontal,
@@ -21,7 +20,6 @@ import {
   Plus,
   Pointer,
   Pencil,
-  ScanSearch,
   Trash2,
 } from 'lucide-react'
 import { BookCoverThumbnail } from '@/components/books/book-cover-thumbnail'
@@ -30,6 +28,15 @@ import {
   BookWorkbenchShell,
 } from '@/components/books/book-workbench-shell'
 import { StructureWizardDots } from '@/components/books/structure-wizard-dots'
+import { BookAlignMarking, BookAlignPageGrid, BookContentsMarking } from '@/components/books/book-align-step'
+import {
+  BookExtractContentsRow,
+  BookExtractMarking,
+  BookExtractOutlineDraft,
+  extractPhaseButtonLabel,
+  type ExtractProgress,
+  type ExtractUnitResultRow,
+} from '@/components/books/book-extract-step'
 import { PdfPageThumbnail } from '@/components/students/pdf-page-thumbnail'
 import { bookHasCustomCover } from '@/lib/books/book-cover-display'
 import { toast } from 'sonner'
@@ -48,7 +55,11 @@ import {
 } from '@/lib/books/book-part-visual-kind'
 import { normalizeLessonsStructureTags, resolvePartStructureTag } from '@/lib/books/part-structure-tag'
 import { draftsToUnits, type TocUnitDraft } from '@/lib/books/toc-import'
-import { mergeExtractedStructureBatches } from '@/lib/books/merge-toc-extract-batches'
+import {
+  chunkTocImagesWithOverlap,
+  mergeExtractedStructureBatches,
+  openUnitContinuationHint,
+} from '@/lib/books/merge-toc-extract-batches'
 import { formatTocChunkTitle } from '@/lib/books/lesson-title'
 import { resolveTocExtractProfileForBook, tocChunkLabelStyleForProfile } from '@/lib/books/toc-extract-profile'
 import { pageRangeForIndex } from '@/lib/books/toc-page-range'
@@ -102,6 +113,7 @@ import {
   canEnterReview,
   initialStructureWizardStep,
   isStructureWizardStepReachable,
+  STRUCTURE_WIZARD_STEPS,
   type StructureWizardStep,
 } from '@/lib/books/structure-wizard-steps'
 import { cn } from '@/lib/utils'
@@ -170,13 +182,6 @@ function stringifyPageListInput(pages: number[]): string {
   return [...new Set(pages)].sort((a, b) => a - b).join(', ')
 }
 
-function chunkArray<T>(items: T[], size: number): T[][] {
-  if (size <= 0) return [items]
-  const out: T[][] = []
-  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
-  return out
-}
-
 function makeUnitFileUrl(filePath: string): string {
   return `/api/book-file?path=${encodeURIComponent(filePath)}`
 }
@@ -204,6 +209,36 @@ function stampDraftsFilePath(drafts: TocUnitDraft[], filePath: string): TocUnitD
     // Keep an existing per-unit path (multi-file books) instead of overwriting siblings.
     filePath: d.filePath?.trim() || path,
   }))
+}
+
+/** Replace drafts that share `filePath` with `stamped`, keeping other volumes’ drafts. */
+function spliceDraftsForFilePath(
+  existingDrafts: TocUnitDraft[],
+  existingLessons: BookLessonRecord[][],
+  filePath: string,
+  stamped: TocUnitDraft[],
+  stampedLessons: BookLessonRecord[][],
+  fallbackSourcePath: string,
+): { drafts: TocUnitDraft[]; lessons: BookLessonRecord[][]; focusIdx: number } {
+  const unitFilePath = normalizeBookFilePath(filePath)
+  const draftMatchesActiveFile = (draft: TocUnitDraft) =>
+    normalizeBookFilePath(draft.filePath?.trim() || fallbackSourcePath) === unitFilePath
+
+  const firstReplacedIndex = existingDrafts.findIndex(draftMatchesActiveFile)
+  const spliceAt = firstReplacedIndex >= 0 ? firstReplacedIndex : existingDrafts.length
+  const beforeDrafts = existingDrafts.slice(0, spliceAt).filter((d) => !draftMatchesActiveFile(d))
+  const beforeLessons = existingLessons
+    .slice(0, spliceAt)
+    .filter((_, i) => !draftMatchesActiveFile(existingDrafts[i]!))
+  const afterDrafts = existingDrafts.slice(spliceAt).filter((d) => !draftMatchesActiveFile(d))
+  const afterLessons = existingLessons
+    .slice(spliceAt)
+    .filter((_, i) => !draftMatchesActiveFile(existingDrafts[spliceAt + i]!))
+
+  const nextDrafts = [...beforeDrafts, ...stamped, ...afterDrafts]
+  const nextLessons = [...beforeLessons, ...stampedLessons, ...afterLessons]
+  const focusIdx = Math.min(beforeDrafts.length, Math.max(0, nextDrafts.length - 1))
+  return { drafts: nextDrafts, lessons: nextLessons, focusIdx }
 }
 
 function restoreOutlineDraftsFromBook(
@@ -387,8 +422,8 @@ export function BookStructureWizard({
   const [internalOpen, setInternalOpen] = useState(false)
   const [bookId, setBookId] = useState('')
   const [sourceFilePath, setSourceFilePath] = useState('')
-  const [tocFrom, setTocFrom] = useState('1')
-  const [tocTo, setTocTo] = useState('3')
+  const [tocFrom, setTocFrom] = useState('')
+  const [tocTo, setTocTo] = useState('')
   const [notCountedPdfPagesInput, setNotCountedPdfPagesInput] = useState('')
   const [hiddenPdfPagesInput, setHiddenPdfPagesInput] = useState('')
   const [previewPage, setPreviewPage] = useState(1)
@@ -399,14 +434,16 @@ export function BookStructureWizard({
   const [drafts, setDrafts] = useState<TocUnitDraft[]>([])
   const [lessonsByUnitIndex, setLessonsByUnitIndex] = useState<BookLessonRecord[][]>([])
   const [aiExtracting, setAiExtracting] = useState(false)
-  const [wizardStep, setWizardStep] = useState<StructureWizardStep>('toc')
-  const [furthestStep, setFurthestStep] = useState<StructureWizardStep>('toc')
+  const [wizardStep, setWizardStep] = useState<StructureWizardStep>('align')
+  const [furthestStep, setFurthestStep] = useState<StructureWizardStep>('align')
+  const [contentsEdge, setContentsEdge] = useState<'from' | 'to'>('from')
+  const [contentsFocusPage, setContentsFocusPage] = useState(1)
   const [tocRangeAtExtract, setTocRangeAtExtract] = useState<{ from: number; to: number } | null>(null)
   const [reconcileOpen, setReconcileOpen] = useState(false)
   const [reconcileBusy, setReconcileBusy] = useState(false)
   const [reconcileCandidates, setReconcileCandidates] = useState<ManualStoryReconcileCandidateRow[]>([])
   const [reconcilePending, setReconcilePending] = useState(false)
-  const [aiMessage, setAiMessage] = useState<string | null>(null)
+  const [extractProgress, setExtractProgress] = useState<ExtractProgress | null>(null)
   const [stagedExtractionEnabled, setStagedExtractionEnabled] = useState(false)
   const [tocDetectStatus, setTocDetectStatus] = useState<'idle' | 'scanning' | 'ready' | 'failed'>('idle')
   const [tocDetectMessage, setTocDetectMessage] = useState<string | null>(null)
@@ -417,9 +454,15 @@ export function BookStructureWizard({
   } | null>(null)
   const tocDetectRunIdRef = useRef(0)
   const tocAutoDetectPathRef = useRef<string | null>(null)
+  const contentsTouchedRef = useRef(false)
+  const outlineLiveRef = useRef<{ drafts: TocUnitDraft[]; lessons: BookLessonRecord[][] }>({
+    drafts: [],
+    lessons: [],
+  })
   const [alignSyncPrintedDraft, setAlignSyncPrintedDraft] = useState('')
   const [alignSyncMessage, setAlignSyncMessage] = useState<string | null>(null)
   const [alignSyncObservedPrinted, setAlignSyncObservedPrinted] = useState<number | null>(null)
+  const [alignPdfPage, setAlignPdfPage] = useState(2)
   const [saving, setSaving] = useState(false)
   const [lastNumPages, setLastNumPages] = useState<number | null>(null)
   const [structureUnitIdx, setStructureUnitIdx] = useState(0)
@@ -466,6 +509,34 @@ export function BookStructureWizard({
   )
   const isMultiFileBook = Boolean(selectedBook && bookHasDistinctUnitFiles(selectedBook))
 
+  useEffect(() => {
+    outlineLiveRef.current = { drafts, lessons: lessonsByUnitIndex }
+  }, [drafts, lessonsByUnitIndex])
+
+  const extractScopeLabel = useMemo(() => {
+    if (!selectedBook) return null
+    const volume =
+      findBookVolume(selectedBook, preferredVolumeId) ??
+      listBookVolumes(selectedBook).find(
+        (v) => normalizeBookFilePath(v.filePath) === normalizeBookFilePath(sourceFilePath),
+      ) ??
+      null
+    if (volume?.title?.trim()) return volume.title.trim()
+    if (listBookVolumes(selectedBook).length >= 2 && sourceFilePath) {
+      const base = fileBasename(sourceFilePath).replace(/\.pdf$/i, '')
+      return base || null
+    }
+    return selectedBook.title?.trim() || null
+  }, [preferredVolumeId, selectedBook, sourceFilePath])
+
+  const extractUnitRows = useMemo((): ExtractUnitResultRow[] => {
+    return drafts.map((draft, index) => ({
+      id: draft.id,
+      title: draft.title,
+      chunkCount: lessonsByUnitIndex[index]?.length ?? 0,
+    }))
+  }, [drafts, lessonsByUnitIndex])
+
   // When reviewing a multi-file book, keep the preview/extract target on the active unit’s PDF.
   useEffect(() => {
     if (!isMultiFileBook) return
@@ -481,9 +552,12 @@ export function BookStructureWizard({
     setOpenLessonId(null)
     setEditingFieldId(null)
     setUnitTocRangeById({})
-    setTocFrom('1')
-    setTocTo('3')
-    setAiMessage(null)
+    setTocFrom('')
+    setTocTo('')
+    setContentsEdge('from')
+    setContentsFocusPage(1)
+    contentsTouchedRef.current = false
+    setExtractProgress(null)
     setStagedExtractionEnabled(false)
     setTocDetectStatus('idle')
     setTocDetectMessage(null)
@@ -528,9 +602,11 @@ export function BookStructureWizard({
       setReconcileCandidates([])
       setReconcileOpen(false)
       resetWizardChrome()
-      if (initialTocRange && startStep === 'toc') {
+      if (initialTocRange) {
         setTocFrom(String(initialTocRange.from))
         setTocTo(String(initialTocRange.to))
+        setContentsEdge('from')
+        setContentsFocusPage(initialTocRange.from)
         setPreviewPage(initialTocRange.from)
         setPreviewPageJumpDraft(String(initialTocRange.from))
         setTocDetectSuggestion({
@@ -540,7 +616,7 @@ export function BookStructureWizard({
         })
         setTocDetectStatus('ready')
         setTocDetectMessage(
-          `Suggested PDF pages ${initialTocRange.from}–${initialTocRange.to}. Check the preview, then continue.`,
+          `Suggested PDF pages ${initialTocRange.from}–${initialTocRange.to}. Click the first or last page if this span is wrong.`,
         )
         if (nextPath) tocAutoDetectPathRef.current = nextPath
       }
@@ -604,13 +680,13 @@ export function BookStructureWizard({
           setTocDetectSuggestion(null)
           if (result.reason === 'no_text') {
             setTocDetectMessage(
-              'No selectable text in early pages (common with scans). Set the PDF range by hand and check the preview.',
+              'No selectable text in early pages. Click the first contents page, then the last.',
             )
           } else if (result.reason === 'no_file') {
             setTocDetectMessage('No PDF loaded yet.')
           } else {
             setTocDetectMessage(
-              'Couldn’t spot a contents section automatically. Set From/To by hand and confirm in the preview.',
+              'Couldn’t spot a contents section. Click the first contents page, then the last.',
             )
           }
           return
@@ -625,11 +701,13 @@ export function BookStructureWizard({
         const confidenceLabel =
           proposal.confidence === 'high' ? 'Strong match' : proposal.confidence === 'medium' ? 'Likely match' : 'Weak match'
         setTocDetectMessage(
-          `${confidenceLabel}: PDF pages ${proposal.from}–${proposal.to}. Check the preview, then continue.`,
+          `${confidenceLabel}: PDF pages ${proposal.from}–${proposal.to}. Click the first or last page if this span is wrong.`,
         )
-        if (options?.applyRange !== false) {
+        if (options?.applyRange !== false && !contentsTouchedRef.current) {
           setTocFrom(String(proposal.from))
           setTocTo(String(proposal.to))
+          setContentsEdge('from')
+          setContentsFocusPage(proposal.from)
           setPreviewPage(proposal.from)
           setPreviewPageJumpDraft(String(proposal.from))
         }
@@ -637,19 +715,19 @@ export function BookStructureWizard({
         if (runId !== tocDetectRunIdRef.current) return
         setTocDetectStatus('failed')
         setTocDetectSuggestion(null)
-        setTocDetectMessage('Detection failed. Set the PDF range by hand.')
+        setTocDetectMessage('Detection failed. Click the first contents page, then the last.')
       }
     },
     [previewUrl],
   )
 
   useEffect(() => {
-    if (!open || wizardStep !== 'toc' || !previewUrl || !sourceFilePath) return
+    if (!open || !previewUrl || !sourceFilePath) return
     if (skipAutoTocDetect) return
     if (tocAutoDetectPathRef.current === sourceFilePath) return
     tocAutoDetectPathRef.current = sourceFilePath
     void runTocAutoDetect({ applyRange: true })
-  }, [open, wizardStep, previewUrl, sourceFilePath, runTocAutoDetect, skipAutoTocDetect])
+  }, [open, previewUrl, sourceFilePath, runTocAutoDetect, skipAutoTocDetect])
 
   const alignmentRuntime = useMemo(
     () => buildPageAlignmentRuntime(previewNumPages, hiddenPdfPagesParsed, notCountedPdfPages),
@@ -924,6 +1002,9 @@ export function BookStructureWizard({
   const extractBatchesWithAi = useCallback(async (
     images: Array<{ pdfPage: number; mimeType: string; base64: string }>,
     numPages: number,
+    options?: {
+      onPartial?: (partial: { drafts: TocUnitDraft[]; lessonsByUnit: BookLessonRecord[][] }) => void
+    },
   ): Promise<{ drafts: TocUnitDraft[]; lessonsByUnit: BookLessonRecord[][] }> => {
     const chunks = stagedExtractionEnabled
       ? (function planStagedBatches() {
@@ -932,19 +1013,34 @@ export function BookStructureWizard({
           const out: typeof images[] = []
           for (let phase = 0; phase < phaseCount; phase++) {
             const start = Math.floor((phase * images.length) / phaseCount)
+            // Overlap one page with the previous phase so unit headers at the cut are visible.
+            const overlappedStart = phase === 0 ? start : Math.max(0, start - 1)
             const end = Math.floor(((phase + 1) * images.length) / phaseCount)
-            out.push(images.slice(start, end))
+            out.push(images.slice(overlappedStart, end))
           }
           return out.filter((batch) => batch.length > 0)
         })()
-      : chunkArray(images, 3)
+      : chunkTocImagesWithOverlap(images, 3, 1)
     const extractedBatches: Array<{ drafts: TocUnitDraft[]; lessonsByUnit: BookLessonRecord[][] }> = []
     for (let i = 0; i < chunks.length; i++) {
-      const phaseLabel = stagedExtractionEnabled ? `phase ${i + 1}/${chunks.length}` : `batch ${i + 1}/${chunks.length}`
+      const passDetail = `Pass ${i + 1} of ${chunks.length}`
+      setExtractProgress({
+        phase: i === 0 ? 'finding' : 'filling',
+        detail: passDetail,
+        activePdfPage: null,
+      })
+      const continuationHint =
+        i > 0 ? openUnitContinuationHint(mergeExtractedStructureBatches(extractedBatches)) : null
       let body: { drafts?: TocUnitDraft[]; lessonsByUnit?: BookLessonRecord[][]; error?: string } | null = null
       let phaseSucceeded = false
       for (let attempt = 1; attempt <= 2 && !phaseSucceeded; attempt++) {
-        setAiMessage(`Extracting structure with Gemini... ${phaseLabel}${attempt > 1 ? ' (retry)' : ''}`)
+        if (attempt > 1) {
+          setExtractProgress({
+            phase: i === 0 ? 'finding' : 'filling',
+            detail: `${passDetail} (retry)`,
+            activePdfPage: null,
+          })
+        }
         const res = await fetch('/api/books/toc-extract-v2', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -953,6 +1049,7 @@ export function BookStructureWizard({
             totalPdfPages: numPages,
             notCountedPdfPages,
             profile: tocExtractProfile,
+            ...(continuationHint ? { continuationHint } : {}),
           }),
         })
         body = (await res.json()) as {
@@ -966,12 +1063,14 @@ export function BookStructureWizard({
         }
       }
       if (!phaseSucceeded || !body?.drafts?.length) {
-        throw new Error(body?.error ?? `AI extraction failed on ${phaseLabel}.`)
+        throw new Error(body?.error ?? `Could not read the contents (pass ${i + 1} of ${chunks.length}).`)
       }
       extractedBatches.push({
         drafts: body.drafts,
         lessonsByUnit: body.lessonsByUnit ?? body.drafts.map(() => []),
       })
+      const partial = mergeExtractedStructureBatches(extractedBatches)
+      if (partial.drafts.length) options?.onPartial?.(partial)
     }
     const merged = mergeExtractedStructureBatches(extractedBatches)
     if (!merged.drafts.length) throw new Error('AI extraction produced no units.')
@@ -1085,13 +1184,20 @@ export function BookStructureWizard({
     const pdfFrom = Math.min(fromPdf, toPdf)
     const pdfTo = Math.max(fromPdf, toPdf)
     setAiExtracting(true)
-    setAiMessage(`Rendering unit ${unitIndex + 1} TOC pages...`)
+    setExtractProgress({ phase: 'reading', detail: 'Reading pages…', activePdfPage: pdfFrom })
     try {
       const fileUrl = makeUnitFileUrl(unitFilePath)
       const { images, numPages } = await captureTocRangeAsJpegs(fileUrl, pdfFrom, pdfTo, {
-        onProgress: setAiMessage,
+        onPageProgress: (info) => {
+          setExtractProgress({
+            phase: 'reading',
+            detail: info.message,
+            activePdfPage: info.pdfPage,
+          })
+        },
       })
       setLastNumPages(numPages)
+      // Unit re-extract stays one unit — no growing outline from partial batches.
       const merged = await extractBatchesWithAi(images, numPages)
       let bestIndex = 0
       for (let i = 1; i < merged.drafts.length; i++) {
@@ -1120,12 +1226,12 @@ export function BookStructureWizard({
       setStructureUnitIdx(unitIndex)
       setOpenLessonId(null)
       setEditingFieldId(null)
-      setAiMessage(`Re-extracted Unit ${unitIndex + 1}.`)
+      setExtractProgress({ phase: 'done', detail: null, activePdfPage: null })
       toast.success(`Re-extracted Unit ${unitIndex + 1}.`)
       void maybeOfferManualStoryReconcile(nextDrafts, nextLessons, unitFilePath)
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Unit extraction failed.'
-      setAiMessage(message)
+      setExtractProgress({ phase: 'error', detail: message, activePdfPage: null })
       toast.error(message)
     } finally {
       setAiExtracting(false)
@@ -1144,61 +1250,86 @@ export function BookStructureWizard({
   const runExtractWithAi = useCallback(async () => {
     if (!tocRange || !sourceFilePath) return
 
-    // Multi-file books: each unit has its own TOC — extract into the active unit only.
+    const applyPartialForFile = (
+      unitFilePath: string,
+      partial: { drafts: TocUnitDraft[]; lessonsByUnit: BookLessonRecord[][] },
+    ) => {
+      const stamped = stampDraftsFilePath(partial.drafts, unitFilePath)
+      const normalizedLessons = partial.lessonsByUnit.map((lessons) =>
+        normalizeLessonsStructureTags(lessons, tocExtractProfile),
+      )
+      const live = outlineLiveRef.current
+      const spliced = spliceDraftsForFilePath(
+        live.drafts,
+        live.lessons,
+        unitFilePath,
+        stamped,
+        normalizedLessons,
+        sourceFilePath,
+      )
+      outlineLiveRef.current = { drafts: spliced.drafts, lessons: spliced.lessons }
+      setDrafts(spliced.drafts)
+      setLessonsByUnitIndex(spliced.lessons)
+      setStructureUnitIdx(spliced.focusIdx)
+    }
+
+    // Multi-file / multi-volume: contents belong to the active PDF. Keep every unit
+    // returned for that file; leave other volumes’ drafts alone.
     if (isMultiFileBook && drafts.length > 0) {
       const unitIndex = Math.max(0, Math.min(structureUnitIdx, drafts.length - 1))
       const unit = drafts[unitIndex]
-      const unitFilePath = unit?.filePath?.trim() || sourceFilePath
+      const unitFilePath = normalizeBookFilePath(unit?.filePath?.trim() || sourceFilePath)
       if (!unit || !unitFilePath) return
       setAiExtracting(true)
-      setAiMessage(`Rendering unit ${unitIndex + 1} TOC pages...`)
+      setExtractProgress({
+        phase: 'reading',
+        detail: 'Reading pages…',
+        activePdfPage: tocRange.from,
+      })
       try {
         const fileUrl = makeUnitFileUrl(unitFilePath)
         const { images, numPages } = await captureTocRangeAsJpegs(fileUrl, tocRange.from, tocRange.to, {
-          onProgress: setAiMessage,
+          onPageProgress: (info) => {
+            setExtractProgress({
+              phase: 'reading',
+              detail: info.message,
+              activePdfPage: info.pdfPage,
+            })
+          },
         })
         setLastNumPages(numPages)
-        const merged = await extractBatchesWithAi(images, numPages)
-        let bestIndex = 0
-        for (let i = 1; i < merged.drafts.length; i++) {
-          const prevLen = merged.lessonsByUnit[bestIndex]?.length ?? 0
-          const nextLen = merged.lessonsByUnit[i]?.length ?? 0
-          if (nextLen > prevLen) bestIndex = i
-        }
-        const replacementDraft = merged.drafts[bestIndex]
-        const replacementLessons = merged.lessonsByUnit[bestIndex] ?? []
-        if (!replacementDraft) throw new Error('Unit extraction returned no units.')
-        const nextDrafts = drafts.map((draft, i) =>
-          i === unitIndex
-            ? {
-                ...draft,
-                ...replacementDraft,
-                id: draft.id,
-                title: draft.title || replacementDraft.title,
-                filePath: unitFilePath,
-              }
-            : draft,
+        const merged = await extractBatchesWithAi(images, numPages, {
+          onPartial: (partial) => applyPartialForFile(unitFilePath, partial),
+        })
+        if (!merged.drafts.length) throw new Error('Volume extraction returned no units.')
+        const stamped = stampDraftsFilePath(merged.drafts, unitFilePath)
+        const normalizedLessons = merged.lessonsByUnit.map((lessons) =>
+          normalizeLessonsStructureTags(lessons, tocExtractProfile),
         )
-        const nextLessons = lessonsByUnitIndex.map((lessons, i) =>
-          i === unitIndex
-            ? normalizeLessonsStructureTags(replacementLessons, tocExtractProfile)
-            : lessons,
+        const live = outlineLiveRef.current
+        const spliced = spliceDraftsForFilePath(
+          live.drafts,
+          live.lessons,
+          unitFilePath,
+          stamped,
+          normalizedLessons,
+          sourceFilePath,
         )
-        setDrafts(nextDrafts)
-        setLessonsByUnitIndex(nextLessons)
-        setStructureUnitIdx(unitIndex)
+        outlineLiveRef.current = { drafts: spliced.drafts, lessons: spliced.lessons }
+        setDrafts(spliced.drafts)
+        setLessonsByUnitIndex(spliced.lessons)
+        setStructureUnitIdx(spliced.focusIdx)
         setSelectedUnitIndicesForMerge(new Set())
         setOpenLessonId(null)
         setEditingFieldId(null)
-        setAiMessage(`Extracted Unit ${unitIndex + 1}.`)
+        setExtractProgress({ phase: 'done', detail: null, activePdfPage: null })
         if (tocRange) setTocRangeAtExtract({ from: tocRange.from, to: tocRange.to })
         setFurthestStep((prev) => advanceFurthestStructureWizardStep(prev, 'extract'))
-        setWizardStep('review')
-        toast.success(`Extracted Unit ${unitIndex + 1}.`)
-        void maybeOfferManualStoryReconcile(nextDrafts, nextLessons, unitFilePath)
+        toast.success(`Extracted ${stamped.length} units.`)
+        void maybeOfferManualStoryReconcile(spliced.drafts, spliced.lessons, unitFilePath)
       } catch (e) {
         const message = e instanceof Error ? e.message : 'AI extraction failed.'
-        setAiMessage(message)
+        setExtractProgress({ phase: 'error', detail: message, activePdfPage: null })
         toast.error(message)
       } finally {
         setAiExtracting(false)
@@ -1207,33 +1338,53 @@ export function BookStructureWizard({
     }
 
     setAiExtracting(true)
-    setAiMessage('Rendering TOC pages...')
+    setExtractProgress({
+      phase: 'reading',
+      detail: 'Reading pages…',
+      activePdfPage: tocRange.from,
+    })
     try {
       const fileUrl = makeUnitFileUrl(sourceFilePath)
       const { images, numPages } = await captureTocRangeAsJpegs(fileUrl, tocRange.from, tocRange.to, {
-        onProgress: setAiMessage,
+        onPageProgress: (info) => {
+          setExtractProgress({
+            phase: 'reading',
+            detail: info.message,
+            activePdfPage: info.pdfPage,
+          })
+        },
       })
       setLastNumPages(numPages)
-      const merged = await extractBatchesWithAi(images, numPages)
+      const merged = await extractBatchesWithAi(images, numPages, {
+        onPartial: (partial) => {
+          const stamped = stampDraftsFilePath(partial.drafts, sourceFilePath)
+          const normalizedLessons = partial.lessonsByUnit.map((lessons) =>
+            normalizeLessonsStructureTags(lessons, tocExtractProfile),
+          )
+          outlineLiveRef.current = { drafts: stamped, lessons: normalizedLessons }
+          setDrafts(stamped)
+          setLessonsByUnitIndex(normalizedLessons)
+        },
+      })
       const stamped = stampDraftsFilePath(merged.drafts, sourceFilePath)
       const normalizedLessons = merged.lessonsByUnit.map((lessons) =>
         normalizeLessonsStructureTags(lessons, tocExtractProfile),
       )
+      outlineLiveRef.current = { drafts: stamped, lessons: normalizedLessons }
       setDrafts(stamped)
       setLessonsByUnitIndex(normalizedLessons)
       setStructureUnitIdx(0)
       setSelectedUnitIndicesForMerge(new Set())
       setOpenLessonId(null)
       setEditingFieldId(null)
-      setAiMessage(`Extracted ${merged.drafts.length} units.`)
+      setExtractProgress({ phase: 'done', detail: null, activePdfPage: null })
       if (tocRange) setTocRangeAtExtract({ from: tocRange.from, to: tocRange.to })
       setFurthestStep((prev) => advanceFurthestStructureWizardStep(prev, 'extract'))
-      setWizardStep('review')
       toast.success(`Extracted ${merged.drafts.length} units.`)
       void maybeOfferManualStoryReconcile(stamped, normalizedLessons, sourceFilePath)
     } catch (e) {
       const message = e instanceof Error ? e.message : 'AI extraction failed.'
-      setAiMessage(message)
+      setExtractProgress({ phase: 'error', detail: message, activePdfPage: null })
       toast.error(message)
     } finally {
       setAiExtracting(false)
@@ -1242,7 +1393,6 @@ export function BookStructureWizard({
     drafts,
     extractBatchesWithAi,
     isMultiFileBook,
-    lessonsByUnitIndex,
     maybeOfferManualStoryReconcile,
     sourceFilePath,
     structureUnitIdx,
@@ -1294,8 +1444,8 @@ export function BookStructureWizard({
     const restored = restoreOutlineDraftsFromBook(cleared)
     setDrafts(restored.drafts)
     setLessonsByUnitIndex(restored.lessonsByUnitIndex)
-    setWizardStep('toc')
-    setFurthestStep('toc')
+    setWizardStep('align')
+    setFurthestStep('align')
     setTocRangeAtExtract(null)
     exitUnitMergeSelectMode()
     toast.success('Structure cleared. Start the outline again from the TOC step.')
@@ -1365,7 +1515,7 @@ export function BookStructureWizard({
     toast.success(`Unit ${unitIndex + 1} cover starts at printed page ${nextCoverHint}.`)
   }
 
-  const canEditAlignment = wizardStep === 'align' || wizardStep === 'extract'
+  const canEditAlignment = wizardStep === 'align'
   const tocRangeDirtyAfterExtract = Boolean(
     tocRangeAtExtract &&
       tocRange &&
@@ -1390,11 +1540,47 @@ export function BookStructureWizard({
 
   function continueFromToc() {
     if (!canContinueFromToc(Boolean(tocRange))) {
-      toast.error('Enter a valid TOC from–to range.')
+      toast.error('Click the first contents page, then the last.')
       return
     }
     setFurthestStep((prev) => advanceFurthestStructureWizardStep(prev, 'toc'))
-    setWizardStep('align')
+    setWizardStep('extract')
+  }
+
+  function selectContentsPdfPage(pdfPage: number) {
+    const total = previewNumPages
+    const next = total != null ? Math.min(Math.max(1, pdfPage), total) : Math.max(1, pdfPage)
+    contentsTouchedRef.current = true
+    setContentsFocusPage(next)
+    const from = parsePositiveInt(tocFrom)
+    const to = parsePositiveInt(tocTo)
+    if (contentsEdge === 'from') {
+      if (to == null || next <= to) {
+        setTocFrom(String(next))
+        if (to == null) setTocTo(String(next))
+      } else {
+        setTocFrom(String(next))
+        setTocTo(String(next))
+      }
+      setContentsEdge('to')
+      return
+    }
+    const start = from ?? next
+    if (next < start) {
+      setTocFrom(String(next))
+      setTocTo(String(start))
+    } else {
+      setTocFrom(String(start))
+      setTocTo(String(next))
+    }
+  }
+
+  function selectAlignPdfPage(pdfPage: number) {
+    const total = previewNumPages
+    const next = total != null ? Math.min(Math.max(1, pdfPage), total) : Math.max(1, pdfPage)
+    setAlignPdfPage(next)
+    setAlignSyncPrintedDraft('')
+    setAlignSyncMessage(null)
   }
 
   function applyAlignFromSyncPoint() {
@@ -1403,44 +1589,46 @@ export function BookStructureWizard({
       setAlignSyncMessage('Enter the printed page number you see on this PDF page.')
       return
     }
-    const result = notCountedFromSyncPoint(previewLeftPage, printed, {
+    const result = notCountedFromSyncPoint(alignPdfPage, printed, {
       totalPdfPages: previewNumPages ?? undefined,
     })
     if (!result.ok) {
       if (result.reason === 'too_large') {
         setAlignSyncMessage(
-          'That would skip too many early PDF pages. Check you’re on a page that shows a real book page number (like 4 or 10), then try again.',
+          'That would skip too many early PDF pages. Pick a page that shows a small book page number, like 1 or 4.',
         )
       } else {
-        setAlignSyncMessage('Use a PDF page from 2 onward and a printed page of 1 or higher.')
+        setAlignSyncMessage('Pick a page after the cover and enter the printed number on it.')
       }
       return
     }
     setNotCountedPdfPagesInput(stringifyPageListInput(result.notCountedPdfPages))
     setAlignSyncObservedPrinted(printed)
-    if (result.pagesAlreadyMatch) {
-      setAlignSyncMessage(
-        `Synced: PDF ${previewLeftPage} = printed ${printed}. Numbering already lines up — nothing to skip.`,
-      )
-    } else {
-      const first = result.notCountedPdfPages[0]
-      const last = result.notCountedPdfPages[result.notCountedPdfPages.length - 1]
-      setAlignSyncMessage(
-        `Synced: PDF ${previewLeftPage} = printed ${printed}. Skipping PDF ${first}–${last} for numbering (${result.notCountedPdfPages.length} pages).`,
-      )
-    }
+    setAlignSyncMessage(null)
   }
 
   function clearAlignSync() {
     setNotCountedPdfPagesInput('')
     setAlignSyncPrintedDraft('')
     setAlignSyncObservedPrinted(null)
-    setAlignSyncMessage('Cleared. Skip if pages already match, or sync again from a clear page number.')
+    setAlignSyncMessage(null)
+  }
+
+  function removeNotCountedSpan(start: number, end: number) {
+    const next = notCountedPdfPages.filter((page) => page < start || page > end)
+    setNotCountedPdfPagesInput(stringifyPageListInput(next))
+    setAlignSyncObservedPrinted(null)
+    setAlignSyncMessage(null)
   }
 
   function continueFromAlign() {
     setFurthestStep((prev) => advanceFurthestStructureWizardStep(prev, 'align'))
-    setWizardStep('extract')
+    setWizardStep('toc')
+  }
+
+  function goToPreviousWizardStep() {
+    const idx = STRUCTURE_WIZARD_STEPS.indexOf(wizardStep)
+    if (idx > 0) setWizardStep(STRUCTURE_WIZARD_STEPS[idx - 1]!)
   }
 
   function toggleCurrentPageIgnored() {
@@ -1772,17 +1960,13 @@ export function BookStructureWizard({
                 onSelect={goToWizardStep}
               />
               <div className="flex gap-2">
-                {wizardStep !== 'toc' ? (
+                {wizardStep !== 'align' ? (
                   <Button
                     type="button"
                     variant="outline"
                     className="h-9 flex-1 rounded-full"
                     disabled={workspaceBusy}
-                    onClick={() => {
-                      const order: StructureWizardStep[] = ['toc', 'align', 'extract', 'review']
-                      const idx = order.indexOf(wizardStep)
-                      if (idx > 0) setWizardStep(order[idx - 1]!)
-                    }}
+                    onClick={goToPreviousWizardStep}
                   >
                     Back
                   </Button>
@@ -1824,7 +2008,11 @@ export function BookStructureWizard({
                     onClick={() => void runExtractWithAi()}
                     disabled={!canRunAi}
                   >
-                    {aiExtracting ? 'Extracting…' : drafts.length ? 'Re-extract' : 'Extract'}
+                    {aiExtracting
+                      ? extractPhaseButtonLabel(extractProgress, true) || 'Extracting…'
+                      : drafts.length
+                        ? 'Re-extract'
+                        : 'Extract'}
                   </Button>
                 ) : null}
                 {wizardStep === 'review' ? (
@@ -1842,16 +2030,12 @@ export function BookStructureWizard({
           ) : (
             <>
           <div className="flex justify-start">
-            {wizardStep !== 'toc' ? (
+            {wizardStep !== 'align' ? (
               <Button
                 type="button"
                 variant="outline"
                 className="h-9 rounded-full"
-                onClick={() => {
-                  const order: StructureWizardStep[] = ['toc', 'align', 'extract', 'review']
-                  const idx = order.indexOf(wizardStep)
-                  if (idx > 0) setWizardStep(order[idx - 1]!)
-                }}
+                onClick={goToPreviousWizardStep}
               >
                 Back
               </Button>
@@ -1880,7 +2064,11 @@ export function BookStructureWizard({
                 onClick={() => void runExtractWithAi()}
                 disabled={!canRunAi}
               >
-                {aiExtracting ? 'Extracting…' : drafts.length ? 'Re-extract' : 'Extract'}
+                {aiExtracting
+                  ? extractPhaseButtonLabel(extractProgress, true) || 'Extracting…'
+                  : drafts.length
+                    ? 'Re-extract'
+                    : 'Extract'}
               </Button>
             ) : null}
             {wizardStep === 'review' ? (
@@ -1938,368 +2126,67 @@ export function BookStructureWizard({
               )}
             >
             {wizardStep === 'toc' ? (
-              <div
-                className={cn(
-                  'flex w-full flex-col gap-1.5 rounded-2xl bg-[var(--surface-3)] px-3 py-2.5',
-                  !isWorkspace && 'mx-auto max-w-3xl',
-                )}
-              >
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-                  <div className="flex items-center gap-1">
-                    <span className="text-[13px] font-semibold tracking-tight text-foreground">Contents</span>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground hover:bg-[var(--surface-2)] hover:text-foreground"
-                          aria-label="About contents pages"
-                        >
-                          <HelpCircle size={14} />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent className="max-w-xs text-left">
-                        We scan early PDF pages and suggest a range. Confirm in the preview, or edit From/To.
-                      </TooltipContent>
-                    </Tooltip>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Label htmlFor="structure-toc-from" className="sr-only">
-                      From
-                    </Label>
-                    <Input
-                      id="structure-toc-from"
-                      type="number"
-                      min={1}
-                      className="h-8 w-[4.25rem] tabular-nums"
-                      value={tocFrom}
-                      onChange={(e) => setTocFrom(e.target.value)}
-                      aria-label="Contents from PDF page"
-                    />
-                    <span className="text-sm text-muted-foreground" aria-hidden>
-                      –
-                    </span>
-                    <Label htmlFor="structure-toc-to" className="sr-only">
-                      To
-                    </Label>
-                    <Input
-                      id="structure-toc-to"
-                      type="number"
-                      min={1}
-                      className="h-8 w-[4.25rem] tabular-nums"
-                      value={tocTo}
-                      onChange={(e) => setTocTo(e.target.value)}
-                      aria-label="Contents to PDF page"
-                    />
-                  </div>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          disabled={!previewUrl || tocDetectStatus === 'scanning'}
-                          onClick={() => {
-                            tocAutoDetectPathRef.current = sourceFilePath || null
-                            void runTocAutoDetect({ applyRange: true })
-                          }}
-                          aria-label={tocDetectStatus === 'scanning' ? 'Scanning' : 'Find contents pages'}
-                        >
-                          <ScanSearch size={15} />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        {tocDetectStatus === 'scanning' ? 'Scanning…' : 'Find contents pages'}
-                      </TooltipContent>
-                    </Tooltip>
-                    {tocDetectSuggestion ? (
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        className="h-8"
-                        disabled={tocDetectStatus === 'scanning'}
-                        onClick={() => {
-                          setTocFrom(String(tocDetectSuggestion.from))
-                          setTocTo(String(tocDetectSuggestion.to))
-                          setPreviewPage(tocDetectSuggestion.from)
-                          setPreviewPageJumpDraft(String(tocDetectSuggestion.from))
-                          toast.success(
-                            `Using suggested PDF pages ${tocDetectSuggestion.from}–${tocDetectSuggestion.to}.`,
-                          )
-                        }}
-                      >
-                        Use {tocDetectSuggestion.from}–{tocDetectSuggestion.to}
-                      </Button>
-                    ) : null}
-                  </div>
-                  {recommendStagedExtraction ? (
-                    <label className="ml-auto flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                      <input
-                        type="checkbox"
-                        className="h-3.5 w-3.5 rounded border-border"
-                        checked={stagedExtractionEnabled}
-                        onChange={(e) => setStagedExtractionEnabled(e.target.checked)}
-                      />
-                      Staged
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            className="inline-flex text-muted-foreground hover:text-foreground"
-                            aria-label="About staged extraction"
-                          >
-                            <HelpCircle size={12} />
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent className="max-w-xs text-left">
-                          Splits a long table of contents into smaller extract passes.
-                        </TooltipContent>
-                      </Tooltip>
-                    </label>
-                  ) : null}
-                </div>
-                {tocDetectMessage ? (
-                  <p
-                    className={cn(
-                      'truncate text-[11px] leading-snug',
-                      tocDetectStatus === 'failed' ? 'text-amber-800' : 'text-muted-foreground',
-                    )}
-                    title={tocDetectMessage}
-                  >
-                    {tocDetectMessage}
-                  </p>
-                ) : null}
-                {tocRangeDirtyAfterExtract ? (
-                  <p className="text-[11px] leading-snug text-amber-800">
-                    Range changed — re-extract before saving.
-                  </p>
-                ) : null}
-              </div>
+              <BookContentsMarking
+                from={tocRange?.from ?? null}
+                to={tocRange?.to ?? null}
+                notCountedPdfPages={notCountedPdfPages}
+                edge={contentsEdge}
+                scanning={tocDetectStatus === 'scanning'}
+                statusMessage={tocDetectMessage}
+                statusFailed={tocDetectStatus === 'failed'}
+                warning={tocRangeDirtyAfterExtract ? 'The contents range changed. Extract again before saving.' : null}
+                onEdge={setContentsEdge}
+                onScan={() => {
+                  contentsTouchedRef.current = false
+                  tocAutoDetectPathRef.current = sourceFilePath || null
+                  void runTocAutoDetect({ applyRange: true })
+                }}
+              />
             ) : null}
 
             {wizardStep === 'align' ? (
-              <div
-                className={cn(
-                  'flex w-full flex-col gap-1.5 rounded-2xl bg-[var(--surface-3)] px-3 py-2.5',
-                  !isWorkspace && 'mx-auto max-w-3xl',
-                )}
-              >
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-                  <div className="flex items-center gap-1">
-                    <span className="text-[13px] font-semibold tracking-tight text-foreground">Align</span>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground hover:bg-[var(--surface-2)] hover:text-foreground"
-                          aria-label="About page align"
-                        >
-                          <HelpCircle size={14} />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent className="max-w-xs text-left">
-                        Open a PDF page that shows a clear printed page number, type that number, then use this page. We skip early uncounted pages for you.
-                      </TooltipContent>
-                    </Tooltip>
-                  </div>
-                  <span className="text-[11px] tabular-nums text-muted-foreground">
-                    PDF {previewLeftPage}
-                    {previewLeftEffective != null ? ` · counted ${previewLeftEffective}` : ''}
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    <Label htmlFor="structure-align-sync-printed" className="sr-only">
-                      Printed page on this PDF
-                    </Label>
-                    <Input
-                      id="structure-align-sync-printed"
-                      type="number"
-                      min={1}
-                      className="h-8 w-[4.5rem] tabular-nums"
-                      placeholder="e.g. 4"
-                      value={alignSyncPrintedDraft}
-                      onChange={(e) => setAlignSyncPrintedDraft(e.target.value)}
-                      aria-label="Printed page number on this PDF"
-                    />
-                    <Button type="button" size="sm" className="h-8" onClick={applyAlignFromSyncPoint}>
-                      Use
-                    </Button>
-                    <Button type="button" variant="ghost" size="sm" className="h-8 px-2" onClick={clearAlignSync}>
-                      Clear
-                    </Button>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 px-2 text-muted-foreground"
-                    onClick={continueFromAlign}
-                  >
-                    Already match
-                  </Button>
-                </div>
-                {alignSyncMessage ? (
-                  <p
-                    className={cn(
-                      'truncate text-[11px] leading-snug',
-                      alignSyncMessage.startsWith('Synced')
-                        ? 'text-emerald-800'
-                        : alignSyncMessage.startsWith('Cleared')
-                          ? 'text-muted-foreground'
-                          : 'text-amber-800',
-                    )}
-                    title={alignSyncMessage}
-                  >
-                    {alignSyncMessage}
-                  </p>
-                ) : null}
-                {alignmentCheckpoints.length > 0 && notCountedPdfPages.length > 0 ? (
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {alignmentCheckpoints.map((checkpoint) => (
-                      <Button
-                        key={checkpoint.id}
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-7 rounded-full px-2.5 text-[11px]"
-                        onClick={() => {
-                          setPreviewPage(checkpoint.pdfPage)
-                          setPreviewPageJumpDraft(String(checkpoint.pdfPage))
-                        }}
-                      >
-                        {checkpoint.label}
-                        <span className="ml-1 tabular-nums text-muted-foreground">
-                          PDF {checkpoint.pdfPage}
-                        </span>
-                      </Button>
-                    ))}
-                  </div>
-                ) : null}
-                <details className="group/advanced text-muted-foreground">
-                  <summary className="cursor-pointer list-none text-[11px] font-medium marker:content-none [&::-webkit-details-marker]:hidden">
-                    <span className="inline-flex items-center gap-1">
-                      <ChevronDown size={12} className="transition group-open/advanced:rotate-180" />
-                      Advanced
-                    </span>
-                  </summary>
-                  <div className="mt-1.5 flex flex-wrap gap-2">
-                    <div className="grid gap-1">
-                      <Label htmlFor="structure-not-counted" className="text-[10px] text-muted-foreground">
-                        Not counted
-                      </Label>
-                      <Input
-                        id="structure-not-counted"
-                        className="h-8 w-[11rem] font-mono text-xs"
-                        placeholder="8,9 or 120-122"
-                        value={notCountedPdfPagesInput}
-                        onChange={(e) => setNotCountedPdfPagesInput(e.target.value)}
-                      />
-                    </div>
-                    <div className="grid gap-1">
-                      <Label htmlFor="structure-hidden" className="text-[10px] text-muted-foreground">
-                        Hidden
-                      </Label>
-                      <Input
-                        id="structure-hidden"
-                        className="h-8 w-[11rem] font-mono text-xs"
-                        placeholder="12,13 or 120-121"
-                        value={hiddenPdfPagesInput}
-                        onChange={(e) => setHiddenPdfPagesInput(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                </details>
-              </div>
+              <BookAlignMarking
+                pdfPage={alignPdfPage}
+                notCountedPdfPages={notCountedPdfPages}
+                hiddenPdfPages={hiddenPdfPages}
+                checkpoints={alignmentCheckpoints}
+                printedDraft={alignSyncPrintedDraft}
+                errorMessage={alignSyncMessage}
+                onPrintedDraft={setAlignSyncPrintedDraft}
+                onMatch={applyAlignFromSyncPoint}
+                onToggleNoNumber={() => {
+                  if (alignPdfPage >= 2) toggleIgnoredPage(alignPdfPage)
+                }}
+                onToggleHidden={() => toggleHiddenPage(alignPdfPage)}
+                onRemoveNotCounted={removeNotCountedSpan}
+                onRemoveHidden={(page) => toggleHiddenPage(page)}
+                onReset={clearAlignSync}
+                onSelectPdfPage={selectAlignPdfPage}
+              />
             ) : null}
 
             {wizardStep === 'extract' ? (
-              <div
-                className={cn(
-                  'flex w-full flex-col gap-1.5 rounded-2xl bg-[var(--surface-3)] px-3 py-2.5',
-                  !isWorkspace && 'mx-auto max-w-3xl',
-                )}
-              >
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-                  <div className="flex items-center gap-1">
-                    <span className="text-[13px] font-semibold tracking-tight text-foreground">Extract</span>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground hover:bg-[var(--surface-2)] hover:text-foreground"
-                          aria-label="About extract"
-                        >
-                          <HelpCircle size={14} />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent className="max-w-xs text-left">
-                        AI reads your contents pages and builds units and lessons. Use Extract in the footer when ready.
-                      </TooltipContent>
-                    </Tooltip>
-                  </div>
-                  <span className="rounded-md bg-[var(--surface-2)] px-2 py-0.5 text-[11px] font-medium text-foreground">
-                    {tocExtractProfile === 'wonders_workshop'
-                      ? 'Wonders Workshop'
-                      : tocExtractProfile === 'wonders_literature'
-                        ? 'Wonders Literature'
-                        : tocExtractProfile === 'journeys'
-                          ? 'Journeys'
-                          : 'Generic'}
-                  </span>
-                  {tocRange ? (
-                    <span className="text-[11px] tabular-nums text-muted-foreground">
-                      Pages {tocRange.from}–{tocRange.to}
-                    </span>
-                  ) : null}
-                  {recommendStagedExtraction ? (
-                    <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                      <input
-                        type="checkbox"
-                        className="h-3.5 w-3.5 rounded border-border"
-                        checked={stagedExtractionEnabled}
-                        onChange={(e) => setStagedExtractionEnabled(e.target.checked)}
-                      />
-                      Staged
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            className="inline-flex text-muted-foreground hover:text-foreground"
-                            aria-label="About staged extraction"
-                          >
-                            <HelpCircle size={12} />
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent className="max-w-xs text-left">
-                          Splits a long table of contents into smaller extract passes.
-                        </TooltipContent>
-                      </Tooltip>
-                    </label>
-                  ) : null}
-                  {drafts.length > 0 && !tocRangeDirtyAfterExtract ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="ml-auto h-8 px-2"
-                      onClick={() => goToWizardStep('review')}
-                    >
-                      Review
-                    </Button>
-                  ) : null}
-                </div>
-                {aiMessage ? (
-                  <p className="truncate font-mono text-[11px] leading-snug text-muted-foreground" title={aiMessage}>
-                    {aiMessage}
-                  </p>
-                ) : null}
-                {tocRangeDirtyAfterExtract ? (
-                  <p className="text-[11px] leading-snug text-amber-800">
-                    Range changed — extract again before saving.
-                  </p>
-                ) : null}
-              </div>
+              <BookExtractMarking
+                profile={tocExtractProfile}
+                scopeLabel={extractScopeLabel}
+                from={tocRange?.from ?? null}
+                to={tocRange?.to ?? null}
+                multiVolumeHint={
+                  isMultiFileBook || Boolean(selectedBook && listBookVolumes(selectedBook).length >= 2)
+                }
+                extracting={aiExtracting}
+                progress={extractProgress}
+                errorMessage={
+                  extractProgress?.phase === 'error' ? extractProgress.detail : null
+                }
+                unitRows={extractUnitRows}
+                chunkCount={lessonsByUnitIndex.reduce((sum, lessons) => sum + lessons.length, 0)}
+                rangeChanged={tocRangeDirtyAfterExtract}
+                recommendStaged={recommendStagedExtraction}
+                staged={stagedExtractionEnabled}
+                onStagedChange={setStagedExtractionEnabled}
+                onReview={() => goToWizardStep('review')}
+              />
             ) : null}
 
             {wizardStep === 'review' && drafts?.length ? (
@@ -2913,7 +2800,76 @@ export function BookStructureWizard({
                   ),
             )}
           >
-            {previewUrl && pdfReady ? (
+            {wizardStep === 'align' && previewUrl && pdfReady && previewNumPages != null ? (
+              <BookAlignPageGrid
+                fileUrl={previewUrl}
+                unitId={sourceFilePath || bookId || 'align'}
+                pdfReady={pdfReady}
+                pageCount={previewNumPages}
+                selectedPdfPage={Math.min(alignPdfPage, previewNumPages)}
+                notCountedPdfPages={notCountedPdfPages}
+                hiddenPdfPages={hiddenPdfPages}
+                onSelect={selectAlignPdfPage}
+              />
+            ) : wizardStep === 'toc' && previewUrl && pdfReady && previewNumPages != null ? (
+              <BookAlignPageGrid
+                fileUrl={previewUrl}
+                unitId={sourceFilePath || bookId || 'contents'}
+                pdfReady={pdfReady}
+                pageCount={previewNumPages}
+                selectedPdfPage={Math.min(Math.max(1, contentsFocusPage), previewNumPages)}
+                notCountedPdfPages={notCountedPdfPages}
+                hiddenPdfPages={hiddenPdfPages}
+                rangeFrom={tocRange?.from ?? null}
+                rangeTo={tocRange && previewNumPages != null ? Math.min(tocRange.to, previewNumPages) : tocRange?.to ?? null}
+                caption={
+                  tocRange
+                    ? tocRange.from === tocRange.to
+                      ? `Contents · PDF ${tocRange.from}`
+                      : `Contents · PDF ${tocRange.from}–${tocRange.to}`
+                    : 'Click the first contents page'
+                }
+                onSelect={selectContentsPdfPage}
+              />
+            ) : (wizardStep === 'align' || wizardStep === 'toc') && previewUrl && pdfReady ? (
+              <div className="flex min-h-0 flex-1 items-center justify-center">
+                <PdfDocument
+                  file={previewUrl}
+                  options={PDF_DOCUMENT_OPTIONS}
+                  onLoadSuccess={onPreviewDocumentLoadSuccess}
+                  loading={<p className="p-4 text-sm text-muted-foreground">Opening the book…</p>}
+                  error={<p className="p-4 text-sm text-[var(--brand-red)]">Could not open this PDF.</p>}
+                >
+                  <span className="sr-only">Opening the book…</span>
+                </PdfDocument>
+              </div>
+            ) : wizardStep === 'extract' ? (
+              previewUrl && pdfReady && tocRange ? (
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                  <div className="min-h-0 flex-[1.1]">
+                    <BookExtractContentsRow
+                      fileUrl={previewUrl}
+                      unitId={sourceFilePath || bookId || 'extract'}
+                      pdfReady={pdfReady}
+                      from={tocRange.from}
+                      to={previewNumPages != null ? Math.min(tocRange.to, previewNumPages) : tocRange.to}
+                      activePdfPage={aiExtracting ? extractProgress?.activePdfPage ?? null : null}
+                      extracting={aiExtracting}
+                    />
+                  </div>
+                  <BookExtractOutlineDraft
+                    drafts={drafts}
+                    lessonsByUnitIndex={lessonsByUnitIndex}
+                    profile={tocExtractProfile}
+                    extracting={aiExtracting}
+                  />
+                </div>
+              ) : (
+                <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-[13px] text-muted-foreground">
+                  {tocRange ? 'Opening the contents pages…' : 'Set the contents pages first.'}
+                </div>
+              )
+            ) : previewUrl && pdfReady ? (
               <div className="flex min-h-0 flex-1 flex-col gap-1">
                 <div className="flex shrink-0 flex-wrap items-center gap-1 rounded-md border border-border/50 bg-background/80 px-1.5 py-0.5">
                   {canEditAlignment ? (

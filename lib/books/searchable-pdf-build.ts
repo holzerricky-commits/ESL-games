@@ -1,10 +1,10 @@
 import 'server-only'
 
-import { copyFile, mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { PDFDocument, StandardFonts, pushGraphicsState, popGraphicsState, translate, scale } from 'pdf-lib'
 import type { PDFFont, PDFPage } from 'pdf-lib'
-import { pdfFilePageHasSelectableText, pdfFilePagesWithSelectableText } from '@/lib/books/extract-story-pdf-text'
+import { pdfFilePagesWithSelectableText } from '@/lib/books/extract-story-pdf-text'
 import { renderPdfPageToPngBuffer } from '@/lib/books/generate-book-cover-server'
 import { recognizePageWordsWithCloudOcr } from '@/lib/books/searchable-pdf-cloud-ocr'
 import { recognizePageWordsDetailed } from '@/lib/books/searchable-pdf-ocr'
@@ -12,8 +12,25 @@ import {
   medianOcrConfidence,
   pageNeedsCloudOcrFallback,
 } from '@/lib/books/searchable-pdf-ocr-fallback'
-import { searchablePdfAbsolutePath } from '@/lib/books/searchable-pdf-path'
-import { writeSearchableOcrBoxes } from '@/lib/books/searchable-ocr-boxes-io'
+import {
+  searchableOcrBoxesAbsolutePath,
+  searchableOcrResultAbsolutePath,
+  searchablePdfAbsolutePath,
+} from '@/lib/books/searchable-pdf-path'
+import {
+  SEARCHABLE_PDF_FILE_OPEN_ERROR,
+  clearReadOnlyAttribute,
+  isFileBusyError,
+  writeFileReplacingWithRetry,
+} from '@/lib/books/searchable-pdf-sidecar-write'
+import {
+  fileMtimeMs,
+  readSearchableOcrResult,
+  writeSearchableOcrBoxes,
+  writeSearchableOcrResult,
+} from '@/lib/books/searchable-ocr-boxes-io'
+import { buildSelectWordBoxes } from '@/lib/books/searchable-ocr-boxes'
+import { buildSearchableOcrResultFile, isCurrentSearchableOcrProfile } from '@/lib/books/searchable-ocr-result'
 import { filterBodyOcrWords, filterDecorativeOcrLines } from '@/lib/books/searchable-pdf-body-text'
 import {
   HELVETICA_DESCENDER_RATIO,
@@ -31,8 +48,25 @@ import type { SearchablePagePlanItem } from '@/lib/books/searchable-pdf-types'
 
 export type { SearchablePagePlanAction, SearchablePagePlanItem } from '@/lib/books/searchable-pdf-types'
 
-/** ~200 DPI on a typical textbook page — enough for Tesseract without huge rasters. */
-const OCR_RENDER_WIDTH = 1800
+/** ~300 DPI on a typical textbook page — small bubble and caption text needs the extra pixels. */
+const OCR_RENDER_WIDTH = 2600
+
+/** Per-step millisecond log for one searchable-pdf operation. */
+function createStepTimer(label: string) {
+  const steps: string[] = []
+  const started = Date.now()
+  let last = started
+  return {
+    mark(step: string) {
+      const now = Date.now()
+      steps.push(`${step}=${now - last}ms`)
+      last = now
+    },
+    log() {
+      console.info(`[searchable-pdf] ${label} total=${Date.now() - started}ms ${steps.join(' ')}`)
+    },
+  }
+}
 
 let sidecarWriteChain: Promise<unknown> = Promise.resolve()
 
@@ -89,10 +123,33 @@ export async function ensureSearchableSidecar(originalAbsPath: string): Promise<
   const orig = await stat(originalAbsPath)
   if (await fileExists(sidecar)) {
     const side = await stat(sidecar)
-    if (orig.mtimeMs <= side.mtimeMs) return sidecar
+    if (orig.mtimeMs <= side.mtimeMs) {
+      await clearReadOnlyAttribute(sidecar)
+      return sidecar
+    }
+    await clearReadOnlyAttribute(sidecar)
   }
   await copyFile(originalAbsPath, sidecar)
+  await clearReadOnlyAttribute(sidecar)
   return sidecar
+}
+
+/**
+ * A page is stamped when its select boxes exist, are newer than the scan,
+ * the sidecar PDF is still there, and the words were read with the current
+ * OCR settings (older reads are redone). File stats plus one small JSON read.
+ */
+async function pageStampedOnSidecar(
+  originalAbsPath: string,
+  pdfPage: number,
+  originalMtimeMs: number,
+  sidecarReady: boolean,
+): Promise<boolean> {
+  if (!sidecarReady) return false
+  const boxesMtime = await fileMtimeMs(searchableOcrBoxesAbsolutePath(originalAbsPath, pdfPage))
+  if (boxesMtime == null || boxesMtime < originalMtimeMs) return false
+  const result = await readSearchableOcrResult(originalAbsPath, pdfPage)
+  return result != null && isCurrentSearchableOcrProfile(result)
 }
 
 export async function planSearchablePdfPages(
@@ -102,12 +159,11 @@ export async function planSearchablePdfPages(
 ): Promise<SearchablePagePlanItem[]> {
   const start = Math.max(1, Math.floor(startPdfPage))
   const end = Math.max(start, Math.floor(endPdfPage))
-  const sidecar = searchablePdfAbsolutePath(originalAbsPath)
-  const sidecarReady = await fileExists(sidecar)
+  const timer = createStepTimer(`plan ${start}-${end}`)
+  const sidecarReady = await fileExists(searchablePdfAbsolutePath(originalAbsPath))
+  const originalMtimeMs = (await stat(originalAbsPath)).mtimeMs
   const originalHasText = await pdfFilePagesWithSelectableText(originalAbsPath, start, end)
-  const sidecarHasText = sidecarReady
-    ? await pdfFilePagesWithSelectableText(sidecar, start, end)
-    : new Set<number>()
+  timer.mark('origTextCheck')
   const items: SearchablePagePlanItem[] = []
 
   for (let pdfPage = start; pdfPage <= end; pdfPage += 1) {
@@ -115,229 +171,319 @@ export async function planSearchablePdfPages(
       items.push({ pdfPage, action: 'skip-has-text' })
       continue
     }
-    if (sidecarHasText.has(pdfPage)) {
+    if (await pageStampedOnSidecar(originalAbsPath, pdfPage, originalMtimeMs, sidecarReady)) {
       items.push({ pdfPage, action: 'skip-done' })
       continue
     }
     items.push({ pdfPage, action: 'ocr' })
   }
+  timer.mark('stats')
+  timer.log()
 
   return items
 }
 
-export type StampSearchablePageResult =
-  | { ok: true; status: 'stamped'; wordCount: number; pdfPage: number }
-  | { ok: true; status: 'skipped'; reason: 'has-text' | 'done'; pdfPage: number; wordCount: number }
+export type OcrSearchablePageResult =
+  | { ok: true; status: 'read'; wordCount: number; pdfPage: number; source: 'tesseract' | 'cloud' | 'cached' }
+  | { ok: true; status: 'skipped'; reason: 'has-text'; pdfPage: number; wordCount: number }
   | { ok: false; error: string; pdfPage: number }
 
-export type StampSearchablePageOptions = {
-  /** Replace the sidecar page from the original first, then stamp (redo). */
+export type OcrSearchablePageOptions = {
+  /** Ignore a saved OCR result and read the page again (redo). */
   force?: boolean
+  /**
+   * The client already ran `plan` for this range. Skip the "does the scan already have text?"
+   * check so the page request does not parse the unit PDF again.
+   */
+  planned?: boolean
+}
+
+function friendlyPageError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : ''
+  if (/none of these types|InvalidArg|Path2D/i.test(raw)) return 'Could not read this page picture.'
+  return 'Could not add selectable text to this page.'
 }
 
 /**
- * Replace one sidecar page with a clean copy from the original PDF
- * so a redo does not stack invisible text on top of an old stamp.
+ * Read the words on one page and save them as `pN.ocr.json`.
+ * Does not touch the sidecar PDF — `finalizeSearchablePdfPages` stamps once per run.
  */
-export async function replaceSidecarPageFromOriginal(
-  originalAbsPath: string,
-  sidecarAbsPath: string,
-  pdfPage: number,
-): Promise<void> {
-  const pageNo = Math.max(1, Math.floor(pdfPage))
-  const [origBytes, sideBytes] = await Promise.all([
-    readFile(originalAbsPath),
-    readFile(sidecarAbsPath),
-  ])
-  const originalPdf = await PDFDocument.load(origBytes, { ignoreEncryption: true })
-  const sidecarPdf = await PDFDocument.load(sideBytes, { ignoreEncryption: true })
-  if (pageNo > originalPdf.getPageCount() || pageNo > sidecarPdf.getPageCount()) {
-    throw new Error(`PDF page ${pageNo} is out of range.`)
-  }
-  const [copied] = await sidecarPdf.copyPages(originalPdf, [pageNo - 1])
-  sidecarPdf.removePage(pageNo - 1)
-  sidecarPdf.insertPage(pageNo - 1, copied)
-  const saved = await sidecarPdf.save({ useObjectStreams: true })
-  await writeFile(sidecarAbsPath, Buffer.from(saved))
-}
-
-async function stampPageOnSidecar(
+export async function ocrSearchablePdfPage(
   originalAbsPath: string,
   pdfPage: number,
-  options?: StampSearchablePageOptions,
-): Promise<StampSearchablePageResult> {
+  options?: OcrSearchablePageOptions,
+): Promise<OcrSearchablePageResult> {
   const pageNo = Math.max(1, Math.floor(pdfPage))
   const force = Boolean(options?.force)
+  const timer = createStepTimer(`ocr page ${pageNo}`)
   try {
-    const originalHasText = await pdfFilePageHasSelectableText(originalAbsPath, pageNo)
-    if (originalHasText) {
-      return { ok: true, status: 'skipped', reason: 'has-text', pdfPage: pageNo, wordCount: 0 }
+    if (!options?.planned) {
+      const hasText = await pdfFilePagesWithSelectableText(originalAbsPath, pageNo, pageNo)
+      timer.mark('origTextCheck')
+      if (hasText.has(pageNo)) {
+        return { ok: true, status: 'skipped', reason: 'has-text', pdfPage: pageNo, wordCount: 0 }
+      }
     }
 
-    const sidecar = await ensureSearchableSidecar(originalAbsPath)
-    const sidecarHasText = await pdfFilePageHasSelectableText(sidecar, pageNo)
-    if (sidecarHasText && !force) {
-      return { ok: true, status: 'skipped', reason: 'done', pdfPage: pageNo, wordCount: 0 }
-    }
-    if (sidecarHasText && force) {
-      await replaceSidecarPageFromOriginal(originalAbsPath, sidecar, pageNo)
+    if (!force) {
+      const [ocrMtime, origMtime] = await Promise.all([
+        fileMtimeMs(searchableOcrResultAbsolutePath(originalAbsPath, pageNo)),
+        fileMtimeMs(originalAbsPath),
+      ])
+      if (ocrMtime != null && origMtime != null && ocrMtime >= origMtime) {
+        const cached = await readSearchableOcrResult(originalAbsPath, pageNo)
+        if (cached && isCurrentSearchableOcrProfile(cached)) {
+          timer.mark('cachedOcr')
+          timer.log()
+          return { ok: true, status: 'read', wordCount: cached.words.length, pdfPage: pageNo, source: 'cached' }
+        }
+      }
     }
 
-    const png = await renderPdfPageToPngBuffer(originalAbsPath, pageNo, OCR_RENDER_WIDTH)
+    const png = await renderPdfPageToPngBuffer(originalAbsPath, pageNo, OCR_RENDER_WIDTH, {
+      ocrPreprocess: true,
+    })
+    timer.mark('render')
     const recognized = await recognizePageWordsDetailed(png.buffer)
-    let words = recognized.words
+    timer.mark('tesseract')
+    let words: OcrWordBox[] = recognized.words
+    let source: 'tesseract' | 'cloud' = 'tesseract'
     if (pageNeedsCloudOcrFallback(recognized.scoredWords)) {
-      const pageConfidence = medianOcrConfidence(recognized.scoredWords)
+      const pageConfidence = medianOcrConfidence(filterBodyOcrWords(recognized.scoredWords))
       console.info(
-        `[searchable-pdf] page ${pageNo} Tesseract confidence ${pageConfidence.toFixed(0)} — trying cloud OCR`,
+        `[searchable-pdf] page ${pageNo} body-text confidence ${pageConfidence.toFixed(0)} — trying cloud OCR`,
       )
       const cloudWords = await recognizePageWordsWithCloudOcr({
-        pngBuffer: png.buffer,
+        imageBuffer: await png.encodeJpeg(),
+        mimeType: 'image/jpeg',
         imageWidth: png.width,
         imageHeight: png.height,
       })
       if (cloudWords && cloudWords.length > 0) {
         words = cloudWords
-        console.info(
-          `[searchable-pdf] page ${pageNo} cloud OCR returned ${cloudWords.length} words`,
-        )
+        source = 'cloud'
       } else {
         console.warn(
           `[searchable-pdf] page ${pageNo} cloud OCR unavailable — keeping Tesseract (${words.length} words)`,
         )
       }
+      timer.mark('gemini')
     }
 
-    const bytes = await readFile(sidecar)
-    const pdf = await PDFDocument.load(bytes, { ignoreEncryption: true })
-    if (pageNo > pdf.getPageCount()) {
-      return { ok: false, error: `PDF page ${pageNo} is out of range.`, pdfPage: pageNo }
-    }
-    const page = pdf.getPage(pageNo - 1)
-    const font = await pdf.embedFont(StandardFonts.Helvetica)
-    const pageWidth = page.getWidth()
-    const pageHeight = page.getHeight()
-
-    // Prefer body-sized words; if the filter empties the page, stamp everything OCR returned.
-    const bodyWords = filterBodyOcrWords(words)
-    const wordsToStamp = bodyWords.length > 0 ? bodyWords : words
-    if (words.length > 0 && bodyWords.length === 0) {
-      console.warn(
-        `[searchable-pdf] page ${pageNo} body filter removed all words — stamping full OCR set`,
-      )
-    }
-    const lines = filterDecorativeOcrLines(groupWordsIntoLines(wordsToStamp))
-    const selectWords: OcrWordBox[] = []
-    for (const line of lines) {
-      for (const word of line.words) {
-        const safe = winAnsiSafePdfText(word.text)
-        if (!safe) continue
-        selectWords.push({ ...word, text: safe })
-      }
-    }
-    let wordCount = 0
-    for (const line of lines) {
-      if (shouldStampLineAsUnit(line)) {
-        const lineText = ocrLinePlainText(line)
-        const widthAt1 = font.widthOfTextAtSize(lineText || ' ', 1)
-        const placement = mapOcrLineToPdfText({
-          line,
-          imageWidth: png.width,
-          imageHeight: png.height,
-          pageWidth,
-          pageHeight,
-          textWidthAtSize1: widthAt1,
-          descenderRatio: HELVETICA_DESCENDER_RATIO,
-        })
-        if (!placement || !placement.text) continue
-        try {
-          drawInvisibleOcrText(page, font, placement)
-          wordCount += line.words.length
-        } catch {
-          // Fall through to per-word if Helvetica cannot encode the full line.
-          const lineSize = lineFontSizeFromHeight(line.lineHeight, png.height, pageHeight)
-          for (const word of line.words) {
-            const safeText = winAnsiSafePdfText(word.text)
-            if (!safeText) continue
-            const w1 = font.widthOfTextAtSize(safeText, 1)
-            const wordPlacement = mapOcrWordToPdfText({
-              word: { ...word, text: safeText },
-              imageWidth: png.width,
-              imageHeight: png.height,
-              pageWidth,
-              pageHeight,
-              textWidthAtSize1: w1,
-              descenderRatio: HELVETICA_DESCENDER_RATIO,
-              lineFontSize: lineSize,
-            })
-            if (!wordPlacement) continue
-            try {
-              drawInvisibleOcrText(page, font, wordPlacement)
-              wordCount += 1
-            } catch {
-              // Skip glyphs Helvetica still cannot encode.
-            }
-          }
-        }
-        continue
-      }
-
-      const lineSize = lineFontSizeFromHeight(line.lineHeight, png.height, pageHeight)
-      for (const word of line.words) {
-        const safeText = winAnsiSafePdfText(word.text)
-        if (!safeText) continue
-        const widthAt1 = font.widthOfTextAtSize(safeText, 1)
-        const placement = mapOcrWordToPdfText({
-          word: { ...word, text: safeText },
-          imageWidth: png.width,
-          imageHeight: png.height,
-          pageWidth,
-          pageHeight,
-          textWidthAtSize1: widthAt1,
-          descenderRatio: HELVETICA_DESCENDER_RATIO,
-          lineFontSize: lineSize,
-        })
-        if (!placement) continue
-        try {
-          drawInvisibleOcrText(page, font, placement)
-          wordCount += 1
-        } catch {
-          // Skip glyphs Helvetica still cannot encode.
-        }
-      }
-    }
-
-    const saved = await pdf.save({ useObjectStreams: true })
-    await writeFile(sidecar, Buffer.from(saved))
-    // Select uses these printed boxes — not Helvetica positions from the PDF.
-    await writeSearchableOcrBoxes({
+    await mkdir(path.dirname(searchableOcrResultAbsolutePath(originalAbsPath, pageNo)), { recursive: true })
+    await writeSearchableOcrResult(
       originalAbsPath,
-      pdfPage: pageNo,
-      words: selectWords,
-      imageWidth: png.width,
-      imageHeight: png.height,
-    })
+      buildSearchableOcrResultFile({
+        pdfPage: pageNo,
+        imageWidth: png.width,
+        imageHeight: png.height,
+        source,
+        words,
+      }),
+    )
+    timer.mark('writeOcr')
+    timer.log()
 
-    return { ok: true, status: 'stamped', wordCount, pdfPage: pageNo }
+    return { ok: true, status: 'read', wordCount: words.length, pdfPage: pageNo, source }
   } catch (err) {
-    console.error('[searchable-pdf] stamp page failed', pageNo, err)
-    const raw = err instanceof Error ? err.message : ''
-    if (/none of these types|InvalidArg|Path2D/i.test(raw)) {
-      return { ok: false, error: 'Could not read this page picture.', pdfPage: pageNo }
-    }
-    return {
-      ok: false,
-      error: 'Could not add selectable text to this page.',
-      pdfPage: pageNo,
-    }
+    console.error('[searchable-pdf] OCR page failed', pageNo, err)
+    return { ok: false, error: friendlyPageError(err), pdfPage: pageNo }
   }
 }
 
-/** OCR one page and stamp hidden text onto the sidecar. Serialized per process. */
-export function stampSearchablePdfPage(
+/**
+ * Stamp one page's body-sized OCR words as invisible text (for search and copy in
+ * other PDF viewers). Select boxes come from {@link buildSelectWordBoxes} instead.
+ */
+function stampOcrWordsOnPage(args: {
+  page: PDFPage
+  font: PDFFont
+  words: readonly OcrWordBox[]
+  imageWidth: number
+  imageHeight: number
+  pdfPage: number
+}): number {
+  const { page, font, words, imageWidth, imageHeight } = args
+  const pageWidth = page.getWidth()
+  const pageHeight = page.getHeight()
+
+  // Prefer body-sized words; if the filter empties the page, stamp everything OCR returned.
+  const bodyWords = filterBodyOcrWords(words)
+  const wordsToStamp = bodyWords.length > 0 ? bodyWords : [...words]
+  if (words.length > 0 && bodyWords.length === 0) {
+    console.warn(
+      `[searchable-pdf] page ${args.pdfPage} body filter removed all words — stamping full OCR set`,
+    )
+  }
+  const lines = filterDecorativeOcrLines(groupWordsIntoLines(wordsToStamp))
+
+  const stampWord = (word: OcrWordBox, lineFontSize: number): boolean => {
+    const safeText = winAnsiSafePdfText(word.text)
+    if (!safeText) return false
+    const placement = mapOcrWordToPdfText({
+      word: { ...word, text: safeText },
+      imageWidth,
+      imageHeight,
+      pageWidth,
+      pageHeight,
+      textWidthAtSize1: font.widthOfTextAtSize(safeText, 1),
+      descenderRatio: HELVETICA_DESCENDER_RATIO,
+      lineFontSize,
+    })
+    if (!placement) return false
+    try {
+      drawInvisibleOcrText(page, font, placement)
+      return true
+    } catch {
+      // Skip glyphs Helvetica still cannot encode.
+      return false
+    }
+  }
+
+  let wordCount = 0
+  for (const line of lines) {
+    const lineSize = lineFontSizeFromHeight(line.lineHeight, imageHeight, pageHeight)
+    if (shouldStampLineAsUnit(line)) {
+      const lineText = ocrLinePlainText(line)
+      const placement = mapOcrLineToPdfText({
+        line,
+        imageWidth,
+        imageHeight,
+        pageWidth,
+        pageHeight,
+        textWidthAtSize1: font.widthOfTextAtSize(lineText || ' ', 1),
+        descenderRatio: HELVETICA_DESCENDER_RATIO,
+      })
+      if (!placement || !placement.text) continue
+      try {
+        drawInvisibleOcrText(page, font, placement)
+        wordCount += line.words.length
+      } catch {
+        // Fall through to per-word if Helvetica cannot encode the full line.
+        for (const word of line.words) {
+          if (stampWord(word, lineSize)) wordCount += 1
+        }
+      }
+      continue
+    }
+    for (const word of line.words) {
+      if (stampWord(word, lineSize)) wordCount += 1
+    }
+  }
+
+  return wordCount
+}
+
+export type FinalizeSearchablePagesResult =
+  | { ok: true; stamped: number[]; missing: number[] }
+  | { ok: false; error: string }
+
+/**
+ * Stamp every page's saved OCR words into the sidecar with one PDF load and one save.
+ * Pages that were stamped before (redo, or select boxes already on disk) are first
+ * replaced with a clean copy from the original so invisible text does not stack.
+ */
+async function finalizeOnSidecar(
   originalAbsPath: string,
-  pdfPage: number,
-  options?: StampSearchablePageOptions,
-): Promise<StampSearchablePageResult> {
-  return enqueueSidecarWrite(() => stampPageOnSidecar(originalAbsPath, pdfPage, options))
+  pdfPages: readonly number[],
+  options?: { force?: boolean },
+): Promise<FinalizeSearchablePagesResult> {
+  const pages = [...new Set(pdfPages.map((p) => Math.max(1, Math.floor(p))))].sort((a, b) => a - b)
+  if (pages.length === 0) return { ok: true, stamped: [], missing: [] }
+  const timer = createStepTimer(`finalize ${pages.length} page(s)`)
+  try {
+    const ocrResults = new Map<number, Awaited<ReturnType<typeof readSearchableOcrResult>>>()
+    const missing: number[] = []
+    for (const pageNo of pages) {
+      const result = await readSearchableOcrResult(originalAbsPath, pageNo)
+      if (result) ocrResults.set(pageNo, result)
+      else missing.push(pageNo)
+    }
+    const toStamp = pages.filter((p) => ocrResults.has(p))
+    if (toStamp.length === 0) return { ok: true, stamped: [], missing }
+
+    const sidecar = await ensureSearchableSidecar(originalAbsPath)
+    timer.mark('ensureSidecar')
+    const pdf = await PDFDocument.load(await readFile(sidecar), { ignoreEncryption: true })
+    timer.mark('pdfLibLoadSidecar')
+
+    const outOfRange = toStamp.find((p) => p > pdf.getPageCount())
+    if (outOfRange != null) {
+      return { ok: false, error: `PDF page ${outOfRange} is out of range.` }
+    }
+
+    const needsClean: number[] = []
+    for (const pageNo of toStamp) {
+      const boxesMtime = await fileMtimeMs(searchableOcrBoxesAbsolutePath(originalAbsPath, pageNo))
+      if (options?.force || boxesMtime != null) needsClean.push(pageNo)
+    }
+    if (needsClean.length > 0) {
+      const original = await PDFDocument.load(await readFile(originalAbsPath), { ignoreEncryption: true })
+      timer.mark('pdfLibLoadOriginal')
+      const copied = await pdf.copyPages(
+        original,
+        needsClean.map((p) => p - 1),
+      )
+      needsClean.forEach((pageNo, i) => {
+        pdf.removePage(pageNo - 1)
+        pdf.insertPage(pageNo - 1, copied[i]!)
+      })
+      timer.mark('replacePages')
+    }
+
+    const font = await pdf.embedFont(StandardFonts.Helvetica)
+    const selectBoxes: Array<{ pdfPage: number; words: OcrWordBox[]; imageWidth: number; imageHeight: number }> = []
+    for (const pageNo of toStamp) {
+      const result = ocrResults.get(pageNo)!
+      stampOcrWordsOnPage({
+        page: pdf.getPage(pageNo - 1),
+        font,
+        words: result.words,
+        imageWidth: result.imageWidth,
+        imageHeight: result.imageHeight,
+        pdfPage: pageNo,
+      })
+      selectBoxes.push({
+        pdfPage: pageNo,
+        words: buildSelectWordBoxes(result.words),
+        imageWidth: result.imageWidth,
+        imageHeight: result.imageHeight,
+      })
+    }
+    timer.mark('stamp')
+
+    const saved = await pdf.save({ useObjectStreams: true })
+    timer.mark('pdfLibSave')
+    await writeFileReplacingWithRetry(sidecar, saved)
+    timer.mark('writeSidecar')
+
+    // Select uses these printed boxes — not Helvetica positions from the PDF.
+    // Written after the save so a box file always means "this page is stamped".
+    for (const box of selectBoxes) {
+      await writeSearchableOcrBoxes({ originalAbsPath, ...box })
+    }
+    timer.mark('boxes')
+    timer.log()
+
+    return { ok: true, stamped: toStamp, missing }
+  } catch (err) {
+    console.error('[searchable-pdf] finalize failed', err)
+    timer.log()
+    if (
+      isFileBusyError(err) ||
+      (err instanceof Error && err.message === SEARCHABLE_PDF_FILE_OPEN_ERROR)
+    ) {
+      return { ok: false, error: SEARCHABLE_PDF_FILE_OPEN_ERROR }
+    }
+    return { ok: false, error: 'Could not save the selectable text into the book file.' }
+  }
+}
+
+/** Stamp saved OCR results into the sidecar once. Serialized per process. */
+export function finalizeSearchablePdfPages(
+  originalAbsPath: string,
+  pdfPages: readonly number[],
+  options?: { force?: boolean },
+): Promise<FinalizeSearchablePagesResult> {
+  return enqueueSidecarWrite(() => finalizeOnSidecar(originalAbsPath, pdfPages, options))
 }

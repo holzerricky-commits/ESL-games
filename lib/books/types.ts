@@ -28,6 +28,12 @@ export const BOOK_LESSON_PART_TAGS = [
   'vocabulary_strategy',
   /** Wonders Workshop poetry weeks: Literary Element */
   'literary_element',
+  /** Wonders Workshop (Grade 1 and similar): Phonics row */
+  'phonics',
+  /** Wonders Workshop: Fluency row */
+  'fluency',
+  /** Wonders Workshop: Structural Analysis row */
+  'structural_analysis',
 ] as const
 
 export type BookLessonPartTag = (typeof BOOK_LESSON_PART_TAGS)[number]

@@ -43,14 +43,12 @@ export function MarkerToolPreview({
     const barH = Math.min(barHeightPx, cssH * 0.55)
     const x = (cssW - barW) / 2
     const y = (cssH - barH) / 2
-    const r = barH / 2
 
     ctx.save()
     ctx.globalAlpha = 0.88
     ctx.fillStyle = markerColor
-    ctx.beginPath()
-    ctx.roundRect(x, y, barW, barH, r)
-    ctx.fill()
+    // Flat ends to match live/committed highlighter (butt caps).
+    ctx.fillRect(x, y, barW, barH)
     ctx.restore()
   }, [barHeightPx, markerColor])
 

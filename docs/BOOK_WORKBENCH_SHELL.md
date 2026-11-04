@@ -1,14 +1,14 @@
 # Book workbench shell — contract
 
-Last updated: 2026-09-03
+Last updated: 2026-10-09
 
-**Status:** Locked. Edit outline and story part prep share this shell.
+**Status:** Locked. Edit outline uses this shell; story part prep moved to the class reader (rule 3).
 
 **Code:** [`components/books/book-workbench-shell.tsx`](../components/books/book-workbench-shell.tsx)
 
 **Outline job today:** Still passes legacy `children` for its columns (slot migration next).
 
-**Story part desk today:** Uses `left` + `book` slots. Back returns to the parts list.
+**Story part desk today:** Does not use this shell. It runs on the class reader — see [Story part desk](#story-part-desk-class-reader) below.
 
 ---
 
@@ -58,8 +58,8 @@ Same window chrome for Outline, Story text, Checks, Vocab, etc. Swap the job; ke
 | Job | Entry | Left | Book extras |
 |-----|--------|------|-------------|
 | **Outline** | Edit outline | TOC → align → extract → review | Not-counted / hide page (align) |
-| **Story text** | Part desk · Text chip | Scan / paste / Make selectable | Text layer when ready |
-| **Checks** *(later pins)* | Part desk · Checks chip | Draft / approve checks (left scroll) | Pins on pages (Phase 3) |
+| **Story text** | `BookPartClassDesk` · Text chip | Scan / paste / Make selectable | Class text select (reloads when the selectable copy is saved) |
+| **Checks** | `BookPartClassDesk` · Checks chip | Draft / approve checks (left scroll) | Draft pins on the class reader |
 | **Vocab** *(later)* | Vocab part | Words tools | Highlights as needed |
 
 ---
@@ -68,9 +68,22 @@ Same window chrome for Outline, Story text, Checks, Vocab, etc. Swap the job; ke
 
 1. **One shell file** — do not copy left/right layout into part prep again.  
 2. **Book chrome is job-owned** — Outline page buttons must not stay visible for Text/Checks.  
-3. **Do not mount the class fullscreen reader as the shell** — shell is the Edit-outline-shaped desk; the book *viewer* inside may grow toward class fidelity over time.  
+3. **Story part jobs run on the class reader** — `BookPartClassDesk` mounts `FullscreenBookOverlay` in prep mode and puts the job in its `deskRail` (via `DeskToolRail`). Do not build another preview viewer for story pages; what you test on the desk is what class shows. This shell stays for Edit outline.  
 4. **One job visible at a time** in the left panel.  
 5. **Changing the shell** updates every job that uses it.
+
+---
+
+## Story part desk (class reader)
+
+**Code:** [`components/books/book-part-class-desk.tsx`](../components/books/book-part-class-desk.tsx)
+
+- **Book:** `FullscreenBookOverlay` with `isPrepMode`, `BOOKS_WORKSHOP_STUDENT_ID`, opened on the story's first page.
+- **Left:** `deskRail` + `deskRailWidthPx` (300, Checks 420). Opens on a **Story prep** checklist (`DeskStepList` / `DeskStepRow` with `DeskStatusChip`): Pages, Selectable pages, Story text, Reading checks. Running scans show a progress bar on their row. Each step screen has one main button; rarer actions sit in `DeskOverflowMenu` ("⋯"). Pages uses `onSpreadChange` from the reader for "Use p. N" buttons. Reading checks (`StoryCheckPackPanel` `embed`) is a list of checks that opens one at a time ("All checks" returns), with "Approve for class" pinned at the bottom; tapping a pin on the book opens that check. A row drills into that job; `DeskPanelHeader` back arrow returns to the checklist (from the checklist it returns to the parts list). Jobs stay mounted while hidden so Pages auto-confirms and scans keep running.
+- **Page jumps:** `focusPdfPage` — story start, or the active check's page on Checks.
+- **Pins:** `prepReadingCheckPins` shows draft stops; place/move results go through the reading-check hotspot events so the Checks job saves them.
+- **Selectable text:** no extra wiring — the reader reloads on `SEARCHABLE_PDF_UPDATED_EVENT`.
+- Back / Escape return to the parts list.
 
 ---
 

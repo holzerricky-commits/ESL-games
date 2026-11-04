@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import type { ScanNotice } from '@/components/books/dismissible-scan-notice'
-import type { SearchablePdfProgress } from '@/lib/books/searchable-pdf-client'
+import type { SearchablePdfProgress, SearchablePdfScope } from '@/lib/books/searchable-pdf-client'
 import {
   dismissSearchablePdfJobNotice,
   startSearchablePdfJob,
@@ -17,6 +17,7 @@ export type StartSelectableInput = {
   partId?: string | null
   title?: string
   totalPdfPages?: number | null
+  scope?: SearchablePdfScope
   force?: boolean
 }
 

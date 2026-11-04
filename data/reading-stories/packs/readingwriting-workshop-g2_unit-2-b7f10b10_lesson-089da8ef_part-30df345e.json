@@ -1,0 +1,88 @@
+{
+  "storyId": "readingwriting-workshop-g2::unit-2-b7f10b10::lesson-089da8ef::part-30df345e",
+  "bookId": "readingwriting-workshop-g2",
+  "unitId": "unit-2-b7f10b10",
+  "status": "approved",
+  "stops": [
+    {
+      "id": "stop-794bbdf3",
+      "label": "How Cats Clean",
+      "displayPage": 167,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 169,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-39c68d91",
+          "kind": "true_false",
+          "prompt": "True or False: Cats take baths with water, just like people do.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "Instead of taking baths like me,\nThey use their tongues quite handily.",
+          "evidenceHighlight": null
+        }
+      ]
+    },
+    {
+      "id": "stop-d2656c05",
+      "label": "Camel's Hump",
+      "displayPage": 168,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 170,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-588e5b8c",
+          "kind": "mcq",
+          "prompt": "What do camels have on their backs to help carry people and sacks?",
+          "choices": [
+            "A big basket",
+            "A hump",
+            "A saddle",
+            "A blanket"
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "Camels have a hump on their backs\nTo carry people and their sacks.",
+          "evidenceHighlight": null
+        }
+      ]
+    },
+    {
+      "id": "stop-7d152065",
+      "label": "How Bats Fly",
+      "displayPage": 169,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 171,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-048bc27c",
+          "kind": "true_false",
+          "prompt": "True or False: A bat flies by hearing sounds like pings.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": true,
+          "evidenceSnippet": "He flies by hearing sounds like pings,\nFlapping, flapping his leathery wings.",
+          "evidenceHighlight": "He flies by hearing sounds like pings"
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-11-03T09:25:33.940Z",
+  "approvedAt": "2026-11-03T09:25:33.940Z",
+  "autoApprovedAt": "2026-11-03T09:25:33.940Z"
+}

@@ -8,11 +8,19 @@ export interface BookCaptureRegionOverlayProps {
   onCancel: () => void
   /** Rectangle in CSS pixels relative to the overlay box (same as capture root). */
   onConfirm: (rect: { x: number; y: number; width: number; height: number }) => void
+  confirmLabel?: string
+  hint?: string
 }
 
 type Point = { x: number; y: number }
 
-export function BookCaptureRegionOverlay({ open, onCancel, onConfirm }: BookCaptureRegionOverlayProps) {
+export function BookCaptureRegionOverlay({
+  open,
+  onCancel,
+  onConfirm,
+  confirmLabel = 'Save region',
+  hint = 'Drag to select an area. Enter to confirm, Esc to cancel.',
+}: BookCaptureRegionOverlayProps) {
   const rootRef = useRef<HTMLDivElement | null>(null)
   const [dragging, setDragging] = useState(false)
   const [start, setStart] = useState<Point | null>(null)
@@ -122,11 +130,11 @@ export function BookCaptureRegionOverlay({ open, onCancel, onConfirm }: BookCapt
           disabled={!rect || rect.width < 4 || rect.height < 4}
           onClick={confirm}
         >
-          Save region
+          {confirmLabel}
         </Button>
       </div>
       <p className="pointer-events-none absolute left-1/2 top-3 w-[min(90%,24rem)] -translate-x-1/2 rounded-lg bg-black/55 px-3 py-1.5 text-center text-xs text-white backdrop-blur-sm">
-        Drag to select an area. Enter to confirm, Esc to cancel.
+        {hint}
       </p>
     </div>
   )

@@ -522,7 +522,7 @@ export function BookBottomChrome({
       className={cn(
         'pointer-events-none fixed z-[56]',
         floating
-          ? 'bottom-3 left-[var(--book-workspace-left-inset)] right-3 flex items-end justify-between gap-2 px-1'
+          ? 'bottom-3 left-[var(--book-workspace-left-inset)] right-3 px-1'
           : 'bottom-0 left-[var(--book-workspace-left-inset)] right-0',
         suppressChrome && 'invisible opacity-0',
       )}
@@ -534,15 +534,45 @@ export function BookBottomChrome({
       }
     >
       {floating ? (
-        <>
-          <div className="pointer-events-auto flex items-center gap-2">{historyCluster}</div>
-          <div className="pointer-events-auto flex items-center gap-2">{navCluster}</div>
-          <div className="pointer-events-auto flex items-center gap-2">{viewCluster}</div>
-        </>
+        <div
+          className={cn(
+            'pointer-events-none relative flex w-full items-end',
+            suppressChrome && 'invisible opacity-0',
+          )}
+          role="toolbar"
+          aria-label="Book controls"
+          aria-hidden={suppressChrome || undefined}
+        >
+          {/* Sides sit above the centered page pill so notebook/view buttons stay clickable. */}
+          <div
+            className={cn(
+              'relative z-20 shrink-0',
+              !suppressChrome && 'pointer-events-auto',
+            )}
+          >
+            {historyCluster}
+          </div>
+          <div
+            className={cn(
+              'absolute left-1/2 z-10 -translate-x-1/2',
+              !suppressChrome && 'pointer-events-auto',
+            )}
+          >
+            {navCluster}
+          </div>
+          <div
+            className={cn(
+              'relative z-20 ml-auto shrink-0',
+              !suppressChrome && 'pointer-events-auto',
+            )}
+          >
+            {viewCluster}
+          </div>
+        </div>
       ) : (
         <div
           className={cn(
-            'pointer-events-auto flex h-[var(--book-bottom-chrome-height)] w-full items-center justify-between gap-3 border-t border-white/[0.08] bg-[var(--book-reading-mat)] px-3 text-white',
+            'pointer-events-auto flex h-[var(--book-bottom-chrome-height)] w-full items-center gap-3 border-t border-white/[0.08] bg-[var(--book-reading-mat)] px-3 text-white',
             suppressChrome && 'pointer-events-none invisible opacity-0',
           )}
           role="toolbar"

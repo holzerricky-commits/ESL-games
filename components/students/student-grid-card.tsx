@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { MoreHorizontal, Trash2, Undo2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -59,6 +60,7 @@ export function StudentGridCard({
   onBreak = false,
   onRestore,
 }: StudentGridCardProps) {
+  const router = useRouter()
   const [removeOpen, setRemoveOpen] = useState(false)
   const [imageFailed, setImageFailed] = useState(false)
   const openHref = openHrefForStudent(student)
@@ -78,12 +80,19 @@ export function StudentGridCard({
           student.needsSetup && !onBreak && 'bg-[color-mix(in_srgb,var(--brand-blue)_6%,var(--surface-2))]',
           onBreak && 'opacity-90',
         )}
+        onClick={(event) => {
+          if (onBreak) return
+          const target = event.target
+          if (!(target instanceof Element)) return
+          if (target.closest('a, button, [role="menuitem"]')) return
+          router.push(openHref)
+        }}
       >
         {!onBreak ? (
           <Link href={openHref} className="absolute inset-0 z-0 rounded-[18px]" aria-label={openLabel} />
         ) : null}
 
-        <div className="relative z-[1] flex items-start justify-between gap-2">
+        <div className="pointer-events-none relative z-[1] flex items-start justify-between gap-2">
           <div className="pointer-events-none flex min-w-0 flex-1 flex-col items-start gap-3">
             <div className="relative h-16 w-16 overflow-hidden rounded-full bg-[var(--surface-3)]">
               {!imageFailed ? (
@@ -115,7 +124,7 @@ export function StudentGridCard({
             </div>
           </div>
 
-          <div className="relative z-[1] shrink-0">
+          <div className="pointer-events-auto relative z-[1] shrink-0">
             {onBreak ? (
               <div className="flex flex-col items-end gap-1">
                 <Button

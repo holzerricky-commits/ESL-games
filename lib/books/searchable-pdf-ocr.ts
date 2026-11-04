@@ -5,7 +5,15 @@ import { mkdir } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
 
-const OCR_MIN_CONFIDENCE = 40
+/** Words below this confidence are dropped — on picture pages they are mostly art fragments. */
+const OCR_MIN_CONFIDENCE = 60
+
+/**
+ * Tesseract page segmentation mode 11 (sparse text): find as much text as possible
+ * in no fixed layout. Picture books scatter text around art and in bubbles, which
+ * the default full-page layout mode reads as one garbled block.
+ */
+const TESSERACT_PSM_SPARSE_TEXT = '11'
 
 export type OcrRecognizedWord = {
   text: string
@@ -26,6 +34,7 @@ type TesseractWorker = {
       }>
     }
   }>
+  setParameters: (params: Record<string, string>) => Promise<unknown>
 }
 
 let workerPromise: Promise<TesseractWorker> | null = null
@@ -57,11 +66,16 @@ async function getWorker(): Promise<TesseractWorker> {
           options: Record<string, unknown>,
         ) => Promise<TesseractWorker>
       }
-      return createWorker('eng', 1, {
+      const worker = await createWorker('eng', 1, {
         cachePath,
         workerBlobURL: false,
         workerPath: nodeModuleFile('tesseract.js', 'src', 'worker-script', 'node', 'index.js'),
       })
+      await worker.setParameters({
+        tessedit_pageseg_mode: TESSERACT_PSM_SPARSE_TEXT,
+        preserve_interword_spaces: '1',
+      })
+      return worker
     })().catch((err: unknown) => {
       workerPromise = null
       throw err

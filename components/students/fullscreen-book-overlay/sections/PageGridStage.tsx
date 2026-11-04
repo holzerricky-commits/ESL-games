@@ -5,6 +5,7 @@ import { PdfPageThumbnail } from '@/components/students/pdf-page-thumbnail'
 import {
   computePageGridLayout,
   PAGE_GRID_THUMB_RENDER_WIDTH,
+  type PageGridLayoutOptions,
 } from '@/lib/books/page-grid-layout'
 import {
   mapPdfPageToDisplayLabel,
@@ -27,6 +28,14 @@ export interface PageGridStageProps {
   numberingMode: PageNumberingMode
   onSelectPage: (pageNumber: number) => void
   className?: string
+  /** Override auto-fit density (e.g. denser start-picker grids). */
+  layoutOptions?: PageGridLayoutOptions
+  /** PDF render width for tiles; keep stable across resize. */
+  thumbRenderWidth?: number
+  /** Tighter tile chrome for dense scan grids. */
+  compactTiles?: boolean
+  /** Student’s current place (PDF page in this unit) — distinct from selection. */
+  herePage?: number | null
 }
 
 /**
@@ -46,26 +55,35 @@ export function PageGridStage({
   numberingMode,
   onSelectPage,
   className,
+  layoutOptions,
+  thumbRenderWidth = PAGE_GRID_THUMB_RENDER_WIDTH,
+  compactTiles = false,
+  herePage = null,
 }: PageGridStageProps) {
   const rootRef = useRef<HTMLDivElement | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const [scrollRoot, setScrollRoot] = useState<HTMLDivElement | null>(null)
-  const [layout, setLayout] = useState(() => computePageGridLayout(1100))
+  const [layout, setLayout] = useState(() => computePageGridLayout(1100, layoutOptions))
 
   useLayoutEffect(() => {
     const el = rootRef.current
     if (!el) return
     const measure = () => {
-      const next = computePageGridLayout(el.clientWidth)
+      const next = computePageGridLayout(el.clientWidth, layoutOptions)
       setLayout((prev) =>
-        prev.cols === next.cols && prev.pageWidthPx === next.pageWidthPx ? prev : next,
+        prev.cols === next.cols &&
+        prev.pageWidthPx === next.pageWidthPx &&
+        prev.gapPx === next.gapPx &&
+        prev.padPx === next.padPx
+          ? prev
+          : next,
       )
     }
     measure()
     const ro = new ResizeObserver(measure)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [])
+  }, [layoutOptions])
 
   useEffect(() => {
     setScrollRoot(scrollRef.current)
@@ -74,9 +92,11 @@ export function PageGridStage({
   useEffect(() => {
     const root = scrollRef.current
     if (!root) return
-    const active = root.querySelector<HTMLElement>('[data-page-grid-active="true"]')
-    active?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-  }, [activeLeftPage, pageNumbers])
+    const target =
+      root.querySelector<HTMLElement>('[data-page-grid-active="true"]') ??
+      root.querySelector<HTMLElement>('[data-page-grid-here="true"]')
+    target?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }, [activeLeftPage, herePage, pageNumbers])
 
   const aspect = pageAspectRatio > 0.2 && pageAspectRatio < 4 ? pageAspectRatio : 1 / 1.414
 
@@ -106,6 +126,7 @@ export function PageGridStage({
           >
             {pageNumbers.map((p) => {
               const isActive = p === activeLeftPage || p === activeRightPage
+              const isHere = herePage != null && p === herePage
               const label = mapPdfPageToDisplayLabel(
                 p,
                 selectedBook,
@@ -119,27 +140,43 @@ export function PageGridStage({
                   type="button"
                   role="listitem"
                   data-page-grid-active={isActive ? 'true' : undefined}
+                  data-page-grid-here={isHere ? 'true' : undefined}
                   aria-current={isActive ? 'page' : undefined}
-                  aria-label={`Open page ${label}`}
-                  title={`Open page ${label}`}
+                  aria-label={isHere ? `Page ${label}, current place` : `Open page ${label}`}
+                  title={isHere ? `Here · page ${label}` : `Open page ${label}`}
                   onClick={() => onSelectPage(p)}
                   className={cn(
-                    'group flex w-full flex-col gap-1.5 rounded-lg p-1.5 text-left outline-none transition-colors',
+                    'group relative flex w-full flex-col text-left outline-none transition-colors',
                     'focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[#1c1c1f]',
-                    isActive
-                      ? 'bg-white/15 ring-1 ring-white/30'
-                      : 'hover:bg-white/10',
+                    compactTiles ? 'gap-1 rounded-md p-1' : 'gap-1.5 rounded-lg p-1.5',
+                    isHere
+                      ? 'bg-amber-300 ring-2 ring-amber-200 shadow-[0_0_0_1px_rgba(251,191,36,0.9)]'
+                      : isActive
+                        ? 'bg-white/15 ring-1 ring-white/30'
+                        : 'hover:bg-white/10',
                   )}
                 >
+                  {isHere ? (
+                    <span className="absolute right-1 top-1 z-[1] rounded-full bg-amber-500 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-black shadow-sm">
+                      Here
+                    </span>
+                  ) : null}
                   <div
-                    className="w-full overflow-hidden rounded-md shadow-[0_8px_24px_rgba(0,0,0,0.35)]"
+                    className={cn(
+                      'w-full overflow-hidden rounded-md',
+                      isHere
+                        ? 'ring-2 ring-amber-500/80 shadow-[0_4px_16px_rgba(245,158,11,0.45)]'
+                        : compactTiles
+                          ? 'shadow-[0_4px_12px_rgba(0,0,0,0.28)]'
+                          : 'shadow-[0_8px_24px_rgba(0,0,0,0.35)]',
+                    )}
                     style={{ aspectRatio: aspect }}
                   >
                     <PdfPageThumbnail
                       fileUrl={fileUrl}
                       unitId={unitId}
                       pageNumber={p}
-                      width={PAGE_GRID_THUMB_RENDER_WIDTH}
+                      width={thumbRenderWidth}
                       fitHeight
                       objectFit="contain"
                       scrollRoot={scrollRoot}
@@ -150,8 +187,13 @@ export function PageGridStage({
                   </div>
                   <span
                     className={cn(
-                      'truncate px-0.5 text-center text-[11px] tabular-nums leading-none',
-                      isActive ? 'font-semibold text-white' : 'font-medium text-white/55',
+                      'truncate px-0.5 text-center tabular-nums leading-none',
+                      compactTiles ? 'text-[10px]' : 'text-[11px]',
+                      isHere
+                        ? 'font-bold text-amber-950'
+                        : isActive
+                          ? 'font-semibold text-white'
+                          : 'font-medium text-white/55',
                     )}
                   >
                     {label}

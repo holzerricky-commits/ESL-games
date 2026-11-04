@@ -34,11 +34,23 @@ async function renderPageToCanvas(page: PdfPageForRender, scale: number): Promis
   return canvas
 }
 
+export type CaptureTocProgress = {
+  pdfPage: number
+  index: number
+  total: number
+  message: string
+}
+
 export async function captureTocRangeAsJpegs(
   fileUrl: string,
   from: number,
   to: number,
-  options?: { maxLongEdge?: number; quality?: number; onProgress?: (message: string) => void },
+  options?: {
+    maxLongEdge?: number
+    quality?: number
+    onProgress?: (message: string) => void
+    onPageProgress?: (info: CaptureTocProgress) => void
+  },
 ): Promise<{ images: TocPageImagePayload[]; numPages: number }> {
   if (typeof document === 'undefined') {
     throw new Error('TOC image capture requires a browser.')
@@ -61,7 +73,9 @@ export async function captureTocRangeAsJpegs(
   try {
     const total = end - start + 1
     for (let i = 0, p = start; p <= end; p++, i++) {
-      options?.onProgress?.(`Rendering TOC page ${i + 1} of ${total} for AI...`)
+      const message = `Page ${i + 1} of ${total}`
+      options?.onProgress?.(message)
+      options?.onPageProgress?.({ pdfPage: p, index: i + 1, total, message })
       const page = await pdf.getPage(p)
       const vp1 = page.getViewport({ scale: 1 })
       const scale = Math.min(maxLongEdge / Math.max(vp1.width, vp1.height), 2.5)

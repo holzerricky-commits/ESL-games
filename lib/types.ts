@@ -232,6 +232,9 @@ export interface StudentClassSession {
 /** Active = on the main roster; on_break = hidden but kept (history preserved, schedule freed). */
 export type StudentRosterStatus = 'active' | 'on_break'
 
+/** In class shows as a class tab. Paused and finished stay on the student shelf. */
+export type StudentBookAssignmentStatus = 'in_class' | 'paused' | 'finished'
+
 export interface StudentRecord {
   id: string
   name: string
@@ -267,6 +270,11 @@ export interface StudentRecord {
   mapPathStartSegment?: { points: Array<{ xPct: number; yCanvasPct: number }> }
   /** Teacher-assigned curriculum books for local reader flow. */
   assignedBookIds?: string[]
+  /**
+   * Which assigned books are on the class desk.
+   * Missing ids are in class. Paused and finished stay on the shelf with their place.
+   */
+  bookAssignmentStatus?: Record<string, StudentBookAssignmentStatus>
   /** Teacher-assigned curriculum units (book+unit reference). */
   assignedUnitRefs?: Array<{ bookId: string; unitId: string }>
   /**

@@ -2,7 +2,6 @@
 
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
-import type { LessonBoardPageOrientation } from '@/lib/books/lesson-board-types'
 import { LessonBoardNewPageMenu } from '@/components/students/fullscreen-book-overlay/sections/LessonBoardNewPageMenu'
 import { cn } from '@/lib/utils'
 import { WHITEBOARD_FOOTER_CHROME } from '../constants'
@@ -30,12 +29,14 @@ function ChromeIconButton({
 export interface LessonBoardFooterProps {
   suppressChrome?: boolean
   deferChromeActions?: boolean
-  pageOrientation?: LessonBoardPageOrientation
   lessonBoardPageIndex?: number
   lessonBoardPageCount?: number
-  onNewLessonBoardPage?: (orientation: LessonBoardPageOrientation) => void
+  onNewLessonBoardPage?: () => void
   onPrevLessonBoardPage?: () => void
   onNextLessonBoardPage?: () => void
+  /** Opens the in-notebook pages TOC (tap the N/M label). */
+  onTogglePageList?: () => void
+  pageListOpen?: boolean
 }
 
 /**
@@ -44,20 +45,18 @@ export interface LessonBoardFooterProps {
 export function LessonBoardFooter({
   suppressChrome = false,
   deferChromeActions = false,
-  pageOrientation = 'standard',
   lessonBoardPageIndex = 0,
   lessonBoardPageCount = 1,
   onNewLessonBoardPage,
   onPrevLessonBoardPage,
   onNextLessonBoardPage,
+  onTogglePageList,
+  pageListOpen = false,
 }: LessonBoardFooterProps) {
-  const isWide = pageOrientation === 'wide'
   const pageNavEnabled = lessonBoardPageCount > 0 && Boolean(onNewLessonBoardPage)
   const canGoPrev = lessonBoardPageIndex > 0
   const canGoNext = lessonBoardPageIndex < lessonBoardPageCount - 1
-  const pageLabel = isWide
-    ? `Page ${lessonBoardPageIndex + 1} / ${lessonBoardPageCount}`
-    : `${lessonBoardPageIndex + 1}/${lessonBoardPageCount}`
+  const pageLabel = `${lessonBoardPageIndex + 1}/${lessonBoardPageCount}`
   const pageAriaLabel = `Page ${lessonBoardPageIndex + 1} of ${lessonBoardPageCount}`
 
   if (suppressChrome) {
@@ -93,16 +92,30 @@ export function LessonBoardFooter({
             >
               <ChevronLeft className={CHROME_ICON} aria-hidden />
             </ChromeIconButton>
-            <span
-              className={cn(
-                'select-none text-center text-[11px] font-medium tabular-nums text-[#4B5563]',
-                isWide ? 'min-w-[4.5rem] px-0.5' : 'min-w-[2rem] px-0.5',
-              )}
-              aria-live="polite"
-              aria-label={pageAriaLabel}
-            >
-              {pageLabel}
-            </span>
+            {onTogglePageList ? (
+              <button
+                type="button"
+                onClick={onTogglePageList}
+                className={cn(
+                  'min-w-[2rem] select-none rounded-full px-1.5 py-0.5 text-center text-[11px] font-medium tabular-nums text-[#4B5563] transition-colors hover:bg-black/[0.05] hover:text-[#111827]',
+                  pageListOpen && 'bg-black/[0.06] text-[#111827]',
+                )}
+                aria-live="polite"
+                aria-label={pageListOpen ? 'Close pages list' : `Pages — ${pageAriaLabel}. Open list`}
+                aria-expanded={pageListOpen}
+                title="Pages"
+              >
+                {pageLabel}
+              </button>
+            ) : (
+              <span
+                className="min-w-[2rem] select-none px-0.5 text-center text-[11px] font-medium tabular-nums text-[#4B5563]"
+                aria-live="polite"
+                aria-label={pageAriaLabel}
+              >
+                {pageLabel}
+              </span>
+            )}
             <ChromeIconButton
               onClick={onNextLessonBoardPage}
               disabled={!canGoNext}

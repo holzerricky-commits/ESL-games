@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react'
+import type { StudentBookAssignmentStatus } from '@/lib/types'
 import type { PageNumberingMode } from '@/lib/books/page-numbering'
 import type { PasteImageOutcome } from '@/lib/books/clipboard-image'
+import type { ReadingCheckStop } from '@/lib/books/reading-check-pack'
 
 /** Paste pictures onto the book spread (spread session layer). */
 export type SpreadImagePasteHandle = {
@@ -17,6 +19,8 @@ export interface FullscreenBookOverlayProps {
   studentId: string
   activeClassSessionId?: string | null
   assignedBookIds: string[]
+  /** When set, class tabs use in-class books only. Missing ids stay in class. */
+  bookAssignmentStatus?: Record<string, StudentBookAssignmentStatus>
   assignedUnitRefs?: Array<{ bookId: string; unitId: string }>
   curriculumHistory?: Array<{
     id: string
@@ -66,4 +70,24 @@ export interface FullscreenBookOverlayProps {
   deskRail?: ReactNode
   deskRailOpen?: boolean
   onDeskRailOpenChange?: (open: boolean) => void
+  /** Width the book is pushed by while `deskRail` is open. Defaults to the icon rail width. */
+  deskRailWidthPx?: number
+  /** Turn to the spread holding this PDF page whenever the value changes. */
+  focusPdfPage?: number | null
+  /** Prep desk: show draft check stops as pins instead of the approved live pack. */
+  prepReadingCheckPins?: PrepReadingCheckPins | null
+  /** Fired when the visible spread changes (PDF pages; right is null on a single page). */
+  onSpreadChange?: (spread: BookReaderSpread) => void
+}
+
+export interface BookReaderSpread {
+  leftPdfPage: number
+  rightPdfPage: number | null
+}
+
+export interface PrepReadingCheckPins {
+  storyId: string
+  stops: readonly ReadingCheckStop[]
+  activeStopId: string | null
+  onSelectStop?: (stopId: string) => void
 }

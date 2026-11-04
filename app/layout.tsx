@@ -1,5 +1,15 @@
 import type { Metadata } from 'next'
-import { Caveat, Comic_Neue, Fredoka, Inter, Kalam, Lexend, Nunito, Space_Mono } from 'next/font/google'
+import {
+  Barlow_Condensed,
+  Caveat,
+  Comic_Neue,
+  Fredoka,
+  Inter,
+  Kalam,
+  Lexend,
+  Nunito,
+  Space_Mono,
+} from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 import { Toaster } from 'sonner'
@@ -36,6 +46,11 @@ const caveat = Caveat({
   variable: '--font-caveat',
 })
 const spaceMono = Space_Mono({ subsets: ['latin'], weight: ['400', '700'], variable: '--font-space-mono' })
+const barlowCondensed = Barlow_Condensed({
+  subsets: ['latin'],
+  weight: ['500', '600'],
+  variable: '--font-barlow-condensed',
+})
 
 export const metadata: Metadata = {
   title: 'ESL Classroom Games - Teacher Ricky',
@@ -68,7 +83,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${inter.variable} ${nunito.variable} ${lexend.variable} ${fredoka.variable} ${comicNeue.variable} ${kalam.variable} ${caveat.variable} ${spaceMono.variable} font-sans antialiased`}
+        className={`${inter.variable} ${nunito.variable} ${lexend.variable} ${fredoka.variable} ${comicNeue.variable} ${kalam.variable} ${caveat.variable} ${spaceMono.variable} ${barlowCondensed.variable} font-sans antialiased`}
         suppressHydrationWarning
       >
         {children}

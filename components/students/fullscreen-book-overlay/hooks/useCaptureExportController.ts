@@ -143,6 +143,37 @@ export function useCaptureExportController(args: UseCaptureExportControllerArgs)
     [args, captureFormat, formatWatermarkDateLine, hideChromeForCapture, jpegQuality, watermarkEnabled],
   )
 
+  /** Crop of what is on the book area (no watermark, no upload), e.g. a picture for a vault card. */
+  const captureRegionToBlob = useCallback(
+    async (regionCss: Pick<DOMRect, 'x' | 'y' | 'width' | 'height'>): Promise<Blob | null> => {
+      const rootEl = args.pageAreaRef.current
+      if (!rootEl) {
+        toast.error('Nothing to capture yet.')
+        return null
+      }
+      setCaptureBusy(true)
+      const prevSelect = args.annotationMode === 'select'
+      if (prevSelect) args.setAnnotationMode('pen')
+      const useSuppress = hideChromeForCapture
+      if (useSuppress) setSuppressChrome(true)
+      await settleLayout(); await settleLayout()
+      try {
+        const canvas = await captureElementToCanvas(rootEl)
+        const cropPx = domRectToCanvasCrop(canvas, regionCss, rootEl.offsetWidth, rootEl.offsetHeight)
+        return await canvasToBlob(cropCanvas(canvas, cropPx), 'png')
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Could not cut that part of the page.')
+        return null
+      } finally {
+        if (useSuppress) setSuppressChrome(false)
+        if (prevSelect) args.setAnnotationMode('select')
+        setCaptureBusy(false)
+        await settleLayout()
+      }
+    },
+    [args, hideChromeForCapture],
+  )
+
   const runPdfPacketExport = useCallback(async (): Promise<void> => {
     requestSpreadSessionFlush()
     if (args.isWhiteboardOpen) {
@@ -272,6 +303,7 @@ export function useCaptureExportController(args: UseCaptureExportControllerArgs)
     pdfProgressLabel, setPdfProgressLabel,
     hasLastImageCapture, setHasLastImageCapture,
     runImageCapture,
+    captureRegionToBlob,
     runPdfPacketExport,
     copyLastCaptureToClipboard,
   }

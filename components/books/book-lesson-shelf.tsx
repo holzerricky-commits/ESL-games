@@ -49,7 +49,7 @@ interface BookLessonShelfProps {
   onOutlineBook: () => void
   /** Outline a specific volume (multi-PDF books). */
   onOutlineVolume?: (volumeId: string) => void
-  /** Cut a stacked single-PDF book into unit files. */
+  /** Cut a stacked single-PDF book into volume files. */
   onCutIntoUnits?: () => void
   activeTab: BookShelfTab
   onTabChange: (tab: BookShelfTab) => void
@@ -107,7 +107,14 @@ export function BookLessonShelf({
   const showCover =
     Boolean(onCoverUpdated) && (Boolean(book.units[0]?.filePath) || bookHasCustomCover(book))
   const showAddUnits = Boolean(onUnitsUploaded) && book.units.length === 0
-  const lessonCount = rows.reduce((n, row) => n + row.cards.length, 0)
+  const lessonCount = useMemo(
+    () =>
+      rows.reduce((n, row) => {
+        const lessons = row.unit.lessons ?? []
+        return n + (lessons.length > 0 ? lessons.length : row.cards.length)
+      }, 0),
+    [rows],
+  )
   const [pageCountByFile, setPageCountByFile] = useState<Record<string, number>>({})
   const browsableUnits = useMemo(
     () => book.units.filter((unit) => Boolean(unit.filePath?.trim())),
@@ -247,7 +254,7 @@ export function BookLessonShelf({
           {canCutIntoUnits ? (
             <Button type="button" size="sm" variant="outline" className="h-8 gap-1.5" onClick={onCutIntoUnits}>
               <Scissors className="h-3.5 w-3.5" aria-hidden />
-              Cut into units
+              Cut into volumes
             </Button>
           ) : null}
           {onOpenFocusGrid && !needsOutline ? (
@@ -342,7 +349,7 @@ export function BookLessonShelf({
                 {canCutIntoUnits ? (
                   <Button type="button" variant="outline" onClick={onCutIntoUnits} className="gap-1.5">
                     <Scissors className="h-4 w-4" aria-hidden />
-                    Cut into units
+                    Cut into volumes
                   </Button>
                 ) : null}
               </div>
@@ -384,39 +391,46 @@ export function BookLessonShelf({
                   </Button>
                 </div>
               ) : (
-                section.rows.map((row) => (
-                  <section key={row.unit.id} className="space-y-3">
-                    <div className="flex items-baseline justify-between gap-3 px-0.5">
-                      <h3 className="text-[17px] font-semibold tracking-tight text-foreground">
-                        {row.unit.title}
-                      </h3>
-                      <span className="text-[12px] text-muted-foreground">
-                        {row.cards.length}{' '}
-                        {row.cards.length === 1
-                          ? isPresentation || row.cards[0]?.kind === 'unit'
-                            ? isPresentation
-                              ? 'deck'
-                              : 'unit'
-                            : 'lesson'
-                          : isPresentation || row.cards.every((c) => c.kind === 'unit')
-                            ? isPresentation
-                              ? 'decks'
-                              : 'units'
-                            : 'lessons'}
-                      </span>
-                    </div>
-                    <div className="-mx-1 overflow-x-auto pb-2 pt-1 [scrollbar-width:thin]">
-                      <ul className="flex w-max flex-row items-start gap-4 px-1">
-                        {row.cards.map((card) => (
-                          <li key={card.id} className="w-[160px] shrink-0">
+                section.rows.map((row) => {
+                  const unitLessons = row.unit.lessons ?? []
+                  const showLessonList = !isPresentation && unitLessons.length > 0
+                  const coverCard = row.cards[0]
+                  const lessonLabelCount = showLessonList ? unitLessons.length : row.cards.length
+                  const lessonWord =
+                    isPresentation
+                      ? lessonLabelCount === 1
+                        ? 'deck'
+                        : 'decks'
+                      : showLessonList
+                        ? lessonLabelCount === 1
+                          ? 'lesson'
+                          : 'lessons'
+                        : lessonLabelCount === 1
+                          ? 'unit'
+                          : 'units'
+
+                  return (
+                    <section key={row.unit.id} className="space-y-3">
+                      <div className="flex items-baseline justify-between gap-3 px-0.5">
+                        <h3 className="text-[17px] font-semibold tracking-tight text-foreground">
+                          {row.unit.title}
+                        </h3>
+                        <span className="text-[12px] text-muted-foreground">
+                          {lessonLabelCount} {lessonWord}
+                        </span>
+                      </div>
+                      {showLessonList && coverCard ? (
+                        <div className="flex w-full min-w-0 items-start gap-5 px-0.5">
+                          <div className="w-[160px] shrink-0">
                             <LessonShelfCard
                               book={book}
                               unit={row.unit}
-                              card={card}
+                              card={coverCard}
                               totalPdfPages={pageCountByFile[row.unit.filePath] ?? null}
+                              hideTitle
                               onOpen={
-                                card.kind === 'lesson' && card.lessonId && onOpenLesson
-                                  ? () => onOpenLesson(row.unit.id, card.lessonId!)
+                                coverCard.lessonId && onOpenLesson
+                                  ? () => onOpenLesson(row.unit.id, coverCard.lessonId!)
                                   : undefined
                               }
                               onOpenInBook={
@@ -425,12 +439,66 @@ export function BookLessonShelf({
                                   : undefined
                               }
                             />
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  </section>
-                ))
+                          </div>
+                          <ul className="min-w-0 flex-1 space-y-1 pt-1">
+                            {unitLessons.map((lesson, lessonIndex) => (
+                              <li key={lesson.id}>
+                                {onOpenLesson ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => onOpenLesson(row.unit.id, lesson.id)}
+                                    className="flex w-full min-w-0 items-baseline gap-2 rounded-md px-2 py-1.5 text-left outline-none transition hover:bg-[var(--surface-2)] focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                                  >
+                                    <span className="shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                                      L{lessonIndex + 1}
+                                    </span>
+                                    <span className="truncate text-[14px] font-medium leading-snug tracking-tight text-foreground">
+                                      {lesson.title}
+                                    </span>
+                                  </button>
+                                ) : (
+                                  <div className="flex min-w-0 items-baseline gap-2 px-2 py-1.5">
+                                    <span className="shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                                      L{lessonIndex + 1}
+                                    </span>
+                                    <span className="truncate text-[14px] font-medium leading-snug tracking-tight text-foreground">
+                                      {lesson.title}
+                                    </span>
+                                  </div>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : (
+                        <div className="-mx-1 overflow-x-auto pb-2 pt-1 [scrollbar-width:thin]">
+                          <ul className="flex w-max flex-row items-start gap-4 px-1">
+                            {row.cards.map((card) => (
+                              <li key={card.id} className="w-[160px] shrink-0">
+                                <LessonShelfCard
+                                  book={book}
+                                  unit={row.unit}
+                                  card={card}
+                                  totalPdfPages={pageCountByFile[row.unit.filePath] ?? null}
+                                  onOpen={
+                                    card.lessonId && onOpenLesson
+                                      ? () => onOpenLesson(row.unit.id, card.lessonId!)
+                                      : undefined
+                                  }
+                                  onOpenInBook={
+                                    row.unit.filePath?.trim()
+                                      ? (pdfPage) => openLessonInBook(row.unit.id, pdfPage)
+                                      : undefined
+                                  }
+                                />
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </section>
+                  )
+                })
               )}
             </div>
           ))}
@@ -447,6 +515,7 @@ function LessonShelfCard({
   totalPdfPages,
   onOpen,
   onOpenInBook,
+  hideTitle = false,
 }: {
   book: BookRecord
   unit: BookUnitRecord
@@ -454,12 +523,15 @@ function LessonShelfCard({
   totalPdfPages: number | null
   onOpen?: () => void
   onOpenInBook?: (pdfPage: number) => void
+  /** Cover-only when lesson titles are listed beside the thumb. */
+  hideTitle?: boolean
 }) {
   const pageNumber = resolveLessonShelfCardPdfPage(book, unit, card, totalPdfPages)
   const filePath = unit.filePath?.trim() || null
-  const hasParts =
-    card.kind === 'lesson' &&
-    (unit.lessons?.find((l) => l.id === card.lessonId)?.parts?.length ?? 0) > 0
+  const coverLesson = card.lessonId
+    ? unit.lessons?.find((l) => l.id === card.lessonId)
+    : undefined
+  const hasParts = Boolean(coverLesson?.parts?.length)
 
   const thumb = (
     <div
@@ -512,26 +584,30 @@ function LessonShelfCard({
       )}
       {filePath && onOpenInBook ? (
         <BookBrowseCornerButton
-          label="Open book at this lesson"
+          label="Open book at this unit"
           onClick={() => onOpenInBook(pageNumber)}
         />
       ) : null}
-      <div className="min-w-0 space-y-0.5 px-0.5">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{card.indexLabel}</p>
-        {onOpen ? (
-          <button
-            type="button"
-            onClick={onOpen}
-            className="line-clamp-2 w-full text-left text-[13px] font-medium leading-snug tracking-tight text-foreground transition hover:opacity-80"
-          >
-            {card.title}
-          </button>
-        ) : (
-          <p className="line-clamp-2 text-[13px] font-medium leading-snug tracking-tight text-foreground">
-            {card.title}
+      {hideTitle ? null : (
+        <div className="min-w-0 space-y-0.5 px-0.5">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            {card.indexLabel}
           </p>
-        )}
-      </div>
+          {onOpen ? (
+            <button
+              type="button"
+              onClick={onOpen}
+              className="line-clamp-2 w-full text-left text-[13px] font-medium leading-snug tracking-tight text-foreground transition hover:opacity-80"
+            >
+              {card.title}
+            </button>
+          ) : (
+            <p className="line-clamp-2 text-[13px] font-medium leading-snug tracking-tight text-foreground">
+              {card.title}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   )
 }

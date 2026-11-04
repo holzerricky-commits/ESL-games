@@ -74,10 +74,9 @@ function buildMarkerCursor(w: number, color: string): { svg: string; hotX: numbe
   const svgH = barH + pad * 2
   const x = pad
   const y = pad
-  const cornerRx = Math.max(1, Math.min(3, Math.round(barW * 0.35)))
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${svgW}" height="${svgH}" viewBox="0 0 ${svgW} ${svgH}">` +
-    `<rect x="${x}" y="${y}" width="${barW}" height="${barH}" rx="${cornerRx}" ry="${cornerRx}" fill="${color}" stroke="#ffffff" stroke-width="${INK_RING_STROKE_PX}"/>` +
+    `<rect x="${x}" y="${y}" width="${barW}" height="${barH}" fill="${color}" stroke="#ffffff" stroke-width="${INK_RING_STROKE_PX}"/>` +
     `</svg>`
   return { svg, hotX: Math.round(svgW / 2), hotY: Math.round(svgH / 2) }
 }
@@ -181,7 +180,7 @@ export function buildAnnotationToolCursor(params: {
 
   const w = clampCursorPx(params.widthPx)
   const color = params.color ?? '#171717'
-  const cacheKey = `v5:${params.tool}:${w}:${color}`
+  const cacheKey = `v6:${params.tool}:${w}:${color}`
   const hit = cursorCache.get(cacheKey)
   if (hit) return hit
 
@@ -207,12 +206,25 @@ export function resolveAnnotationToolCursor(
     color?: string
     penStrokeProfile?: PenStrokeProfile
     eyedropperVariant?: EyedropperVariant
+    /** Freehand line uses shared shape stroke thickness. */
+    shapeStrokeWidthScale?: number
   },
 ): string | undefined {
   if (mode === 'select') return undefined
   if (mode === 'text') return 'text'
   if (mode === 'eyedropper') {
     return resolveEyedropperCursor(options?.eyedropperVariant ?? 'sample')
+  }
+  if (mode === 'freehand-line') {
+    const scale =
+      options?.shapeStrokeWidthScale != null && Number.isFinite(options.shapeStrokeWidthScale)
+        ? options.shapeStrokeWidthScale
+        : 1
+    return buildAnnotationToolCursor({
+      tool: 'pen',
+      widthPx: penCursorWidthPx(scale, 'pen'),
+      color: options?.color,
+    })
   }
   const tool = strokeToolForToolbarMode(mode)
   if (!tool) return undefined

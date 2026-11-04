@@ -28,6 +28,18 @@ let hydratePromise: Promise<boolean> | null = null
 let persistTimer: ReturnType<typeof setTimeout> | null = null
 let pendingPayload: BookAnnotationsDiskPayload | null = null
 
+/** Monotonic generation for full-payload disk writes. */
+let persistGeneration = 0
+/** Generation of the in-flight (or last started) PUT. */
+let inFlightGeneration = 0
+let inFlightPromise: Promise<void> | null = null
+/** Newest payload waiting for the in-flight PUT to finish. */
+let queuedPersist: {
+  payload: BookAnnotationsDiskPayload
+  generation: number
+  keepalive?: boolean
+} | null = null
+
 export const BOOK_ANNOTATIONS_HYDRATED_EVENT = 'esl-book-annotations-hydrated'
 
 function notifyBookAnnotationsHydrated(): void {
@@ -76,9 +88,13 @@ function readBrowserAnnotationPayload(): BookAnnotationsDiskPayload {
 
 /** Sync mirror so refresh can recover ink if the PC write did not finish. */
 export function mirrorInkSessionsToBrowserStorage(args: {
+  annotations?: BookAnnotationsDiskRoot
   whiteboardSessions?: Record<string, unknown>
   spreadSessions?: Record<string, unknown>
 }): void {
+  if (args.annotations) {
+    writeLocalStorageJsonObject(ANNOTATION_STORAGE_KEY_V2, args.annotations as Record<string, unknown>)
+  }
   if (args.whiteboardSessions) {
     writeLocalStorageJsonObject(WHITEBOARD_INK_SESSION_STORAGE_KEY, args.whiteboardSessions)
   }
@@ -87,14 +103,12 @@ export function mirrorInkSessionsToBrowserStorage(args: {
   }
 }
 
-function clearBrowserAnnotationKeys(): void {
-  if (typeof window === 'undefined') return
-  try {
-    localStorage.removeItem(ANNOTATION_STORAGE_KEY_V2)
-    // Keep spread/whiteboard browser mirrors as unload/refresh safety nets.
-  } catch {
-    /* ignore */
-  }
+function mirrorFullPayloadToBrowser(payload: BookAnnotationsDiskPayload): void {
+  mirrorInkSessionsToBrowserStorage({
+    annotations: payload.annotations,
+    whiteboardSessions: payload.whiteboardSessions,
+    spreadSessions: payload.spreadSessions,
+  })
 }
 
 async function persistPayloadToDisk(
@@ -113,6 +127,86 @@ async function persistPayloadToDisk(
   }
 }
 
+/**
+ * Serialize full-payload PUTs. Only the newest generation may land on disk;
+ * concurrent flushes queue behind the in-flight write.
+ */
+function enqueueDiskPersist(
+  payload: BookAnnotationsDiskPayload,
+  options?: { keepalive?: boolean; awaitCompletion?: boolean },
+): Promise<void> {
+  const generation = ++persistGeneration
+  mirrorFullPayloadToBrowser(payload)
+
+  if (inFlightPromise) {
+    queuedPersist = {
+      payload,
+      generation,
+      keepalive: options?.keepalive,
+    }
+    if (options?.awaitCompletion) {
+      return inFlightPromise.then(() => waitForPersistIdle())
+    }
+    return inFlightPromise.then(() => undefined).catch(() => undefined)
+  }
+
+  return startDiskPersist(payload, generation, options)
+}
+
+async function waitForPersistIdle(): Promise<void> {
+  while (inFlightPromise) {
+    try {
+      await inFlightPromise
+    } catch {
+      /* surfaced by callers that care */
+    }
+  }
+}
+
+function startDiskPersist(
+  payload: BookAnnotationsDiskPayload,
+  generation: number,
+  options?: { keepalive?: boolean; awaitCompletion?: boolean },
+): Promise<void> {
+  inFlightGeneration = generation
+  const run = (async () => {
+    try {
+      // Skip network if a newer generation already replaced this one in the queue.
+      if (queuedPersist && queuedPersist.generation > generation) {
+        return
+      }
+      await persistPayloadToDisk(payload, { keepalive: options?.keepalive })
+    } finally {
+      inFlightPromise = null
+      const next = queuedPersist
+      queuedPersist = null
+      if (next && next.generation >= inFlightGeneration) {
+        // Fire-and-follow the newest queued body (may itself queue further).
+        void startDiskPersist(next.payload, next.generation, {
+          keepalive: next.keepalive,
+        }).catch((err) => {
+          if (!options?.awaitCompletion) {
+            const msg =
+              err instanceof Error ? err.message : 'Could not save book annotations to disk.'
+            toast.error(msg)
+          }
+        })
+      }
+    }
+  })()
+
+  inFlightPromise = run
+
+  if (options?.awaitCompletion) {
+    return run.then(() => waitForPersistIdle())
+  }
+
+  return run.catch((err) => {
+    const msg = err instanceof Error ? err.message : 'Could not save book annotations to disk.'
+    toast.error(msg)
+  })
+}
+
 function schedulePersist(payload: BookAnnotationsDiskPayload): void {
   pendingPayload = payload
   if (persistTimer) clearTimeout(persistTimer)
@@ -121,10 +215,7 @@ function schedulePersist(payload: BookAnnotationsDiskPayload): void {
     const next = pendingPayload
     pendingPayload = null
     if (!next) return
-    void persistPayloadToDisk(next).catch((err) => {
-      const msg = err instanceof Error ? err.message : 'Could not save book annotations to disk.'
-      toast.error(msg)
-    })
+    void enqueueDiskPersist(next)
   }, resolveDiskPersistDebounceMs())
 }
 
@@ -139,10 +230,7 @@ export function setBookAnnotationsDiskCache(
   options?: { persist?: boolean },
 ): void {
   cache = normalizeBookAnnotationsDiskPayload(payload)
-  mirrorInkSessionsToBrowserStorage({
-    whiteboardSessions: cache.whiteboardSessions,
-    spreadSessions: cache.spreadSessions,
-  })
+  mirrorFullPayloadToBrowser(cache)
   if (diskActive && options?.persist !== false) {
     schedulePersist(cache)
   }
@@ -151,6 +239,7 @@ export function setBookAnnotationsDiskCache(
 export function setAnnotationsRootOnDiskCache(annotations: BookAnnotationsDiskRoot): void {
   const next = { ...ensureCache(), annotations }
   cache = next
+  mirrorInkSessionsToBrowserStorage({ annotations })
   if (diskActive) schedulePersist(next)
 }
 
@@ -177,11 +266,7 @@ export function flushBookAnnotationsToDisk(): void {
   const payload = pendingPayload ?? cache
   pendingPayload = null
   if (!payload) return
-  mirrorInkSessionsToBrowserStorage({
-    whiteboardSessions: payload.whiteboardSessions,
-    spreadSessions: payload.spreadSessions,
-  })
-  void persistPayloadToDisk(payload, { keepalive: true }).catch(() => {})
+  void enqueueDiskPersist(payload, { keepalive: true })
 }
 
 /** Awaitable flush for end-class paths. */
@@ -193,12 +278,11 @@ export async function flushBookAnnotationsToDiskAsync(): Promise<void> {
   }
   const payload = pendingPayload ?? cache
   pendingPayload = null
-  if (!payload) return
-  mirrorInkSessionsToBrowserStorage({
-    whiteboardSessions: payload.whiteboardSessions,
-    spreadSessions: payload.spreadSessions,
-  })
-  await persistPayloadToDisk(payload)
+  if (!payload) {
+    await waitForPersistIdle()
+    return
+  }
+  await enqueueDiskPersist(payload, { awaitCompletion: true })
 }
 
 export async function hydrateBookAnnotationsFromDisk(): Promise<boolean> {
@@ -219,7 +303,6 @@ export async function hydrateBookAnnotationsFromDisk(): Promise<boolean> {
       if (isBookAnnotationsDiskPayloadEmpty(payload) && !isBookAnnotationsDiskPayloadEmpty(browser)) {
         payload = browser
         await persistPayloadToDisk(payload)
-        clearBrowserAnnotationKeys()
         migrated = true
       } else {
         const merged = mergeBrowserInkSafetyNetIntoPayload(payload, browser)
@@ -231,10 +314,8 @@ export async function hydrateBookAnnotationsFromDisk(): Promise<boolean> {
 
       cache = payload
       diskActive = true
-      mirrorInkSessionsToBrowserStorage({
-        whiteboardSessions: payload.whiteboardSessions,
-        spreadSessions: payload.spreadSessions,
-      })
+      // Keep browser mirrors as unload/refresh safety nets (page marks + sessions).
+      mirrorFullPayloadToBrowser(payload)
       notifyBookAnnotationsHydrated()
 
       if (migrated) {
@@ -254,6 +335,26 @@ export async function hydrateBookAnnotationsFromDisk(): Promise<boolean> {
 
 export async function ensureBookAnnotationsHydrated(): Promise<boolean> {
   return hydrateBookAnnotationsFromDisk()
+}
+
+/** Test-only: reset module state between vitest cases. */
+export function __resetBookAnnotationsDiskClientForTests(): void {
+  diskActive = false
+  cache = null
+  hydratePromise = null
+  if (persistTimer) clearTimeout(persistTimer)
+  persistTimer = null
+  pendingPayload = null
+  persistGeneration = 0
+  inFlightGeneration = 0
+  inFlightPromise = null
+  queuedPersist = null
+}
+
+/** Test-only: mark disk mode active without hydrating from the network. */
+export function __activateBookAnnotationsDiskForTests(payload?: BookAnnotationsDiskPayload): void {
+  cache = normalizeBookAnnotationsDiskPayload(payload ?? emptyBookAnnotationsDiskPayload())
+  diskActive = true
 }
 
 if (typeof window !== 'undefined') {

@@ -5,6 +5,8 @@ describe('resolveAnnotationRailToolSlot', () => {
   it('maps drawing modes to rail slots', () => {
     expect(resolveAnnotationRailToolSlot('pen')).toBe('pen')
     expect(resolveAnnotationRailToolSlot('marker')).toBe('marker')
+    expect(resolveAnnotationRailToolSlot('line')).toBe('lines')
+    expect(resolveAnnotationRailToolSlot('arrow')).toBe('lines')
     expect(resolveAnnotationRailToolSlot('rect')).toBe('shapes')
     expect(resolveAnnotationRailToolSlot('text')).toBe('text')
     expect(resolveAnnotationRailToolSlot('select')).toBe('select')

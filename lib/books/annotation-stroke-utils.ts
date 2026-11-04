@@ -6,6 +6,7 @@ export function strokeToolForToolbarMode(
   mode: BookAnnotationInteractionMode,
 ): StrokeTool | null {
   if (mode === 'pen' || mode === 'marker' || mode === 'eraser-line') return mode
+  if (mode === 'freehand-line') return 'pen'
   if (mode === 'eraser') return 'eraser'
   return null
 }

@@ -14,7 +14,7 @@ Last updated: 2026-09-18
               → 4 copy settle   ← current
 ```
 
-Page model (Standard / Wide, New page, ink) stays as built in `LESSON_BOARD_PHASED_PLAN.md`. Do not reopen that work here.
+Page model (one Standard page kind, New page, ink) stays as built in `LESSON_BOARD_PHASED_PLAN.md`. Wide pages removed — do not reintroduce.
 
 ---
 
@@ -22,7 +22,7 @@ Page model (Standard / Wide, New page, ink) stays as built in `LESSON_BOARD_PHAS
 
 - Strip Notebook chip + left-rail board button + header dock/float/minimize already exist
 - Tab (notebook Focus) hides the book and keeps the PDF warm
-- Pin = slot; Overlay = floating Standard page; Wide pages cover the spread
+- Pin = slot; Overlay = floating page
 - Ink store today: `wb:session:local:{bookId}:{unitId}` (no student id on the key)
 - Board links today: scoped to student + book + unit; payload is PDF page + spot only
 - Boards menu lists per-book notebooks for this student
@@ -57,7 +57,7 @@ Page model (Standard / Wide, New page, ink) stays as built in `LESSON_BOARD_PHAS
 - [x] Strip visuals: Park = off; Pin/Overlay = present but **book** stays selected; Tab = Notebook selected, books not.
 - [x] Left rail: Park/closed → Pin; Pin/Overlay → Park; Tab → Pin. Never Tab. Restore from Park is always Pin.
 - [x] Rail label / title / aria: **Notebook** (Pin / Hide), not “lesson board”.
-- [x] Header: **Pin to book** / **Overlay on book** / **Hide notebook**. Overlay still exits Tab. Wide pages still cannot Overlay.
+- [x] Header: **Pin to book** / **Overlay on book** / **Hide notebook**. Overlay still exits Tab.
 - [x] `W` = rail (Pin / Park). Do **not** close the session.
 - [x] `Esc` on an open notebook **Parks** (does not destroy the session). Book overlay close still goes to the yellow shelf.
 - [x] Remember Pin vs Overlay vs Park vs Tab for the open class (refresh comes back to that layout).
@@ -80,7 +80,7 @@ Page model (Standard / Wide, New page, ink) stays as built in `LESSON_BOARD_PHAS
 - [ ] From Pin, header Overlay → sheet on the book; Pin snaps back to the slot
 - [ ] `W` Pins / Parks; it does not wipe the notebook
 - [ ] Refresh in Pin stays Pin; refresh in Tab stays Tab
-- [ ] Wide page still covers the spread; Standard page never stretches
+- [ ] Standard page never stretches to spread width
 
 ### Non-goals
 

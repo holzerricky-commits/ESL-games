@@ -106,7 +106,7 @@ export type AddBookSheetProps = {
   onLibraryRefresh: () => Promise<void>
   onLibraryUpdated?: (payload: BookLibraryPayload) => void
   onManifestSaved: (payload: BookLibraryPayload, meta?: BookStructureManifestSaveMeta) => void
-  /** Open full-window Cut into units after naming a stacked PDF. */
+  /** Open full-window Cut into volumes after naming a stacked PDF. */
   onRequestCutUnits?: (payload: { bookId: string; filePath: string }) => void
   /** Open full-window Outline after upload/detect. */
   onRequestOutline?: (payload: OutlineWorkspaceRequest) => void
@@ -306,7 +306,7 @@ export function AddBookSheet({
       if (!saved) return
     }
     if (!onRequestCutUnits) {
-      toast.error('Cut into units is not available here.')
+      toast.error('Cut into volumes is not available here.')
       return
     }
     onOpenChange(false)
@@ -580,7 +580,7 @@ export function AddBookSheet({
                   }
                   onClick={() => void continueToCutFromConfirm()}
                 >
-                  This PDF is several units
+                  This PDF is several volumes
                 </Button>
                 <Button
                   type="button"

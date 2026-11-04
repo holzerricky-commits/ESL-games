@@ -12,7 +12,7 @@ function clampPdfPage(page: number, totalPdfPages: number | null): number {
 }
 
 /**
- * PDF page index for a unit cover thumb.
+ * PDF page index for a unit cover thumb (= first page of the unit).
  * `startPageHint` is printed/effective when set — convert via book alignment.
  */
 export function resolveUnitCoverThumbPdfPage(

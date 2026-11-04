@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { INK_SESSION_AUTOSAVE_MS_DRAWING } from '@/lib/books/ink-session-persist-config'
+import {
+  INK_SESSION_AUTOSAVE_MS_DRAWING,
+  INK_SESSION_MAX_DIRTY_AGE_MS,
+} from '@/lib/books/ink-session-persist-config'
 import {
   createMemorySpreadSessionStorage,
   invalidateSpreadSessionRootCache,
@@ -398,5 +401,84 @@ describe('spread-session-store', () => {
     if (cmd?.kind === 'stroke') {
       expect(cmd.figureGroupId).toBeUndefined()
     }
+  })
+
+  it('destroy checkpoints dirty ink before becoming destroyed', () => {
+    const storage = createMemorySpreadSessionStorage()
+    const store = createSpreadSessionStore(key, { storage, autosaveMs: 60_000 })
+    store.appendCommand({
+      kind: 'line',
+      id: 'l1',
+      a: [0.1, 0.1],
+      b: [0.2, 0.2],
+      color: '#111827',
+    })
+    expect(store.getState().doc.meta.dirty).toBe(true)
+    expect(loadSpreadSession(key, storage).commands).toHaveLength(0)
+    store.destroy()
+    expect(loadSpreadSession(key, storage).commands).toHaveLength(1)
+    expect(loadSpreadSession(key, storage).commands[0]?.id).toBe('l1')
+  })
+
+  it('markClean before checkpointNow skips save (flush helpers must checkpoint first)', () => {
+    const storage = createMemorySpreadSessionStorage()
+    const store = createSpreadSessionStore(key, { storage, autosaveMs: 60_000 })
+    store.appendCommand({
+      kind: 'line',
+      id: 'l1',
+      a: [0.1, 0.1],
+      b: [0.2, 0.2],
+      color: '#111827',
+    })
+    store.markClean()
+    store.checkpointNow()
+    expect(loadSpreadSession(key, storage).commands).toHaveLength(0)
+  })
+
+  it('checkpointNow before projecting persists canonical session while dirty', () => {
+    const storage = createMemorySpreadSessionStorage()
+    const store = createSpreadSessionStore(key, { storage, autosaveMs: 60_000 })
+    store.appendCommand({
+      kind: 'line',
+      id: 'l1',
+      a: [0.1, 0.1],
+      b: [0.2, 0.2],
+      color: '#111827',
+    })
+    store.checkpointNow()
+    expect(loadSpreadSession(key, storage).commands).toHaveLength(1)
+    expect(store.getState().doc.meta.dirty).toBe(false)
+  })
+
+  it('forces a checkpoint after max dirty age even while drawing stays hot', () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('requestIdleCallback', (cb: IdleRequestCallback) => {
+      cb({ didTimeout: false, timeRemaining: () => 50 } as IdleDeadline)
+      return 1
+    })
+    vi.stubGlobal('cancelIdleCallback', () => {})
+    const storage = createMemorySpreadSessionStorage()
+    const store = createSpreadSessionStore(key, { storage, autosaveMs: 3000 })
+    store.appendCommand({
+      kind: 'line',
+      id: 'l1',
+      a: [0.1, 0.1],
+      b: [0.2, 0.2],
+      color: '#111827',
+    })
+    // Keep drawing-hot debounce from firing before the max-age ceiling.
+    for (let i = 0; i < 5; i++) {
+      vi.advanceTimersByTime(INK_SESSION_AUTOSAVE_MS_DRAWING - 1000)
+      store.appendCommand({
+        kind: 'line',
+        id: `l${i + 2}`,
+        a: [0.1, 0.1],
+        b: [0.2, 0.2],
+        color: '#111827',
+      })
+    }
+    expect(loadSpreadSession(key, storage).commands.length).toBeLessThan(6)
+    vi.advanceTimersByTime(INK_SESSION_MAX_DIRTY_AGE_MS)
+    expect(loadSpreadSession(key, storage).commands).toHaveLength(6)
   })
 })

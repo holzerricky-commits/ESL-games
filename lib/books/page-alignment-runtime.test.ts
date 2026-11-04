@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { buildPageAlignmentRuntime, mergeCoverIntoHiddenPages, resolveEffectiveAnchorToPdfPage } from '@/lib/books/page-alignment-runtime'
+import {
+  buildPageAlignmentRuntime,
+  estimatePdfTotalForEffectiveAnchor,
+  mergeCoverIntoHiddenPages,
+  resolveEffectiveAnchorToPdfPage,
+} from '@/lib/books/page-alignment-runtime'
 
 describe('mergeCoverIntoHiddenPages', () => {
   it('always includes page 1', () => {
@@ -24,5 +29,15 @@ describe('buildPageAlignmentRuntime', () => {
     expect(rt.visiblePdfPages).toEqual([3, 4])
     expect(rt.effectivePageByPdf.get(1)).toBe(1)
     expect(rt.effectivePageByPdf.get(3)).toBe(2)
+  })
+})
+
+describe('estimatePdfTotalForEffectiveAnchor', () => {
+  it('is large enough to resolve past ghost pages without a known PDF length', () => {
+    const notCounted = [2, 3, 10, 11]
+    const hidden = [1]
+    const estimated = estimatePdfTotalForEffectiveAnchor(14, hidden, notCounted)
+    const rt = buildPageAlignmentRuntime(estimated, hidden, notCounted)
+    expect(resolveEffectiveAnchorToPdfPage(14, rt)).toBe(18)
   })
 })

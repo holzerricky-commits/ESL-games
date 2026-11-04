@@ -19,6 +19,10 @@ export function FullscreenBookOverlay(props: FullscreenBookOverlayProps) {
       deskRail={props.deskRail}
       deskRailOpen={props.deskRailOpen}
       onDeskRailOpenChange={props.onDeskRailOpenChange}
+      deskRailWidthPx={props.deskRailWidthPx}
+      focusPdfPage={props.focusPdfPage}
+      prepReadingCheckPins={props.prepReadingCheckPins}
+      onSpreadChange={props.onSpreadChange}
       preferOpenExercises={props.preferOpenExercises}
       onSwitchTeachingBook={props.onSwitchTeachingBook}
     />

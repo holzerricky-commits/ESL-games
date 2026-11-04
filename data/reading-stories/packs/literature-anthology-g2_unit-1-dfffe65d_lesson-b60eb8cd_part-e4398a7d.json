@@ -1,0 +1,305 @@
+{
+  "storyId": "literature-anthology-g2::unit-1-dfffe65d::lesson-b60eb8cd::part-e4398a7d",
+  "bookId": "literature-anthology-g2",
+  "unitId": "unit-1-dfffe65d",
+  "status": "approved",
+  "stops": [
+    {
+      "id": "stop-805d6172",
+      "label": "Mouse is hiding",
+      "displayPage": 11,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 13,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-9ff177e1",
+          "kind": "mcq",
+          "prompt": "Why was Mouse hiding?",
+          "choices": [
+            "A. From Hedgehog",
+            "B. From Snake",
+            "C. From Squirrel",
+            "D. From Rabbit"
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "\"I'm hiding,\" said Mouse, \"from Snake.\"",
+          "evidenceHighlight": "from Snake"
+        }
+      ]
+    },
+    {
+      "id": "stop-c9ea0654",
+      "label": "Hedgehog's advice",
+      "displayPage": 12,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 14,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-0f36a2aa",
+          "kind": "true_false",
+          "prompt": "Hedgehog told Mouse that Snake was dangerous.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "\"That's silly gossip,” said Hedgehog. \"You know Snake would never hurt you.\"",
+          "evidenceHighlight": "Snake would never hurt you"
+        }
+      ]
+    },
+    {
+      "id": "stop-85abc3c6",
+      "label": "Mouse falls",
+      "displayPage": 14,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 16,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-e789321e",
+          "kind": "mcq",
+          "prompt": "What happened to Mouse because he wasn't watching his feet?",
+          "choices": [
+            "A. He found a friend",
+            "B. He fell into a hole",
+            "C. He saw Snake",
+            "D. He went home"
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "“It’s not funny,” Mouse yelled. “I’ve hurt my foot and I can’t get out.”",
+          "evidenceHighlight": "I’ve hurt my foot and I can’t get out"
+        }
+      ]
+    },
+    {
+      "id": "stop-6b076e35",
+      "label": "Mouse's feelings in the hole",
+      "displayPage": 16,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 18,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-f14552b6",
+          "kind": "mcq",
+          "prompt": "How did Mouse feel when he was stuck in the deep hole and no one could help?",
+          "choices": [
+            "A. Happy and excited",
+            "B. Calm and relaxed",
+            "C. Scared and sad",
+            "D. Angry and loud"
+          ],
+          "correctIndex": 2,
+          "correctTrue": null,
+          "evidenceSnippet": "Mouse started to cry.",
+          "evidenceHighlight": "Mouse started to cry"
+        }
+      ]
+    },
+    {
+      "id": "stop-bb474848",
+      "label": "Snake arrives",
+      "displayPage": 18,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 20,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-3cbe99ac",
+          "kind": "mcq",
+          "prompt": "Who came along when Hedgehog was whispering about Mouse?",
+          "choices": [
+            "A. Fox",
+            "B. Skunk",
+            "C. Snake",
+            "D. A new animal"
+          ],
+          "correctIndex": 2,
+          "correctTrue": null,
+          "evidenceSnippet": "It was Snake. “What’s going on?” said Snake.",
+          "evidenceHighlight": "It was Snake"
+        }
+      ]
+    },
+    {
+      "id": "stop-5c512cdb",
+      "label": "Friends don't want Snake to help",
+      "displayPage": 19,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 21,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-cc55c9f3",
+          "kind": "true_false",
+          "prompt": "Hedgehog, Squirrel, and Rabbit thought it was a good idea for Snake to go down the hole.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "“Oh, no,” said Hedgehog. “That’s not a good idea at all.” “Not at all,” said Squirrel. “Not at all,” said Rabbit.",
+          "evidenceHighlight": "not a good idea at all"
+        }
+      ]
+    },
+    {
+      "id": "stop-960b804d",
+      "label": "Snake's plan",
+      "displayPage": 22,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 24,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-5bd9e61a",
+          "kind": "mcq",
+          "prompt": "What did Snake ask for to help Mouse get out of the hole?",
+          "choices": [
+            "A. A rope",
+            "B. A ladder",
+            "C. A stick",
+            "D. A big leaf"
+          ],
+          "correctIndex": 2,
+          "correctTrue": null,
+          "evidenceSnippet": "\"Someone get a stick,\" said Snake.",
+          "evidenceHighlight": "a stick"
+        }
+      ]
+    },
+    {
+      "id": "stop-e0b552c9",
+      "label": "Mouse apologizes",
+      "displayPage": 25,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 27,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-76d69a5f",
+          "kind": "true_false",
+          "prompt": "After Mouse was rescued, he felt angry at Snake.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "Mouse turned a deep shade of pink. \"I am very sorry,\" he said.",
+          "evidenceHighlight": "I am very sorry"
+        }
+      ]
+    },
+    {
+      "id": "stop-1693210d",
+      "label": "Animals help Mouse home",
+      "displayPage": 27,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 29,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-e46312bf",
+          "kind": "true_false",
+          "prompt": "After Mouse was rescued, the animals helped him get home and rest.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": true,
+          "evidenceSnippet": "They bandaged Mouse's foot, and he lay down to rest.",
+          "evidenceHighlight": "They bandaged Mouse's foot, and he lay down to rest"
+        }
+      ]
+    },
+    {
+      "id": "stop-7a4ec4d5",
+      "label": "What friends do",
+      "displayPage": 27,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 29,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-9e595527",
+          "kind": "mcq",
+          "prompt": "What does the animals helping Mouse home tell us about them?",
+          "choices": [
+            "A. They are all very fast runners",
+            "B. They are good friends who care about each other",
+            "C. They like to play games",
+            "D. They are scared of Mouse"
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "They bandaged Mouse's foot, and he lay down to rest.",
+          "evidenceHighlight": "They bandaged Mouse's foot, and he lay down to rest"
+        }
+      ]
+    },
+    {
+      "id": "stop-b357224f",
+      "label": "Mouse says thank you",
+      "displayPage": 28,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 30,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-2014b40c",
+          "kind": "true_false",
+          "prompt": "Mouse decided to give Snake some flowers to say thank you.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": true,
+          "evidenceSnippet": "“I’m going to say thank you to Snake,” said Mouse, “and to give him some flowers that I picked.”",
+          "evidenceHighlight": "to say thank you to Snake"
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-10-23T13:12:15.170Z",
+  "approvedAt": "2026-10-23T13:12:15.170Z",
+  "autoApprovedAt": "2026-10-23T13:12:15.170Z"
+}

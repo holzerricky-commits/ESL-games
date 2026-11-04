@@ -45,6 +45,8 @@ describe('normalizeTocV2ToDrafts', () => {
     const out = normalizeTocV2ToDrafts(parsed)
     expect(out.drafts).toHaveLength(2)
     expect(out.drafts[0]?.title).toBe('Good Citizens')
+    expect(out.drafts[0]?.unitNumber).toBe(1)
+    expect(out.drafts[1]?.unitNumber).toBe(2)
     expect(out.drafts[0]?.startPageHint).toBe(10)
     expect(out.drafts[0]?.endPageHint).toBe(185)
     expect(out.lessonsByUnit[0]?.[0]?.startPageHint).toBe(10)

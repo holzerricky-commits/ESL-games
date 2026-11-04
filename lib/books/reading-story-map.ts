@@ -407,6 +407,63 @@ export function resolveReadingStoryRange(
   }
 }
 
+/**
+ * Inclusive PDF span for a whole lesson: its outline span plus any part ranges
+ * (saved story pages can run past the outline). Null when the lesson has no known pages.
+ */
+export function resolveLessonPdfRange(
+  book: BookRecord,
+  unit: BookUnitRecord,
+  lesson: BookLessonRecord,
+  totalPdfPages: number | null,
+  overridesByStoryId: Record<string, ReadingStoryRangeOverride | undefined> = {},
+): { startPdfPage: number; endPdfPage: number } | null {
+  const spans: Array<{ startPdfPage: number; endPdfPage: number }> = []
+
+  const lessons = unit.lessons ?? []
+  const lessonIdx = lessons.findIndex((l) => l.id === lesson.id)
+  if (lessonIdx >= 0 && typeof lesson.startPageHint === 'number') {
+    const bounds = getUnitReaderBounds(unit, totalPdfPages, book)
+    const lr = pageRangeForIndex(lessons, lessonIdx, bounds.min, bounds.max)
+    if (lr.start != null) {
+      const end = lr.end ?? lr.start
+      const useAlignment = shouldUsePrintedPageAlignment(book, unit, totalPdfPages, true)
+      spans.push(
+        displayRangeToPdfRange(book, unit, totalPdfPages, Math.min(lr.start, end), Math.max(lr.start, end), useAlignment),
+      )
+    }
+  }
+
+  // Parts without their own hint or saved range would fall back to the whole unit.
+  for (const part of lesson.parts ?? []) {
+    const storyId = readingStoryPartKey(book.id, unit.id, lesson.id, part.id)
+    const override = overridesByStoryId[storyId]
+    if (!override && typeof part.startPageHint !== 'number') continue
+    const range = resolveReadingStoryRange(
+      {
+        id: storyId,
+        bookId: book.id,
+        unitId: unit.id,
+        lessonId: lesson.id,
+        partId: part.id,
+        title: part.title?.trim() || 'Part',
+      },
+      book,
+      unit,
+      totalPdfPages,
+      override,
+    )
+    if (range.source !== 'none') spans.push(range)
+  }
+
+  if (spans.length === 0) return null
+  const maxPage = totalPdfPages != null && totalPdfPages >= 1 ? totalPdfPages : Number.POSITIVE_INFINITY
+  const startPdfPage = Math.max(1, Math.min(...spans.map((s) => s.startPdfPage)))
+  const endPdfPage = Math.min(maxPage, Math.max(...spans.map((s) => s.endPdfPage)))
+  if (endPdfPage < startPdfPage) return null
+  return { startPdfPage, endPdfPage }
+}
+
 export function isPdfPageInReadingStory(
   pdfPage: number,
   range: ReadingStoryPdfRange,

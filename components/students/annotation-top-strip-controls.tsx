@@ -6,8 +6,6 @@ import {
   ChevronDown,
   Eraser,
   GitBranch,
-  Minus,
-  MoveUpRight,
   MoveHorizontal,
   Pipette,
   Scan,
@@ -48,7 +46,7 @@ import {
 import { cn } from '@/lib/utils'
 
 const LINE_CYCLE: AnnotationLineDashStyle[] = ['solid', 'dashed', 'dotted']
-const SHAPE_MODES = ['line', 'rect', 'ellipse', 'triangle', 'arrow'] as const
+const SHAPE_MODES = ['rect', 'ellipse', 'triangle'] as const
 type ShapeMode = (typeof SHAPE_MODES)[number]
 const FILL_CYCLE: ShapeFillMode[] = ['solid', 'transparent', 'none']
 
@@ -257,19 +255,15 @@ export function TopStripShapeLineStyleChip({
 }
 
 function shapeIcon(mode: ShapeMode) {
-  if (mode === 'line') return <Minus className={iconCls} strokeWidth={1.75} aria-hidden />
   if (mode === 'rect') return <Square className={iconCls} strokeWidth={1.75} aria-hidden />
   if (mode === 'ellipse') return <Circle className={iconCls} strokeWidth={1.75} aria-hidden />
-  if (mode === 'triangle') return <Triangle className={iconCls} strokeWidth={1.75} aria-hidden />
-  return <MoveUpRight className={iconCls} strokeWidth={1.75} aria-hidden />
+  return <Triangle className={iconCls} strokeWidth={1.75} aria-hidden />
 }
 
 const SHAPE_LABEL: Record<ShapeMode, string> = {
-  line: 'Line',
   rect: 'Rectangle',
   ellipse: 'Ellipse',
   triangle: 'Triangle',
-  arrow: 'Arrow',
 }
 
 export function TopStripShapeKindChip({

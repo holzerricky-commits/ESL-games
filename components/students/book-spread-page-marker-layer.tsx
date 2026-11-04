@@ -1,7 +1,14 @@
 'use client'
 
 import type { CSSProperties, MutableRefObject } from 'react'
-import { useCallback, useLayoutEffect, useRef, useState } from 'react'
+import {
+  forwardRef,
+  useCallback,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
 import { useBrowserZoomRepaintRevision } from '@/components/students/fullscreen-book-overlay/hooks/useBrowserZoomRepaintRevision'
 import type { LiveStrokeDraft } from '@/components/students/book-page-annotation-layer'
 import type { AnnotationCommand, StrokeAnnotationCommand } from '@/lib/books/annotation-command-types'
@@ -22,6 +29,26 @@ import type { PageRect, SpreadInkLayout } from '@/lib/books/spread-stroke-split'
 const MARKER_STACK_BASE_Z = 2
 
 const MARKER_CANVAS_BLEND: CSSProperties = { mixBlendMode: 'multiply' }
+
+/** Page-normalized live strip (0–1); drawn with fillRect — no stroke projection. */
+export type MarkerTrailingPageStrip = {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+export type BookSpreadPageMarkerHandle = {
+  /** Imperative live highlighter paint (same rAF as pointer); null clears. */
+  paintTrailing: (draft: LiveStrokeDraft | null) => void
+  /** Multi-strip text-snap live preview (clears when empty). */
+  paintTrailingDrafts: (drafts: readonly LiveStrokeDraft[]) => void
+  /**
+   * Instant text-snap / strip ghost: page-norm fillRects on the trailing canvas.
+   * Empty array clears. Prefer this on pointermove — skips projection + path stroke.
+   */
+  paintTrailingPageStrips: (strips: readonly MarkerTrailingPageStrip[], color: string) => void
+}
 
 function sizeCanvas(el: HTMLCanvasElement, widthPx: number, heightPx: number): void {
   const dpr = window.devicePixelRatio || 1
@@ -81,6 +108,8 @@ function markerCommandIdForSlice(
   return cmd?.kind === 'stroke' && cmd.tool === 'marker' ? cmd.id : `marker-slice-${index}`
 }
 
+type MarkerClientRects = NonNullable<ReturnType<typeof readMarkerClientRects>>
+
 type BookSpreadPageMarkerLayerProps = {
   side: 'left' | 'right'
   widthPx: number
@@ -91,30 +120,77 @@ type BookSpreadPageMarkerLayerProps = {
   layoutMeasureRevision?: number
   leftPageCaptureRef: MutableRefObject<HTMLDivElement | null>
   rightPageCaptureRef: MutableRefObject<HTMLDivElement | null>
-  trailingMarkerStrokeDraft?: LiveStrokeDraft | null
 }
 
-export function BookSpreadPageMarkerLayer({
-  side,
-  widthPx,
-  heightPx,
-  commands,
-  layout,
-  layoutMeasureRevision = 0,
-  leftPageCaptureRef,
-  rightPageCaptureRef,
-  trailingMarkerStrokeDraft = null,
-}: BookSpreadPageMarkerLayerProps) {
+export const BookSpreadPageMarkerLayer = forwardRef<
+  BookSpreadPageMarkerHandle,
+  BookSpreadPageMarkerLayerProps
+>(function BookSpreadPageMarkerLayer(
+  {
+    side,
+    widthPx,
+    heightPx,
+    commands,
+    layout,
+    layoutMeasureRevision = 0,
+    leftPageCaptureRef,
+    rightPageCaptureRef,
+  },
+  ref,
+) {
   const markerSliceRefs = useRef<Map<string, HTMLCanvasElement | null>>(new Map())
   const trailingCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const paintRetryRafRef = useRef<number | null>(null)
+  const cachedClientRectsRef = useRef<MarkerClientRects | null>(null)
+  const lastTrailingDraftsRef = useRef<LiveStrokeDraft[]>([])
+  const lastTrailingPageStripsRef = useRef<{
+    strips: MarkerTrailingPageStrip[]
+    color: string
+  } | null>(null)
+  const trailingCtxRef = useRef<CanvasRenderingContext2D | null>(null)
+  const layoutRef = useRef(layout)
+  const widthPxRef = useRef(widthPx)
+  const heightPxRef = useRef(heightPx)
+  const sideRef = useRef(side)
   const [paintPass, setPaintPass] = useState(0)
   const zoomRepaintRevision = useBrowserZoomRepaintRevision()
 
+  layoutRef.current = layout
+  widthPxRef.current = widthPx
+  heightPxRef.current = heightPx
+  sideRef.current = side
+
+  const invalidateClientRectsCache = useCallback(() => {
+    cachedClientRectsRef.current = null
+  }, [])
+
   const getClientRects = useCallback(
-    () => readMarkerClientRects(leftPageCaptureRef, rightPageCaptureRef),
+    (opts?: { force?: boolean }): MarkerClientRects | undefined => {
+      if (!opts?.force && cachedClientRectsRef.current) {
+        return cachedClientRectsRef.current
+      }
+      const rects = readMarkerClientRects(leftPageCaptureRef, rightPageCaptureRef)
+      cachedClientRectsRef.current = rects ?? null
+      return rects
+    },
     [leftPageCaptureRef, rightPageCaptureRef],
   )
+
+  const ensureTrailingCtx = useCallback((): CanvasRenderingContext2D | null => {
+    const w = widthPxRef.current
+    const h = heightPxRef.current
+    const trailEl = trailingCanvasRef.current
+    if (!trailEl || !(w > 0) || !(h > 0)) return null
+    sizeCanvas(trailEl, w, h)
+    let ctx = trailingCtxRef.current
+    if (!ctx || ctx.canvas !== trailEl) {
+      ctx =
+        trailEl.getContext('2d', { alpha: true, desynchronized: true } as CanvasRenderingContext2DSettings) ??
+        trailEl.getContext('2d', { alpha: true })
+      trailingCtxRef.current = ctx
+    }
+    return ctx
+  }, [])
 
   const clientRects = getClientRects()
   const pageMarkerCommands = projectSpreadMarkerCommandsToPage(commands, side, layout, clientRects)
@@ -122,13 +198,88 @@ export function BookSpreadPageMarkerLayer({
   const markerSlices = slices.filter((s) => s.kind === 'marker')
   const markerSliceCount = markerSlices.length
 
-  const showTrailing =
-    trailingMarkerStrokeDraft?.tool === 'marker' && trailingMarkerStrokeDraft.points.length >= 1
+  const paintTrailingCanvas = useCallback(
+    (drafts: readonly LiveStrokeDraft[], rects: MarkerClientRects | undefined) => {
+      lastTrailingPageStripsRef.current = null
+      const w = widthPxRef.current
+      const h = heightPxRef.current
+      const trailCtx = ensureTrailingCtx()
+      if (!trailCtx || !(w > 0) || !(h > 0)) return
+      clearAnnotationCanvas(trailCtx)
+      applyAnnotationCanvasDpr(trailCtx)
+      let i = 0
+      for (const draft of drafts) {
+        if (draft.tool !== 'marker' || draft.points.length < 1) continue
+        const pagePoints = projectSpreadMarkerDraftToPage(
+          draft.points,
+          sideRef.current,
+          layoutRef.current,
+          rects,
+        )
+        if (!pagePoints || pagePoints.length < 1) continue
+        const trailCmd: StrokeAnnotationCommand = {
+          kind: 'stroke',
+          id: `__trailing_marker_${i++}`,
+          tool: 'marker',
+          points: pagePoints,
+          ...(draft.widthScale != null ? { widthScale: draft.widthScale } : {}),
+          ...(draft.color ? { color: draft.color } : {}),
+          ...(draft.lineDashStyle ? { lineDashStyle: draft.lineDashStyle } : {}),
+          ...(draft.markerDecoratedEdge ? { markerDecoratedEdge: true } : {}),
+        }
+        drawStrokePath(trailCtx, trailCmd, w, h)
+      }
+    },
+    [ensureTrailingCtx],
+  )
+
+  const paintTrailingPageStripsCanvas = useCallback(
+    (strips: readonly MarkerTrailingPageStrip[], color: string) => {
+      lastTrailingDraftsRef.current = []
+      lastTrailingPageStripsRef.current = { strips: [...strips], color }
+      const w = widthPxRef.current
+      const h = heightPxRef.current
+      const trailCtx = ensureTrailingCtx()
+      if (!trailCtx || !(w > 0) || !(h > 0)) return
+      clearAnnotationCanvas(trailCtx)
+      if (strips.length === 0) return
+      applyAnnotationCanvasDpr(trailCtx)
+      trailCtx.globalCompositeOperation = 'source-over'
+      trailCtx.globalAlpha = 1
+      trailCtx.fillStyle = color
+      for (const strip of strips) {
+        if (!(strip.w > 0) || !(strip.h > 0)) continue
+        trailCtx.fillRect(strip.x * w, strip.y * h, strip.w * w, strip.h * h)
+      }
+    },
+    [ensureTrailingCtx],
+  )
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      paintTrailing(draft: LiveStrokeDraft | null) {
+        const drafts = draft ? [draft] : []
+        lastTrailingDraftsRef.current = drafts
+        paintTrailingCanvas(drafts, getClientRects())
+      },
+      paintTrailingDrafts(drafts: readonly LiveStrokeDraft[]) {
+        const next = drafts.length > 0 ? [...drafts] : []
+        lastTrailingDraftsRef.current = next
+        paintTrailingCanvas(next, getClientRects())
+      },
+      paintTrailingPageStrips(strips: readonly MarkerTrailingPageStrip[], color: string) {
+        paintTrailingPageStripsCanvas(strips, color)
+      },
+    }),
+    [getClientRects, paintTrailingCanvas, paintTrailingPageStripsCanvas],
+  )
 
   const paintMarkerCanvases = useCallback(() => {
     if (!(widthPx > 0) || !(heightPx > 0)) return false
 
-    const rects = getClientRects()
+    invalidateClientRectsCache()
+    const rects = getClientRects({ force: true })
     const commandsForPaint = projectSpreadMarkerCommandsToPage(commands, side, layout, rects)
     const paintSlices = buildAnnotationRenderSlices(commandsForPaint, new Set())
     const paintMarkerSlices = paintSlices.filter((s) => s.kind === 'marker')
@@ -136,8 +287,6 @@ export function BookSpreadPageMarkerLayer({
     for (const el of markerSliceRefs.current.values()) {
       if (el) sizeCanvas(el, widthPx, heightPx)
     }
-    const trailEl = trailingCanvasRef.current
-    if (trailEl) sizeCanvas(trailEl, widthPx, heightPx)
 
     let missingRef = false
     for (const slice of paintMarkerSlices) {
@@ -161,27 +310,11 @@ export function BookSpreadPageMarkerLayer({
       }
     }
 
-    const trailCtx = trailingCanvasRef.current?.getContext('2d', { alpha: true })
-    if (trailCtx) {
-      clearAnnotationCanvas(trailCtx)
-      const trail = trailingMarkerStrokeDraft
-      if (trail?.tool === 'marker' && trail.points.length >= 1) {
-        const pagePoints = projectSpreadMarkerDraftToPage(trail.points, side, layout, rects)
-        if (pagePoints && pagePoints.length >= 1) {
-          applyAnnotationCanvasDpr(trailCtx)
-          const trailCmd: StrokeAnnotationCommand = {
-            kind: 'stroke',
-            id: '__trailing_marker__',
-            tool: 'marker',
-            points: pagePoints,
-            ...(trail.widthScale != null ? { widthScale: trail.widthScale } : {}),
-            ...(trail.color ? { color: trail.color } : {}),
-            ...(trail.lineDashStyle ? { lineDashStyle: trail.lineDashStyle } : {}),
-            ...(trail.markerDecoratedEdge ? { markerDecoratedEdge: true } : {}),
-          }
-          drawStrokePath(trailCtx, trailCmd, widthPx, heightPx)
-        }
-      }
+    const pageStrips = lastTrailingPageStripsRef.current
+    if (pageStrips) {
+      paintTrailingPageStripsCanvas(pageStrips.strips, pageStrips.color)
+    } else {
+      paintTrailingCanvas(lastTrailingDraftsRef.current, rects)
     }
 
     return paintMarkerSlices.length > 0 && missingRef
@@ -189,11 +322,17 @@ export function BookSpreadPageMarkerLayer({
     commands,
     widthPx,
     heightPx,
-    trailingMarkerStrokeDraft,
     side,
     layout,
     getClientRects,
+    invalidateClientRectsCache,
+    paintTrailingCanvas,
+    paintTrailingPageStripsCanvas,
   ])
+
+  useLayoutEffect(() => {
+    invalidateClientRectsCache()
+  }, [layoutMeasureRevision, zoomRepaintRevision, invalidateClientRectsCache])
 
   useLayoutEffect(() => {
     if (paintRetryRafRef.current != null) {
@@ -228,12 +367,15 @@ export function BookSpreadPageMarkerLayer({
     const rightEl = rightPageCaptureRef.current
     if (!leftEl || !rightEl) return
 
-    const bump = () => paintMarkerCanvases()
+    const bump = () => {
+      invalidateClientRectsCache()
+      paintMarkerCanvases()
+    }
     const ro = new ResizeObserver(bump)
     ro.observe(leftEl)
     ro.observe(rightEl)
     return () => ro.disconnect()
-  }, [leftPageCaptureRef, rightPageCaptureRef, paintMarkerCanvases])
+  }, [leftPageCaptureRef, rightPageCaptureRef, paintMarkerCanvases, invalidateClientRectsCache])
 
   return (
     <div className="pointer-events-none absolute inset-0" aria-hidden>
@@ -251,17 +393,15 @@ export function BookSpreadPageMarkerLayer({
           />
         )
       })}
-      {showTrailing ? (
-        <canvas
-          key={`page-marker-trail-${side}`}
-          ref={trailingCanvasRef}
-          className="pointer-events-none"
-          style={{
-            ...pageBox(widthPx, heightPx, MARKER_STACK_BASE_Z + markerSliceCount + 1),
-            ...MARKER_CANVAS_BLEND,
-          }}
-        />
-      ) : null}
+      <canvas
+        key={`page-marker-trail-${side}`}
+        ref={trailingCanvasRef}
+        className="pointer-events-none"
+        style={{
+          ...pageBox(widthPx, heightPx, MARKER_STACK_BASE_Z + markerSliceCount + 1),
+          ...MARKER_CANVAS_BLEND,
+        }}
+      />
     </div>
   )
-}
+})

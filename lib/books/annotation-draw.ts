@@ -43,6 +43,79 @@ export const ERASER_LINE_WIDTH = 18
 /** Shape outlines use the same base width as pen ink. */
 const DEFAULT_SHAPE_STROKE_PX = PEN_LINE_WIDTH
 
+/** Half-width / length for a note-app style filled tip (~31°). */
+export const ARROW_HEAD_HALF_WIDTH_RATIO = 0.6
+
+/**
+ * Tip length in CSS px — scales with stroke like GoodNotes / OneNote / Freeform,
+ * with an optional stored norm floor from the page short side.
+ */
+export function resolveArrowHeadLengthPx(args: {
+  minDimPx: number
+  lineWidthPx: number
+  headLengthNorm?: number
+  shaftLenPx?: number
+}): number {
+  const { minDimPx, lineWidthPx, headLengthNorm, shaftLenPx } = args
+  const fromNorm = (headLengthNorm ?? 0.035) * Math.max(1, minDimPx)
+  const fromStroke = Math.max(1, lineWidthPx) * 5.2
+  let headLen = Math.max(fromStroke, fromNorm)
+  if (shaftLenPx != null && shaftLenPx > 0) {
+    headLen = Math.min(headLen, shaftLenPx * 0.42)
+  }
+  return Math.max(Math.max(1, lineWidthPx) * 2.5, headLen)
+}
+
+/** Solid shaft + filled triangular tip (opaque). Shaft stops at the tip base. */
+export function drawSolidArrow(
+  ctx: CanvasRenderingContext2D,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+  opts: {
+    color: string
+    lineWidthPx: number
+    lineDashStyle?: AnnotationLineDashStyle
+    headLengthPx: number
+  },
+): void {
+  const dx = bx - ax
+  const dy = by - ay
+  const len = Math.hypot(dx, dy) || 1
+  const ux = dx / len
+  const uy = dy / len
+  const headLen = Math.min(opts.headLengthPx, len * 0.9)
+  if (!(headLen > 0)) return
+  const hw = headLen * ARROW_HEAD_HALF_WIDTH_RATIO
+  const baseX = bx - ux * headLen
+  const baseY = by - uy * headLen
+  const px = -uy
+  const py = ux
+  const lw = Math.max(1, opts.lineWidthPx)
+
+  ctx.save()
+  ctx.globalAlpha = 1
+  ctx.strokeStyle = opts.color
+  ctx.fillStyle = opts.color
+  ctx.lineWidth = lw
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'miter'
+  applyAnnotationLineDash(ctx, opts.lineDashStyle, lw)
+  ctx.beginPath()
+  ctx.moveTo(ax, ay)
+  ctx.lineTo(baseX, baseY)
+  ctx.stroke()
+  ctx.setLineDash([])
+  ctx.beginPath()
+  ctx.moveTo(bx, by)
+  ctx.lineTo(baseX + px * hw, baseY + py * hw)
+  ctx.lineTo(baseX - px * hw, baseY - py * hw)
+  ctx.closePath()
+  ctx.fill()
+  ctx.restore()
+}
+
 function withBoxShapeRotation(
   ctx: CanvasRenderingContext2D,
   cmd: { x: number; y: number; w: number; h: number; rotationDeg?: number },
@@ -128,6 +201,72 @@ function drawStrokePathWithRotation(
   drawStrokePath(ctx, cmd, widthPx, heightPx, options)
 }
 
+/** Tip length relative to stroke width for freehand open-V arrowheads. */
+const OPEN_V_ARROW_TIP_LENGTH_FACTOR = 4.6
+/** Half-angle from the reverse shaft axis (≈55° total V). */
+const OPEN_V_ARROW_HALF_ANGLE_RAD = (28 * Math.PI) / 180
+
+/**
+ * Note-app open chevron at the end of a freehand path (two strokes meeting at the tip).
+ * Direction follows the path tangent near the end.
+ */
+export function drawOpenVArrowTip(
+  ctx: CanvasRenderingContext2D,
+  points: readonly [number, number][],
+  widthPx: number,
+  heightPx: number,
+  lineWidthPx: number,
+  color: string,
+): void {
+  if (points.length < 2 || !(widthPx > 0) || !(heightPx > 0)) return
+  const tip = points[points.length - 1]!
+  const tipX = tip[0] * widthPx
+  const tipY = tip[1] * heightPx
+  const minLookbackPx = Math.max(lineWidthPx * 2.5, 6)
+  let fromX = tipX
+  let fromY = tipY
+  for (let i = points.length - 2; i >= 0; i--) {
+    const p = points[i]!
+    const x = p[0] * widthPx
+    const y = p[1] * heightPx
+    fromX = x
+    fromY = y
+    if (Math.hypot(tipX - x, tipY - y) >= minLookbackPx) break
+  }
+  const dx = tipX - fromX
+  const dy = tipY - fromY
+  const len = Math.hypot(dx, dy)
+  if (!(len > 1e-6)) return
+  const ux = dx / len
+  const uy = dy / len
+  const tipLen = Math.max(lineWidthPx * OPEN_V_ARROW_TIP_LENGTH_FACTOR, 8)
+  const cos = Math.cos(OPEN_V_ARROW_HALF_ANGLE_RAD)
+  const sin = Math.sin(OPEN_V_ARROW_HALF_ANGLE_RAD)
+  // Wings go back from tip along ±halfAngle from reverse shaft.
+  const bx = -ux
+  const by = -uy
+  const w1x = (bx * cos - by * sin) * tipLen
+  const w1y = (bx * sin + by * cos) * tipLen
+  const w2x = (bx * cos + by * sin) * tipLen
+  const w2y = (-bx * sin + by * cos) * tipLen
+
+  ctx.save()
+  ctx.globalAlpha = 1
+  ctx.globalCompositeOperation = 'source-over'
+  ctx.strokeStyle = color
+  ctx.fillStyle = color
+  ctx.lineWidth = Math.max(1, lineWidthPx)
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  ctx.setLineDash([])
+  ctx.beginPath()
+  ctx.moveTo(tipX + w1x, tipY + w1y)
+  ctx.lineTo(tipX, tipY)
+  ctx.lineTo(tipX + w2x, tipY + w2y)
+  ctx.stroke()
+  ctx.restore()
+}
+
 export function drawStrokePath(
   ctx: CanvasRenderingContext2D,
   cmd: Pick<
@@ -139,6 +278,7 @@ export function drawStrokePath(
     | 'penInkStyle'
     | 'penStrokeProfile'
     | 'lineDashStyle'
+    | 'arrowTip'
     | 'markerDecoratedEdge'
     | 'penInkPatternPhaseX'
     | 'penInkPatternPhaseY'
@@ -236,6 +376,10 @@ export function drawStrokePath(
 
   ctx.globalCompositeOperation = 'source-over'
   ctx.globalAlpha = 1
+
+  if (cmd.arrowTip === 'open-v' && points.length >= 2) {
+    drawOpenVArrowTip(ctx, points, widthPx, heightPx, outlinePx, inkColor)
+  }
 }
 
 function normLineToPx(
@@ -544,38 +688,20 @@ export function drawAnnotationCommand(
     }
     case 'arrow': {
       const { ax, ay, bx, by } = normLineToPx(cmd.from, cmd.to, widthPx, heightPx)
-      const dx = bx - ax
-      const dy = by - ay
-      const len = Math.hypot(dx, dy) || 1
-      const ux = dx / len
-      const uy = dy / len
-      const headLen = (cmd.headLengthNorm ?? 0.035) * Math.min(widthPx, heightPx)
-      const hw = headLen * 0.45
-      const bxShaft = bx - ux * headLen
-      const byShaft = by - uy * headLen
-      const px = -uy
-      const py = ux
       const lw = strokeWidthPx(cmd.widthScale, DEFAULT_SHAPE_STROKE_PX)
-
-      ctx.save()
-      ctx.strokeStyle = cmd.color
-      ctx.fillStyle = cmd.color
-      ctx.lineWidth = lw
-      ctx.lineCap = 'round'
-      ctx.lineJoin = 'round'
-      applyAnnotationLineDash(ctx, cmd.lineDashStyle, lw)
-      ctx.beginPath()
-      ctx.moveTo(ax, ay)
-      ctx.lineTo(bxShaft, byShaft)
-      ctx.stroke()
-      ctx.setLineDash([])
-      ctx.beginPath()
-      ctx.moveTo(bx, by)
-      ctx.lineTo(bxShaft + px * hw, byShaft + py * hw)
-      ctx.lineTo(bxShaft - px * hw, byShaft - py * hw)
-      ctx.closePath()
-      ctx.fill()
-      ctx.restore()
+      const minDim = Math.min(widthPx, heightPx)
+      const shaftLenPx = Math.hypot(bx - ax, by - ay)
+      drawSolidArrow(ctx, ax, ay, bx, by, {
+        color: cmd.color,
+        lineWidthPx: lw,
+        lineDashStyle: cmd.lineDashStyle,
+        headLengthPx: resolveArrowHeadLengthPx({
+          minDimPx: minDim,
+          lineWidthPx: lw,
+          headLengthNorm: cmd.headLengthNorm,
+          shaftLenPx,
+        }),
+      })
       break
     }
     case 'stamp': {

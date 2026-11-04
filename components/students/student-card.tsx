@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { ChevronRight, MoreHorizontal, Trash2, Undo2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -121,6 +122,7 @@ function RowMoreMenu({
 }
 
 export function StudentCard({ student, onRemoved, onBreak = false, onRestore }: StudentCardProps) {
+  const router = useRouter()
   const [removeOpen, setRemoveOpen] = useState(false)
   const openHref = openHrefForStudent(student)
   const bookPageLabel = bookPageLabelForStudent(student)
@@ -139,6 +141,13 @@ export function StudentCard({ student, onRemoved, onBreak = false, onRestore }: 
           student.needsSetup && !onBreak && 'bg-[color-mix(in_srgb,var(--brand-blue)_6%,transparent)]',
           onBreak && 'opacity-90',
         )}
+        onClick={(event) => {
+          if (onBreak) return
+          const target = event.target
+          if (!(target instanceof Element)) return
+          if (target.closest('a, button, [role="menuitem"]')) return
+          router.push(openHref)
+        }}
       >
         {!onBreak ? (
           <Link href={openHref} className="absolute inset-0 z-0 rounded-xl" aria-label={openLabel} />

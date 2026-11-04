@@ -13,5 +13,11 @@ export const INK_SESSION_IDLE_CHECKPOINT_TIMEOUT_MS = 1500
 /** Disk payload debounce when R5 persist v2 is on (batch after idle stringify). */
 export const INK_SESSION_DISK_PERSIST_DEBOUNCE_MS = 2000
 
+/**
+ * Ceiling: while dirty, force a sync checkpoint at least this often even if drawing stays hot.
+ * Debounced idle/hot autosave still runs sooner when it can.
+ */
+export const INK_SESSION_MAX_DIRTY_AGE_MS = 30_000
+
 /** @deprecated Use INK_SESSION_AUTOSAVE_MS */
 export const SPREAD_SESSION_AUTOSAVE_MS = INK_SESSION_AUTOSAVE_MS

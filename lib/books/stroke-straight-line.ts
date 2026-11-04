@@ -2,9 +2,15 @@ import type { StrokeTool } from '@/lib/books/annotation-command-types'
 import type { PenInkStyle } from '@/lib/books/pen-ink'
 import {
   appendNormPointsIfMoved,
+  FREEHAND_ARROW_RDP_EPSILON,
+  FREEHAND_ARROW_SMOOTH_BLEND,
   smoothingLevelToBlend,
   smoothingLevelToRdpEpsilon,
 } from '@/lib/books/stroke-pointer-samples'
+
+function draftHasOpenVArrowTip(draft: { arrowTip?: string }): boolean {
+  return draft.arrowTip === 'open-v'
+}
 import { rdpSimplify } from '@/lib/books/stroke-rdp-simplify'
 import { STROKE_TAP_MAX_DIST_SQ } from '@/lib/books/stroke-tap-dot'
 
@@ -72,7 +78,7 @@ export function straightStrokePoints(
 
 /** Append coalesced move samples to a freehand draft, or snap a straight pen/marker segment. */
 export function extendStrokeDraftFromMove(
-  draft: { tool: StrokeTool; points: [number, number][] },
+  draft: { tool: StrokeTool; points: [number, number][]; arrowTip?: string },
   samples: readonly [number, number][],
   opts: {
     shiftKey: boolean
@@ -107,14 +113,19 @@ export function extendStrokeDraftFromMove(
     return axis
   }
 
-  const smoothBlend = draft.tool === 'pen' ? smoothingLevelToBlend(opts.penSmoothingLevel ?? 5) : 0
+  const smoothBlend =
+    draft.tool === 'pen'
+      ? draftHasOpenVArrowTip(draft)
+        ? FREEHAND_ARROW_SMOOTH_BLEND
+        : smoothingLevelToBlend(opts.penSmoothingLevel ?? 5)
+      : 0
   appendNormPointsIfMoved(draft.points, samples, undefined, smoothBlend)
   return opts.straightStrokeAxis
 }
 
 /** Snap the stroke end to the pointer release position (no move-distance threshold). */
 export function finalizeStrokeDraftEndPoint(
-  draft: { tool: StrokeTool; points: [number, number][] },
+  draft: { tool: StrokeTool; points: [number, number][]; arrowTip?: string },
   end: [number, number],
   opts: {
     shiftKey: boolean
@@ -162,7 +173,9 @@ export function finalizeStrokeDraftEndPoint(
 
   // RDP simplification for freehand pen strokes at commit time.
   if (draft.tool === 'pen' && !opts.straightStrokeAxis && draft.points.length > 2) {
-    const epsilon = smoothingLevelToRdpEpsilon(opts.penSmoothingLevel ?? 5)
+    const epsilon = draftHasOpenVArrowTip(draft)
+      ? FREEHAND_ARROW_RDP_EPSILON
+      : smoothingLevelToRdpEpsilon(opts.penSmoothingLevel ?? 5)
     if (epsilon > 0) {
       draft.points = rdpSimplify(draft.points, epsilon)
     }

@@ -15,7 +15,8 @@ export function applyMarkerCanvasStrokeStyle(
   ctx.globalAlpha = alpha
   ctx.strokeStyle = color
   ctx.fillStyle = color
-  ctx.lineCap = 'round'
+  /** Flat chisel ends — like a real highlighter, not a round pen tip. */
+  ctx.lineCap = 'butt'
   ctx.lineJoin = 'round'
 }
 
@@ -40,7 +41,7 @@ export function traceMarkerPointsWithOverlapAccumulate(
     ctx.globalAlpha = 1
     ctx.strokeStyle = color
     ctx.fillStyle = color
-    ctx.lineCap = 'round'
+    ctx.lineCap = 'butt'
     ctx.lineJoin = 'round'
     applyAnnotationLineDash(ctx, lineDashStyle, lineWidthPx)
     ctx.beginPath()

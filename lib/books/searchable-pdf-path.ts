@@ -28,9 +28,25 @@ export function searchablePdfAbsolutePath(originalAbsPath: string): string {
  * `unit.pdf` page 3 → `.searchable/unit.p3.boxes.json`
  */
 export function searchableOcrBoxesAbsolutePath(originalAbsPath: string, pdfPage: number): string {
+  return searchablePageFileAbsolutePath(originalAbsPath, pdfPage, 'boxes')
+}
+
+/**
+ * Raw OCR words for one page, waiting to be stamped into the sidecar.
+ * `unit.pdf` page 3 → `.searchable/unit.p3.ocr.json`
+ */
+export function searchableOcrResultAbsolutePath(originalAbsPath: string, pdfPage: number): string {
+  return searchablePageFileAbsolutePath(originalAbsPath, pdfPage, 'ocr')
+}
+
+function searchablePageFileAbsolutePath(
+  originalAbsPath: string,
+  pdfPage: number,
+  kind: 'boxes' | 'ocr',
+): string {
   const sidecarPdf = searchablePdfAbsolutePath(originalAbsPath)
   const dir = path.dirname(sidecarPdf)
   const stem = path.basename(sidecarPdf, path.extname(sidecarPdf))
   const pageNo = Math.max(1, Math.floor(pdfPage))
-  return path.join(dir, `${stem}.p${pageNo}.boxes.json`)
+  return path.join(dir, `${stem}.p${pageNo}.${kind}.json`)
 }

@@ -1,0 +1,228 @@
+{
+  "storyId": "literature-anthology-g2::unit-1-908992a7::lesson-895fa01d::part-ef62c071",
+  "bookId": "literature-anthology-g2",
+  "unitId": "unit-1-908992a7",
+  "status": "approved",
+  "stops": [
+    {
+      "id": "stop-cd61358e",
+      "label": "What is a bear?",
+      "displayPage": 188,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 190,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-07fef12b",
+          "kind": "true_false",
+          "prompt": "Baby bears are called cubs.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": true,
+          "evidenceSnippet": "Baby bears are called cubs. Cubs are born with their eyes shut.",
+          "evidenceHighlight": "Baby bears are called cubs"
+        }
+      ]
+    },
+    {
+      "id": "stop-5eab5ac0",
+      "label": "Giant Pandas",
+      "displayPage": 191,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 193,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-323c47ce",
+          "kind": "mcq",
+          "prompt": "What animal did people used to think giant pandas were?",
+          "choices": [
+            "raccoons",
+            "monkeys",
+            "dogs",
+            "cats"
+          ],
+          "correctIndex": 0,
+          "correctTrue": null,
+          "evidenceSnippet": "People who study bears once thought that giant pandas were raccoons. Now people think that these animals are bears.",
+          "evidenceHighlight": "raccoons"
+        }
+      ]
+    },
+    {
+      "id": "stop-86e58937",
+      "label": "Bear diets",
+      "displayPage": 196,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 198,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-b8f11fa2",
+          "kind": "mcq",
+          "prompt": "Most bears are omnivores. What does that mean?",
+          "choices": [
+            "They only eat plants.",
+            "They only eat other animals.",
+            "They eat both plants and animals.",
+            "They don't eat anything in winter."
+          ],
+          "correctIndex": 2,
+          "correctTrue": null,
+          "evidenceSnippet": "Most bears are omnivores. Omnivores are animals that eat both plants and animals.",
+          "evidenceHighlight": "Omnivores are animals that eat both plants and animals."
+        }
+      ]
+    },
+    {
+      "id": "stop-23e9406d",
+      "label": "Panda food",
+      "displayPage": 197,
+      "midPageNote": "This question checks understanding of panda diet and habitat, which was part of the original prediction prompt.",
+      "hotspot": {
+        "pdfPage": 199,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-e403c3d6",
+          "kind": "mcq",
+          "prompt": "Giant pandas live in mountain forests. What do they find to eat there?",
+          "choices": [
+            "fish",
+            "bamboo",
+            "berries",
+            "other animals"
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "Pandas live in forests that grow high on mountains. Bamboo grows in these forests.",
+          "evidenceHighlight": "Bamboo grows in these forests."
+        }
+      ]
+    },
+    {
+      "id": "stop-cfca42da",
+      "label": "Black bear habitat",
+      "displayPage": 197,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 199,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-1ed0ae02",
+          "kind": "true_false",
+          "prompt": "Black bears live in North American forests.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": true,
+          "evidenceSnippet": "Black bears live in North American forests.",
+          "evidenceHighlight": "Black bears live in North American forests."
+        }
+      ]
+    },
+    {
+      "id": "stop-ac1682a5",
+      "label": "Winter sleep reason",
+      "displayPage": 198,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 200,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-66764bca",
+          "kind": "mcq",
+          "prompt": "Why do some bears sleep through most of the winter?",
+          "choices": [
+            "They are tired from playing.",
+            "It is hard to find food when it is cold.",
+            "They like to stay warm in their dens.",
+            "They are waiting for their cubs to be born."
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "It is hard for the bears to find food when it is cold. To stay alive, they sleep through most of the winter.",
+          "evidenceHighlight": "It is hard for the bears to find food when it is cold."
+        }
+      ]
+    },
+    {
+      "id": "stop-ecd20915",
+      "label": "Bear dens",
+      "displayPage": 199,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 201,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-bd695a5a",
+          "kind": "mcq",
+          "prompt": "What is the special home a mother bear builds for her cubs called?",
+          "choices": [
+            "a nest",
+            "a cave",
+            "a den",
+            "a tunnel"
+          ],
+          "correctIndex": 2,
+          "correctTrue": null,
+          "evidenceSnippet": "Before the cubs are born, the mother builds a home called a den. The den is a warm and safe place for the bears to live.",
+          "evidenceHighlight": "a home called a den"
+        }
+      ]
+    },
+    {
+      "id": "stop-0973b5b2",
+      "label": "Cubs born in winter",
+      "displayPage": 199,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 201,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-fabe3580",
+          "kind": "true_false",
+          "prompt": "Mother bears have their cubs in the summer.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "Mother bears that live in cold places have their cubs in winter.",
+          "evidenceHighlight": "have their cubs in winter."
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-10-24T12:59:12.152Z",
+  "approvedAt": "2026-10-24T12:59:12.152Z",
+  "autoApprovedAt": "2026-10-24T12:59:12.152Z"
+}

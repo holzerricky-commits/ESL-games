@@ -149,9 +149,8 @@ function selectAnnotationAfterEditEnd(
   if (!liveText.trim()) return
   // Only auto-Move when the writable tool is still active (click-away commit),
   // not when the user already picked pen / stamp / another tool.
-  const stickerKind = config.stickerKind ?? 'writable'
-  const stillOnWritable =
-    isWritableStickerInteraction(config.mode, stickerKind) || config.mode === 'sticky'
+  const stickerKind = config.stickerKind ?? 'quick'
+  const stillOnWritable = isWritableStickerInteraction(config.mode, stickerKind)
   if (!stillOnWritable) return
   config.onSelectedIdsChange?.([endedId])
   config.onEnterSelectMode?.()
@@ -184,10 +183,10 @@ export function useSpreadSessionDomInteraction(config: SpreadSessionDomConfig | 
 
   const enabled = config?.enabled ?? false
   const mode = config?.mode ?? 'pen'
-  const stickerKind = config?.stickerKind ?? 'writable'
+  const stickerKind = config?.stickerKind ?? 'quick'
   const writableStickerVariant = config?.writableStickerVariant ?? 'note'
   const isTextTool = mode === 'text'
-  const isWritableTool = isWritableStickerInteraction(mode, stickerKind) || mode === 'sticky'
+  const isWritableTool = isWritableStickerInteraction(mode, stickerKind)
   const toolPointerEnabled =
     enabled && (isTextTool || isWritableTool) && !(config?.selectEnabled && editingId != null)
   const textToolHoverKind: TextToolHoverKind | null = isTextTool

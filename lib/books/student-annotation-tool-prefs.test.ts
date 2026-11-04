@@ -90,11 +90,11 @@ describe('student-annotation-tool-prefs', () => {
     expect(resolveMarkerToolPrefsFromStorage('stu-a').markerColor).toBe('#ffff00')
   })
 
-  it('markerStraightStroke defaults to true when omitted', () => {
+  it('markerStraightStroke defaults to false when omitted (text-snap / freehand primary)', () => {
     mockLocalStorage()
-    expect(resolveMarkerToolPrefsFromStorage('stu-a').markerStraightStroke).toBe(true)
-    patchStudentAnnotationToolPrefs('stu-a', { markerStraightStroke: false })
     expect(resolveMarkerToolPrefsFromStorage('stu-a').markerStraightStroke).toBe(false)
+    patchStudentAnnotationToolPrefs('stu-a', { markerStraightStroke: true })
+    expect(resolveMarkerToolPrefsFromStorage('stu-a').markerStraightStroke).toBe(true)
   })
 
   it('stores text color and sticky fill per student', () => {

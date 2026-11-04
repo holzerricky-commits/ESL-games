@@ -142,6 +142,32 @@ export function hitTestNormPoint(runs: readonly PdfPageTextRun[], nx: number, ny
   return null
 }
 
+/**
+ * Closest run whose box is within `maxDx` / `maxDy` (page-normalized) of the point.
+ * Lets a click just beside or between words still pick a word.
+ */
+export function nearestRunWithin(
+  runs: readonly PdfPageTextRun[],
+  nx: number,
+  ny: number,
+  maxDx: number,
+  maxDy: number,
+): number | null {
+  if (!(maxDx > 0) || !(maxDy > 0)) return null
+  let best: number | null = null
+  let bestScore = 1
+  for (const run of runs) {
+    const dx = Math.max(run.x - nx, 0, nx - (run.x + run.w)) / maxDx
+    const dy = Math.max(run.y - ny, 0, ny - (run.y + run.h)) / maxDy
+    const score = Math.hypot(dx, dy)
+    if (score <= bestScore) {
+      bestScore = score
+      best = run.index
+    }
+  }
+  return best
+}
+
 export function clampRunIndex(runs: readonly PdfPageTextRun[], index: number): number | null {
   if (runs.length === 0) return null
   const clamped = Math.max(0, Math.min(index, runs.length - 1))

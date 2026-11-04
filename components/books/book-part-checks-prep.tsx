@@ -166,12 +166,7 @@ export function BookPartChecksPrep({
       )}
     >
       <div className={cn(rail ? 'flex min-h-0 flex-1 flex-col space-y-3' : 'space-y-4 px-6 py-5 sm:px-8 sm:py-6')}>
-        {rail ? (
-          <div className="space-y-0.5">
-            <p className="text-[13px] font-semibold tracking-tight text-foreground">Reading checks</p>
-            <p className="text-[12px] text-muted-foreground">Questions for this story</p>
-          </div>
-        ) : (
+        {rail ? null : (
           <div className="flex items-start gap-3.5">
             <span
               className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-[linear-gradient(160deg,color-mix(in_srgb,var(--brand-blue)_72%,white),var(--brand-blue))] text-white shadow-[0_10px_24px_-14px_rgba(0,0,0,0.35)]"

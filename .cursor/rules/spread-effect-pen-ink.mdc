@@ -3,6 +3,7 @@ description: Spread-mode pen/marker ink — live preview, session commit, seam c
 globs:
   - components/students/book-spread-stroke-overlay.tsx
   - components/students/book-spread-session-layer.tsx
+  - components/students/book-spread-page-marker-layer.tsx
   - components/students/fullscreen-book-overlay/sections/BookCanvasStage.tsx
   - lib/books/spread-stroke-split.ts
   - lib/books/spread-canvas-coords.ts
@@ -20,6 +21,7 @@ Two-page spread when `spreadSessionEditingEnabled` (`lib/books/feature-flags.ts`
 - **Live draft:** `BookSpreadStrokeOverlay` (z-30) — spread-normalized points while dragging.
 - **Committed ink:** `BookSpreadSessionLayer` (z-24) + `bookSpreadSessionV1` store — one command list per spread.
 - **Page layers:** text, sticky, stamp, callout only on canvas; pen/marker/shapes delegated via `ink-session-page-layer` helpers.
+- **Live highlighter:** per-page multiply canvases via `BookSpreadPageMarkerLayer.paintTrailing` (imperative, same rAF as pen). Do **not** `setState` per pointer move for live marker.
 
 See `docs/SPREAD_INK_PHASED_PLAN.md`.
 
@@ -34,8 +36,10 @@ Must match `spreadOverlayWidthPx`. Inline-flex pages + right `marginLeft: -pull`
 ### 2. Live preview coordinates
 
 - Accumulate **`draft.points`** in spread-normalized space (`clientToSpreadNorm` on spread capture).
-- **Live pen/marker/eraser:** full polyline on spread overlay draft canvases (continuous seam).
-- **Session mode:** do **not** split live pen/marker to per-page drafts. `eraser-line` live preview goes to spread session layer when session is on.
+- **Live pen:** full polyline on spread overlay draft ink canvas (continuous seam).
+- **Live highlighter (book):** keep multiply on per-page trailing canvases; paint with `leftPageMarkerRef` / `rightPageMarkerRef` from the overlay rAF — never React state each move.
+- **Text-aware highlighter:** when PDF text geometry is available, snap marker gestures to line/word strips (`lib/books/marker-text-line-snap.ts`); freehand only when not over text.
+- **Session mode:** do **not** split live pen to per-page drafts. `eraser-line` live preview goes to spread session layer when session is on.
 
 ### 3. Commit coordinates (session mode)
 
@@ -57,10 +61,12 @@ Must match `spreadOverlayWidthPx`. Inline-flex pages + right `marginLeft: -pull`
 
 - **Keep** incremental committed paint (`canIncrementallyAppendSpreadSessionCommands`) on lift.
 - **Do not** add runtime command-count caps that force full `replayAllSlices` during normal teaching.
+- **Do not** drive live highlighter through `setSpreadMarkerStrokeDraft` / page-pool re-renders; committed marker slice paint must stay decoupled from trailing moves.
 - Perf budget = manual test script (20 quick pen letters); park heavy optimizations in `PARKING_LOT.md`.
 
 ## Quick check
 
 - Rainbow/galaxy/solid on spread: stroke under cursor while drawing; no jump on release; no growing pause on quick letters.
+- Highlighter on spread: tracks pointer like pen; multiply still darkens crossings; seam stroke still looks continuous after commit.
 
 See `docs/BRUSH_PATTERNS_PHASES.md`.

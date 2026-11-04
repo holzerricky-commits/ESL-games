@@ -20,6 +20,8 @@ export function useArrowKeyPageTurn({
       if (e.defaultPrevented) return
       if (e.altKey || e.ctrlKey || e.metaKey) return
       if (shouldDeferBookOverlayToolShortcuts()) return
+      // Lesson review owns ← → while open (flashcards / games).
+      if (document.querySelector('[aria-label="Lesson review"]')) return
 
       if (e.key === 'ArrowLeft') {
         e.preventDefault()

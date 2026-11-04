@@ -23,6 +23,8 @@ export interface TocUnitDraft {
   needsReview: boolean
   /** PDF file for this unit; preserved on save so multi-PDF books keep correct paths. */
   filePath?: string
+  /** Unit/chapter number from AI extract when known (used to merge TOC page batches). */
+  unitNumber?: number
   startPageHint?: number
   endPageHint?: number
   anchorConfidence?: 'high' | 'medium' | 'low'

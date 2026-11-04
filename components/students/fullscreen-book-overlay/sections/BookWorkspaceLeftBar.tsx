@@ -1,6 +1,6 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { useSyncExternalStore, type ReactNode } from 'react'
 import { BookOpen, ImageIcon, Languages, ListChecks, Presentation, Settings, Smartphone, SquareDashedMousePointer, Vault, Volume2, Wrench, X } from 'lucide-react'
 import { BookOverlayPageListButton } from '@/components/students/fullscreen-book-overlay/sections/BookOverlayPageListButton'
 import {
@@ -11,6 +11,12 @@ import {
 } from '@/components/students/fullscreen-book-overlay/FloatingSideToolbar'
 import { BOOK_OVERLAY_SHORTCUT_LABELS as SC } from '@/lib/books/book-overlay-keyboard-shortcuts'
 import { bookPageNavigationChromeEnabled } from '@/lib/books/feature-flags'
+import {
+  getVaultDrag,
+  LESSON_VAULT_DROP_ATTR,
+  LESSON_VAULT_RAIL_ATTR,
+  subscribeVaultDrag,
+} from '@/lib/lesson-vault/vault-drag'
 import { cn } from '@/lib/utils'
 
 interface BookWorkspaceLeftBarProps {
@@ -61,6 +67,45 @@ interface BookWorkspaceLeftBarProps {
 
 function RailIconStack({ children }: { children: ReactNode }) {
   return <div className="flex w-full flex-col items-center gap-0.5 px-0 py-1">{children}</div>
+}
+
+const VAULT_TARGET_ATTRS = { [LESSON_VAULT_RAIL_ATTR]: '', [LESSON_VAULT_DROP_ATTR]: '' }
+
+function VaultRailButton({
+  vaultOpen,
+  vaultCount,
+  onVaultToggle,
+}: {
+  vaultOpen: boolean
+  vaultCount: number
+  onVaultToggle: () => void
+}) {
+  const drag = useSyncExternalStore(subscribeVaultDrag, getVaultDrag, () => null)
+  return (
+    <FloatingSideToolbarButton
+      {...VAULT_TARGET_ATTRS}
+      className={cn(
+        vaultOpen && FLOATING_SIDE_TOOLBAR_BUTTON_ACTIVE,
+        'transition-[box-shadow,scale] duration-150 motion-reduce:transition-none',
+        drag && !drag.overVault && 'ring-2 ring-sky-400/50',
+        drag?.overVault && 'scale-110 ring-2 ring-sky-400 shadow-[0_0_16px_rgba(56,189,248,0.6)]',
+      )}
+      aria-label={vaultOpen ? 'Close vault' : `Open vault (${vaultCount} words)`}
+      aria-pressed={vaultOpen}
+      title="Vault — words saved for this lesson. Drag a word here to save it."
+      onClick={onVaultToggle}
+    >
+      <Vault className={FLOATING_SIDE_TOOLBAR_ICON} aria-hidden />
+      {vaultCount > 0 ? (
+        <span
+          key={vaultCount}
+          className="pointer-events-none absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-sky-500 px-1 text-[10px] font-semibold leading-none text-white animate-in zoom-in-50 duration-300 motion-reduce:animate-none"
+        >
+          {vaultCount}
+        </span>
+      ) : null}
+    </FloatingSideToolbarButton>
+  )
 }
 
 /** Full-height dark left strip — no scroll; navigation top, assist tools bottom. */
@@ -167,20 +212,7 @@ export function BookWorkspaceLeftBar({
           </FloatingSideToolbarButton>
         ) : null}
         {onVaultToggle ? (
-          <FloatingSideToolbarButton
-            className={cn(vaultOpen && FLOATING_SIDE_TOOLBAR_BUTTON_ACTIVE)}
-            aria-label={vaultOpen ? 'Close vault' : `Open vault (${vaultCount} words)`}
-            aria-pressed={vaultOpen}
-            title="Vault — words saved for this lesson"
-            onClick={onVaultToggle}
-          >
-            <Vault className={FLOATING_SIDE_TOOLBAR_ICON} aria-hidden />
-            {vaultCount > 0 ? (
-              <span className="pointer-events-none absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-sky-500 px-1 text-[10px] font-semibold leading-none text-white">
-                {vaultCount}
-              </span>
-            ) : null}
-          </FloatingSideToolbarButton>
+          <VaultRailButton vaultOpen={vaultOpen} vaultCount={vaultCount} onVaultToggle={onVaultToggle} />
         ) : null}
       </RailIconStack>
 

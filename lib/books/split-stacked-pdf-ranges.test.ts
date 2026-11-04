@@ -3,7 +3,7 @@ import {
   bookHasDistinctUnitFiles,
   bookHasSingleSharedPdf,
   buildStackedPdfUnitRanges,
-  unitPdfFileName,
+  volumePdfFileName,
 } from '@/lib/books/split-stacked-pdf-ranges'
 
 describe('buildStackedPdfUnitRanges', () => {
@@ -44,10 +44,10 @@ describe('buildStackedPdfUnitRanges', () => {
     )
     expect(result.ok).toBe(true)
     if (!result.ok) return
-    expect(result.ranges.map((r) => r.title)).toEqual(['Unit 1', 'Unit 2'])
+    expect(result.ranges.map((r) => r.title)).toEqual(['Volume 1', 'Volume 2'])
   })
 
-  it('rejects when unit 1 does not start at 1', () => {
+  it('rejects when volume 1 does not start at 1', () => {
     const result = buildStackedPdfUnitRanges([{ title: 'U', startPage: 2 }], 10)
     expect(result.ok).toBe(false)
   })
@@ -117,9 +117,9 @@ describe('bookHasSingleSharedPdf / bookHasDistinctUnitFiles', () => {
   })
 })
 
-describe('unitPdfFileName', () => {
-  it('pads unit index', () => {
-    expect(unitPdfFileName(0)).toBe('unit-01.pdf')
-    expect(unitPdfFileName(9)).toBe('unit-10.pdf')
+describe('volumePdfFileName', () => {
+  it('pads volume index', () => {
+    expect(volumePdfFileName(0)).toBe('volume-01.pdf')
+    expect(volumePdfFileName(9)).toBe('volume-10.pdf')
   })
 })

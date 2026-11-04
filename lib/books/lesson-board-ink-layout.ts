@@ -1,7 +1,4 @@
-import {
-  lessonBoardAspectHeightPx,
-  type LessonBoardPageOrientation,
-} from '@/lib/books/lesson-board-types'
+import { lessonBoardAspectHeightPx } from '@/lib/books/lesson-board-types'
 import type { WhiteboardViewportInkConfig } from '@/lib/books/whiteboard-viewport-ink'
 
 /** Visible ink area below the board header. */
@@ -12,7 +9,7 @@ export function lessonBoardCanvasViewportHeightPx(
   return Math.max(1, panelHeightPx - headerHeightPx)
 }
 
-/** Spread-wide board width with the same outer margin as the docked slot. */
+/** @deprecated Wide pages removed — kept for call-site cleanup. Prefer slot width. */
 export function lessonBoardWideSpreadWidthPx(
   spreadOverlayWidthPx: number,
   slotInsetPx: number,
@@ -20,7 +17,7 @@ export function lessonBoardWideSpreadWidthPx(
   return Math.max(1, spreadOverlayWidthPx - slotInsetPx * 2)
 }
 
-/** Wide panel chrome height = header + 16∶9 content. */
+/** @deprecated Wide pages removed. */
 export function lessonBoardWidePanelHeightPx(
   contentHeightPx: number,
   headerHeightPx: number,
@@ -42,7 +39,7 @@ export function lessonBoardCenteredPanelAnchorPx(
   }
 }
 
-/** Center the wide card on the spread while keeping at least slotInset margin on each side. */
+/** @deprecated Wide pages removed — alias of centered panel anchor. */
 export function lessonBoardWidePanelAnchorPx(
   spreadOverlayWidthPx: number,
   pageCanvasHeightPx: number,
@@ -60,7 +57,7 @@ export function lessonBoardWidePanelAnchorPx(
 }
 
 /**
- * Center a Standard board on the desk during notebook Focus.
+ * Center a notebook board on the desk during notebook Focus.
  * Panel size stays the native slot (do not stretch to spread width).
  */
 export function lessonBoardFocusStandardAnchorPx(
@@ -79,25 +76,20 @@ export function lessonBoardFocusStandardAnchorPx(
   )
 }
 
-/** Default wide content height from inset spread width (16∶9). */
+/** @deprecated Wide pages removed. */
 export function lessonBoardWideDefaultContentHeightPx(
   spreadOverlayWidthPx: number,
   slotInsetPx: number,
 ): number {
   const widthPx = lessonBoardWideSpreadWidthPx(spreadOverlayWidthPx, slotInsetPx)
-  return lessonBoardAspectHeightPx(widthPx, 'wide')
+  return lessonBoardAspectHeightPx(widthPx)
 }
 
 /** Runway growth + min height should match the panel the teacher actually scrolls. */
 export function lessonBoardRunwayViewportHeightPx(
-  orientation: LessonBoardPageOrientation,
   slotPanelHeightPx: number,
   headerHeightPx: number,
-  widePanelHeightPx?: number,
 ): number {
-  if (orientation === 'wide' && widePanelHeightPx != null && widePanelHeightPx > 0) {
-    return lessonBoardCanvasViewportHeightPx(widePanelHeightPx, headerHeightPx)
-  }
   return lessonBoardCanvasViewportHeightPx(slotPanelHeightPx, headerHeightPx)
 }
 

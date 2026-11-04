@@ -1,7 +1,10 @@
 import type { BookAnnotationInteractionMode } from '@/lib/books/annotation-storage'
 import type { StampVariant, WritableStickerVariant } from '@/lib/books/annotation-command-types'
 
-/** Quick tap stickers (canvas symbols) vs writable cards (DOM text). */
+/**
+ * Sticker tool kinds. `'writable'` is retired (legacy prefs / types only);
+ * new stickers are always quick tap symbols. Existing sticky annotations still render.
+ */
 export type StickerKind = 'quick' | 'writable'
 
 export const STICKER_QUICK_VARIANTS = [
@@ -57,23 +60,20 @@ export function normalizeInteractionMode(mode: BookAnnotationInteractionMode): B
 }
 
 export function resolveStickerKindFromLegacyMode(
-  mode: BookAnnotationInteractionMode,
-  storedKind: StickerKind | undefined,
+  _mode: BookAnnotationInteractionMode,
+  _storedKind: StickerKind | undefined,
 ): StickerKind {
-  if (storedKind === 'quick' || storedKind === 'writable') return storedKind
-  if (mode === 'stamp') return 'quick'
-  if (mode === 'sticky') return 'writable'
   return 'quick'
 }
 
 export function isQuickStickerInteraction(
   mode: BookAnnotationInteractionMode,
-  stickerKind: StickerKind,
+  _stickerKind: StickerKind,
 ): boolean {
   const m = normalizeInteractionMode(mode)
   if (m === 'stamp') return true
   if (m === 'sticky') return false
-  return m === 'sticker' && stickerKind === 'quick'
+  return m === 'sticker'
 }
 
 /** Tap-to-place canvas tools (quick stickers, callouts, eyedropper) on ink session layers. */
@@ -89,14 +89,12 @@ export function isSessionTapCanvasToolInteraction(
   )
 }
 
+/** Writable sticker creation is retired; always false. Legacy stickies still render/edit via select. */
 export function isWritableStickerInteraction(
-  mode: BookAnnotationInteractionMode,
-  stickerKind: StickerKind,
+  _mode: BookAnnotationInteractionMode,
+  _stickerKind: StickerKind,
 ): boolean {
-  const m = normalizeInteractionMode(mode)
-  if (m === 'sticky') return true
-  if (m === 'stamp') return false
-  return m === 'sticker' && stickerKind === 'writable'
+  return false
 }
 
 export function stickyWritableVariant(

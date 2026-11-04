@@ -8,23 +8,46 @@ import {
   parseCloudOcrWordsFromModelText,
 } from '@/lib/books/searchable-pdf-ocr-fallback'
 
+/** Body-sized word on one text line (20px tall), spaced across the page. */
+function bodyWord(index: number, confidence: number) {
+  const x0 = 10 + index * 60
+  return { text: `word${index}`, confidence, x0, y0: 100, x1: x0 + 50, y1: 120 }
+}
+
 describe('pageNeedsCloudOcrFallback', () => {
   it('asks for cloud OCR when the page has no words', () => {
     expect(pageNeedsCloudOcrFallback([])).toBe(true)
     expect(medianOcrConfidence([])).toBe(0)
   })
 
-  it('asks for cloud OCR when the median confidence is under 65', () => {
-    const words = [{ confidence: 90 }, { confidence: 40 }, { confidence: 50 }]
+  it('asks for cloud OCR when fewer than 5 body words came back', () => {
+    const words = [0, 1, 2, 3].map((i) => bodyWord(i, 95))
+    expect(pageNeedsCloudOcrFallback(words)).toBe(true)
+  })
+
+  it('asks for cloud OCR when the body median confidence is under 65', () => {
+    const words = [90, 40, 50, 45, 55].map((c, i) => bodyWord(i, c))
     expect(medianOcrConfidence(words)).toBe(50)
     expect(pageNeedsCloudOcrFallback(words)).toBe(true)
   })
 
-  it('keeps local OCR when the median confidence is 65 or higher', () => {
-    expect(pageNeedsCloudOcrFallback([{ confidence: OCR_PAGE_CONFIDENCE_MIN }])).toBe(false)
-    expect(pageNeedsCloudOcrFallback([{ confidence: 80 }, { confidence: 70 }, { confidence: 90 }])).toBe(
-      false,
-    )
+  it('keeps local OCR when the body median is 65 or higher', () => {
+    const words = [OCR_PAGE_CONFIDENCE_MIN, 70, 80, 90, 65].map((c, i) => bodyWord(i, c))
+    expect(pageNeedsCloudOcrFallback(words)).toBe(false)
+  })
+
+  it('ignores low-confidence junk boxes from illustrations', () => {
+    const body = [80, 85, 90, 75, 88].map((c, i) => bodyWord(i, c))
+    const junk = [0, 1, 2, 3, 4, 5].map((i) => ({
+      text: '~',
+      confidence: 10,
+      x0: 400 + i * 20,
+      y0: 400,
+      x1: 410 + i * 20,
+      y1: 460,
+    }))
+    expect(medianOcrConfidence([...body, ...junk])).toBeLessThan(OCR_PAGE_CONFIDENCE_MIN)
+    expect(pageNeedsCloudOcrFallback([...body, ...junk])).toBe(false)
   })
 })
 

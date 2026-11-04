@@ -2,6 +2,7 @@ import path from 'node:path'
 import { promises as fs } from 'node:fs'
 import { migrateBookVolumes } from '@/lib/books/book-volumes'
 import { dedupeBookLibraryPayload } from '@/lib/books/dedupe-book-library'
+import { isBookLessonPartTag } from '@/lib/books/part-structure-tag'
 import { clampSpreadGutterPullRatio } from '@/lib/books/spread-gutter'
 import type { BookLibraryPayload, BookRecord, BookVolumeRecord } from '@/lib/books/types'
 import { isHiddenLibraryDirName } from '@/lib/books/searchable-pdf-path'
@@ -165,6 +166,9 @@ async function loadManifestIfPresent(): Promise<BookLibraryPayload | null> {
           ...(optionalStartPageHint(unit?.startPageHint) != null
             ? { startPageHint: optionalStartPageHint(unit?.startPageHint) as number }
             : {}),
+          ...(optionalStartPageHint(unit?.endPageHint) != null
+            ? { endPageHint: optionalStartPageHint(unit?.endPageHint) as number }
+            : {}),
           ...(optionalAnchorConfidence(unit?.anchorConfidence)
             ? { anchorConfidence: optionalAnchorConfidence(unit?.anchorConfidence) as 'high' | 'medium' | 'low' }
             : {}),
@@ -180,6 +184,9 @@ async function loadManifestIfPresent(): Promise<BookLibraryPayload | null> {
                     ...(optionalStartPageHint(lesson?.startPageHint) != null
                       ? { startPageHint: optionalStartPageHint(lesson?.startPageHint) as number }
                       : {}),
+                    ...(optionalStartPageHint(lesson?.endPageHint) != null
+                      ? { endPageHint: optionalStartPageHint(lesson?.endPageHint) as number }
+                      : {}),
                     ...(optionalAnchorConfidence(lesson?.anchorConfidence)
                       ? { anchorConfidence: optionalAnchorConfidence(lesson?.anchorConfidence) as 'high' | 'medium' | 'low' }
                       : {}),
@@ -193,6 +200,12 @@ async function loadManifestIfPresent(): Promise<BookLibraryPayload | null> {
                             title: typeof part?.title === 'string' ? part.title : `Part ${pi + 1}`,
                             ...(optionalStartPageHint(part?.startPageHint) != null
                               ? { startPageHint: optionalStartPageHint(part?.startPageHint) as number }
+                              : {}),
+                            ...(optionalStartPageHint(part?.endPageHint) != null
+                              ? { endPageHint: optionalStartPageHint(part?.endPageHint) as number }
+                              : {}),
+                            ...(isBookLessonPartTag(part?.structureTag)
+                              ? { structureTag: part.structureTag }
                               : {}),
                             ...(optionalAnchorConfidence(part?.anchorConfidence)
                               ? { anchorConfidence: optionalAnchorConfidence(part?.anchorConfidence) as 'high' | 'medium' | 'low' }

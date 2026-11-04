@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   isCenteredWritableStickerVariant,
+  isQuickStickerInteraction,
+  isWritableStickerInteraction,
   isWritableStickerVariant,
   normalizeWritableStickerVariant,
+  resolveStickerKindFromLegacyMode,
 } from './sticker-tool'
 import {
   defaultWritableStickerFill,
@@ -10,7 +13,7 @@ import {
   writableStickerLayoutMetrics,
 } from './writable-sticker-visuals'
 
-describe('sticker-tool writable variants', () => {
+describe('sticker-tool writable variants (legacy render)', () => {
   it('recognizes speech and thought as writable variants', () => {
     expect(isWritableStickerVariant('speech')).toBe(true)
     expect(isWritableStickerVariant('thought')).toBe(true)
@@ -29,6 +32,25 @@ describe('sticker-tool writable variants', () => {
     expect(isCenteredWritableStickerVariant('speech')).toBe(true)
     expect(isCenteredWritableStickerVariant('thought')).toBe(true)
     expect(isCenteredWritableStickerVariant('note')).toBe(false)
+  })
+})
+
+describe('sticker-tool writable creation retired', () => {
+  it('never enables writable sticker interaction', () => {
+    expect(isWritableStickerInteraction('sticker', 'writable')).toBe(false)
+    expect(isWritableStickerInteraction('sticky', 'writable')).toBe(false)
+    expect(isWritableStickerInteraction('sticker', 'quick')).toBe(false)
+  })
+
+  it('resolves sticker kind to quick only', () => {
+    expect(resolveStickerKindFromLegacyMode('sticky', 'writable')).toBe('quick')
+    expect(resolveStickerKindFromLegacyMode('sticker', 'writable')).toBe('quick')
+    expect(resolveStickerKindFromLegacyMode('stamp', undefined)).toBe('quick')
+  })
+
+  it('treats sticker mode as quick regardless of stored kind', () => {
+    expect(isQuickStickerInteraction('sticker', 'writable')).toBe(true)
+    expect(isQuickStickerInteraction('sticker', 'quick')).toBe(true)
   })
 })
 

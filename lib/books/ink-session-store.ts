@@ -58,6 +58,7 @@ import {
   markInkSessionDrawingHot,
   resolveInkSessionAutosaveMs,
 } from '@/lib/books/ink-session-persist-v2'
+import { INK_SESSION_MAX_DIRTY_AGE_MS } from '@/lib/books/ink-session-persist-config'
 import { notifyReaderPrefetchInkRevisionHot } from '@/lib/books/reader-prefetch-ink-coordinator'
 
 
@@ -232,6 +233,11 @@ export function createInkSessionStore<TDoc extends InkSessionDocument>(
 
   let autosaveTimer: ReturnType<typeof setTimeout> | null = null
 
+  let maxDirtyAgeTimer: ReturnType<typeof setTimeout> | null = null
+
+  /** Wall time when the doc last became dirty (or last forced max-age checkpoint). */
+  let dirtySinceMs: number | null = null
+
   const persistWriter = createInkSessionPersistV2Writer()
 
   let destroyed = false
@@ -242,6 +248,10 @@ export function createInkSessionStore<TDoc extends InkSessionDocument>(
 
   if (sceneNeedsEraserLineCompaction(doc.commands)) {
     doc = { ...doc, commands: compactLegacyEraserLineScene(doc.commands) }
+  }
+
+  if (doc.meta.dirty) {
+    dirtySinceMs = now()
   }
 
 
@@ -322,6 +332,20 @@ export function createInkSessionStore<TDoc extends InkSessionDocument>(
 
 
 
+  function clearMaxDirtyAgeTimer(): void {
+    if (maxDirtyAgeTimer) {
+      clearTimeout(maxDirtyAgeTimer)
+      maxDirtyAgeTimer = null
+    }
+  }
+
+  function clearAutosaveTimer(): void {
+    if (autosaveTimer) {
+      clearTimeout(autosaveTimer)
+      autosaveTimer = null
+    }
+  }
+
   function runCheckpointWrite(): void {
     if (destroyed || !doc.meta.dirty) return
     options.saveCheckpoint(doc)
@@ -333,6 +357,8 @@ export function createInkSessionStore<TDoc extends InkSessionDocument>(
         updatedAt: now(),
       },
     }
+    dirtySinceMs = null
+    clearMaxDirtyAgeTimer()
   }
 
   function writeCheckpoint(mode: 'sync' | 'idle' = 'sync'): void {
@@ -344,9 +370,31 @@ export function createInkSessionStore<TDoc extends InkSessionDocument>(
     persistWriter.flushSync(runCheckpointWrite)
   }
 
+  function scheduleMaxDirtyAgeCheckpoint(): void {
+    if (!persistEnabled || destroyed || !doc.meta.dirty) return
+    if (dirtySinceMs == null) dirtySinceMs = now()
+    if (maxDirtyAgeTimer) return
+    const elapsed = Math.max(0, now() - dirtySinceMs)
+    const remaining = Math.max(0, INK_SESSION_MAX_DIRTY_AGE_MS - elapsed)
+    maxDirtyAgeTimer = setTimeout(() => {
+      maxDirtyAgeTimer = null
+      if (destroyed || !doc.meta.dirty) return
+      clearAutosaveTimer()
+      writeCheckpoint('sync')
+      // Still dirty means write was skipped; otherwise start a fresh ceiling window if edits continue.
+      if (doc.meta.dirty) {
+        dirtySinceMs = now()
+        scheduleMaxDirtyAgeCheckpoint()
+      }
+      emit()
+    }, remaining)
+  }
+
   function scheduleAutosave(): void {
     if (!persistEnabled || destroyed) return
-    if (autosaveTimer) clearTimeout(autosaveTimer)
+    if (dirtySinceMs == null) dirtySinceMs = now()
+    scheduleMaxDirtyAgeCheckpoint()
+    clearAutosaveTimer()
     const delay = resolveInkSessionAutosaveMs(autosaveMs)
     autosaveTimer = setTimeout(() => {
       autosaveTimer = null
@@ -950,6 +998,12 @@ export function createInkSessionStore<TDoc extends InkSessionDocument>(
 
       }
 
+      dirtySinceMs = null
+
+      clearMaxDirtyAgeTimer()
+
+      clearAutosaveTimer()
+
       emit()
 
     },
@@ -976,6 +1030,8 @@ export function createInkSessionStore<TDoc extends InkSessionDocument>(
 
       selectedIds = selectedIds.filter((id) => doc.commands.some((c) => c.id === id))
 
+      dirtySinceMs = now()
+
       scheduleAutosave()
 
       emit()
@@ -986,21 +1042,16 @@ export function createInkSessionStore<TDoc extends InkSessionDocument>(
 
       if (destroyed) return
 
-      destroyed = true
+      clearAutosaveTimer()
 
-      if (autosaveTimer) {
+      clearMaxDirtyAgeTimer()
 
-        clearTimeout(autosaveTimer)
-
-        autosaveTimer = null
-
-      }
-
+      // Checkpoint while still alive — runCheckpointWrite no-ops once destroyed=true.
       if (persistEnabled && doc.meta.dirty) {
-
         writeCheckpoint('sync')
-
       }
+
+      destroyed = true
 
       persistWriter.cancelPending()
 

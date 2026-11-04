@@ -2,8 +2,15 @@ import { toast } from 'sonner'
 import type { ScanNotice } from '@/components/books/dismissible-scan-notice'
 import {
   runSearchablePdfForStory,
+  type SearchablePdfJobResult,
   type SearchablePdfProgress,
+  type SearchablePdfScope,
 } from '@/lib/books/searchable-pdf-client'
+
+/** Job key for a whole-lesson run; kept apart from story keys so both can show progress. */
+export function lessonSelectableJobKey(bookId: string, unitId: string, lessonId: string): string {
+  return `lesson-selectable::${bookId}::${unitId}::${lessonId}`
+}
 
 export type SearchablePdfJobSnapshot = {
   storyId: string
@@ -107,10 +114,13 @@ export function startSearchablePdfJob(input: {
   partId?: string | null
   title?: string
   totalPdfPages?: number | null
+  scope?: SearchablePdfScope
   force?: boolean
-}): void {
+}): Promise<SearchablePdfJobResult> {
   const storyId = input.storyId.trim()
-  if (!storyId) return
+  if (!storyId) {
+    return Promise.resolve({ ok: false, error: 'Missing job id.', filePath: null, stamped: 0 })
+  }
 
   const prev = jobs.get(storyId)
   if (prev?.running) prev.controller.abort()
@@ -130,6 +140,7 @@ export function startSearchablePdfJob(input: {
       percent: 0,
       activeLabel: null,
       activeStartedAt: null,
+      phase: 'reading',
       message: force ? 'Preparing redo…' : 'Checking pages…',
     },
     lastNotice: null,
@@ -147,7 +158,7 @@ export function startSearchablePdfJob(input: {
     pruneIdleJob(current)
   }
 
-  void (async () => {
+  return (async (): Promise<SearchablePdfJobResult> => {
     try {
       const result = await runSearchablePdfForStory({
         ...input,
@@ -163,7 +174,7 @@ export function startSearchablePdfJob(input: {
       })
 
       const current = jobs.get(storyId)
-      if (!current || current.generation !== generation) return
+      if (!current || current.generation !== generation) return result
 
       if (result.ok) {
         if (result.stamped === 0) {
@@ -185,7 +196,7 @@ export function startSearchablePdfJob(input: {
               : `Selectable text is ready on ${pagesLabel(result.stamped)}. Drag words on the book to copy or translate.`,
           })
         }
-      } else if (controller.signal.aborted || result.error.startsWith('Stopped')) {
+      } else if (result.error.startsWith('Stopped')) {
         finish(current, {
           kind: 'info',
           message:
@@ -203,10 +214,17 @@ export function startSearchablePdfJob(input: {
               : result.error,
         })
       }
+      return result
     } catch (err) {
-      const current = jobs.get(storyId)
-      if (!current || current.generation !== generation) return
       const message = err instanceof Error ? err.message : 'Could not make pages selectable.'
+      const failed: SearchablePdfJobResult = {
+        ok: false,
+        error: controller.signal.aborted ? 'Stopped.' : message,
+        filePath: null,
+        stamped: 0,
+      }
+      const current = jobs.get(storyId)
+      if (!current || current.generation !== generation) return failed
       if (!controller.signal.aborted) toast.error(message)
       finish(
         current,
@@ -214,6 +232,7 @@ export function startSearchablePdfJob(input: {
           ? { kind: 'info', message: 'Stopped before any page was finished.' }
           : { kind: 'error', message },
       )
+      return failed
     }
   })()
 }

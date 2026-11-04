@@ -1,4 +1,4 @@
-import { isBookOverlayShapeMode } from '@/lib/books/book-overlay-keyboard-shortcuts'
+import { isBookOverlayLineMode, isBookOverlayShapeMode } from '@/lib/books/book-overlay-keyboard-shortcuts'
 import { isQuickStickerInteraction, type StickerKind } from '@/lib/books/sticker-tool'
 import type { BookAnnotationInteractionMode } from '@/lib/books/annotation-storage'
 
@@ -6,6 +6,7 @@ export type AnnotationRailToolSlot =
   | 'pen'
   | 'eyedropper'
   | 'marker'
+  | 'lines'
   | 'shapes'
   | 'stickers'
   | 'text'
@@ -22,6 +23,7 @@ export function resolveAnnotationRailToolSlot(
   if (mode === 'pen') return 'pen'
   if (mode === 'eyedropper') return 'eyedropper'
   if (mode === 'marker') return 'marker'
+  if (isBookOverlayLineMode(mode)) return 'lines'
   if (isBookOverlayShapeMode(mode)) return 'shapes'
   if (mode === 'sticky' || mode === 'stamp' || isQuickStickerInteraction(mode, options?.stickerKind ?? 'quick')) {
     return 'stickers'

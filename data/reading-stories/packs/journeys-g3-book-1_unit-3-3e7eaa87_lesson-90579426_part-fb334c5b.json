@@ -1,0 +1,218 @@
+{
+  "storyId": "journeys-g3-book-1::unit-3-3e7eaa87::lesson-90579426::part-fb334c5b",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-3-3e7eaa87",
+  "status": "approved",
+  "stops": [
+    {
+      "id": "stop-d4008ad1",
+      "label": "Aero is a K-9 officer",
+      "displayPage": 462,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 470,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-8c446900",
+          "kind": "true_false",
+          "prompt": "Aero is a regular pet dog who stays home all day.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "Aero is a police dog, also known as a K-9 officer. When Officer Mike puts on his uniform with a silver badge on his chest, Aero jumps up, ready to have his wide black leather collar with a police badge on it slipped over his head. He knows this will be a work day.",
+          "evidenceHighlight": "Aero is a police dog, also known as a K-9 officer."
+        }
+      ]
+    },
+    {
+      "id": "stop-1831cd94",
+      "label": "Publisher: Police Jargon",
+      "displayPage": 463,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 471,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-a3b1331c",
+          "kind": "mcq",
+          "prompt": "What special ability does Aero have that Officer Mike does not?",
+          "choices": [
+            "Drive a car",
+            "Understand commands",
+            "Sniff and find lost things",
+            "Run very fast"
+          ],
+          "correctIndex": 2,
+          "correctTrue": null,
+          "evidenceSnippet": "Aero, with his powerful nose, can do many things Officer Mike cannot. He can sniff and find lost children. He can sniff and find lost things.",
+          "evidenceHighlight": "He can sniff and find lost children. He can sniff and find lost things."
+        }
+      ]
+    },
+    {
+      "id": "stop-df89beb1",
+      "label": "Aero protects the car",
+      "displayPage": 465,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 473,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-7d994e6b",
+          "kind": "true_false",
+          "prompt": "Aero lets anyone sit in the front seat of the police car.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "Officer Mike sits in the driver's seat, but Aero will not let anyone else sit in the front until Officer Mike tells Aero it is OK.",
+          "evidenceHighlight": "Aero will not let anyone else sit in the front until Officer Mike tells Aero it is OK."
+        }
+      ]
+    },
+    {
+      "id": "stop-beb20f9f",
+      "label": "Publisher: Author's Purpose",
+      "displayPage": 467,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 475,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-2cf5073f",
+          "kind": "mcq",
+          "prompt": "How does the author organize the information about Aero's signals and commands on this page?",
+          "choices": [
+            "By listing them in alphabetical order",
+            "By showing how Aero learns new tricks",
+            "By describing different types of signals and commands",
+            "By telling a story about Aero using a command"
+          ],
+          "correctIndex": 2,
+          "correctTrue": null,
+          "evidenceSnippet": "Officer Mike can talk to Aero in different ways. One way is to use hand and arm signals. When Mike's hand is outstretched, it means \"stay.\" When Mike's arm is raised, it means \"sit.\" When his hand is flat, it means \"down.\" ... Aero can understand short commands like \"Find him!\" or \"Stop him!\" and \"No barking!\" Aero can also understand some commands in Czech, the language spoken where he was born and where he began his training as a police dog.",
+          "evidenceHighlight": null
+        }
+      ]
+    },
+    {
+      "id": "stop-a0a857ef",
+      "label": "Publisher: K-9 Training Summary",
+      "displayPage": 468,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 476,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-d0f66785",
+          "kind": "mcq",
+          "prompt": "What is one important part of Aero's training?",
+          "choices": [
+            "Learning to drive the police car",
+            "Running through an obstacle course",
+            "Sleeping quietly in the car",
+            "Playing with other dogs"
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "One exercise the police dogs do is to run through an obstacle course. The dogs practice getting over, under, around, and through difficult spots.",
+          "evidenceHighlight": "One exercise the police dogs do is to run through an obstacle course."
+        }
+      ]
+    },
+    {
+      "id": "stop-bb90e99a",
+      "label": "Aero's powerful nose",
+      "displayPage": 470,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 478,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-ec0e9dcd",
+          "kind": "true_false",
+          "prompt": "Aero's nose is not as good as a human's nose for finding things.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "K-9s have very powerful noses—hundreds of times more powerful than human noses. That's why one of Aero's most helpful talents on the police force is his ability to find things by smell.",
+          "evidenceHighlight": "K-9s have very powerful noses—hundreds of times more powerful than human noses."
+        }
+      ]
+    },
+    {
+      "id": "stop-dabe35ff",
+      "label": "Aero visits children",
+      "displayPage": 472,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 480,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-8b28ff4c",
+          "kind": "true_false",
+          "prompt": "Aero is gentle with children, even when they are sick.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": true,
+          "evidenceSnippet": "Aero likes children and is always gentle with them. He is even gentler when visiting a sick child. He lies down, staying very still and quiet so the child won't be afraid of him.",
+          "evidenceHighlight": "Aero likes children and is always gentle with them. He is even gentler when visiting a sick child."
+        }
+      ]
+    },
+    {
+      "id": "stop-ca19e3bf",
+      "label": "End of work day",
+      "displayPage": 476,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 484,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-d1bcc4c4",
+          "kind": "true_false",
+          "prompt": "After work, Aero and Officer Mike go home and sleep far away from each other.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "When Officer Mike goes to bed, Aero will plop down on the floor near the bed. He lays his head on his paws, and with a sigh goes to sleep near his best friend.",
+          "evidenceHighlight": null
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-10-16T12:45:52.585Z",
+  "approvedAt": "2026-10-16T12:45:52.585Z",
+  "autoApprovedAt": "2026-10-16T12:45:52.585Z"
+}

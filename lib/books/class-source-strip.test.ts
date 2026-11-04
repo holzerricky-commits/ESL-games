@@ -69,6 +69,27 @@ describe('class-source-strip', () => {
     expect(chips[1]).toMatchObject({ bookId: 'ws', unitId: 'u1', page: 4 })
   })
 
+  it('prefers student place unit and page over assignment defaults', () => {
+    const chips = listClassSourceBooks({
+      library,
+      assignedBookIds: ['lit', 'ws'],
+      assignedUnitRefs: [
+        { bookId: 'lit', unitId: 'u1' },
+        { bookId: 'ws', unitId: 'u1' },
+      ],
+      openBookId: 'ws',
+      openUnitId: 'u1',
+      openPage: 3,
+      getSavedPage: () => 1,
+      getPlaceForBook: (bookId) =>
+        bookId === 'lit' ? { unitId: 'u2', pdfPage: 27 } : null,
+    })
+    expect(chips.find((c) => c.bookId === 'lit')).toMatchObject({
+      unitId: 'u2',
+      page: 27,
+    })
+  })
+
   it('uses the live open page for the focused book', () => {
     const chips = listClassSourceBooks({
       library,

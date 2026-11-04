@@ -35,8 +35,6 @@ import { useWhiteboardPlacement } from './useWhiteboardPlacement'
 import {
   getLessonBoardActivePage,
   lessonBoardLogicalWidthPx,
-  lessonBoardResolveContentHeightPx,
-  type LessonBoardPageOrientation,
 } from '@/lib/books/lesson-board-types'
 import { listClassSourceBooks, readClassSourceNotebookLayout, resolveClassSourceNotebookLayout, writeClassSourceNotebookLayout } from '@/lib/books/class-source-strip'
 import { classSourceRetainUnitIds } from '@/lib/books/class-source-parked-reader'
@@ -46,11 +44,7 @@ import {
   type LessonBoardShelfEntry,
 } from '@/lib/books/lesson-board-nav'
 import { peekSavedUnitPage } from '@/lib/books/progress'
-import {
-  lessonBoardRunwayViewportHeightPx,
-  lessonBoardWidePanelHeightPx,
-  lessonBoardWideSpreadWidthPx,
-} from '@/lib/books/lesson-board-ink-layout'
+import { lessonBoardRunwayViewportHeightPx } from '@/lib/books/lesson-board-ink-layout'
 import { useLessonBoardPageRunway } from './useLessonBoardPageRunway'
 import { useWhiteboardInkSession } from './useWhiteboardInkSession'
 import { useBoardLinkPlacement } from './useBoardLinkPlacement'
@@ -75,6 +69,7 @@ import { useBookPageAlignmentModel } from './useBookPageAlignmentModel'
 import { useCurrentPageCaptureEl } from './useCurrentPageCaptureEl'
 import { preloadAllEffectPenResources } from '@/lib/books/effect-pen-preload'
 import { getFileAlignment, getUnitReaderBounds } from '@/lib/books/page-range'
+import { resolveMappedPageToPdfPage } from '@/lib/books/page-numbering'
 import {
   clearReaderPrefetchCacheForUnit,
   invalidateReaderPrefetchStaleWidthBucketsForUnit,
@@ -117,8 +112,15 @@ import {
   formatNotebookBookLinkGoToLabel,
   removeLessonBoardPageLinksForBoardPageIds,
 } from '@/lib/books/lesson-board-page-links'
-import { getStudentTeachingOpenPdfPageForBookUnit } from '@/lib/students/selectors'
+import { inClassBookIds } from '@/lib/students/book-assignment-status'
+import {
+  getStudentBookPlaces,
+  getStudentOpenTargetForBook,
+  getStudentTeachingOpenPdfPageForBookUnit,
+} from '@/lib/students/selectors'
 import type { FullscreenBookOverlayProps } from '../types'
+
+type SessionBookPlace = { unitId: string; pdfPage: number }
 
 /** A4-style portrait default until PDF viewport is primed (see B3). */
 const DEFAULT_PAGE_ASPECT_RATIO = 1 / 1.414
@@ -140,6 +142,7 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     studentId,
     activeClassSessionId = null,
     assignedBookIds,
+    bookAssignmentStatus,
     assignedUnitRefs = EMPTY_ASSIGNED_UNIT_REFS,
     curriculumHistory = EMPTY_CURRICULUM_HISTORY,
     studentName,
@@ -159,13 +162,23 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     onSwitchTeachingBook,
   } = props
 
+  /** Last unit+page per book during this overlay visit — restores place when switching books. */
+  const sessionPlaceByBookRef = useRef<Record<string, SessionBookPlace>>({})
+
   const preferResumePage = useMemo(() => {
     if (preferOpenPdfPage != null && Number.isFinite(preferOpenPdfPage)) {
       return Math.max(1, Math.floor(preferOpenPdfPage))
     }
     const bookId = preferBookId?.trim()
+    if (!bookId) return null
+    const session = sessionPlaceByBookRef.current[bookId]
+    if (session && Number.isFinite(session.pdfPage) && session.pdfPage >= 1) {
+      return Math.floor(session.pdfPage)
+    }
+    const openTarget = getStudentOpenTargetForBook(studentId, bookId, null)
+    if (openTarget) return openTarget.pdfPage
     const unitId = preferUnitId?.trim()
-    if (!bookId || !unitId) return null
+    if (!unitId) return null
     return getStudentTeachingOpenPdfPageForBookUnit(studentId, bookId, unitId, null)
   }, [preferBookId, preferOpenPdfPage, preferUnitId, studentId])
 
@@ -193,6 +206,12 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
   const [lessonBoardUnitId, setLessonBoardUnitId] = useState<string | null>(null)
   const [pageNumber, setPageNumber] = useState(1)
   const [numPages, setNumPages] = useState<number | null>(null)
+  /** Per-unit page counts — restore on strip tab switch so presentation never blanks. */
+  const numPagesByUnitIdRef = useRef<Record<string, number>>({})
+  const getCachedNumPages = useCallback((unitId: string) => {
+    const n = numPagesByUnitIdRef.current[unitId.trim()]
+    return n != null && Number.isFinite(n) && n >= 1 ? Math.floor(n) : null
+  }, [])
   const [targetSpreadPageWidth, setTargetSpreadPageWidth] = useState(initialSpreadPageWidthPx)
   const [spreadPageWidth, setSpreadPageWidth] = useState(initialSpreadPageWidthPx)
   const [pageAspectRatio, setPageAspectRatio] = useState(DEFAULT_PAGE_ASPECT_RATIO)
@@ -231,7 +250,6 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
   /** Bumps so `BookCanvasStage` resets slot reporting when reopening, unit change, or width bucket. */
   const [spreadReportEpoch, setSpreadReportEpoch] = useState(0)
   const [isPageListOpen, setIsPageListOpen] = useState(false)
-  const [pageListRailTab, setPageListRailTab] = useState<'book' | 'board'>('book')
   const [isWhiteboardOpen, setIsWhiteboardOpen] = useState(false)
   const [isWhiteboardMinimized, setIsWhiteboardMinimized] = useState(false)
   const [notebookFocus, setNotebookFocus] = useState(false)
@@ -263,7 +281,6 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
   targetSpreadPageWidthRef.current = targetSpreadPageWidth
   const spreadTurnGridRef = useRef<HTMLDivElement | null>(null)
   const activePageRowRef = useRef<HTMLButtonElement | null>(null)
-  const lessonBoardActivePageRowRef = useRef<HTMLDivElement | null>(null)
   const [pageJumpDraft, setPageJumpDraft] = useState('1')
   const [pageJumpFocused, setPageJumpFocused] = useState(false)
   const [pageListScrollRoot, setPageListScrollRoot] = useState<HTMLDivElement | null>(null)
@@ -286,15 +303,26 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
 
   usePdfJsWorker(setPdfReady)
 
-  useBookLibraryLoader({
+  const resolvedPreferUnitId = useMemo(() => {
+    const bookId = preferBookId?.trim()
+    if (!bookId) return preferUnitId
+    const session = sessionPlaceByBookRef.current[bookId]
+    if (session?.unitId?.trim()) return session.unitId
+    const openTarget = getStudentOpenTargetForBook(studentId, bookId, null)
+    if (openTarget?.unitId) return openTarget.unitId
+    return preferUnitId
+  }, [preferBookId, preferUnitId, studentId])
+
+  const { markSelectionApplied } = useBookLibraryLoader({
     open,
     studentId,
     assignedBookIds,
     assignedUnitRefs,
     curriculumHistory,
     preferBookId,
-    preferUnitId,
+    preferUnitId: resolvedPreferUnitId,
     preferResumePage,
+    getCachedNumPages,
     setLoading,
     setError,
     setLibrary,
@@ -309,6 +337,64 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     const book = library.books.find((item) => item.id === selectedBookId)
     return book?.units.find((unit) => unit.id === selectedUnitId) ?? null
   }, [library, selectedBookId, selectedUnitId])
+
+  /** Strip / notebook switch: apply book+unit+page locally so the loader does not blank numPages. */
+  const applyTeachingBookSwitch = useCallback(
+    (bookId: string, unitId: string) => {
+      const nextBook = bookId.trim()
+      const chipUnit = unitId.trim()
+      if (!nextBook || !chipUnit) return
+
+      const session = sessionPlaceByBookRef.current[nextBook]
+      const openTarget = getStudentOpenTargetForBook(studentId, nextBook, library)
+      const nextUnit = (session?.unitId?.trim() || openTarget?.unitId || chipUnit).trim()
+      let nextPage =
+        session?.pdfPage ??
+        openTarget?.pdfPage ??
+        getStudentTeachingOpenPdfPageForBookUnit(studentId, nextBook, nextUnit, library) ??
+        1
+      if (!Number.isFinite(nextPage) || nextPage < 1) nextPage = 1
+      nextPage = Math.floor(nextPage)
+
+      if (nextBook === selectedBookId && nextUnit === (selectedUnitId ?? '')) {
+        if (pageNumber !== nextPage) setPageNumber(nextPage)
+        onSwitchTeachingBook?.(nextBook, nextUnit)
+        return
+      }
+
+      markSelectionApplied(nextBook, nextUnit)
+      setSelectedBookId(nextBook)
+      setSelectedUnitId(nextUnit)
+      setPageNumber(nextPage)
+      const cachedPages = getCachedNumPages(nextUnit)
+      if (cachedPages != null) setNumPages(cachedPages)
+      onSwitchTeachingBook?.(nextBook, nextUnit)
+    },
+    [
+      getCachedNumPages,
+      library,
+      markSelectionApplied,
+      onSwitchTeachingBook,
+      pageNumber,
+      selectedBookId,
+      selectedUnitId,
+      studentId,
+    ],
+  )
+
+  useEffect(() => {
+    if (!open) {
+      sessionPlaceByBookRef.current = {}
+      return
+    }
+    const bookId = selectedBookId?.trim()
+    const unitId = selectedUnitId?.trim()
+    if (!bookId || !unitId || !Number.isFinite(pageNumber) || pageNumber < 1) return
+    sessionPlaceByBookRef.current[bookId] = {
+      unitId,
+      pdfPage: Math.floor(pageNumber),
+    }
+  }, [open, selectedBookId, selectedUnitId, pageNumber])
 
   const primeReaderPageAspectRatio = useCallback((ratio: number) => {
     if (Number.isFinite(ratio) && ratio > 0) setPageAspectRatio(ratio)
@@ -484,18 +570,30 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     return library.books.find((item) => item.id === selectedBookId) ?? null
   }, [library, selectedBookId])
 
+  const classSourceBookIds = useMemo(
+    () => inClassBookIds(assignedBookIds, bookAssignmentStatus),
+    [assignedBookIds, bookAssignmentStatus],
+  )
+
   const classSourceBooks = useMemo(() => {
     if (!library) return []
+    const places = getStudentBookPlaces(studentId)
     return listClassSourceBooks({
       library,
-      assignedBookIds,
+      assignedBookIds: classSourceBookIds,
       assignedUnitRefs,
       openBookId: selectedBookId,
       openUnitId: selectedUnitId,
       openPage: pageNumber,
       getSavedPage: peekSavedUnitPage,
+      getPlaceForBook: (bookId) => {
+        const session = sessionPlaceByBookRef.current[bookId]
+        if (session) return session
+        const place = places[bookId]
+        return place ? { unitId: place.unitId, pdfPage: place.pdfPage } : null
+      },
     })
-  }, [assignedBookIds, assignedUnitRefs, library, pageNumber, selectedBookId, selectedUnitId])
+  }, [assignedUnitRefs, classSourceBookIds, library, pageNumber, selectedBookId, selectedUnitId, studentId])
 
   const retainUnitIds = useMemo(
     () => classSourceRetainUnitIds(classSourceBooks),
@@ -1227,7 +1325,6 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
   const lessonBoardActivePage = whiteboardSessionDoc
     ? getLessonBoardActivePage(whiteboardSessionDoc.pages, whiteboardSessionDoc.activePageId)
     : null
-  const lessonBoardRunwayOrientation = lessonBoardActivePage?.orientation ?? 'standard'
   const lessonBoardSpreadOverlayWidthPx = Math.max(
     1,
     Math.round(spreadPageWidth * 2 - spreadSidePullPx(spreadPageWidth, spreadGutterPullRatio)),
@@ -1285,40 +1382,21 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     onLessonBoardOpenChange?.(lessonBoardCoversClassChrome)
   }, [lessonBoardCoversClassChrome, onLessonBoardOpenChange])
 
-  const lessonBoardSpreadWidthPx = lessonBoardWideSpreadWidthPx(
-    lessonBoardSpreadOverlayWidthPx,
-    WHITEBOARD_SLOT_INSET_PX,
-  )
   const lessonBoardSlotWidthPx = Math.max(1, spreadPageWidth - WHITEBOARD_SLOT_INSET_PX * 2)
   const lessonBoardActiveLogicalWidthPx = lessonBoardActivePage
     ? lessonBoardLogicalWidthPx(lessonBoardActivePage, {
         slotWidthPx: lessonBoardSlotWidthPx,
-        spreadWidthPx: lessonBoardSpreadWidthPx,
       })
     : lessonBoardSlotWidthPx
-  const widePanelHeightPx =
-    lessonBoardRunwayOrientation === 'wide'
-      ? lessonBoardWidePanelHeightPx(
-          lessonBoardResolveContentHeightPx(
-            'wide',
-            lessonBoardActiveLogicalWidthPx,
-            lessonBoardActivePage?.contentHeightPx ?? 0,
-          ),
-          WHITEBOARD_CHROME_HEIGHT_PX,
-        )
-      : undefined
   const whiteboardCanvasViewportHeightPx = lessonBoardRunwayViewportHeightPx(
-    lessonBoardRunwayOrientation,
     whiteboardSlotPanelHeightPx,
     WHITEBOARD_CHROME_HEIGHT_PX,
-    widePanelHeightPx,
   )
 
   const { lessonBoardContentHeightPx, ensureLessonBoardRunwayBelowView } = useLessonBoardPageRunway({
     enabled: isWhiteboardOpen && !!whiteboardSessionDoc,
     viewportHeightPx: whiteboardCanvasViewportHeightPx,
     logicalWidthPx: lessonBoardActiveLogicalWidthPx,
-    orientation: lessonBoardActivePage?.orientation ?? 'standard',
     storedContentHeightPx: lessonBoardActivePage?.contentHeightPx ?? 0,
     activePageId: whiteboardSessionDoc?.activePageId ?? '',
     commands: whiteboardSessionDoc?.commands ?? [],
@@ -1442,24 +1520,18 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     [setActiveLessonBoardPage],
   )
 
-  const createLessonBoardPage = useCallback(
-    (orientation: LessonBoardPageOrientation = 'standard') => {
-      appendLessonBoardPage({
-        orientation,
-        viewportHeightPx: whiteboardCanvasViewportHeightPx,
-        slotWidthPx: lessonBoardSlotWidthPx,
-        spreadWidthPx: lessonBoardSpreadWidthPx,
-        bookPageHint: pageNumber >= 1 ? pageNumber : undefined,
-      })
-    },
-    [
-      appendLessonBoardPage,
-      lessonBoardSlotWidthPx,
-      lessonBoardSpreadWidthPx,
-      pageNumber,
-      whiteboardCanvasViewportHeightPx,
-    ],
-  )
+  const createLessonBoardPage = useCallback(() => {
+    appendLessonBoardPage({
+      viewportHeightPx: whiteboardCanvasViewportHeightPx,
+      slotWidthPx: lessonBoardSlotWidthPx,
+      bookPageHint: pageNumber >= 1 ? pageNumber : undefined,
+    })
+  }, [
+    appendLessonBoardPage,
+    lessonBoardSlotWidthPx,
+    pageNumber,
+    whiteboardCanvasViewportHeightPx,
+  ])
 
   const renameLessonBoardPage = useCallback(
     (pageId: string, title: string | undefined) => {
@@ -1524,17 +1596,8 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
   const canDeleteActiveLessonBoardPage = (whiteboardSessionDoc?.pages.length ?? 0) > 1
 
   const togglePageListRail = useCallback(() => {
-    setIsPageListOpen((wasOpen) => {
-      if (!wasOpen) {
-        setPageListRailTab(notebookFocus || isWhiteboardOpen ? 'board' : 'book')
-      }
-      return !wasOpen
-    })
-  }, [isWhiteboardOpen, notebookFocus])
-
-  useEffect(() => {
-    if (notebookFocus && isPageListOpen) setPageListRailTab('board')
-  }, [isPageListOpen, notebookFocus])
+    setIsPageListOpen((wasOpen) => !wasOpen)
+  }, [])
 
   const openWhiteboard = useCallback(() => {
     if (bookFocusZoom.focusActive) {
@@ -1726,6 +1789,10 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
   const pendingNotebookLinkJumpRef = useRef<{ bookId: string; unitId: string; pdfPage: number } | null>(
     null,
   )
+  /** TOC / forced unit jump — must not use strip session-unit resume. */
+  const pendingForcedUnitJumpRef = useRef<{ bookId: string; unitId: string; pdfPage: number } | null>(
+    null,
+  )
 
   const jumpToNotebookBookLink = useCallback(() => {
     const link = activePrimaryLink
@@ -1747,22 +1814,74 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
       pendingNotebookLinkJumpRef.current = null
       return
     }
-    if (onSwitchTeachingBook) {
-      onSwitchTeachingBook(link.bookId, unitId)
-      return
-    }
-    goToPage(link.pdfPage)
-    pendingNotebookLinkJumpRef.current = null
+    applyTeachingBookSwitch(link.bookId, unitId)
   }, [
     activePrimaryLink,
+    applyTeachingBookSwitch,
     classSourceBooks,
     goToPage,
     notebookFocus,
-    onSwitchTeachingBook,
     parkNotebookFromFocus,
     selectedBookId,
     selectedUnitId,
   ])
+
+  /**
+   * L-rail TOC: jump to a unit+PDF page, forcing that unit (ignores strip session resume).
+   * `mappedPage` is a printed/effective hint; resolved to PDF index when possible.
+   */
+  const jumpToTeachingUnitPage = useCallback(
+    (unitId: string, mappedPage: number) => {
+      if (notebookFocus) return
+      const bookId = selectedBookId?.trim()
+      const nextUnitId = unitId.trim()
+      if (!bookId || !nextUnitId) return
+      if (!Number.isFinite(mappedPage) || mappedPage < 1) return
+
+      const book = selectedBook
+      const unit = book?.units.find((u) => u.id === nextUnitId) ?? null
+      if (!book || !unit) return
+
+      const pagesForUnit =
+        nextUnitId === (selectedUnitId ?? '')
+          ? numPages
+          : getCachedNumPages(nextUnitId)
+      const pdfPage =
+        resolveMappedPageToPdfPage(Math.floor(mappedPage), book, unit, pagesForUnit) ??
+        Math.floor(mappedPage)
+      if (!Number.isFinite(pdfPage) || pdfPage < 1) return
+      const targetPdf = Math.floor(pdfPage)
+
+      if (selectedBookId === bookId && selectedUnitId === nextUnitId) {
+        goToPage(targetPdf)
+        return
+      }
+
+      pendingForcedUnitJumpRef.current = {
+        bookId,
+        unitId: nextUnitId,
+        pdfPage: targetPdf,
+      }
+      markSelectionApplied(bookId, nextUnitId)
+      setSelectedBookId(bookId)
+      setSelectedUnitId(nextUnitId)
+      setPageNumber(targetPdf)
+      const cachedPages = getCachedNumPages(nextUnitId)
+      if (cachedPages != null) setNumPages(cachedPages)
+      onSwitchTeachingBook?.(bookId, nextUnitId)
+    },
+    [
+      getCachedNumPages,
+      goToPage,
+      markSelectionApplied,
+      notebookFocus,
+      numPages,
+      onSwitchTeachingBook,
+      selectedBook,
+      selectedBookId,
+      selectedUnitId,
+    ],
+  )
 
   useEffect(() => {
     const pending = pendingNotebookLinkJumpRef.current
@@ -1770,6 +1889,14 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     if (selectedBookId !== pending.bookId || selectedUnitId !== pending.unitId) return
     goToPage(pending.pdfPage)
     pendingNotebookLinkJumpRef.current = null
+  }, [goToPage, pageNumber, selectedBookId, selectedUnitId])
+
+  useEffect(() => {
+    const pending = pendingForcedUnitJumpRef.current
+    if (!pending) return
+    if (selectedBookId !== pending.bookId || selectedUnitId !== pending.unitId) return
+    goToPage(pending.pdfPage)
+    pendingForcedUnitJumpRef.current = null
   }, [goToPage, pageNumber, selectedBookId, selectedUnitId])
 
   const activeBoardPageLinkGoToLabel = useMemo(
@@ -1815,7 +1942,7 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     [goToPage],
   )
 
-  const { onDocumentLoadSuccess } = useBookPdfPageSync({
+  const { onDocumentLoadSuccess: onDocumentLoadSuccessInner } = useBookPdfPageSync({
     selectedBookId,
     selectedUnitId,
     selectedBook,
@@ -1827,6 +1954,17 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     setPageNumber,
     primeReaderPageAspectRatio,
   })
+
+  const onDocumentLoadSuccess = useCallback(
+    (meta: Parameters<typeof onDocumentLoadSuccessInner>[0]) => {
+      const uid = selectedUnitId?.trim()
+      if (uid && Number.isFinite(meta.numPages) && meta.numPages >= 1) {
+        numPagesByUnitIdRef.current[uid] = Math.floor(meta.numPages)
+      }
+      onDocumentLoadSuccessInner(meta)
+    },
+    [onDocumentLoadSuccessInner, selectedUnitId],
+  )
 
   usePageJumpUiSync({
     isPageListOpen,
@@ -1883,6 +2021,7 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     hasLastImageCapture,
     setHasLastImageCapture,
     runImageCapture,
+    captureRegionToBlob,
     runPdfPacketExport,
     copyLastCaptureToClipboard,
   } = useCaptureExportController({
@@ -1914,6 +2053,9 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     pageAreaRef,
   })
 
+  /** Vault card waiting for a box cut from the book page. */
+  const [vaultCutTarget, setVaultCutTarget] = useState<{ cardId: string; word: string } | null>(null)
+
   const pasteSpreadImageFromSystemClipboard = useCallback(
     () => spreadImagePasteRef.current?.pasteImageFromSystemClipboard() ?? Promise.resolve({ ok: false }),
     [],
@@ -1931,16 +2073,12 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     pulseStampIndicator,
     stickerKind,
     setStickerKind,
-    writableStickerVariant,
-    setWritableStickerVariant,
     eyedropperVariant,
     setEyedropperVariant,
     isAnnotationRailVisible,
     toggleAnnotationRailKeyboard,
     isPageListOpen,
     setIsPageListOpen,
-    pageListRailTab,
-    setPageListRailTab,
     isWhiteboardOpen: isWhiteboardOpen && !isWhiteboardMinimized,
     isWhiteboardSessionOpen: isWhiteboardOpen,
     setIsWhiteboardOpen: setWhiteboardSessionOpen,
@@ -1952,7 +2090,7 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     setWhiteboardSlotSide,
     isWhiteboardMinimized,
     pdfDialogOpen,
-    regionSelectOpen,
+    regionSelectOpen: regionSelectOpen || vaultCutTarget != null,
     boardLinkPlacementActive,
     cancelBoardLinkPlacement,
     readingCheckHotspotPlacementActive,
@@ -1968,8 +2106,6 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     setShapeThicknessStep,
     textThicknessStep,
     setTextThicknessStep,
-    stickyThicknessStep,
-    setStickyThicknessStep,
     stampThicknessStep,
     setStampThicknessStep,
     eraserPixelThicknessStep,
@@ -2059,7 +2195,6 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     open,
     isPageListOpen,
     syncWorkspaceDeskLeftPx,
-    pageListRailTab,
     exportCaptureLayoutActive,
     showBookFrame,
     setShowBookFrame,
@@ -2171,7 +2306,11 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     regionSelectOpen,
     rightPageCaptureRef,
     runImageCapture,
+    captureRegionToBlob,
+    vaultCutTarget,
+    setVaultCutTarget,
     runPdfPacketExport,
+    library,
     selectedBook,
     selectedBookId,
     classSourceBooks,
@@ -2196,7 +2335,6 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     isPrepMode,
     setIsPageListOpen,
     togglePageListRail,
-    setPageListRailTab,
     setIsWhiteboardOpen: setWhiteboardSessionOpen,
     setJpegQuality,
     setMarkerThicknessStep,
@@ -2252,7 +2390,6 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     saveLessonBoardNow,
     deleteActiveLessonBoardPage,
     canDeleteActiveLessonBoardPage,
-    lessonBoardActivePageRowRef,
     boardLinkPlacementActive,
     lessonBoardPageLinks,
     activeBoardPageLink,
@@ -2362,6 +2499,8 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     browserFullscreenSupported,
     isBrowserFullscreen,
     toggleBrowserFullscreen,
+    applyTeachingBookSwitch,
+    jumpToTeachingUnitPage,
   }
 }
 

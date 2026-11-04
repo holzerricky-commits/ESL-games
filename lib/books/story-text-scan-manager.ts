@@ -14,6 +14,8 @@ export type StoryTextScanJobSnapshot = {
   lastText: ReadingStoryTextRecord | null
 }
 
+export type StoryTextScanResult = Awaited<ReturnType<typeof runChunkedStoryTextScan>>
+
 export type StoryTextScanListener = (snapshot: StoryTextScanJobSnapshot) => void
 
 type StartStoryTextScanInput = {
@@ -159,9 +161,9 @@ export function subscribeStoryTextScan(
  * Start (or restart) a chunked story text scan that outlives Prep/Books UI.
  * Starting again for the same story aborts the previous job first.
  */
-export function startStoryTextScan(input: StartStoryTextScanInput): void {
+export function startStoryTextScan(input: StartStoryTextScanInput): Promise<StoryTextScanResult> {
   const storyId = input.storyId.trim()
-  if (!storyId) return
+  if (!storyId) return Promise.resolve({ ok: false, error: 'Missing story id.', text: null })
 
   const title = (input.title ?? '').trim() || 'Story'
   const notify = input.notify !== false
@@ -195,7 +197,7 @@ export function startStoryTextScan(input: StartStoryTextScanInput): void {
   jobs.set(storyId, job)
   emit(job)
 
-  void (async () => {
+  return (async (): Promise<StoryTextScanResult> => {
     try {
       const result = await runChunkedStoryTextScan({
         storyId,
@@ -223,7 +225,7 @@ export function startStoryTextScan(input: StartStoryTextScanInput): void {
       })
 
       const current = jobs.get(storyId)
-      if (!current || current.generation !== generation) return
+      if (!current || current.generation !== generation) return result
 
       if (result.ok) {
         current.lastText = result.text
@@ -241,9 +243,19 @@ export function startStoryTextScan(input: StartStoryTextScanInput): void {
       if (current.listeners.size === 0) {
         jobs.delete(storyId)
       }
+      return result
     } catch (err) {
+      const failed: StoryTextScanResult = {
+        ok: false,
+        error: controller.signal.aborted
+          ? 'Scan stopped.'
+          : err instanceof Error
+            ? err.message
+            : `Could not scan “${title}”.`,
+        text: null,
+      }
       const current = jobs.get(storyId)
-      if (!current || current.generation !== generation) return
+      if (!current || current.generation !== generation) return failed
       current.running = false
       current.progress = null
       emit(current)
@@ -257,6 +269,7 @@ export function startStoryTextScan(input: StartStoryTextScanInput): void {
       if (current.listeners.size === 0) {
         jobs.delete(storyId)
       }
+      return failed
     }
   })()
 }

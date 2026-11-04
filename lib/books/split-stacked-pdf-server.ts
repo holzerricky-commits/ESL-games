@@ -8,7 +8,7 @@ import { isBookLibraryFilePath } from '@/lib/books/manifest-validation'
 import {
   STACKED_SOURCE_DIR,
   buildStackedPdfUnitRanges,
-  unitPdfFileName,
+  volumePdfFileName,
   type StackedPdfCutInput,
 } from '@/lib/books/split-stacked-pdf-ranges'
 import { getBookLibraryRoot, loadBookLibrary, saveBookLibraryManifest } from '@/lib/books/server'
@@ -91,8 +91,9 @@ function unitIdFromFileName(fileName: string, bookId: string, index: number): st
 }
 
 /**
- * Cut a stacked PDF on disk into one file per unit, archive the original under
- * `.stacked-source/`, and replace the book's units in the manifest.
+ * Cut a stacked PDF on disk into one file per volume, archive the original under
+ * `.stacked-source/`, and replace the book's units in the manifest (one placeholder
+ * unit row per volume until outline extract fills real units).
  */
 export async function splitStackedPdfIntoUnits(options: {
   bookId: string
@@ -104,7 +105,7 @@ export async function splitStackedPdfIntoUnits(options: {
   if (!bookId) return { ok: false, error: 'bookId is required.' }
   if (!sourceFilePath) return { ok: false, error: 'sourceFilePath is required.' }
   if (!Array.isArray(options.cuts) || options.cuts.length < 2) {
-    return { ok: false, error: 'Mark at least two unit starts before cutting.' }
+    return { ok: false, error: 'Mark at least two volume starts before cutting.' }
   }
 
   const cwd = /* turbopackIgnore: true */ process.cwd()
@@ -162,7 +163,7 @@ export async function splitStackedPdfIntoUnits(options: {
   const ranged = buildStackedPdfUnitRanges(options.cuts, pageCount)
   if (!ranged.ok) return { ok: false, error: ranged.error }
   if (ranged.ranges.length < 2) {
-    return { ok: false, error: 'Mark at least two unit starts before cutting.' }
+    return { ok: false, error: 'Mark at least two volume starts before cutting.' }
   }
 
   const writtenAbsPaths: string[] = []
@@ -170,7 +171,7 @@ export async function splitStackedPdfIntoUnits(options: {
 
   try {
     for (const range of ranged.ranges) {
-      const preferredName = unitPdfFileName(range.index)
+      const preferredName = volumePdfFileName(range.index)
       const fileName = await allocateUniquePdfName(absBookDir, preferredName)
       const absOut = path.resolve(absBookDir, fileName)
       if (!absOut.startsWith(absBookDir)) {
@@ -201,7 +202,7 @@ export async function splitStackedPdfIntoUnits(options: {
       return {
         ok: false,
         error:
-          'Could not write unit files — a PDF may be open. Close the book reader, then try again.',
+          'Could not write volume files — a PDF may be open. Close the book reader, then try again.',
       }
     }
     const message = error instanceof Error ? error.message : 'Split failed.'

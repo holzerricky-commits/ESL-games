@@ -1,6 +1,11 @@
 import type { AnnotationLineDashStyle, ShapeFillMode } from '@/lib/books/annotation-command-types'
 import { shapeFillAlphaForMode } from '@/lib/books/annotation-command-types'
-import { applyAnnotationLineDash, PEN_LINE_WIDTH } from '@/lib/books/annotation-draw'
+import {
+  applyAnnotationLineDash,
+  drawSolidArrow,
+  PEN_LINE_WIDTH,
+  resolveArrowHeadLengthPx,
+} from '@/lib/books/annotation-draw'
 import {
   appendRoundRectPath,
   appendRoundedTrianglePath,
@@ -75,39 +80,35 @@ export function drawTwoPointShapePreview(
   const by = sy(draft.current[1])
   const lw = Math.max(1, PEN_LINE_WIDTH * (shapeStrokeWidthScale || 1))
   ctx.save()
-  ctx.globalAlpha = 0.88
   ctx.lineCap = 'round'
   if (draft.kind === 'line' || draft.kind === 'arrow') {
-    ctx.strokeStyle = shapeColor
-    ctx.lineWidth = lw
-    applyAnnotationLineDash(ctx, shapeLineDashStyle, lw)
-    ctx.beginPath()
-    ctx.moveTo(ax, ay)
-    ctx.lineTo(bx, by)
-    ctx.stroke()
-    ctx.setLineDash([])
+    // Full opacity so the tip never looks washed out while dragging.
+    ctx.globalAlpha = 1
     if (draft.kind === 'arrow') {
-      const dx = bx - ax
-      const dy = by - ay
-      const len = Math.hypot(dx, dy) || 1
-      const ux = dx / len
-      const uy = dy / len
-      const headLen = 0.035 * Math.min(widthPx, heightPx)
-      const hw = headLen * 0.45
-      const bxShaft = bx - ux * headLen
-      const byShaft = by - uy * headLen
-      const px = -uy
-      const py = ux
-      ctx.fillStyle = shapeColor
-      ctx.setLineDash([])
+      const minDim = Math.min(widthPx, heightPx)
+      const shaftLenPx = Math.hypot(bx - ax, by - ay)
+      drawSolidArrow(ctx, ax, ay, bx, by, {
+        color: shapeColor,
+        lineWidthPx: lw,
+        lineDashStyle: shapeLineDashStyle,
+        headLengthPx: resolveArrowHeadLengthPx({
+          minDimPx: minDim,
+          lineWidthPx: lw,
+          shaftLenPx,
+        }),
+      })
+    } else {
+      ctx.strokeStyle = shapeColor
+      ctx.lineWidth = lw
+      applyAnnotationLineDash(ctx, shapeLineDashStyle, lw)
       ctx.beginPath()
-      ctx.moveTo(bx, by)
-      ctx.lineTo(bxShaft + px * hw, byShaft + py * hw)
-      ctx.lineTo(bxShaft - px * hw, byShaft - py * hw)
-      ctx.closePath()
-      ctx.fill()
+      ctx.moveTo(ax, ay)
+      ctx.lineTo(bx, by)
+      ctx.stroke()
+      ctx.setLineDash([])
     }
   } else if (draft.kind === 'rect') {
+    ctx.globalAlpha = 0.88
     const rx = sx(x)
     const ry = sy(y)
     const rw = w * widthPx
@@ -136,6 +137,7 @@ export function drawTwoPointShapePreview(
       ctx.setLineDash([])
     }
   } else if (draft.kind === 'triangle') {
+    ctx.globalAlpha = 0.88
     const rx = sx(x)
     const ry = sy(y)
     const rw = w * widthPx
@@ -173,6 +175,7 @@ export function drawTwoPointShapePreview(
       ctx.setLineDash([])
     }
   } else {
+    ctx.globalAlpha = 0.88
     const cx = sx(x) + (w * widthPx) / 2
     const cy = sy(y) + (h * heightPx) / 2
     const rx = (w * widthPx) / 2

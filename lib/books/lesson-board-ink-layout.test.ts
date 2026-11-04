@@ -3,7 +3,6 @@ import {
   buildWhiteboardViewportInkConfig,
   lessonBoardCanvasViewportHeightPx,
   lessonBoardRunwayViewportHeightPx,
-  lessonBoardWideDefaultContentHeightPx,
   lessonBoardFocusStandardAnchorPx,
   lessonBoardWidePanelAnchorPx,
   lessonBoardWidePanelHeightPx,
@@ -13,27 +12,11 @@ import {
 import { WHITEBOARD_HEADER_HEIGHT_PX } from '@/components/students/fullscreen-book-overlay/constants'
 
 describe('lesson-board-ink-layout', () => {
-  it('lessonBoardRunwayViewportHeightPx uses slot panel for standard pages', () => {
+  it('lessonBoardRunwayViewportHeightPx uses slot panel height', () => {
     const slotPanelHeightPx = 776
-    expect(
-      lessonBoardRunwayViewportHeightPx(
-        'standard',
-        slotPanelHeightPx,
-        WHITEBOARD_HEADER_HEIGHT_PX,
-      ),
-    ).toBe(lessonBoardCanvasViewportHeightPx(slotPanelHeightPx, WHITEBOARD_HEADER_HEIGHT_PX))
-  })
-
-  it('lessonBoardRunwayViewportHeightPx uses compact wide panel height', () => {
-    const widePanelHeightPx = 400
-    expect(
-      lessonBoardRunwayViewportHeightPx(
-        'wide',
-        776,
-        WHITEBOARD_HEADER_HEIGHT_PX,
-        widePanelHeightPx,
-      ),
-    ).toBe(lessonBoardCanvasViewportHeightPx(widePanelHeightPx, WHITEBOARD_HEADER_HEIGHT_PX))
+    expect(lessonBoardRunwayViewportHeightPx(slotPanelHeightPx, WHITEBOARD_HEADER_HEIGHT_PX)).toBe(
+      lessonBoardCanvasViewportHeightPx(slotPanelHeightPx, WHITEBOARD_HEADER_HEIGHT_PX),
+    )
   })
 
   it('lessonBoardWideSpreadWidthPx applies slot inset on both sides', () => {
@@ -53,10 +36,6 @@ describe('lesson-board-ink-layout', () => {
     expect(anchor.leftPx).toBe(300)
     expect(anchor.topPx).toBe(12)
     expect(slotWidthPx).toBeLessThan(1000 - 12 * 2)
-  })
-
-  it('lessonBoardWideDefaultContentHeightPx is 16:9 from inset spread width', () => {
-    expect(lessonBoardWideDefaultContentHeightPx(640, 12)).toBe(Math.round(616 / (16 / 9)))
   })
 
   it('lessonBoardWidePanelHeightPx includes header', () => {

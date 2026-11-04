@@ -14,6 +14,9 @@ const PRIMARY_BY_TAG: Record<BookLessonPartTag, string> = {
   genre: 'Genre',
   vocabulary_strategy: 'Vocab strategy',
   literary_element: 'Literary element',
+  phonics: 'Phonics',
+  fluency: 'Fluency',
+  structural_analysis: 'Structural analysis',
 }
 
 /** Strip common leading skill labels so the rest reads as the lesson-specific line. */
@@ -32,13 +35,23 @@ function stripComprehensionNoise(raw: string): string {
   return t || raw.trim()
 }
 
+const STORY_TYPE_PREFIX =
+  /^(shared\s+read|main\s+selection|paired\s+selection|paired\s+read|anchor\s+text|main\s+story|paired\s+story)\s*[:·-]?\s*/i
+
+/**
+ * Drop leading lesson-part type words (“Shared Read …”) so only the story name remains.
+ * Returns '' when the title was only a type label.
+ */
+export function stripLessonPartTypePrefix(raw: string): string {
+  const t = raw.trim()
+  if (!t) return ''
+  if (!STORY_TYPE_PREFIX.test(t)) return t
+  return t.replace(STORY_TYPE_PREFIX, '').trim()
+}
+
 function stripStoryNoise(raw: string): string {
-  let t = raw.trim()
-  t = t.replace(/^main\s*selection\s*:\s*/i, '').trim()
-  t = t.replace(/^paired\s*selection\s*:\s*/i, '').trim()
-  t = t.replace(/^anchor\s*text\s*:\s*/i, '').trim()
-  t = t.replace(/^shared\s*read\s*:\s*/i, '').trim()
-  return t || raw.trim()
+  const cleaned = stripLessonPartTypePrefix(raw)
+  return cleaned || raw.trim()
 }
 
 /**
@@ -72,6 +85,18 @@ export function getPartPrimaryLabel(tag: BookLessonPartTag, rawTitle: string): s
   if (tag === 'literary_element') {
     const cleaned = stripLabeledPrefix(raw, [/^literary\s*element\s*:\s*/i])
     return cleaned.length > 0 ? cleaned : PRIMARY_BY_TAG.literary_element
+  }
+  if (tag === 'phonics') {
+    const cleaned = stripLabeledPrefix(raw, [/^phonics\s*:\s*/i])
+    return cleaned.length > 0 ? cleaned : PRIMARY_BY_TAG.phonics
+  }
+  if (tag === 'fluency') {
+    const cleaned = stripLabeledPrefix(raw, [/^fluency\s*:\s*/i])
+    return cleaned.length > 0 ? cleaned : PRIMARY_BY_TAG.fluency
+  }
+  if (tag === 'structural_analysis') {
+    const cleaned = stripLabeledPrefix(raw, [/^structural\s*analysis\s*:\s*/i])
+    return cleaned.length > 0 ? cleaned : PRIMARY_BY_TAG.structural_analysis
   }
   if (tag === 'writing_narrate') {
     const cleaned = stripLabeledPrefix(raw, [/^writing\s*:\s*/i, /^write to narrate\s*:\s*/i])

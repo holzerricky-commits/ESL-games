@@ -3,6 +3,8 @@
  * Session-only data (e.g. map viewport in sessionStorage) is not included.
  */
 
+import { LESSON_VAULT_PICTURES_BACKUP_KEY, parsePicturesBackup } from '@/lib/lesson-vault/picture-backup'
+
 export const ESL_LOCAL_STORAGE_KEY_PATTERN = /^esl_[a-zA-Z0-9_:.-]+$/
 
 export const LOCAL_DATA_BACKUP_KIND = 'esl-local-data-backup' as const
@@ -56,6 +58,8 @@ export async function buildBackupPayloadAsync(): Promise<LocalDataBackupPayload>
       boardLinksRes,
       readerProgressRes,
       lessonVaultRes,
+      lessonVaultPicturesRes,
+      lessonGrammarRes,
     ] = await Promise.all([
       fetch('/api/local-data/students', { cache: 'no-store' }),
       fetch('/api/local-data/student-progress', { cache: 'no-store' }),
@@ -66,6 +70,8 @@ export async function buildBackupPayloadAsync(): Promise<LocalDataBackupPayload>
       fetch('/api/local-data/lesson-board-links', { cache: 'no-store' }),
       fetch('/api/local-data/reader-progress', { cache: 'no-store' }),
       fetch('/api/local-data/lesson-vault', { cache: 'no-store' }),
+      fetch('/api/local-data/lesson-vault/pictures', { cache: 'no-store' }),
+      fetch('/api/local-data/lesson-grammar', { cache: 'no-store' }),
     ])
     if (studentsRes.ok) {
       const data = (await studentsRes.json()) as { students?: unknown[] }
@@ -140,6 +146,24 @@ export async function buildBackupPayloadAsync(): Promise<LocalDataBackupPayload>
         payload.localStorage.esl_lesson_vault_v1 = JSON.stringify({ byStudent: data.byStudent })
       }
     }
+    if (lessonVaultPicturesRes.ok) {
+      const data = (await lessonVaultPicturesRes.json()) as { byStudent?: Record<string, Record<string, string>> }
+      if (data.byStudent && typeof data.byStudent === 'object' && Object.keys(data.byStudent).length > 0) {
+        payload.localStorage[LESSON_VAULT_PICTURES_BACKUP_KEY] = JSON.stringify({ byStudent: data.byStudent })
+      }
+    }
+    if (lessonGrammarRes.ok) {
+      const data = (await lessonGrammarRes.json()) as {
+        byStudent?: Record<string, unknown[]>
+        rulesByStudent?: Record<string, unknown[]>
+      }
+      if (data.byStudent && typeof data.byStudent === 'object') {
+        payload.localStorage.esl_lesson_grammar_v1 = JSON.stringify({
+          byStudent: data.byStudent,
+          rulesByStudent: data.rulesByStudent ?? {},
+        })
+      }
+    }
   } catch {
     /* keep browser-only snapshot */
   }
@@ -175,6 +199,8 @@ export function applyBackupPayload(payload: LocalDataBackupPayload): { keysWritt
   let keysWritten = 0
   for (const [key, value] of Object.entries(payload.localStorage)) {
     if (!ESL_LOCAL_STORAGE_KEY_PATTERN.test(key)) continue
+    // Pictures go to disk only; megabytes of base64 would overflow the localStorage quota.
+    if (key === LESSON_VAULT_PICTURES_BACKUP_KEY) continue
     if (value === null) {
       window.localStorage.removeItem(key)
     } else {
@@ -224,42 +250,42 @@ async function applyDiskStudentRecordsFromBackup(payload: LocalDataBackupPayload
   const whiteboardRaw =
     payload.localStorage[BACKUP_WHITEBOARD_SESSIONS_KEY] ??
     payload.localStorage[LIVE_WHITEBOARD_SESSIONS_KEY]
-  if (!annotationsRaw && !spreadRaw && !whiteboardRaw) return
-
-  try {
-    let annotations: Record<string, unknown> = {}
-    let spreadSessions: Record<string, unknown> = {}
-    let whiteboardSessions: Record<string, unknown> = {}
-    if (annotationsRaw) {
-      const parsed = JSON.parse(annotationsRaw) as unknown
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        annotations = parsed as Record<string, unknown>
+  if (annotationsRaw || spreadRaw || whiteboardRaw) {
+    try {
+      let annotations: Record<string, unknown> = {}
+      let spreadSessions: Record<string, unknown> = {}
+      let whiteboardSessions: Record<string, unknown> = {}
+      if (annotationsRaw) {
+        const parsed = JSON.parse(annotationsRaw) as unknown
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          annotations = parsed as Record<string, unknown>
+        }
       }
-    }
-    if (spreadRaw) {
-      const parsed = JSON.parse(spreadRaw) as unknown
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        spreadSessions = parsed as Record<string, unknown>
+      if (spreadRaw) {
+        const parsed = JSON.parse(spreadRaw) as unknown
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          spreadSessions = parsed as Record<string, unknown>
+        }
       }
-    }
-    if (whiteboardRaw) {
-      const parsed = JSON.parse(whiteboardRaw) as unknown
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        whiteboardSessions = parsed as Record<string, unknown>
+      if (whiteboardRaw) {
+        const parsed = JSON.parse(whiteboardRaw) as unknown
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          whiteboardSessions = parsed as Record<string, unknown>
+        }
       }
+      await fetch('/api/local-data/book-annotations', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ annotations, spreadSessions, whiteboardSessions }),
+      })
+      // Live session stores use non-esl keys; restore them for browser-only fallback.
+      if (typeof window !== 'undefined') {
+        if (spreadRaw) localStorage.setItem(LIVE_SPREAD_SESSIONS_KEY, spreadRaw)
+        if (whiteboardRaw) localStorage.setItem(LIVE_WHITEBOARD_SESSIONS_KEY, whiteboardRaw)
+      }
+    } catch {
+      /* ignore */
     }
-    await fetch('/api/local-data/book-annotations', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ annotations, spreadSessions, whiteboardSessions }),
-    })
-    // Live session stores use non-esl keys; restore them for browser-only fallback.
-    if (typeof window !== 'undefined') {
-      if (spreadRaw) localStorage.setItem(LIVE_SPREAD_SESSIONS_KEY, spreadRaw)
-      if (whiteboardRaw) localStorage.setItem(LIVE_WHITEBOARD_SESSIONS_KEY, whiteboardRaw)
-    }
-  } catch {
-    /* ignore */
   }
 
   const scheduleConfigRaw = payload.localStorage.esl_weekly_schedule_config
@@ -347,6 +373,32 @@ async function applyDiskStudentRecordsFromBackup(payload: LocalDataBackupPayload
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(JSON.parse(lessonVaultRaw) as unknown),
+      })
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const lessonGrammarRaw = payload.localStorage.esl_lesson_grammar_v1
+  if (lessonGrammarRaw) {
+    try {
+      await fetch('/api/local-data/lesson-grammar', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(JSON.parse(lessonGrammarRaw) as unknown),
+      })
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const vaultPictures = parsePicturesBackup(payload.localStorage[LESSON_VAULT_PICTURES_BACKUP_KEY])
+  for (const [studentId, pictures] of Object.entries(vaultPictures.byStudent)) {
+    try {
+      await fetch('/api/local-data/lesson-vault/pictures', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentId, pictures }),
       })
     } catch {
       /* ignore */

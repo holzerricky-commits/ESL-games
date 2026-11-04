@@ -17,6 +17,8 @@ export const SAVED_WORDS_JSON_PATH = join(STUDENT_RECORDS_DIR, 'saved-words.json
 
 export const LESSON_VAULT_JSON_PATH = join(STUDENT_RECORDS_DIR, 'lesson-vault.json')
 
+export const LESSON_GRAMMAR_JSON_PATH = join(STUDENT_RECORDS_DIR, 'lesson-grammar.json')
+
 export const LESSON_BOARD_LINKS_JSON_PATH = join(STUDENT_RECORDS_DIR, 'lesson-board-links.json')
 
 export const READER_PROGRESS_JSON_PATH = join(STUDENT_RECORDS_DIR, 'reader-progress.json')

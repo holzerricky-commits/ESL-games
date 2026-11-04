@@ -81,7 +81,11 @@ import {
 } from '@/lib/books/progress'
 import { getBooksLibraryCached } from '@/lib/books/fetch-books-library-cached'
 import {
-  resolveOpenTargetForPlace,
+  inClassBookIds,
+  pruneBookAssignmentStatus,
+  sanitizeBookAssignmentStatus,
+} from '@/lib/students/book-assignment-status'
+import {
   resolveUpNextBookId,
   sanitizeStudentBookPlaces,
   type BookOpenTarget,
@@ -94,6 +98,7 @@ import type {
   BookSectionType,
   ClassSessionBookmarkAtEnd,
   DifficultyTier,
+  StudentBookAssignmentStatus,
   StudentBookSectionRef,
   StudentClassSession,
   StudentClassStatus,
@@ -1124,6 +1129,10 @@ export function getStudentProfileView(
     infoSummary: 'Your teacher manages your path and settings from the plan screen.',
     defaultDifficultyTier: registryRecord?.defaultDifficultyTier ?? DEFAULT_PLAY_TIER,
     assignedBookIds: dedupeStrings(registryRecord?.assignedBookIds ?? []),
+    bookAssignmentStatus: (() => {
+      const status = sanitizeBookAssignmentStatus(registryRecord?.bookAssignmentStatus)
+      return Object.keys(status).length > 0 ? status : undefined
+    })(),
     assignedUnitRefs: dedupeUnitRefs(registryRecord?.assignedUnitRefs ?? []),
     curriculumAnchorSectionId: registryRecord?.curriculumAnchorSectionId?.trim() || undefined,
     curriculumBookStarts: sanitizeCurriculumBookStarts(registryRecord?.curriculumBookStarts),
@@ -1230,9 +1239,18 @@ function resolveCurriculumForStudentCard(
     return fp || null
   }
 
-  const history = [...(record.curriculumHistory ?? [])].sort(
-    (a, b) => new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime(),
-  )
+  const assignedIds = dedupeStrings(record.assignedBookIds ?? [])
+  const classIds = new Set(inClassBookIds(assignedIds, record.bookAssignmentStatus))
+  const onDesk = (bookId: string) => {
+    const id = bookId.trim()
+    if (!id) return false
+    if (assignedIds.length === 0) return true
+    return classIds.has(id)
+  }
+
+  const history = [...(record.curriculumHistory ?? [])]
+    .filter((entry) => onDesk(entry.bookId))
+    .sort((a, b) => new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime())
   if (history.length > 0) {
     const h = history[0]
     const pageNum = Number.isFinite(h.page) ? Math.max(1, Math.floor(h.page)) : 1
@@ -1251,9 +1269,9 @@ function resolveCurriculumForStudentCard(
   }
 
   const bookStarts = sanitizeCurriculumBookStarts(record.curriculumBookStarts)
-  const startEntries = Object.entries(bookStarts).sort(
-    (a, b) => new Date(b[1].updatedAt).getTime() - new Date(a[1].updatedAt).getTime(),
-  )
+  const startEntries = Object.entries(bookStarts)
+    .filter(([bookId]) => onDesk(bookId))
+    .sort((a, b) => new Date(b[1].updatedAt).getTime() - new Date(a[1].updatedAt).getTime())
   if (startEntries.length > 0) {
     const [bookId, start] = startEntries[0]!
     const pageNum =
@@ -1274,7 +1292,7 @@ function resolveCurriculumForStudentCard(
     }
   }
 
-  const refs = dedupeUnitRefs(record.assignedUnitRefs ?? [])
+  const refs = dedupeUnitRefs(record.assignedUnitRefs ?? []).filter((ref) => onDesk(ref.bookId))
   if (refs.length > 0) {
     const r = refs[0]
     const fp = unitFilePath(r.bookId, r.unitId)
@@ -1288,7 +1306,7 @@ function resolveCurriculumForStudentCard(
     }
   }
 
-  const bookIds = record.assignedBookIds ?? []
+  const bookIds = assignedIds.length > 0 ? [...classIds] : []
   if (bookIds.length > 0) {
     const bid = bookIds[0]
     return {
@@ -2470,6 +2488,17 @@ export interface TodaysClassSessionRow {
   session: StudentClassSession
 }
 
+/** Day timeline row — every status, with avatar for the dashboard clock. */
+export interface DashboardDaySessionRow extends TodaysClassSessionRow {
+  avatarUrl?: string
+}
+
+export type DashboardOffDayLeftoverKind = 'missed' | 'needs_recap'
+
+export interface DashboardOffDayLeftover extends DashboardDaySessionRow {
+  kind: DashboardOffDayLeftoverKind
+}
+
 /** Local calendar day bounds for the given date (default: today in the browser when called client-side). */
 export function getLocalDayBoundsMs(day: Date = new Date()): { startMs: number; endMs: number } {
   const start = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 0, 0, 0, 0)
@@ -2483,6 +2512,43 @@ export function getTodaysClassSessionsForTeacher(day: Date = new Date()): Todays
   const rangeStart = new Date(startMs)
   const rangeEnd = new Date(endMs - 1)
   return getClassSessionsForDateRange(rangeStart, rangeEnd)
+}
+
+/**
+ * Dashboard day clock: every non-break student’s class whose scheduled start falls on
+ * this local day — including completed, missed, and cancelled.
+ */
+export function getDashboardDaySessions(day: Date = new Date()): DashboardDaySessionRow[] {
+  pruneOrphanWeeklySlots()
+  generateScheduledClassesWindow(30)
+  const { startMs, endMs } = getLocalDayBoundsMs(day)
+  const out: DashboardDaySessionRow[] = []
+  for (const row of getActiveStudents()) {
+    const studentName = row.name.trim() || 'Student'
+    const sessions = sortClassesByDate(
+      (row.scheduledClasses ?? [])
+        .map((session) => sanitizeClassSession(session))
+        .filter((session): session is StudentClassSession => !!session),
+    )
+    for (const session of sessions) {
+      const t = new Date(session.scheduledFor).getTime()
+      if (!Number.isFinite(t) || t < startMs || t >= endMs) continue
+      out.push({
+        studentId: row.id,
+        studentName,
+        session,
+        avatarUrl: row.avatarUrl,
+      })
+    }
+  }
+  out.sort((a, b) => new Date(a.session.scheduledFor).getTime() - new Date(b.session.scheduledFor).getTime())
+  // Guard against duplicate session ids from overlapping generation / edits.
+  const seen = new Set<string>()
+  return out.filter((row) => {
+    if (seen.has(row.session.id)) return false
+    seen.add(row.session.id)
+    return true
+  })
 }
 
 /** Class sessions in a local date range (inclusive), excluding completed/cancelled. */
@@ -2619,6 +2685,86 @@ export function getDashboardStillOpenItems(nowMs: number = Date.now()): Dashboar
     return aMs - bMs
   })
   return out
+}
+
+/** How far back off-day missed classes appear on the dashboard strip. */
+const DASHBOARD_MISSED_LOOKBACK_DAYS = 14
+
+/**
+ * Leftovers that are not on the selected day’s clock: recent missed starts elsewhere,
+ * and completed classes from other days that still need a recap (last 7 days).
+ */
+export function getDashboardOffDayLeftovers(
+  selectedDay: Date,
+  nowMs: number = Date.now(),
+): DashboardOffDayLeftover[] {
+  pruneOrphanWeeklySlots()
+  generateScheduledClassesWindow(30)
+  const selectedBounds = getLocalDayBoundsMs(selectedDay)
+  const now = new Date(nowMs)
+  const todayBounds = getLocalDayBoundsMs(now)
+  const recapStartMs = getLocalDayBoundsMs(
+    new Date(now.getFullYear(), now.getMonth(), now.getDate() - (DASHBOARD_RECAP_LOOKBACK_DAYS - 1)),
+  ).startMs
+  const missedStartMs = getLocalDayBoundsMs(
+    new Date(now.getFullYear(), now.getMonth(), now.getDate() - (DASHBOARD_MISSED_LOOKBACK_DAYS - 1)),
+  ).startMs
+
+  const out: DashboardOffDayLeftover[] = []
+  for (const row of getActiveStudents()) {
+    const studentName = row.name.trim() || 'Student'
+    const sessions = (row.scheduledClasses ?? [])
+      .map((session) => sanitizeClassSession(session))
+      .filter((session): session is StudentClassSession => !!session)
+    for (const session of sessions) {
+      if (session.status === 'missed') {
+        const t = new Date(session.scheduledFor).getTime()
+        if (!Number.isFinite(t)) continue
+        if (t >= selectedBounds.startMs && t < selectedBounds.endMs) continue
+        if (t < missedStartMs || t >= todayBounds.endMs) continue
+        out.push({
+          kind: 'missed',
+          studentId: row.id,
+          studentName,
+          session,
+          avatarUrl: row.avatarUrl,
+        })
+        continue
+      }
+      if (sessionNeedsPostClassRecap(session)) {
+        const anchor = classDayAnchorMs(session)
+        if (anchor == null) continue
+        if (anchor >= selectedBounds.startMs && anchor < selectedBounds.endMs) continue
+        if (anchor < recapStartMs || anchor >= todayBounds.endMs) continue
+        out.push({
+          kind: 'needs_recap',
+          studentId: row.id,
+          studentName,
+          session,
+          avatarUrl: row.avatarUrl,
+        })
+      }
+    }
+  }
+
+  const kindRank: Record<DashboardOffDayLeftoverKind, number> = {
+    missed: 0,
+    needs_recap: 1,
+  }
+  out.sort((a, b) => {
+    const kr = kindRank[a.kind] - kindRank[b.kind]
+    if (kr !== 0) return kr
+    const aMs = classDayAnchorMs(a.session) ?? new Date(a.session.scheduledFor).getTime()
+    const bMs = classDayAnchorMs(b.session) ?? new Date(b.session.scheduledFor).getTime()
+    return aMs - bMs
+  })
+  const seen = new Set<string>()
+  return out.filter((item) => {
+    const key = `${item.kind}:${item.session.id}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 const NOW_LIVE_STATES: TodayClassTeachingState[] = ['ending', 'grace', 'live', 'starting']
@@ -3268,9 +3414,7 @@ function getStudentLastViewedAcrossAssignedBooks(
   const student = getStudents().find((row) => row.id === studentId)
   if (!student) return null
   let best: StudentLastViewedPlace | null = null
-  for (const raw of student.assignedBookIds ?? []) {
-    const bid = raw.trim()
-    if (!bid) continue
+  for (const bid of inClassBookIds(student.assignedBookIds, student.bookAssignmentStatus)) {
     best = newerLastViewedPlace(best, getStudentLastViewedForBook(studentId, bid))
     if (!isStudentCurriculumBookStartFresherThanLastStop(studentId, bid, library)) continue
     const start = getStudentCurriculumBookStart(studentId, bid, library)
@@ -3394,7 +3538,7 @@ export function getStudentUpNextBookId(studentId: string, library: BookLibraryPa
   const lib = libraryOrCached(library)
   if (!lib?.books?.length) return null
   return resolveUpNextBookId({
-    assignedBookIds: student.assignedBookIds ?? [],
+    assignedBookIds: inClassBookIds(student.assignedBookIds, student.bookAssignmentStatus),
     places: sanitizeStudentBookPlaces(student.bookPlaces),
     lastTaughtBookId: student.lastTaughtBookId,
     booksById: new Map(lib.books.map((b) => [b.id, b])),
@@ -3413,7 +3557,8 @@ export function getStudentPlaceOpenTargetForBook(
   const lib = libraryOrCached(library)
   const book = lib?.books.find((b) => b.id === bid) ?? null
   if (book && !book.units.some((u) => u.id === place.unitId)) return null
-  return resolveOpenTargetForPlace(book, place)
+  // Exact stored place — no lesson-end skip. Up-next book wrap still uses resolveOpenTargetForPlace.
+  return { unitId: place.unitId, pdfPage: place.pdfPage }
 }
 
 /** Up-next book with its open unit + page, or null when the student has no places yet. */
@@ -3443,8 +3588,7 @@ export function resolveUpNextSectionForStudent(
 
 /**
  * PDF page for opening the teaching reader on a book+unit.
- * The student's saved place for the book wins. Students without a place yet use the older ladder:
- * last viewed page (class bookmark or reader, if ≥ plan pin time) → starting place → reader history → null.
+ * `bookPlaces` wins when present for this unit. Otherwise: last stop → plan pin → history.
  */
 export function getStudentTeachingOpenPdfPageForBookUnit(
   studentId: string,
@@ -3457,11 +3601,7 @@ export function getStudentTeachingOpenPdfPageForBookUnit(
   const uid = unitId.trim()
   if (!bid || !uid) return null
   const place = getStudentBookPlaces(studentId)[bid]
-  if (place) {
-    const target = getStudentPlaceOpenTargetForBook(studentId, bid, library)
-    if (target && target.unitId === uid) return target.pdfPage
-    if (place.unitId === uid) return place.pdfPage
-  }
+  if (place?.unitId === uid) return place.pdfPage
   return legacyTeachingOpenPdfPageForBookUnit(studentId, bid, uid, library, totalPdfPages)
 }
 
@@ -3511,7 +3651,7 @@ function legacyTeachingOpenPdfPageForBookUnit(
 
 /**
  * Best unit + PDF page when opening a book without an explicit unit.
- * Prefers fresher plan pin’s unit, else last-class bookmark unit, else first unit page ladder.
+ * Saved place wins; otherwise last stop / plan pin / first unit.
  */
 export function getStudentOpenTargetForBook(
   studentId: string,
@@ -3527,18 +3667,6 @@ export function getStudentOpenTargetForBook(
   const fromPlace = getStudentPlaceOpenTargetForBook(studentId, bid, library)
   if (fromPlace) return fromPlace
 
-  const bookStart = getStudentCurriculumBookStart(studentId, bid, library)
-  const startFresher = isStudentCurriculumBookStartFresherThanLastStop(studentId, bid, library)
-  if (startFresher && bookStart) {
-    const unit = book.units.find((u) => u.id === bookStart.unitId)
-    if (unit) {
-      const pdf =
-        getStudentTeachingOpenPdfPageForBookUnit(studentId, bid, unit.id, library, totalPdfPages) ??
-        pdfPageFromCurriculumBookStart(bookStart, bid, library, totalPdfPages)
-      if (pdf != null) return { unitId: unit.id, pdfPage: pdf }
-    }
-  }
-
   const last = getStudentLastViewedForBook(studentId, bid)
   if (last) {
     const unit = book.units.find((u) => u.id === last.unitId) ?? book.units[0] ?? null
@@ -3550,6 +3678,7 @@ export function getStudentOpenTargetForBook(
     }
   }
 
+  const bookStart = getStudentCurriculumBookStart(studentId, bid, library)
   if (bookStart) {
     const unit = book.units.find((u) => u.id === bookStart.unitId) ?? book.units[0]
     if (unit) {
@@ -3644,6 +3773,8 @@ export function getStudentDefaultBookUnitForReader(
   const student = getStudents().find((row) => row.id === studentId)
   if (!student || !library?.books?.length) return null
   const bookMap = new Map(library.books.map((b) => [b.id, b]))
+  const assignedIds = dedupeStrings(student.assignedBookIds ?? [])
+  const classBookIds = inClassBookIds(assignedIds, student.bookAssignmentStatus)
 
   const upNext = getStudentUpNextOpenTarget(studentId, library)
   if (upNext) return { bookId: upNext.bookId, unitId: upNext.unitId }
@@ -3662,7 +3793,7 @@ export function getStudentDefaultBookUnitForReader(
     }
   }
 
-  for (const bid of student.assignedBookIds ?? []) {
+  for (const bid of classBookIds) {
     const book = bookMap.get(bid)
     if (!book) continue
     const openTarget = getStudentOpenTargetForBook(studentId, bid, library)
@@ -3678,11 +3809,12 @@ export function getStudentDefaultBookUnitForReader(
   }
 
   for (const ref of dedupeUnitRefs(student.assignedUnitRefs ?? [])) {
+    if (assignedIds.includes(ref.bookId) && !classBookIds.includes(ref.bookId)) continue
     const book = bookMap.get(ref.bookId)
     const unit = book?.units.find((u) => u.id === ref.unitId)
     if (book && unit) return { bookId: ref.bookId, unitId: ref.unitId }
   }
-  for (const bid of student.assignedBookIds ?? []) {
+  for (const bid of classBookIds) {
     const book = bookMap.get(bid)
     const first = book?.units?.[0]
     if (book && first) return { bookId: bid, unitId: first.id }
@@ -4167,8 +4299,40 @@ export function updateStudentCurriculumAssignments(
     ...prev,
     assignedBookIds: bookIds,
     assignedUnitRefs: refs,
+    bookAssignmentStatus: pruneBookAssignmentStatus(prev.bookAssignmentStatus, bookIds),
     curriculumAnchorSectionId,
     curriculumBookStarts: nextStarts,
+    updatedAt: new Date().toISOString(),
+  })
+  notifyStudentLocalDataChanged(studentId)
+  return { ok: true }
+}
+
+/**
+ * Mark assigned books in class, paused, or finished.
+ * Does not change places, starting pages, or class bookmarks.
+ */
+export function setStudentBookAssignmentStatus(
+  studentId: string,
+  bookIds: string[],
+  status: StudentBookAssignmentStatus,
+): { ok: true } | { ok: false; error: string } {
+  const students = getStudents()
+  const idx = students.findIndex((s) => s.id === studentId)
+  if (idx < 0) return { ok: false, error: 'Student not found.' }
+  const prev = students[idx]
+  if (!prev) return { ok: false, error: 'Student not found.' }
+  const assigned = new Set(dedupeStrings(prev.assignedBookIds ?? []))
+  const ids = dedupeStrings(bookIds).filter((id) => assigned.has(id))
+  if (!ids.length) return { ok: false, error: 'Book is not assigned.' }
+  const next = sanitizeBookAssignmentStatus(prev.bookAssignmentStatus)
+  for (const id of ids) {
+    if (status === 'in_class') delete next[id]
+    else next[id] = status
+  }
+  saveStudent({
+    ...prev,
+    bookAssignmentStatus: Object.keys(next).length > 0 ? next : undefined,
     updatedAt: new Date().toISOString(),
   })
   notifyStudentLocalDataChanged(studentId)
@@ -4214,6 +4378,11 @@ export function updateStudentCurriculumBookStart(
     sectionId: string | null
     /** Mapped / printed page; defaults to the section’s start hint when omitted. */
     mappedPage?: number | null
+    /**
+     * Exact PDF page to store in `bookPlaces` (Books tab grid pick).
+     * When omitted, derived from `mappedPage` via page alignment.
+     */
+    pdfPage?: number | null
     /** When false, skip spotlight class sync (Next class already wrote the section). Default true. */
     syncSpotlight?: boolean
   },
@@ -4277,7 +4446,12 @@ export function updateStudentCurriculumBookStart(
     ...curriculumBookStarts,
     [bookId]: nextStart,
   }
-  const placePdf = pdfPageFromCurriculumBookStart(nextStart, bookId, library, null) ?? mappedPage
+  const explicitPdf =
+    typeof input.pdfPage === 'number' && Number.isFinite(input.pdfPage) && input.pdfPage >= 1
+      ? Math.max(1, Math.floor(input.pdfPage))
+      : null
+  const placePdf =
+    explicitPdf ?? pdfPageFromCurriculumBookStart(nextStart, bookId, library, null) ?? mappedPage
   saveStudent({
     ...prev,
     curriculumBookStarts,

@@ -48,7 +48,7 @@ export function createEmptyWhiteboardSession(
 ): WhiteboardSessionDocument {
   const contentHeightPx =
     options.defaultContentHeightPx ?? defaultLessonBoardContentHeightPx()
-  const page = createLessonBoardPage('standard', { contentHeightPx, commands: [] })
+  const page = createLessonBoardPage({ contentHeightPx, commands: [] })
   return {
     docId: whiteboardSessionDocId(key),
     key,

@@ -13,7 +13,6 @@ import {
   Trash2,
 } from 'lucide-react'
 import type { WhiteboardLayoutMode } from '../hooks/useWhiteboardPlacement'
-import type { LessonBoardPageOrientation } from '@/lib/books/lesson-board-types'
 import type { LessonBoardShelfEntry } from '@/lib/books/lesson-board-nav'
 import { LessonBoardNotebookTitle } from '@/components/students/fullscreen-book-overlay/sections/LessonBoardNotebookTitle'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
@@ -68,8 +67,6 @@ export interface WhiteboardHeaderProps {
   /** While true, toolbar controls stay hidden so the bar can appear at full size first. */
   deferChromeActions?: boolean
   layoutMode?: WhiteboardLayoutMode
-  /** Active board page orientation — drives compact vs labeled chrome. */
-  pageOrientation?: LessonBoardPageOrientation
   onFloat?: () => void
   onDock?: () => void
   swapSlotSide: () => void
@@ -114,7 +111,6 @@ export function WhiteboardHeader({
   suppressChrome,
   deferChromeActions = false,
   layoutMode = 'slot',
-  pageOrientation = 'standard',
   onFloat,
   onDock,
   swapSlotSide,
@@ -150,8 +146,6 @@ export function WhiteboardHeader({
   nextUnitBoard = null,
   onOpenNextUnitBoard,
 }: WhiteboardHeaderProps) {
-  const isWide = pageOrientation === 'wide'
-
   const linkInHeader = boardLinkInHeader && Boolean(onStartBoardLinkPlacement)
   const linkInMoreMenu = Boolean(onStartBoardLinkPlacement) && !linkInHeader
   const showMoreMenu =
@@ -159,11 +153,9 @@ export function WhiteboardHeader({
     linkInMoreMenu ||
     (canDeleteLessonBoardPage && Boolean(onDeleteLessonBoardPage))
 
-  const showLayoutControls = !isWide
   const showFloatOrDock =
-    showLayoutControls &&
-    ((layoutMode === 'floating' && Boolean(onDock)) || Boolean(onFloat))
-  const showSwapSide = showLayoutControls && layoutMode === 'slot'
+    (layoutMode === 'floating' && Boolean(onDock)) || Boolean(onFloat)
+  const showSwapSide = layoutMode === 'slot'
   const showDragGrip =
     (layoutMode === 'floating' && floatDragEnabled) || slotDragEnabled
 
@@ -253,7 +245,7 @@ export function WhiteboardHeader({
           ) : null}
         </div>
 
-        {/* Drag grip — only when enabled; no empty center column on wide */}
+        {/* Drag grip — only when enabled */}
         {showDragGrip ? (
           <div className="flex min-w-0 flex-1 items-center justify-center">{dragGrip}</div>
         ) : (

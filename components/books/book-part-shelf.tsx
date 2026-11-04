@@ -3,11 +3,14 @@
 import { useMemo, useState, type ComponentType } from 'react'
 import { BookBrowseCornerButton } from '@/components/books/book-browse-spread-preview'
 import {
+  AudioLines,
+  Blocks,
   BookA,
   BookOpen,
   ChevronRight,
   Feather,
   FileText,
+  WholeWord,
   Hand,
   Library,
   Link2,
@@ -20,6 +23,8 @@ import {
   type LucideProps,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { BookLessonPrepButton, BookLessonPrepPanel } from '@/components/books/book-lesson-prep-panel'
+import { BookLessonSelectablePrep } from '@/components/books/book-lesson-selectable-prep'
 import { PersistedPageThumbnail } from '@/components/books/persisted-page-thumbnail'
 import { UnitPdfPageCountLoader } from '@/components/books/unit-pdf-page-count-loader'
 import { makeUnitFileUrl } from '@/lib/books/book-file-url'
@@ -34,6 +39,7 @@ import {
 import { resolveOutlinePrintedStartPdfPage } from '@/lib/books/story-thumb-pdf-page'
 import { readingStoryPartKey } from '@/lib/books/reading-story-map'
 import { resolveTocExtractProfileForBook } from '@/lib/books/toc-extract-profile'
+import { useLessonPrepJob } from '@/lib/books/use-lesson-prep-job'
 import type { BooksWorkshopOpenRequest } from '@/lib/books/books-workshop'
 import type { BookLessonPartTag, BookLessonRecord, BookRecord, BookUnitRecord } from '@/lib/books/types'
 import { cn } from '@/lib/utils'
@@ -54,6 +60,9 @@ const PART_TYPE_ICONS: Record<BookLessonPartTag, PartIcon> = {
   writing_narrate: PenLine,
   genre: Shapes,
   literary_element: Feather,
+  phonics: WholeWord,
+  fluency: AudioLines,
+  structural_analysis: Blocks,
 }
 
 /** Large enough to recognize the page; still smaller than lesson-shelf thumbs. */
@@ -91,6 +100,8 @@ export function BookPartShelf({
   const hasStoryRow = cards.some((card) => isStoryPartShelfTag(card.structureTag))
   const [pageCount, setPageCount] = useState<number | null>(null)
   const fileUrl = unit.filePath ? makeUnitFileUrl(unit.filePath) : null
+  const canPrepLesson = hasStoryRow && Boolean(unit.filePath?.trim())
+  const { snapshot: prepSnapshot, startPrep, stopPrep, dismissPrep } = useLessonPrepJob(book, unit, lesson)
 
   return (
     <section className="space-y-6">
@@ -144,8 +155,22 @@ export function BookPartShelf({
             <Wand2 className="h-3.5 w-3.5" aria-hidden />
             Edit outline
           </Button>
+          {canPrepLesson ? (
+            <BookLessonPrepButton
+              running={Boolean(prepSnapshot?.running)}
+              disabled={pageCount == null}
+              onStart={() => startPrep(pageCount)}
+              onStop={stopPrep}
+            />
+          ) : null}
         </div>
       </header>
+
+      {canPrepLesson ? <BookLessonPrepPanel snapshot={prepSnapshot} onDismiss={dismissPrep} /> : null}
+
+      {cards.length > 0 && unit.filePath?.trim() ? (
+        <BookLessonSelectablePrep book={book} unit={unit} lesson={lesson} />
+      ) : null}
 
       {cards.length === 0 ? (
         <div className="mx-auto flex max-w-md flex-col items-center gap-4 rounded-2xl bg-[var(--surface-2)] px-6 py-12 text-center">

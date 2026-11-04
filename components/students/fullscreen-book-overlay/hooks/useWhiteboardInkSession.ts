@@ -65,9 +65,13 @@ export function useWhiteboardInkSession({
   mergeSourcesRef.current = mergeSources
 
   const flushWhiteboardSessionToLegacy = useCallback(() => {
-    const doc = whiteboardSessionDocRef.current
+    const store = whiteboardSessionStoreRef.current
     const key = sessionKeyRef.current
-    if (!doc || !key || !bookId || !unitId) return
+    if (!key || !bookId || !unitId) return
+    // Canonical session first — markClean-before-checkpoint made checkpointNow a no-op.
+    store?.checkpointNow()
+    const doc = store?.getState().doc ?? whiteboardSessionDocRef.current
+    if (!doc) return
     flushWhiteboardSessionDocumentToLegacyStorage({
       doc,
       studentId,
@@ -75,8 +79,6 @@ export function useWhiteboardInkSession({
       unitId,
       storagePageKey: key,
     })
-    whiteboardSessionStoreRef.current?.markClean()
-    whiteboardSessionStoreRef.current?.checkpointNow()
   }, [bookId, studentId, unitId, whiteboardSessionStoreRef])
 
   const checkpointWhiteboardSession = useCallback(() => {
@@ -262,10 +264,8 @@ export function useWhiteboardInkSession({
 
   const appendLessonBoardPage = useCallback(
     (options?: {
-      orientation?: import('@/lib/books/lesson-board-types').LessonBoardPageOrientation
       viewportHeightPx?: number
       slotWidthPx?: number
-      spreadWidthPx?: number
       bookPageHint?: number
     }) => {
       whiteboardSessionStoreRef.current?.appendLessonBoardPage(options)

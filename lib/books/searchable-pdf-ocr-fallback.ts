@@ -3,8 +3,13 @@
  * Pure helpers — no network, no server-only.
  */
 
+import { filterBodyOcrWords } from '@/lib/books/searchable-pdf-body-text'
+
 /** Median Tesseract confidence below this sends the page to cloud OCR. */
 export const OCR_PAGE_CONFIDENCE_MIN = 65
+
+/** Fewer body-sized words than this means local OCR missed the text. */
+export const OCR_MIN_BODY_WORDS = 5
 
 /** Confidence assigned to words read by the cloud model (no Tesseract score). */
 export const CLOUD_OCR_WORD_CONFIDENCE = 100
@@ -35,11 +40,14 @@ export function medianOcrConfidence(words: readonly { confidence: number }[]): n
 
 /**
  * True when local OCR is too weak to stamp.
- * Empty pages and medians under {@link OCR_PAGE_CONFIDENCE_MIN} both qualify.
+ * Scores body-sized words only, so junk boxes from illustrations do not drag the median down.
+ * Fewer than {@link OCR_MIN_BODY_WORDS} body words, or a body median under
+ * {@link OCR_PAGE_CONFIDENCE_MIN}, both qualify.
  */
-export function pageNeedsCloudOcrFallback(words: readonly { confidence: number }[]): boolean {
-  if (words.length === 0) return true
-  return medianOcrConfidence(words) < OCR_PAGE_CONFIDENCE_MIN
+export function pageNeedsCloudOcrFallback(words: readonly ScoredOcrWord[]): boolean {
+  const body = filterBodyOcrWords(words)
+  if (body.length < OCR_MIN_BODY_WORDS) return true
+  return medianOcrConfidence(body) < OCR_PAGE_CONFIDENCE_MIN
 }
 
 function parseJsonFromModelText(text: string): unknown {

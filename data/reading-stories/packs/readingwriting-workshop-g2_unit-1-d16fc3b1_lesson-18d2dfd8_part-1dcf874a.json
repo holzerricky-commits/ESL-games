@@ -1,0 +1,117 @@
+{
+  "storyId": "readingwriting-workshop-g2::unit-1-d16fc3b1::lesson-18d2dfd8::part-1dcf874a",
+  "bookId": "readingwriting-workshop-g2",
+  "unitId": "unit-1-d16fc3b1",
+  "status": "approved",
+  "stops": [
+    {
+      "id": "stop-40c43aec",
+      "label": "Why they need to fly",
+      "displayPage": 22,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 24,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-880e7f36",
+          "kind": "mcq",
+          "prompt": "Why did Fluff and Tuff want to learn to fly?",
+          "choices": [
+            "They wanted to sing new songs.",
+            "They wanted to get their own worms.",
+            "They wanted to play with new friends.",
+            "They wanted to build a bigger nest."
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "One day Fluff asked, \"Can we get our own worms?\"\nTuff said, \"We can if we learn to fly.\"",
+          "evidenceHighlight": "get our own worms"
+        }
+      ]
+    },
+    {
+      "id": "stop-d882425a",
+      "label": "Little Flap's secret",
+      "displayPage": 24,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 26,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-fceddd37",
+          "kind": "true_false",
+          "prompt": "Little Flap told his friends that he was afraid to fly.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "He felt scared! He was too afraid to tell his friends about his fear so he kept his feelings a secret.",
+          "evidenceHighlight": "He was too afraid to tell his friends about his fear so he kept his feelings a secret."
+        }
+      ]
+    },
+    {
+      "id": "stop-9bbd5a2e",
+      "label": "Friends depend on each other",
+      "displayPage": 24,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 26,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-e6519e53",
+          "kind": "mcq",
+          "prompt": "How did Fluff and Tuff show Little Flap that he could depend on them?",
+          "choices": [
+            "They told him to stay in the nest.",
+            "They said they would go first and rescue him if he fell.",
+            "They gave him a big, juicy worm.",
+            "They sang him a song to make him feel better."
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "Tuff said, \"You can depend on Fluff and me. We're your friends.\" Fluff said, \"I have an idea. We will go first and show you how. Then you can try. If you fall, Tuff and I will rescue you.\"",
+          "evidenceHighlight": "We will go first and show you how. Then you can try. If you fall, Tuff and I will rescue you."
+        }
+      ]
+    },
+    {
+      "id": "stop-b10774cd",
+      "label": "Little Flap learns to fly",
+      "displayPage": 26,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 28,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-fbf70f52",
+          "kind": "true_false",
+          "prompt": "Little Flap flew well on his first try.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": true,
+          "evidenceSnippet": "Little Flap lifted into the air.\n\"You're flying just right!\" said Fluff.\n\"You're flying perfectly!\" said Tuff.",
+          "evidenceHighlight": null
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-10-13T12:55:11.890Z",
+  "approvedAt": "2026-10-13T12:55:11.890Z",
+  "autoApprovedAt": "2026-10-13T12:55:11.890Z"
+}

@@ -16,6 +16,7 @@
 | **4** | **Spread incremental paint** — append new segment instead of full canvas clear each move. | **Done** | Two-page spread: smooth drag, less lag. |
 | **5** | **Defer page-target update** — only when left/right page actually changes. | **Done** | No regression; optional perf win on touch down. |
 | **6** | **Preload effect pen tiles** — rainbow/galaxy ready before first stroke. | **Ready to test** | First effect stroke not plain-then-pop. |
+| **7** | **Highlighter live path** — imperative `paintTrailing` on per-page multiply layers (no React state per move). | **Done** | Highlighter tracks pointer like pen; multiply + seam still correct. |
 
 **Later / optional**
 
@@ -56,6 +57,12 @@
 - `warmProceduralPenInkTiles` in `pen-ink.ts` for non-PNG effect ids.
 - Spread overlay repaints live draft when a PNG tile finishes loading (`subscribeBrushPatternTileLoads`).
 
+## Task 7 — implementation notes
+
+- Book live highlighter stays on per-page multiply (`BookSpreadPageMarkerLayer`), not the spread overlay marker canvas.
+- Overlay rAF calls `leftPageMarkerRef` / `rightPageMarkerRef` `.paintTrailing` (points by reference); no `setSpreadMarkerStrokeDraft` per move.
+- Committed marker slice paint is decoupled from trailing; client rects cached for the gesture and invalidated on layout/zoom/resize.
+
 ---
 
 ## Changelog
@@ -68,3 +75,4 @@
 | 2026-06-01 | 4 | Spread live stroke incremental append (no full canvas clear each move). |
 | 2026-06-01 | 5 | Guarded `setAnnotationTargetPage`; spread overlay skips redundant updates. |
 | 2026-06-01 | 6 | Effect pen preload on open + profile/swatch; spread live repaint on tile load. |
+| 2026-11-03 | 7 | Imperative live highlighter on page multiply layers (no React lag). |

@@ -32,8 +32,8 @@ Never show **“Prep”** as a student-facing title. Welcome / Welcome back only
 
 ## What Prepare does now
 
-- Lands on the **book spread** (last page), clock off. Capsule: Checks · Save · Leave.
-- Save / Leave / close / Escape return to the **student Classes tab** — not yellow Welcome, not a teacher sheet.
+- Lands on the **book spread** (last page), clock off. Session exit: **Save Annotations · Exit Prep**. Separate **Checks** control opens the reading-checks prep panel.
+- Save Annotations / Exit Prep / close / Escape return to the **student Classes tab** — not yellow Welcome, not a teacher sheet.
 - Notes and “what we’re teaching” stay on the **student Classes tab**.
 - Do not scan, generate, or rewrite packs on Prepare. That stays in Books.
 

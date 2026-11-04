@@ -1,0 +1,93 @@
+{
+  "storyId": "literature-anthology-g2::unit-1-908992a7::lesson-895fa01d::part-bf78a5c3",
+  "bookId": "literature-anthology-g2",
+  "unitId": "unit-1-908992a7",
+  "status": "approved",
+  "stops": [
+    {
+      "id": "stop-77bcacdc",
+      "label": "Butterfly Offspring",
+      "displayPage": 204,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 206,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-8c37c38d",
+          "kind": "mcq",
+          "prompt": "What is the baby of a butterfly called?",
+          "choices": [
+            "A chick",
+            "A caterpillar",
+            "A tadpole",
+            "A puppy"
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "The parent is the butterfly, and its baby is the caterpillar.",
+          "evidenceHighlight": "its baby is the caterpillar"
+        }
+      ]
+    },
+    {
+      "id": "stop-64ea9c33",
+      "label": "Chrysalis Stage",
+      "displayPage": 205,
+      "midPageNote": "Step 4",
+      "hotspot": {
+        "pdfPage": 207,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-8bd168df",
+          "kind": "mcq",
+          "prompt": "What is the shell that a caterpillar forms around itself called?",
+          "choices": [
+            "An egg",
+            "A leaf",
+            "A chrysalis",
+            "A nest"
+          ],
+          "correctIndex": 2,
+          "correctTrue": null,
+          "evidenceSnippet": "The caterpillar forms a shell around itself. The shell is called a chrysalis.",
+          "evidenceHighlight": "shell is called a chrysalis"
+        }
+      ]
+    },
+    {
+      "id": "stop-aab8c0ac",
+      "label": "Adult Butterfly",
+      "displayPage": 205,
+      "midPageNote": "Step 5",
+      "hotspot": {
+        "pdfPage": 207,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-d093d92a",
+          "kind": "true_false",
+          "prompt": "True or False: An adult butterfly comes out of the chrysalis.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": true,
+          "evidenceSnippet": "Two weeks later, an adult butterfly comes out of the chrysalis.",
+          "evidenceHighlight": "adult butterfly comes out of the chrysalis"
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-10-17T13:03:10.197Z",
+  "approvedAt": "2026-10-17T13:03:10.197Z",
+  "autoApprovedAt": "2026-10-17T13:03:10.197Z"
+}

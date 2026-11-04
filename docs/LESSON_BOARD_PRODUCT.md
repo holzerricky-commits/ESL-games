@@ -2,7 +2,7 @@
 
 Last updated: 2026-09-18
 
-**Status:** **Page model still stands** (Standard / Wide, New page, ink coordinates). **Ownership, teacher-facing name, and layout chrome** now live in **`NOTEBOOK_PRODUCT.md`** / **`NOTEBOOK_PHASED_PLAN.md`**.
+**Status:** **Page model still stands** (one page kind, New page, ink coordinates). **Wide pages removed** — all notebook pages use the Standard (slot) shape. **Ownership, teacher-facing name, and layout chrome** now live in **`NOTEBOOK_PRODUCT.md`** / **`NOTEBOOK_PHASED_PLAN.md`**.
 
 Replaces the “infinite vertical scroll = the product” framing in `INFINITE_WHITEBOARD_V1.md` for **structure and navigation**. Page-model implementation phases live in **`LESSON_BOARD_PHASED_PLAN.md`**.
 
@@ -42,18 +42,17 @@ Replaces the “infinite vertical scroll = the product” framing in `INFINITE_W
 | **New page** | **Explicit only** — teacher taps **New page** (keyboard shortcut TBD). No auto-split when hitting the bottom. |
 | **Optional title** | Skippable name per page for TOC (e.g. “Irregular verbs”). |
 
-### Orientation (two page kinds, v1)
+### Page kind (one shape)
 
-Chosen **when the page is created**; **not** rotatable after content exists (duplicate page if wrong).
+One page kind only — the former **Standard** (portrait) slot board.
 
 | Kind | Use | Aspect (logical) |
 |------|-----|------------------|
-| **Standard** (portrait) | Notes, vocab, stickies, most teaching | Same ratio as today’s **docked slot** board (~one book page width × tall page). |
-| **Wide** (landscape) | Diagrams, timelines, comparisons, “draw the whole picture” | Fixed wide ratio (e.g. **16∶9** or spread-like **~2∶1** — pick one constant in implementation). |
+| **Standard** (portrait) | Notes, vocab, stickies, diagrams | Same ratio as today’s **docked slot** board (~one book page width × tall page). Height grows with content. |
 
-- **Same tools** on both kinds (pen, marker, text, shapes, stickies, etc.).
-- **TOC / thumbnails** show orientation (portrait vs landscape preview).
-- **Wide page ≠ spread-width stretch** of a Standard page. Wide is its own logical canvas.
+- **New page** creates another Standard page (no orientation picker).
+- Legacy **Wide** pages are coerced to Standard on load (spread-locked width dropped).
+- Do **not** stretch a page to full spread width — that stretches ink.
 
 ### Book vs board page
 
@@ -70,9 +69,8 @@ Chosen **when the page is created**; **not** rotatable after content exists (dup
 
 Pin (slot), Tab, Overlay (float), and Park, plus which control does what, are locked in **`NOTEBOOK_PRODUCT.md`**. This section only keeps the page-geometry rules:
 
-- **Do not** widen a Standard page to full spread width — that stretches ink.
-- **Standard** pages keep native aspect in Pin, Tab, and Overlay.
-- **Wide** pages cover the spread when a book is focused; they are not a free Overlay window.
+- **Do not** widen a page to full spread width — that stretches ink.
+- Pages keep native slot aspect in Pin, Tab, and Overlay.
 
 Slot side swap and Overlay drag/resize stay as built.
 
@@ -101,7 +99,7 @@ Slot side swap and Overlay drag/resize stay as built.
 ## Success criteria (overall)
 
 1. Teacher can run a class with **multiple board pages**, explicit **New page**, and find them later via **TOC / previews**.
-2. **Standard** and **Wide** pages coexist; thumbnails show orientation.
+2. Every notebook page is Standard; **New page** adds another without an orientation choice.
 3. **No** horizontal stretch when switching layout modes on the same page.
 4. Book page turns do not wipe or split board content.
 5. Notebook notes (and book↔notebook links) survive into the next class for **this student**.
@@ -110,7 +108,7 @@ Slot side swap and Overlay drag/resize stay as built.
 
 ## Open questions (resolve in implementation, not blockers for Phase 1)
 
-- Exact **wide page** aspect ratio constant (16∶9 vs 2∶1) — 16∶9 is already in types.
+- ~~Exact wide page aspect ratio~~ — Wide pages removed; one Standard page kind only.
 - **Page delete / reorder** in v1 or v2.
 - Export snapshots vs full JSON — later.
 - Layout chrome / Tab / ownership → `NOTEBOOK_PRODUCT.md` (no longer open here).

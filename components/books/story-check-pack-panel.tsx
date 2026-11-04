@@ -7,6 +7,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Plus,
+  Sparkles,
+  Undo2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -15,6 +17,11 @@ import {
 } from '@/components/books/checks-ai-generate-button'
 import { ReadingCheckGamePopup } from '@/components/books/reading-check-game-popup'
 import { StoryCheckQuestionCard } from '@/components/books/story-check-question-card'
+import {
+  DeskOverflowMenu,
+  type DeskOverflowMenuItem,
+} from '@/components/students/fullscreen-book-overlay/sections/DeskOverflowMenu'
+import { DeskStatusChip } from '@/components/students/fullscreen-book-overlay/sections/DeskStatusChip'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -129,6 +136,7 @@ export function StoryCheckPackPanel({
   const [generating, setGenerating] = useState(false)
   const [replaceOpen, setReplaceOpen] = useState(false)
   const [tryoutStopId, setTryoutStopId] = useState<string | null>(null)
+  const [embedView, setEmbedView] = useState<'list' | 'detail'>('list')
   const draftRef = useRef(draft)
   draftRef.current = draft
   const skipAutosaveRef = useRef(false)
@@ -157,8 +165,10 @@ export function StoryCheckPackPanel({
   useEffect(() => {
     if (!requestedStopId) return
     const idx = draft.stops.findIndex((s) => s.id === requestedStopId)
-    if (idx >= 0) setActiveIndex(idx)
-  }, [requestedStopId, draft.stops])
+    if (idx < 0) return
+    setActiveIndex(idx)
+    if (embed) setEmbedView('detail')
+  }, [requestedStopId, draft.stops, embed])
 
   useEffect(() => {
     if (!embed) return undefined
@@ -276,6 +286,7 @@ export function StoryCheckPackPanel({
       }
       setDraft(data.pack)
       setActiveIndex(0)
+      setEmbedView('list')
       onPackChange(data.pack)
       toast.success(
         data.usedLessonFrame
@@ -284,7 +295,7 @@ export function StoryCheckPackPanel({
             : 'Draft ready — skewed to this lesson’s skill.'
           : data.stopCheckCount
             ? `Draft ready — ${data.stopCheckCount} Stop and Check pause${data.stopCheckCount === 1 ? '' : 's'}.`
-            : 'Draft ready — review each check, then Finish.',
+            : 'Draft ready — review each check, then approve.',
       )
       if (!open) setOpen(true)
     } catch {
@@ -445,6 +456,67 @@ export function StoryCheckPackPanel({
     </Popover>
   )
 
+  const stopCount = draft.stops.length
+  const approved = draft.status === 'approved'
+  const incompleteCount = draft.stops.filter(isReadingCheckStopIncomplete).length
+  const canApprove = readingCheckPackCanApprove(draft)
+  const showEmbedDetail = embed && embedView === 'detail' && activeStop != null
+
+  function openStopDetail(index: number) {
+    setActiveIndex(index)
+    setEmbedView('detail')
+  }
+
+  function addAndOpen() {
+    addStopOfKind('mcq')
+    setEmbedView('detail')
+  }
+
+  function approveDraft(opts?: { keepOpen?: boolean }) {
+    const next = approveReadingCheckPack(draft)
+    if (!next) {
+      toast.error('Finish each check first.')
+      return
+    }
+    void persist(next, 'approve', opts)
+  }
+
+  const embedMenuItems: DeskOverflowMenuItem[] = [
+    ...(stopCount > 0
+      ? [
+          {
+            id: 'regenerate',
+            label: 'Regenerate with AI',
+            icon: Sparkles,
+            onSelect: onGenerateClick,
+            disabled: saving || generating || !hasStoryText,
+          },
+        ]
+      : []),
+    ...(onOpenStoryText
+      ? [
+          {
+            id: 'story-text',
+            label: hasStoryText ? 'View story text' : 'Add story text',
+            icon: BookOpen,
+            onSelect: onOpenStoryText,
+            disabled: generating,
+          },
+        ]
+      : []),
+    ...(approved
+      ? [
+          {
+            id: 'unapprove',
+            label: 'Back to draft',
+            icon: Undo2,
+            onSelect: () => void persist(draft, 'unapprove', { keepOpen: true }),
+            disabled: saving,
+          },
+        ]
+      : []),
+  ]
+
   return (
     <>
       {!embed && !hideCollapsedRow ? (
@@ -533,49 +605,92 @@ export function StoryCheckPackPanel({
 
       {embed ? (
         <div className="flex h-full min-h-0 flex-col">
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 pb-2">
-            {onOpenStoryText ? (
+          {showEmbedDetail ? (
+            <div className="flex shrink-0 items-center gap-1 pb-3">
               <Button
                 type="button"
                 size="sm"
                 variant="ghost"
-                className="h-8 w-8 rounded-full p-0 text-muted-foreground"
-                disabled={saving || generating}
-                title={hasStoryText ? 'View story text' : 'Scan or paste story text'}
-                onClick={() => onOpenStoryText()}
+                className="h-8 gap-1 rounded-lg px-2 text-[12px] text-muted-foreground hover:text-foreground"
+                onClick={() => setEmbedView('list')}
               >
-                <BookOpen className="size-4" aria-hidden />
-                <span className="sr-only">View story</span>
+                <ChevronLeft className="h-4 w-4" aria-hidden />
+                All checks
               </Button>
-            ) : null}
-            {draft.stops.length > 0 ? generateControl : null}
-            {draft.stops.length > 0 ? (
-              <span
-                className={cn(
-                  'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium',
-                  draft.status === 'approved'
-                    ? 'bg-[var(--brand-blue)] text-white'
-                    : 'bg-[var(--surface-3)] text-muted-foreground',
-                )}
-              >
-                {draft.status === 'approved' ? (
-                  <Check className="size-3 stroke-[3]" aria-hidden />
-                ) : null}
-                {draft.status === 'approved' ? 'Approved' : 'Draft'}
-                {` · ${draft.stops.length}`}
+              <span className="flex-1 text-center text-[12px] tabular-nums text-muted-foreground">
+                Check {safeIndex + 1} of {stopCount}
               </span>
-            ) : null}
-          </div>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8 rounded-lg text-muted-foreground"
+                disabled={safeIndex <= 0 || generating}
+                onClick={() => setActiveIndex((i) => Math.max(0, i - 1))}
+                aria-label="Previous check"
+              >
+                <ChevronLeft className="h-4 w-4" aria-hidden />
+              </Button>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8 rounded-lg text-muted-foreground"
+                disabled={safeIndex >= stopCount - 1 || generating}
+                onClick={() => setActiveIndex((i) => Math.min(stopCount - 1, i + 1))}
+                aria-label="Next check"
+              >
+                <ChevronRight className="h-4 w-4" aria-hidden />
+              </Button>
+            </div>
+          ) : (
+            <div className="flex shrink-0 items-center justify-between gap-2 pb-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <DeskStatusChip
+                  status={approved ? 'done' : stopCount > 0 ? 'attention' : 'todo'}
+                  label={approved ? 'Approved' : stopCount > 0 ? 'Draft' : 'None yet'}
+                />
+                {stopCount > 0 ? (
+                  <span className="truncate text-[12px] text-muted-foreground">
+                    {stopCount} {stopCount === 1 ? 'check' : 'checks'}
+                    {incompleteCount > 0 ? ` · ${incompleteCount} unfinished` : ''}
+                  </span>
+                ) : null}
+              </div>
+              <DeskOverflowMenu label="More check actions" items={embedMenuItems} />
+            </div>
+          )}
 
-          <div
-            className={cn(
-              'relative flex min-h-0 flex-1 flex-col overflow-y-auto',
-              draft.stops.length === 0 ? 'bg-[var(--surface-1)]' : 'bg-transparent',
-            )}
-          >
+          {replaceOpen ? (
+            <div className="mb-3 shrink-0 space-y-2 rounded-lg bg-[var(--surface-3)] p-3">
+              <p className="text-[13px] text-foreground">Replace all checks with a new AI draft?</p>
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 rounded-lg px-3"
+                  onClick={() => setReplaceOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-8 rounded-lg px-3"
+                  disabled={generating}
+                  onClick={() => void runGenerate()}
+                >
+                  Replace
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto">
             {generating ? <ChecksAiGeneratingOverlay /> : null}
-            {draft.stops.length === 0 ? (
-              <div className="flex flex-1 flex-col items-center justify-center gap-4 rounded-2xl bg-[var(--surface-3)] px-4 py-8">
+            {stopCount === 0 ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-3 rounded-lg bg-[var(--surface-3)] px-4 py-8 text-center">
                 <ChecksAiGenerateButton
                   size="lg"
                   busy={generating}
@@ -587,18 +702,24 @@ export function StoryCheckPackPanel({
                   }
                   onClick={() => void runGenerate()}
                 />
+                <p className="max-w-[16rem] text-[12px] leading-relaxed text-muted-foreground">
+                  {hasStoryText
+                    ? 'Draft checks from the story text, or write your own.'
+                    : 'AI drafts need story text. You can still write checks yourself.'}
+                </p>
                 <Button
                   type="button"
                   size="sm"
                   variant="ghost"
-                  className="h-9 gap-1.5 rounded-full px-3 text-muted-foreground"
+                  className="h-8 gap-1.5 rounded-lg px-3 text-muted-foreground"
                   disabled={generating}
-                  onClick={() => addStopOfKind('mcq')}
+                  onClick={addAndOpen}
                 >
+                  <Plus className="h-3.5 w-3.5" aria-hidden />
                   Write a check
                 </Button>
               </div>
-            ) : activeStop ? (
+            ) : showEmbedDetail && activeStop ? (
               <StoryCheckQuestionCard
                 key={activeStop.id}
                 stop={activeStop}
@@ -609,91 +730,89 @@ export function StoryCheckPackPanel({
                 onChange={(next) => updateStop(activeStop.id, next)}
                 onDuplicate={duplicateActive}
                 onDelete={deleteActive}
-                keepBookVisible={keepBookVisible || embed}
-                compact={embed}
+                keepBookVisible
+                compact
               />
-            ) : null}
-          </div>
-
-          {draft.stops.length > 0 ? (
-            <div className="relative mt-2 flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border/50 pt-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="h-8 gap-1 rounded-full px-2.5 text-[12px] text-muted-foreground"
-                disabled={generating || draft.status === 'approved'}
-                onClick={() => addStopOfKind('mcq')}
-              >
-                <Plus className="size-3" aria-hidden />
-                Add
-              </Button>
-              <div className="flex max-w-[min(100%,12rem)] flex-wrap items-center justify-center gap-0.5">
+            ) : (
+              <div className="space-y-2">
+                <ol className="space-y-0.5">
+                  {draft.stops.map((stop, i) => {
+                    const question = primaryQuestionOfStop(stop)
+                    const incomplete = isReadingCheckStopIncomplete(stop)
+                    const meta = [
+                      stop.displayPage != null ? `p. ${stop.displayPage}` : null,
+                      question?.kind === 'true_false' ? 'True / false' : 'Multiple choice',
+                      stop.hotspot ? 'Pinned' : 'No pin',
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')
+                    return (
+                      <li key={stop.id}>
+                        <button
+                          type="button"
+                          onClick={() => openStopDetail(i)}
+                          className={cn(
+                            'group flex w-full items-start gap-3 rounded-lg px-2 py-2 text-left transition',
+                            'hover:bg-[var(--surface-3)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]',
+                            i === safeIndex && 'bg-[var(--surface-3)]',
+                          )}
+                        >
+                          <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[var(--surface-4)] text-[11px] font-semibold tabular-nums text-foreground">
+                            {i + 1}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="line-clamp-2 text-[13px] leading-snug text-foreground">
+                              {question?.prompt.trim() || stop.label.trim() || 'Untitled check'}
+                            </span>
+                            <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{meta}</span>
+                          </span>
+                          {incomplete ? <DeskStatusChip status="attention" label="Unfinished" /> : null}
+                          <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ol>
                 <Button
                   type="button"
                   size="sm"
                   variant="ghost"
-                  className="h-8 w-8 rounded-full p-0 text-muted-foreground"
-                  disabled={safeIndex <= 0 || generating}
-                  onClick={() => setActiveIndex((i) => Math.max(0, i - 1))}
-                >
-                  <ChevronLeft className="size-4" aria-hidden />
-                  <span className="sr-only">Previous</span>
-                </Button>
-                {draft.stops.map((stop, i) => {
-                  const incomplete = isReadingCheckStopIncomplete(stop)
-                  const active = i === safeIndex
-                  return (
-                    <button
-                      key={stop.id}
-                      type="button"
-                      aria-label={`Go to check ${i + 1}`}
-                      aria-current={active ? 'step' : undefined}
-                      className={cn(
-                        'flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums transition-colors',
-                        active
-                          ? 'bg-[var(--brand-blue)] text-white'
-                          : incomplete
-                            ? 'text-[var(--brand-yellow)]'
-                            : 'text-muted-foreground hover:text-foreground',
-                      )}
-                      onClick={() => setActiveIndex(i)}
-                    >
-                      {i + 1}
-                    </button>
-                  )
-                })}
-              </div>
-              {safeIndex < draft.stops.length - 1 ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  className="h-8 rounded-full px-4"
+                  className="h-8 w-full justify-start gap-1.5 rounded-lg px-2 text-[13px] text-muted-foreground hover:text-foreground"
                   disabled={generating}
-                  onClick={() => setActiveIndex((i) => Math.min(draft.stops.length - 1, i + 1))}
+                  onClick={addAndOpen}
                 >
-                  Next
-                  <ChevronRight className="size-3.5" aria-hidden />
+                  <Plus className="h-4 w-4" aria-hidden />
+                  Add check
                 </Button>
-              ) : draft.status === 'approved' ? (
-                <span className="text-[12px] text-muted-foreground">Ready for class</span>
+              </div>
+            )}
+          </div>
+
+          {stopCount > 0 ? (
+            <div className="mt-3 shrink-0 space-y-1.5 border-t border-[var(--border)] pt-3">
+              {approved ? (
+                <p className="flex items-center justify-center gap-1.5 py-1.5 text-[13px] font-medium text-foreground">
+                  <Check className="h-4 w-4 text-[var(--brand-green)]" aria-hidden />
+                  Approved · live in class
+                </p>
               ) : (
-                <Button
-                  type="button"
-                  size="sm"
-                  className="h-8 rounded-full px-4"
-                  disabled={saving || generating || !readingCheckPackCanApprove(draft)}
-                  onClick={() => {
-                    const approved = approveReadingCheckPack(draft)
-                    if (!approved) {
-                      toast.error('Finish each check first.')
-                      return
-                    }
-                    void persist(approved, 'approve', { keepOpen: true })
-                  }}
-                >
-                  Finish
-                </Button>
+                <>
+                  <Button
+                    type="button"
+                    className="h-9 w-full rounded-lg"
+                    disabled={saving || generating || !canApprove}
+                    onClick={() => approveDraft({ keepOpen: true })}
+                  >
+                    {saving ? 'Saving…' : 'Approve for class'}
+                  </Button>
+                  <p className="text-center text-[11px] text-muted-foreground">
+                    {!canApprove
+                      ? 'Write at least one question to approve.'
+                      : incompleteCount > 0
+                        ? `${incompleteCount} ${incompleteCount === 1 ? 'check is' : 'checks are'} still unfinished.`
+                        : 'Drafts are saved when you leave. Approve to show checks in class.'}
+                  </p>
+                </>
               )}
             </div>
           ) : null}

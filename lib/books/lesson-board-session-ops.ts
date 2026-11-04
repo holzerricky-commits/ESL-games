@@ -10,7 +10,6 @@ import {
   syncLessonBoardActivePageToCommands,
   syncLessonBoardCommandsToActivePage,
   type LessonBoardPage,
-  type LessonBoardPageOrientation,
   type LessonBoardPagePrimaryLink,
 } from '@/lib/books/lesson-board-types'
 
@@ -21,7 +20,9 @@ export function lessonBoardPageStorageKey(sessionStoragePageKey: string, pageId:
 
 type LessonBoardDocumentFields = Pick<WhiteboardSessionDocument, 'pages' | 'activePageId' | 'commands'>
 
-export function getLessonBoardActivePageIndex(doc: LessonBoardDocumentFields): number {
+export function getLessonBoardActivePageIndex(
+  doc: Pick<WhiteboardSessionDocument, 'pages' | 'activePageId'>,
+): number {
   const idx = doc.pages.findIndex((p) => p.id === doc.activePageId)
   return idx >= 0 ? idx : 0
 }
@@ -68,24 +69,17 @@ export function setLessonBoardActivePageId(
 
 export function appendLessonBoardPage(
   doc: WhiteboardSessionDocument,
-  orientation: LessonBoardPageOrientation = 'standard',
   options: {
     viewportHeightPx?: number
     slotWidthPx?: number
-    spreadWidthPx?: number
     bookPageHint?: number
   } = {},
 ): WhiteboardSessionDocument {
   const flushed = syncLessonBoardCommandsToActivePage(doc)
   const slotWidthPx = Math.max(1, options.slotWidthPx ?? 320)
-  const spreadWidthPx = Math.max(1, options.spreadWidthPx ?? slotWidthPx)
-  const logicalWidthPx = orientation === 'wide' ? spreadWidthPx : slotWidthPx
-  const contentHeightPx = lessonBoardMinContentHeightPx(
-    orientation,
-    logicalWidthPx,
-    options.viewportHeightPx,
-  )
-  const page = createLessonBoardPage(orientation, {
+  const logicalWidthPx = slotWidthPx
+  const contentHeightPx = lessonBoardMinContentHeightPx(logicalWidthPx, options.viewportHeightPx)
+  const page = createLessonBoardPage({
     contentHeightPx,
     logicalWidthPx,
     ...(options.bookPageHint != null ? { bookPageHint: options.bookPageHint } : {}),
@@ -104,7 +98,7 @@ export function appendLessonBoardStandardPage(
   doc: WhiteboardSessionDocument,
   options: { viewportHeightPx?: number; bookPageHint?: number; slotWidthPx?: number } = {},
 ): WhiteboardSessionDocument {
-  return appendLessonBoardPage(doc, 'standard', options)
+  return appendLessonBoardPage(doc, options)
 }
 
 export function goToAdjacentLessonBoardPage(
@@ -144,7 +138,7 @@ export function growLessonBoardActivePageContentHeight(
   if (!active || viewportHeightPx <= 0) return doc
   const maxY = maxNormY(commands)
   if (maxY < growthBandThreshold) return doc
-  const min = lessonBoardMinContentHeightPx(active.orientation, 320, viewportHeightPx)
+  const min = lessonBoardMinContentHeightPx(320, viewportHeightPx)
   const max = lessonBoardMaxContentHeightPx(viewportHeightPx)
   const needed = Math.ceil(maxY * active.contentHeightPx + viewportHeightPx)
   const nextHeight = Math.min(max, Math.max(active.contentHeightPx, min, needed))

@@ -69,3 +69,39 @@ export function resolveEffectiveAnchorToPdfPage(
   const rounded = Math.max(1, Math.round(anchorPage))
   return runtime.pdfPageByEffective.get(rounded) ?? rounded
 }
+
+/**
+ * When the real PDF length is unknown, scan far enough that an effective (printed) page
+ * can still be placed after hidden / not-counted PDF pages.
+ */
+export function estimatePdfTotalForEffectiveAnchor(
+  effectiveAnchor: number,
+  hiddenPdfPages: number[],
+  notCountedPdfPages: number[],
+): number {
+  const rounded = Math.max(1, Math.floor(effectiveAnchor))
+  const marked: number[] = []
+  for (const page of [...hiddenPdfPages, ...notCountedPdfPages]) {
+    if (!Number.isFinite(page)) continue
+    const n = Math.floor(page)
+    if (n >= 1) marked.push(n)
+  }
+  const maxMarked = marked.length ? Math.max(...marked) : 0
+  return Math.max(rounded + marked.length, maxMarked, rounded) + 1
+}
+
+/** Lower bound on PDF length so a known PDF index participates in the alignment map. */
+export function estimatePdfTotalForPdfPage(
+  pdfPage: number,
+  hiddenPdfPages: number[],
+  notCountedPdfPages: number[],
+): number {
+  const rounded = Math.max(1, Math.floor(pdfPage))
+  let maxMarked = 0
+  for (const page of [...hiddenPdfPages, ...notCountedPdfPages]) {
+    if (!Number.isFinite(page)) continue
+    const n = Math.floor(page)
+    if (n > maxMarked) maxMarked = n
+  }
+  return Math.max(rounded, maxMarked)
+}

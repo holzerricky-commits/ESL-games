@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { saveStudents } from '@/lib/storage'
+import { getStudents, saveStudents } from '@/lib/storage'
 import type { BookLibraryPayload } from '@/lib/books/types'
 import type { StudentRecord } from '@/lib/types'
 import {
@@ -10,7 +10,9 @@ import {
   resolveClassEndBookmark,
   resolveClassTeachingBookUnit,
   saveStudentBookPlace,
+  setStudentBookAssignmentStatus,
   updateStudentClassSelectedSection,
+  updateStudentCurriculumAssignments,
   updateStudentCurriculumBookStart,
   upsertStudentClassSession,
 } from '@/lib/students/selectors'
@@ -129,7 +131,15 @@ describe('student book places', () => {
       unitId: 'l-u1',
     })
     expect(getStudentTeachingOpenPdfPageForBookUnit('student-1', 'literature', 'l-u1', library)).toBe(6)
-    expect(getStudentTeachingOpenPdfPageForBookUnit('student-1', 'workshop', 'w-u1', library)).toBe(21)
+    // Opening workshop itself still lands on the last flipped page (no lesson-end skip).
+    expect(getStudentTeachingOpenPdfPageForBookUnit('student-1', 'workshop', 'w-u1', library)).toBe(19)
+  })
+
+  it('place at lesson end opens that page, not the next lesson', () => {
+    saveStudents([seed()])
+    saveStudentBookPlace('student-1', { bookId: 'workshop', unitId: 'w-u1', pdfPage: 19 })
+    expect(getStudentTeachingOpenPdfPageForBookUnit('student-1', 'workshop', 'w-u1', library)).toBe(19)
+    expect(getStudentUpNextBookId('student-1', library)).toBe('literature')
   })
 
   it('setting a starting place moves the place and makes that book up next', () => {
@@ -141,9 +151,117 @@ describe('student book places', () => {
     expect(getStudentUpNextBookId('student-1', library)).toBe('literature')
   })
 
+  it('Books tab pin stores the picked PDF page for the next open', () => {
+    const alignedLibrary: BookLibraryPayload = {
+      books: [
+        {
+          id: 'workshop',
+          title: 'Workshop',
+          pageAlignmentByFile: {
+            '/w1.pdf': {
+              notCountedPdfPages: [2, 3, 10, 11],
+              hiddenPdfPages: [1],
+            },
+          },
+          units: [
+            {
+              id: 'w-u1',
+              title: 'Unit 1',
+              filePath: '/w1.pdf',
+              lessons: [{ id: 'w-l1', title: 'Lesson 1', startPageHint: 10, endPageHint: 20 }],
+            },
+          ],
+        },
+      ],
+    }
+    saveStudents([
+      seed({
+        assignedBookIds: ['workshop'],
+        assignedUnitRefs: [{ bookId: 'workshop', unitId: 'w-u1' }],
+      }),
+    ])
+    const options = getStudentSectionOptions('student-1', alignedLibrary)
+    const lesson = options.find((o) => o.bookId === 'workshop')!
+    updateStudentCurriculumBookStart(
+      'student-1',
+      { bookId: 'workshop', sectionId: lesson.id, mappedPage: 14, pdfPage: 18 },
+      alignedLibrary,
+    )
+    expect(getStudentBookPlaces('student-1').workshop).toMatchObject({ unitId: 'w-u1', pdfPage: 18 })
+    expect(getStudentTeachingOpenPdfPageForBookUnit('student-1', 'workshop', 'w-u1', alignedLibrary)).toBe(18)
+  })
+
+  it('class page flips are what the next open uses', () => {
+    saveStudents([seed()])
+    const options = getStudentSectionOptions('student-1', library)
+    const story = options.find((o) => o.bookId === 'literature')!
+    updateStudentCurriculumBookStart(
+      'student-1',
+      { bookId: 'literature', sectionId: story.id, mappedPage: 5, pdfPage: 5 },
+      library,
+    )
+    saveStudentBookPlace('student-1', { bookId: 'literature', unitId: 'l-u1', pdfPage: 9 })
+    expect(getStudentTeachingOpenPdfPageForBookUnit('student-1', 'literature', 'l-u1', library)).toBe(9)
+  })
+
   it('end-of-class bookmark uses the taught book place', () => {
     saveStudents([seed()])
     saveStudentBookPlace('student-1', { bookId: 'literature', unitId: 'l-u1', pdfPage: 9 })
     expect(resolveClassEndBookmark('student-1', {})).toEqual({ bookId: 'literature', pdfPage: 9, unitId: 'l-u1' })
+  })
+
+  it('up next skips a paused book that was taught last', () => {
+    saveStudents([
+      seed({
+        bookAssignmentStatus: { workshop: 'paused' },
+        lastTaughtBookId: 'workshop',
+        bookPlaces: {
+          workshop: { unitId: 'w-u1', pdfPage: 14, updatedAt: '2026-09-02T10:00:00.000Z' },
+          literature: { unitId: 'l-u1', pdfPage: 6, updatedAt: '2026-09-01T10:00:00.000Z' },
+        },
+      }),
+    ])
+    expect(getStudentUpNextBookId('student-1', library)).toBe('literature')
+    expect(getStudentBookPlaces('student-1').workshop?.pdfPage).toBe(14)
+  })
+
+  it('pausing keeps the place and bringing the book back restores it as up next', () => {
+    saveStudents([seed()])
+    saveStudentBookPlace('student-1', { bookId: 'literature', unitId: 'l-u1', pdfPage: 6 })
+    saveStudentBookPlace('student-1', { bookId: 'workshop', unitId: 'w-u1', pdfPage: 14 })
+    expect(setStudentBookAssignmentStatus('student-1', ['workshop'], 'paused').ok).toBe(true)
+    expect(getStudentBookPlaces('student-1').workshop).toMatchObject({ pdfPage: 14 })
+    expect(getStudentUpNextBookId('student-1', library)).toBe('literature')
+    expect(setStudentBookAssignmentStatus('student-1', ['workshop'], 'in_class').ok).toBe(true)
+    expect(getStudents().find((row) => row.id === 'student-1')?.bookAssignmentStatus).toBeUndefined()
+    expect(getStudentUpNextBookId('student-1', library)).toBe('workshop')
+  })
+
+  it('assignment update keeps status on books that remain and drops a removed book', () => {
+    saveStudents([
+      seed({
+        bookAssignmentStatus: { workshop: 'paused', literature: 'finished' },
+        bookPlaces: {
+          workshop: { unitId: 'w-u1', pdfPage: 14, updatedAt: '2026-09-01T10:00:00.000Z' },
+        },
+        curriculumBookStarts: {
+          workshop: {
+            sectionId: 'start-w',
+            unitId: 'w-u1',
+            mappedPage: 10,
+            updatedAt: '2026-09-01T10:00:00.000Z',
+          },
+        },
+      }),
+    ])
+    const result = updateStudentCurriculumAssignments('student-1', {
+      assignedBookIds: ['workshop', 'cambridge'],
+      assignedUnitRefs: [],
+    })
+    expect(result.ok).toBe(true)
+    const saved = getStudents().find((row) => row.id === 'student-1')
+    expect(saved?.bookAssignmentStatus).toEqual({ workshop: 'paused' })
+    expect(saved?.bookPlaces?.workshop?.pdfPage).toBe(14)
+    expect(saved?.curriculumBookStarts?.workshop).toMatchObject({ mappedPage: 10, unitId: 'w-u1' })
   })
 })

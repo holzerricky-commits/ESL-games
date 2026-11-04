@@ -55,6 +55,24 @@ function buildProgress(
   return { pages, doneCount, totalCount, percent, activeLabel, message }
 }
 
+async function readScanJson<T extends { ok?: boolean; error?: string }>(res: Response): Promise<T> {
+  const contentType = res.headers.get('content-type') ?? ''
+  if (!contentType.includes('application/json')) {
+    return {
+      ok: false,
+      error:
+        res.status === 404
+          ? 'Story scan service not found (404). Restart the dev server and try Continue scan.'
+          : `Story scan service returned an unexpected response (${res.status}). Try again.`,
+    } as T
+  }
+  try {
+    return (await res.json()) as T
+  } catch {
+    return { ok: false, error: `Could not read scan response (${res.status}).` } as T
+  }
+}
+
 function pageLabelRange(pages: StoryScanPageProgress[], from: number, to: number): string {
   const slice = pages.filter((p) => p.pdfPage >= from && p.pdfPage <= to)
   if (slice.length === 0) return `${from}–${to}`
@@ -129,11 +147,11 @@ export async function runChunkedStoryTextScan(
     throw err
   }
 
-  const planData = (await planRes.json()) as {
+  const planData = await readScanJson<{
     ok?: boolean
     plan?: StoryScanPlan
     error?: string
-  }
+  }>(planRes)
   if (!planData.ok || !planData.plan || planData.plan.pages.length === 0) {
     return {
       ok: false,
@@ -257,12 +275,12 @@ export async function runChunkedStoryTextScan(
       }
     }
 
-    const chunkData = (await chunkRes.json()) as {
+    const chunkData = await readScanJson<{
       ok?: boolean
       text?: ReadingStoryTextRecord
       error?: string
       emptyChunk?: boolean
-    }
+    }>(chunkRes)
 
     if (!chunkData.ok || !chunkData.text) {
       pages = pages.map((p) =>

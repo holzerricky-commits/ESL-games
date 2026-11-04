@@ -16,7 +16,9 @@ import {
 } from '@/lib/books/annotation-custom-color'
 import {
   ANNOTATION_FINE_INK_STROKE_WIDTH_STEPS,
+  ANNOTATION_STAMP_WIDTH_STEPS,
   ANNOTATION_STROKE_WIDTH_STEPS,
+  DEFAULT_STAMP_THICKNESS_STEP,
   type AnnotationStrokeThicknessStep,
   type BookAnnotationInteractionMode,
 } from '@/lib/books/annotation-storage'
@@ -168,7 +170,8 @@ export function useAnnotationController({
   const [shapeThicknessStep, setShapeThicknessStep] = useState<AnnotationStrokeThicknessStep>(3)
   const [textThicknessStep, setTextThicknessStep] = useState<AnnotationStrokeThicknessStep>(DEFAULT_TEXT_THICKNESS_STEP)
   const [stickyThicknessStep, setStickyThicknessStep] = useState<AnnotationStrokeThicknessStep>(DEFAULT_TEXT_THICKNESS_STEP)
-  const [stampThicknessStep, setStampThicknessStep] = useState<AnnotationStrokeThicknessStep>(3)
+  const [stampThicknessStep, setStampThicknessStep] =
+    useState<AnnotationStrokeThicknessStep>(DEFAULT_STAMP_THICKNESS_STEP)
   const [eraserPixelThicknessStep, setEraserPixelThicknessStep] = useState<AnnotationStrokeThicknessStep>(3)
   const [eraserLineThicknessStep, setEraserLineThicknessStep] = useState<AnnotationStrokeThicknessStep>(3)
   const [textVisualStyle, setTextVisualStyleState] = useState<TextAnnotationVisualStyle>('plain')
@@ -181,7 +184,7 @@ export function useAnnotationController({
   const [textFillColor, setTextFillColor] = useState<string>(DEFAULT_TEXT_FILL_COLOR)
   const [penLineDashStyle, setPenLineDashStyle] = useState<AnnotationLineDashStyle>('solid')
   const [markerLineDashStyle, setMarkerLineDashStyle] = useState<AnnotationLineDashStyle>('solid')
-  const [markerStraightStroke, setMarkerStraightStroke] = useState(true)
+  const [markerStraightStroke, setMarkerStraightStroke] = useState(false)
   const [markerDecoratedEdge, setMarkerDecoratedEdge] = useState(false)
   const [penAutoGroupConnected, setPenAutoGroupConnected] = useState(true)
   const [penSmoothingLevel, setPenSmoothingLevel] = useState(5)
@@ -522,7 +525,8 @@ export function useAnnotationController({
     annotationMode === 'pen' ? penColor : annotationMode === 'marker' ? markerColor : undefined
 
   const shapeStrokeWidthScale = ANNOTATION_FINE_INK_STROKE_WIDTH_STEPS[shapeThicknessStep]
-  const stampScale = ANNOTATION_STROKE_WIDTH_STEPS[stampThicknessStep]
+  const stampScale =
+    ANNOTATION_STAMP_WIDTH_STEPS[stampThicknessStep] ?? ANNOTATION_STAMP_WIDTH_STEPS[DEFAULT_STAMP_THICKNESS_STEP]!
   const textFontSizeNorm =
     ANNOTATION_TEXT_FONT_NORM_STEPS[textThicknessStep] ?? ANNOTATION_TEXT_FONT_NORM_STEPS[DEFAULT_TEXT_THICKNESS_STEP]!
   const stickyFontSizeNorm =

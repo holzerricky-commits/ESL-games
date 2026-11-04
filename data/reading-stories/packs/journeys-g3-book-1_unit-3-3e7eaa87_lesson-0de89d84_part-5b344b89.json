@@ -1,0 +1,227 @@
+{
+  "storyId": "journeys-g3-book-1::unit-3-3e7eaa87::lesson-0de89d84::part-5b344b89",
+  "bookId": "journeys-g3-book-1",
+  "unitId": "unit-3-3e7eaa87",
+  "status": "approved",
+  "stops": [
+    {
+      "id": "stop-e9990468",
+      "label": "Chief Sky is old",
+      "displayPage": 433,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 441,
+        "pageSide": "right",
+        "x": 0.8496276173511697,
+        "y": 0.4788988780908559
+      },
+      "questions": [
+        {
+          "id": "q-f01d3dee",
+          "kind": "true_false",
+          "prompt": "True or False: Chief Sky is still strong enough to lead his people.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "But now his step was slow, and his hand trembled on the bow. He could no longer spot brother deer among the trees. He was no longer able to lead his people.",
+          "evidenceHighlight": "He was no longer able to lead his people."
+        }
+      ]
+    },
+    {
+      "id": "stop-4373574d",
+      "label": "The Mountain Test",
+      "displayPage": 435,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 443,
+        "pageSide": "right",
+        "x": 0.86731843575419,
+        "y": 0.3006305101544322
+      },
+      "questions": [
+        {
+          "id": "q-45ec547b",
+          "kind": "mcq",
+          "prompt": "What did Chief Sky ask the three young men to do?",
+          "choices": [
+            "Go to the river and catch fish.",
+            "Go to the forest and hunt deer.",
+            "Go to yonder mountain and bring back what they find.",
+            "Go to another village and ask for help."
+          ],
+          "correctIndex": 2,
+          "correctTrue": null,
+          "evidenceSnippet": "Chief Sky turned slowly, looking into the distance. \"Do you see yonder mountain?\" ... “I want you to go to the mountaintop. Bring back to me what you find there.\"",
+          "evidenceHighlight": "I want you to go to the mountaintop. Bring back to me what you find there."
+        }
+      ]
+    },
+    {
+      "id": "stop-3987f4dc",
+      "label": "Black Bear's Stones",
+      "displayPage": 436,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 444,
+        "pageSide": "left",
+        "x": 0.8049349225433179,
+        "y": 0.5785836105231126
+      },
+      "questions": [
+        {
+          "id": "q-a5e42003",
+          "kind": "mcq",
+          "prompt": "What did Black Bear find on the mountain?",
+          "choices": [
+            "Healing herbs",
+            "Sparkling stones",
+            "A smoke signal",
+            "A new trail"
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "Just as his eyes were closing, he caught sight of a thousand lights twinkling in the sun. Black Bear sat up straight and saw stones of great beauty lining each side of the trail. They sparkled and glowed in the sunlight.",
+          "evidenceHighlight": "stones of great beauty lining each side of the trail. They sparkled and glowed in the sunlight."
+        }
+      ]
+    },
+    {
+      "id": "stop-241bac1d",
+      "label": "Gray Wolf's Herbs",
+      "displayPage": 439,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 447,
+        "pageSide": "right",
+        "x": 0.8496276173511697,
+        "y": 0.3995876277431196
+      },
+      "questions": [
+        {
+          "id": "q-e15ef8b3",
+          "kind": "mcq",
+          "prompt": "What did Gray Wolf find on the mountain?",
+          "choices": [
+            "Sparkling stones",
+            "Healing plants",
+            "A new animal",
+            "A hidden cave"
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "He picked an herb, looking closely at its pointed leaves and long roots. \"These are the healing plants of our medicine man,\" he said.",
+          "evidenceHighlight": "These are the healing plants of our medicine man"
+        }
+      ]
+    },
+    {
+      "id": "stop-793e335a",
+      "label": "Gray Wolf's Return",
+      "displayPage": 440,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 448,
+        "pageSide": "left",
+        "x": 0.8133148108114744,
+        "y": 0.770676860335788
+      },
+      "questions": [
+        {
+          "id": "q-3a48ecd2",
+          "kind": "true_false",
+          "prompt": "True or False: When Gray Wolf returned, he said he found herbs so his people would no longer be sick.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": true,
+          "evidenceSnippet": "Gray Wolf ran to his chief and spread the plants before him. \"Look, my chief, what I have found. We no longer need to suffer. I have found all kinds of herbs, and we can be healed.\"",
+          "evidenceHighlight": "We no longer need to suffer. I have found all kinds of herbs, and we can be healed."
+        }
+      ]
+    },
+    {
+      "id": "stop-c0160b1a",
+      "label": "Waiting for Soaring Eagle",
+      "displayPage": 441,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 449,
+        "pageSide": "right",
+        "x": 0.8542829971739699,
+        "y": 0.44178995483158906
+      },
+      "questions": [
+        {
+          "id": "q-3c740d57",
+          "kind": "mcq",
+          "prompt": "How many days did the village wait for Soaring Eagle to return?",
+          "choices": [
+            "Three days",
+            "Five days",
+            "Six days",
+            "Seven days"
+          ],
+          "correctIndex": 3,
+          "correctTrue": null,
+          "evidenceSnippet": "After six days, the people began to murmur. \"Something must have happened to Soaring Eagle. Why wait any longer?\" But Chief Sky said to his people, \"We will wait one day longer.\" And so they waited. On the seventh day, as the sun cast its long shadow over the village, the people saw Soaring Eagle coming.",
+          "evidenceHighlight": null
+        }
+      ]
+    },
+    {
+      "id": "stop-7a595616",
+      "label": "Soaring Eagle's Story",
+      "displayPage": 442,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 450,
+        "pageSide": "left",
+        "x": 0.8002793722312543,
+        "y": 0.4912684969718965
+      },
+      "questions": [
+        {
+          "id": "q-d4a42ec0",
+          "kind": "true_false",
+          "prompt": "True or False: Soaring Eagle brought back many sparkling stones and healing herbs.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "I went to the top of the mountain, my chief. But I bring back nothing in my hands. I passed a place where there were sparkling stones, but I remembered you said go to the top of the mountain. I passed a place where all sorts of herbs grew, but I remembered your words. The path was rough. There were great cliffs and sharp rocks. I have nothing in my hands to show you, but I bring back a story from the top of the mountain.",
+          "evidenceHighlight": "But I bring back nothing in my hands."
+        }
+      ]
+    },
+    {
+      "id": "stop-49eee9f5",
+      "label": "Beyond Yonder Mountain",
+      "displayPage": 444,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 452,
+        "pageSide": "left",
+        "x": 0.7779330035161706,
+        "y": 0.41996117644378506
+      },
+      "questions": [
+        {
+          "id": "q-5af38fb0",
+          "kind": "mcq",
+          "prompt": "What did Soaring Eagle see from the top of the mountain?",
+          "choices": [
+            "A new river",
+            "A smoke signal for help",
+            "A large animal",
+            "A beautiful flower"
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "As I stood on yonder mountain and looked across the valley and beyond the farthest mountain, I saw a smoke signal. It was a signal calling for help. The signal said 'We are dying,' and then 'Come and help us.\"",
+          "evidenceHighlight": "I saw a smoke signal. It was a signal calling for help."
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-10-09T12:55:18.731Z",
+  "approvedAt": "2026-10-09T12:55:18.731Z"
+}

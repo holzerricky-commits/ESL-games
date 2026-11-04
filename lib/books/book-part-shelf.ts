@@ -36,11 +36,13 @@ export function buildBookPartShelfCards(
   return parts.map((part, partIndex) => {
     const range = pageRangeForIndex(parts, partIndex, lessonRange.start, lessonRange.end)
     const tag = resolvePartStructureTag(part, partIndex, profile)
+    const title = part.title.trim()
     return {
       id: part.id,
       title: part.title,
       indexLabel: `P${partIndex + 1}`,
-      typeLabel: BOOK_LESSON_PART_TAG_LABELS[tag] ?? 'Part',
+      typeLabel:
+        tag === 'unspecified' && title ? title : (BOOK_LESSON_PART_TAG_LABELS[tag] ?? 'Part'),
       structureTag: tag,
       partIndex,
       printedStart: range.start,

@@ -125,8 +125,8 @@ export const bookSpreadPageArtHiddenForFrameTuning =
 export const bookPdfTextSelectionEnabled = true
 
 /**
- * TEMP: draw OCR text-layer span boxes + visible ghost text for selectable-book debugging.
- * Set `false` before ship.
+ * TEMP: outline every saved select box (with its OCR text) on the page in Select mode,
+ * to check how well OCR lined up with the print. Set `false` before ship.
  */
 export const bookPdfTextLayerDebugEnabled = false
 

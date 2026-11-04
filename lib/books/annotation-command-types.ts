@@ -52,6 +52,11 @@ export interface StrokeAnnotationCommand {
   penInkPatternPhaseY?: number
   /** Pen/marker only; default solid. */
   lineDashStyle?: AnnotationLineDashStyle
+  /**
+   * Freehand arrow: open chevron tip at the stroke end (note-app style),
+   * oriented to the path tangent. Omit for normal strokes.
+   */
+  arrowTip?: 'open-v'
   /** Marker only: themed upper-edge ornaments were enabled when this stroke was drawn. */
   markerDecoratedEdge?: boolean
   /** Explicit figure group; pen only (highlighter never groups). Omitted = ungrouped. */

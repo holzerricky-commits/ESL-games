@@ -1,0 +1,116 @@
+{
+  "storyId": "literature-anthology-g2::unit-1-908992a7::lesson-51f79240::part-1ab09487",
+  "bookId": "literature-anthology-g2",
+  "unitId": "unit-1-908992a7",
+  "status": "approved",
+  "stops": [
+    {
+      "id": "stop-d33476f7",
+      "label": "River habitat",
+      "displayPage": 184,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 186,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-060d80aa",
+          "kind": "true_false",
+          "prompt": "The Cuyahoga River has salty water.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "Many animals call the Cuyahoga River\nhome. It is a fresh-water habitat. Ocean water\nhas salt, but the river does not.",
+          "evidenceHighlight": "the river does not"
+        }
+      ]
+    },
+    {
+      "id": "stop-badf9412",
+      "label": "Wood duck food",
+      "displayPage": 184,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 186,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-4bb44c41",
+          "kind": "mcq",
+          "prompt": "What do the wood ducks eat?",
+          "choices": [
+            "fish",
+            "snails",
+            "duckweed",
+            "worms"
+          ],
+          "correctIndex": 2,
+          "correctTrue": null,
+          "evidenceSnippet": "A family of wood ducks floats by. The\nmother leads her ducklings along the river\nbank. They eat plants that grow in the water.\nThe plants are called duckweed.",
+          "evidenceHighlight": "duckweed"
+        }
+      ]
+    },
+    {
+      "id": "stop-d17e4bf9",
+      "label": "Turtle lays eggs",
+      "displayPage": 185,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 187,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-ac859e6b",
+          "kind": "mcq",
+          "prompt": "Why does the turtle cover her eggs with dirt?",
+          "choices": [
+            "to keep them warm",
+            "to hide them from other animals",
+            "to help them hatch faster",
+            "to make them grow bigger"
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "When she finds a place, she digs a hole with\nher back legs. She covers her eggs with dirt to\nhide them from other animals.",
+          "evidenceHighlight": null
+        }
+      ]
+    },
+    {
+      "id": "stop-ec5734a3",
+      "label": "Nature's cycle",
+      "displayPage": 185,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 187,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-b4b25cee",
+          "kind": "true_false",
+          "prompt": "The story says that every living thing in nature needs and helps another.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": true,
+          "evidenceSnippet": "Every living thing is important in nature.\nEach living thing needs and helps another.\nEach plant and animal lives and then begins a\nnew cycle. Life in the river keeps going.",
+          "evidenceHighlight": "Each living thing needs and helps another."
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-10-08T11:19:48.922Z",
+  "approvedAt": "2026-10-08T11:19:48.922Z"
+}

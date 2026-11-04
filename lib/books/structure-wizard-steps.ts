@@ -1,4 +1,4 @@
-export const STRUCTURE_WIZARD_STEPS = ['toc', 'align', 'extract', 'review'] as const
+export const STRUCTURE_WIZARD_STEPS = ['align', 'toc', 'extract', 'review'] as const
 
 export type StructureWizardStep = (typeof STRUCTURE_WIZARD_STEPS)[number]
 
@@ -6,15 +6,15 @@ export const STRUCTURE_WIZARD_STEP_META: Record<
   StructureWizardStep,
   { index: number; label: string; short: string }
 > = {
-  toc: { index: 0, label: 'Find TOC', short: 'TOC' },
-  align: { index: 1, label: 'Align pages', short: 'Align' },
+  align: { index: 0, label: 'Align pages', short: 'Align' },
+  toc: { index: 1, label: 'Contents', short: 'Contents' },
   extract: { index: 2, label: 'Extract', short: 'Extract' },
   review: { index: 3, label: 'Review', short: 'Review' },
 }
 
 /** Initial step when opening the wizard for a book. */
 export function initialStructureWizardStep(hasOutlineMapping: boolean): StructureWizardStep {
-  return hasOutlineMapping ? 'review' : 'toc'
+  return hasOutlineMapping ? 'review' : 'align'
 }
 
 export function structureWizardStepIndex(step: StructureWizardStep): number {

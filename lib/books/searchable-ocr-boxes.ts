@@ -1,6 +1,51 @@
 import type { PdfPageTextRun } from '@/lib/books/pdf-page-text-geometry'
+import { filterSelectableOcrWords } from '@/lib/books/searchable-pdf-body-text'
 import type { OcrWordBox } from '@/lib/books/searchable-pdf-text-layer'
-import { winAnsiSafePdfText } from '@/lib/books/searchable-pdf-text-layer'
+import { groupWordsIntoLines, winAnsiSafePdfText } from '@/lib/books/searchable-pdf-text-layer'
+
+/** Extra space above and below each line, as a fraction of its height. */
+const LINE_PAD_RATIO = 0.12
+/** Words closer than this × line height share the gap (no dead zone between them). */
+const WORD_GAP_FILL_RATIO = 1.2
+/** Words taller than this × line height (drop caps, titles on the same baseline) keep their own box. */
+const LINE_NORMAL_HEIGHT_RATIO = 1.5
+
+/**
+ * Select boxes in reading order (lines top to bottom, words left to right).
+ * Every word on a line gets the same top and bottom, and small gaps between
+ * words are split at the midpoint so a click between two words still lands.
+ */
+export function buildSelectWordBoxes(words: readonly OcrWordBox[]): OcrWordBox[] {
+  const selectable = filterSelectableOcrWords(words)
+    .map((word) => ({ ...word, text: winAnsiSafePdfText(word.text) }))
+    .filter((word) => word.text)
+  const lines = groupWordsIntoLines(selectable).sort((a, b) => a.baseline - b.baseline)
+  const out: OcrWordBox[] = []
+  for (const line of lines) {
+    const lineHeight = line.lineHeight > 0 ? line.lineHeight : 1
+    const normal = line.words.filter((w) => w.y1 - w.y0 <= lineHeight * LINE_NORMAL_HEIGHT_RATIO)
+    const top = Math.min(...(normal.length ? normal : line.words).map((w) => w.y0))
+    const bottom = Math.max(...(normal.length ? normal : line.words).map((w) => w.y1))
+    const pad = lineHeight * LINE_PAD_RATIO
+    const padded = line.words.map((w) => ({
+      ...w,
+      y0: Math.max(0, Math.min(w.y0, top) - pad),
+      y1: Math.max(w.y1, bottom) + pad,
+    }))
+    for (let i = 0; i + 1 < padded.length; i++) {
+      const left = padded[i]!
+      const right = padded[i + 1]!
+      const gap = right.x0 - left.x1
+      if (gap > 0 && gap <= lineHeight * WORD_GAP_FILL_RATIO) {
+        const mid = left.x1 + gap / 2
+        left.x1 = mid
+        right.x0 = mid
+      }
+    }
+    out.push(...padded)
+  }
+  return out
+}
 
 export const SEARCHABLE_OCR_BOXES_VERSION = 1 as const
 

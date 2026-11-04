@@ -1,4 +1,9 @@
-import type { DifficultyTier, StudentClassSession, StudentClassStatus } from '@/lib/types'
+import type {
+  DifficultyTier,
+  StudentBookAssignmentStatus,
+  StudentClassSession,
+  StudentClassStatus,
+} from '@/lib/types'
 
 export type StudentProfileTab =
   | 'challenges'
@@ -109,6 +114,8 @@ export interface StudentProfileView extends StudentListItemView {
   /** Timed Challenge default difficulty (preselected on play setup). */
   defaultDifficultyTier: DifficultyTier
   assignedBookIds: string[]
+  /** Missing ids are in class. */
+  bookAssignmentStatus?: Record<string, StudentBookAssignmentStatus>
   assignedUnitRefs: StudentCurriculumUnitAssignmentView[]
   /** @deprecated Prefer `curriculumBookStarts`. */
   curriculumAnchorSectionId?: string

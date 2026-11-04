@@ -23,9 +23,7 @@ import type {
   TextAnnotationCommand,
 } from '@/lib/books/annotation-command-types'
 import { isAnnotationTextFontId, isAnnotationTextFontWeight } from '@/lib/books/annotation-text-fonts'
-import { STAMP_DRAW_RADIUS_FACTOR } from '@/lib/books/stamp-symbol-bounds'
 import { TEXT_FONT_SIZE_NORM_MIN } from '@/lib/books/text-font-size-min'
-import { TEXT_TOOL_PREVIEW_REFERENCE_HEIGHT_PX } from '@/lib/books/text-tool-preview-style'
 import { isPenInkStyle, PEN_INK_TILE_PX, type PenInkStyle } from '@/lib/books/pen-ink'
 import { normalizeDeg } from '@/lib/books/annotation-rotation'
 import { isPenStrokeProfile, type PenStrokeProfile } from '@/lib/books/pen-stroke-profile'
@@ -43,6 +41,7 @@ export type BookAnnotationTool = 'pen' | 'marker' | 'eraser' | 'eraser-line'
 export type BookAnnotationInteractionMode =
   | BookAnnotationTool
   | 'line'
+  | 'freehand-line'
   | 'rect'
   | 'ellipse'
   | 'triangle'
@@ -55,13 +54,22 @@ export type BookAnnotationInteractionMode =
   | 'select'
   | 'eyedropper'
 
-/** Seven thickness steps (multiplier on marker / eraser / stamp base widths). */
+/** Seven thickness steps (multiplier on marker / eraser base widths). */
 export const ANNOTATION_STROKE_WIDTH_STEPS = [0.5, 0.66, 0.8, 1, 1.2, 1.42, 1.68] as const
+
+/**
+ * Quick-sticker size multipliers — same ladder as ink, plus one smaller step at the low end.
+ * Index 4 stays scale `1` (previous default at index 3).
+ */
+export const ANNOTATION_STAMP_WIDTH_STEPS = [0.38, 0.5, 0.66, 0.8, 1, 1.2, 1.42, 1.68] as const
 
 export { TEXT_FONT_SIZE_NORM_MIN }
 
-/** Ink / stamp sliders stay on seven steps (0–6). Text / sticky add an 8th (0–7). */
+/** Ink sliders stay on seven steps (0–6). Stamp / text / sticky use eight (0–7). */
 export const ANNOTATION_INK_THICKNESS_STEP_MAX = 6 as const
+export const ANNOTATION_STAMP_THICKNESS_STEP_MAX = 7 as const
+/** Default quick-sticker size — scale `1` on {@link ANNOTATION_STAMP_WIDTH_STEPS}. */
+export const DEFAULT_STAMP_THICKNESS_STEP = 4 as const
 
 /** Max persisted data URL length for pasted board images. */
 export const ANNOTATION_IMAGE_SRC_MAX_CHARS = 2_000_000
@@ -125,10 +133,27 @@ export const ANNOTATION_ERASER_THICKNESS_PREVIEW_DOTS = ANNOTATION_STROKE_WIDTH_
   (m) => ERASER_LINE_BASE_PX * m,
 ) as readonly number[]
 
-/** Preview dots for quick stamp size (= diameter ≈ 2 × stamp draw radius at reference page min dimension). */
-export const ANNOTATION_STAMP_THICKNESS_PREVIEW_DOTS = ANNOTATION_STROKE_WIDTH_STEPS.map(
-  (m) => TEXT_TOOL_PREVIEW_REFERENCE_HEIGHT_PX * STAMP_DRAW_RADIUS_FACTOR * 2 * m,
-) as readonly number[]
+/** Remap real sizes into a compact slider-dot range (keeps relative steps distinct). */
+function buildRelativeThicknessPreviewDots(
+  values: readonly number[],
+  minDotPx: number,
+  maxDotPx: number,
+): readonly number[] {
+  const lo = values[0] ?? minDotPx
+  const hi = values[values.length - 1] ?? maxDotPx
+  const span = Math.max(1e-6, hi - lo)
+  return values.map((v) => Math.round(minDotPx + ((maxDotPx - minDotPx) * (v - lo)) / span))
+}
+
+/**
+ * Preview dots for quick sticker size — relative to the stamp scale ladder, capped for the
+ * thickness slider (full on-canvas diameters overflow the rail panel).
+ */
+export const ANNOTATION_STAMP_THICKNESS_PREVIEW_DOTS = buildRelativeThicknessPreviewDots(
+  ANNOTATION_STAMP_WIDTH_STEPS,
+  6,
+  18,
+)
 
 export type AnnotationStrokeThicknessStep = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7
 
@@ -307,6 +332,7 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
       }
       const markerDecoratedEdge =
         tool === 'marker' && rec.markerDecoratedEdge === true ? true : undefined
+      const arrowTip = tool === 'pen' && rec.arrowTip === 'open-v' ? ('open-v' as const) : undefined
       const rotationBounds =
         tool === 'pen' || tool === 'marker' ? sanitizeNormRect(rec.rotationBounds) : null
       const rotationDeg =
@@ -323,6 +349,7 @@ export function sanitizeAnnotationCommands(raw: unknown): AnnotationCommand[] {
         ...(penInkPatternPhaseX != null ? { penInkPatternPhaseX } : {}),
         ...(penInkPatternPhaseY != null ? { penInkPatternPhaseY } : {}),
         ...(lineDashStyle ? { lineDashStyle } : {}),
+        ...(arrowTip ? { arrowTip } : {}),
         ...(markerDecoratedEdge ? { markerDecoratedEdge } : {}),
         ...(figureGroupId ? { figureGroupId } : {}),
         ...(rotationBounds ? { rotationBounds } : {}),

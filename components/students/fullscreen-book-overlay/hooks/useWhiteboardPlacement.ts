@@ -351,8 +351,6 @@ export function useWhiteboardPlacement({
 
 
 
-  /** Wide pages use spread overlay — floating is not supported. */
-
   const forceDockWhiteboard = useCallback(() => {
 
     if (layoutMode === 'slot') return

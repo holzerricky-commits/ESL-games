@@ -417,6 +417,12 @@ describe('reading-check-pack', () => {
     const draftAgain = demoteReadingCheckPackToDraft(approved!)
     expect(draftAgain.status).toBe('draft')
     expect(getLiveEligibleReadingCheckPack(draftAgain)).toBeNull()
+
+    const autoApproved = approveReadingCheckPack(withStop, { auto: true })
+    expect(autoApproved?.autoApprovedAt).toBeTruthy()
+    expect(sanitizeReadingCheckPack(autoApproved!)?.autoApprovedAt).toBe(autoApproved?.autoApprovedAt)
+    expect(approveReadingCheckPack(autoApproved!)?.autoApprovedAt).toBeNull()
+    expect(sanitizeReadingCheckPack(demoteReadingCheckPackToDraft(autoApproved!))?.autoApprovedAt).toBeUndefined()
   })
 
   it('uses the first ranked story that has an approved pack', () => {

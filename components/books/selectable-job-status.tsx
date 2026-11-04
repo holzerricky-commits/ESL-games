@@ -37,19 +37,22 @@ export interface SelectableJobStatusProps {
  * Live fill bar + per-page chips for Make pages selectable / Redo.
  */
 export function SelectableJobStatus({ progress, onStop, className }: SelectableJobStatusProps) {
-  const { pages, percent, doneCount, totalCount, activeLabel, activeStartedAt, message } = progress
+  const { pages, percent, doneCount, totalCount, activeLabel, activeStartedAt, phase, message } = progress
   const now = useNow(activeStartedAt != null)
   const elapsedMs = activeStartedAt != null ? now - activeStartedAt : 0
   const planned = totalCount > 0
+  const saving = phase === 'saving'
 
-  const headline = activeLabel ? message : planned ? 'Making pages selectable' : message
-  const detail = activeLabel
-    ? elapsedMs >= SLOW_PAGE_MS
-      ? `Still working on this page · ${formatElapsed(elapsedMs)}`
-      : 'Reading the words on this page'
-    : planned
-      ? message
-      : null
+  const headline = activeLabel || saving ? message : planned ? 'Making pages selectable' : message
+  const detail = saving
+    ? `Writing the book file — large scans take a minute · ${formatElapsed(elapsedMs)}`
+    : activeLabel
+      ? elapsedMs >= SLOW_PAGE_MS
+        ? `Still working on this page · ${formatElapsed(elapsedMs)}`
+        : 'Reading the words on this page'
+      : planned
+        ? message
+        : null
 
   return (
     <div

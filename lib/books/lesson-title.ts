@@ -6,6 +6,30 @@
  */
 export type TocChunkLabelStyle = 'lesson' | 'week' | 'plain'
 
+/**
+ * Compact TOC row: number + descriptive title (drops redundant "Lesson N:" / "Week N:" prefix).
+ * `fallbackIndexOneBased` is used when the title has no lesson/week number.
+ */
+export function parseCompactLessonTocLabel(
+  titleFromSource: string | null | undefined,
+  fallbackIndexOneBased: number,
+): { number: number; title: string } {
+  const fallback = Math.max(1, Math.floor(fallbackIndexOneBased))
+  const raw = (titleFromSource ?? '').trim()
+  if (!raw) return { number: fallback, title: `Lesson ${fallback}` }
+
+  const labeled = raw.match(/^(?:lesson|week)\s+(\d+)\s*[:.\-–—]?\s*(.*)$/i)
+  if (labeled) {
+    const number = Number(labeled[1])
+    const rest = (labeled[2] ?? '').replace(/^[\s•·\-–—:]+/, '').trim()
+    if (Number.isFinite(number) && number > 0) {
+      return { number, title: rest || `Lesson ${number}` }
+    }
+  }
+
+  return { number: fallback, title: raw }
+}
+
 export function formatLessonTitleWithNumber(lessonIndexOneBased: number, titleFromSource: string): string {
   return formatTocChunkTitle(lessonIndexOneBased, titleFromSource, 'lesson')
 }

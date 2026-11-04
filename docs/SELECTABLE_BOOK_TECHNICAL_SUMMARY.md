@@ -93,6 +93,7 @@ Class (fullscreen reader)
 | `components/books/tabs/book-stories-tab.tsx` | Stories tab wiring |
 | `components/books/book-part-story-text-prep.tsx` | Part-level prep |
 | `components/books/reading-check-prep-panel.tsx` | Reading-check prep wiring |
+| `components/books/book-lesson-selectable-prep.tsx` | "Make lesson selectable" on the lesson parts screen (`scope: 'lesson'`, range from `resolveLessonPdfRange`) |
 
 #### Tests
 

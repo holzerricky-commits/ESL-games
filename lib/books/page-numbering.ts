@@ -1,6 +1,8 @@
 import type { BookRecord, BookUnitRecord } from '@/lib/books/types'
 import {
   buildPageAlignmentRuntime,
+  estimatePdfTotalForEffectiveAnchor,
+  estimatePdfTotalForPdfPage,
   resolveEffectiveAnchorToPdfPage,
   type PageAlignmentRuntime,
 } from '@/lib/books/page-alignment-runtime'
@@ -8,14 +10,28 @@ import { getFileAlignment } from '@/lib/books/page-range'
 
 export type PageNumberingMode = 'mapped' | 'original'
 
+function alignmentRuntimeForBookUnit(
+  book: BookRecord,
+  unit: BookUnitRecord,
+  totalPdfPages: number | null,
+  minPdfPage = 1,
+): PageAlignmentRuntime {
+  const { notCountedPdfPages, hiddenPdfPages } = getFileAlignment(book, unit.filePath)
+  if (!notCountedPdfPages.length && !hiddenPdfPages.length) {
+    return buildPageAlignmentRuntime(totalPdfPages, hiddenPdfPages, notCountedPdfPages)
+  }
+  const estimated = estimatePdfTotalForPdfPage(minPdfPage, hiddenPdfPages, notCountedPdfPages)
+  const total = Math.max(totalPdfPages ?? 0, estimated)
+  return buildPageAlignmentRuntime(total, hiddenPdfPages, notCountedPdfPages)
+}
+
 export function getPageAlignmentRuntime(
   book: BookRecord | null | undefined,
   unit: BookUnitRecord | null | undefined,
   totalPdfPages: number | null,
 ): PageAlignmentRuntime {
   if (!book || !unit) return buildPageAlignmentRuntime(null, [], [])
-  const { notCountedPdfPages, hiddenPdfPages } = getFileAlignment(book, unit.filePath)
-  return buildPageAlignmentRuntime(totalPdfPages, hiddenPdfPages, notCountedPdfPages)
+  return alignmentRuntimeForBookUnit(book, unit, totalPdfPages)
 }
 
 export function getEffectivePageTotal(
@@ -51,8 +67,7 @@ export function mapPdfPageToDisplayLabel(
 ): string {
   const rounded = Math.max(1, Math.floor(pdfPage))
   if (mode === 'original' || !book || !unit) return String(rounded)
-  const { notCountedPdfPages, hiddenPdfPages } = getFileAlignment(book, unit.filePath)
-  const runtime = buildPageAlignmentRuntime(totalPdfPages, hiddenPdfPages, notCountedPdfPages)
+  const runtime = alignmentRuntimeForBookUnit(book, unit, totalPdfPages, rounded)
   if (runtime.effectiveTotal <= 0) return String(rounded)
   const mapped = runtime.effectivePageByPdf.get(rounded)
   return mapped != null ? String(mapped) : '·'
@@ -84,7 +99,9 @@ export function resolveAlignedAnchorPage(
   if (mode === 'original' || !book || !unit) return rounded
   const { notCountedPdfPages, hiddenPdfPages } = getFileAlignment(book, unit.filePath)
   if (!notCountedPdfPages.length && !hiddenPdfPages.length) return rounded
-  const runtime = buildPageAlignmentRuntime(totalPdfPages, hiddenPdfPages, notCountedPdfPages)
+  const estimated = estimatePdfTotalForEffectiveAnchor(rounded, hiddenPdfPages, notCountedPdfPages)
+  const total = Math.max(totalPdfPages ?? 0, estimated)
+  const runtime = buildPageAlignmentRuntime(total, hiddenPdfPages, notCountedPdfPages)
   return resolveEffectiveAnchorToPdfPage(rounded, runtime) ?? rounded
 }
 

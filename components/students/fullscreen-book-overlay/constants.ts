@@ -68,14 +68,48 @@ export const BOOK_WORKSPACE_LEFT_BAR_WIDTH_PX = 44
 /** Docked solid bottom chrome height (keeps book clear of the bar). */
 export const BOOK_BOTTOM_CHROME_HEIGHT = '2.5rem'
 export const BOOK_BOTTOM_CHROME_HEIGHT_PX = 40
-/** Page list panel width when open beside the left strip. */
-export const BOOK_PAGE_LIST_RAIL_WIDTH_PX = 168
+/**
+ * Standard full-height side panel width (Listening, class tools, page list / TOC).
+ * Keep page-list on this width so Contents / board TOC match other left drawers.
+ */
+export const BOOK_SIDE_PANEL_RAIL_WIDTH_PX = 320
+/** Page list / Contents panel width when open beside the left strip. */
+export const BOOK_PAGE_LIST_RAIL_WIDTH_PX = BOOK_SIDE_PANEL_RAIL_WIDTH_PX
 /** Listening playlist panel width when open beside the left strip. */
-export const BOOK_AUDIO_PLAYLIST_RAIL_WIDTH_PX = 320
+export const BOOK_AUDIO_PLAYLIST_RAIL_WIDTH_PX = BOOK_SIDE_PANEL_RAIL_WIDTH_PX
 
 /** Side list and book scale — keep as a literal so Tailwind can see it. */
 export const BOOK_WORKSPACE_RAIL_MOTION_TW =
   'duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none'
+
+/**
+ * App theme tokens remapped to the class reader's zinc chrome. Apply as inline `style`
+ * together with the `dark` class so token-styled app components match the reader rails.
+ */
+export const BOOK_CLASS_CHROME_THEME_VARS = {
+  colorScheme: 'dark',
+  '--background': '#2a2a2e',
+  '--foreground': '#f4f4f5',
+  '--card': '#323236',
+  '--card-foreground': '#f4f4f5',
+  '--popover': '#323236',
+  '--popover-foreground': '#f4f4f5',
+  '--primary': '#f4f4f5',
+  '--primary-foreground': '#18181b',
+  '--secondary': '#3a3a3f',
+  '--secondary-foreground': '#f4f4f5',
+  '--muted': '#323236',
+  '--muted-foreground': '#a1a1aa',
+  '--accent': '#3a3a3f',
+  '--accent-foreground': '#f4f4f5',
+  '--border': 'rgba(255, 255, 255, 0.1)',
+  '--input': 'rgba(255, 255, 255, 0.14)',
+  '--ring': 'rgba(255, 255, 255, 0.35)',
+  '--surface-1': '#232326',
+  '--surface-2': '#2a2a2e',
+  '--surface-3': '#323236',
+  '--surface-4': '#3a3a3f',
+} as CSSProperties
 
 /** Narrow left desk rail for icon launchers (workshop story tools). */
 export const BOOK_DESK_ICON_RAIL_WIDTH_PX = 56
@@ -87,6 +121,8 @@ export function bookWorkspaceOpenRailWidthPx(args: {
   /** Shared class tools drawer (Translate, Pictures, later tools). */
   classToolDrawerOpen?: boolean
   deskRailOpen?: boolean
+  /** Desk rail width when it hosts a full tool panel instead of icon launchers. */
+  deskRailWidthPx?: number
 }): number {
   if (
     args.audioPlaylistOpen ||
@@ -95,7 +131,7 @@ export function bookWorkspaceOpenRailWidthPx(args: {
   ) {
     return BOOK_AUDIO_PLAYLIST_RAIL_WIDTH_PX
   }
-  if (args.deskRailOpen) return BOOK_DESK_ICON_RAIL_WIDTH_PX
+  if (args.deskRailOpen) return args.deskRailWidthPx ?? BOOK_DESK_ICON_RAIL_WIDTH_PX
   if (args.pageListOpen) return BOOK_PAGE_LIST_RAIL_WIDTH_PX
   return 0
 }
@@ -107,6 +143,7 @@ export function bookWorkspaceDeskLeftCss(args: {
   exerciseRailOpen?: boolean
   classToolDrawerOpen?: boolean
   deskRailOpen?: boolean
+  deskRailWidthPx?: number
 }): string {
   const rail = bookWorkspaceOpenRailWidthPx(args)
   if (rail <= 0) return BOOK_WORKSPACE_LEFT_BAR_WIDTH
@@ -119,6 +156,7 @@ export function bookWorkspaceDeskLeftPx(args: {
   exerciseRailOpen?: boolean
   classToolDrawerOpen?: boolean
   deskRailOpen?: boolean
+  deskRailWidthPx?: number
 }): number {
   return BOOK_WORKSPACE_LEFT_BAR_WIDTH_PX + bookWorkspaceOpenRailWidthPx(args)
 }

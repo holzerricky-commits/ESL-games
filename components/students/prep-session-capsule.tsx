@@ -215,9 +215,24 @@ function LiveSessionCapsule({
   )
 }
 
+function prepChromeClass(bookOpen: boolean, region: 'session' | 'checks') {
+  if (bookOpen) {
+    return cn(
+      BOOK_OVERLAY_GLASS_CHROME,
+      'right-3 text-white',
+      region === 'session' ? 'top-1.5' : 'top-11',
+    )
+  }
+  return cn(
+    CLASS_LAUNCH_CHROME,
+    'left-4',
+    region === 'session' ? 'top-4' : 'top-14',
+  )
+}
+
 /**
- * Session chrome — floating pill.
- * Prep: Checks / Save / Leave. Live: timer / End / … (Move & Cancel).
+ * Session chrome — floating pills.
+ * Prep: Save Annotations · Exit Prep (session) + Checks (panel). Live: timer / End / … (Move & Cancel).
  */
 export function PrepSessionCapsule(props: PrepSessionCapsuleProps) {
   if (props.mode === 'live') {
@@ -237,61 +252,68 @@ export function PrepSessionCapsule(props: PrepSessionCapsuleProps) {
   } = props
 
   const isWorkshop = variant === 'workshop'
+  const pillClass = 'pointer-events-auto absolute z-[60] flex items-center gap-0.5 rounded-full px-1.5 py-0.5'
+
   return (
-    <div
-      className={cn(
-        'pointer-events-auto absolute z-[60] flex items-center gap-0.5 rounded-full px-1.5 py-0.5',
-        bookOpen
-          ? cn(BOOK_OVERLAY_GLASS_CHROME, 'right-3 top-1.5 text-white')
-          : cn(CLASS_LAUNCH_CHROME, 'left-4 top-4'),
-        className,
-      )}
-      role="toolbar"
-      aria-label="Prep"
-    >
-      <PrepChip
-        bookOpen={bookOpen}
-        title="Reading checks prep"
-        pressed={checksPrepOpen}
-        active={checksPrepOpen}
-        onClick={onOpenChecksPrep}
+    <>
+      <div
+        className={cn(pillClass, prepChromeClass(bookOpen, 'session'), className)}
+        role="toolbar"
+        aria-label="Prep session"
       >
-        <ListChecks className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
-        Checks
-      </PrepChip>
-      {isWorkshop ? (
-        <PrepChip bookOpen={bookOpen} title="Close book" onClick={() => onClose?.()}>
-          <X className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+        {isWorkshop ? (
+          <PrepChip bookOpen={bookOpen} title="Close book" onClick={() => onClose?.()}>
+            <X className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+            Close
+          </PrepChip>
+        ) : (
+          <>
+            <PrepChip
+              bookOpen={bookOpen}
+              title="Save Annotations"
+              disabled={exitBusy != null}
+              onClick={() => onSaveAndExit?.()}
+            >
+              {exitBusy === 'save' ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+              ) : (
+                <Check className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+              )}
+              Save Annotations
+            </PrepChip>
+            <PrepChip
+              bookOpen={bookOpen}
+              title="Exit Prep"
+              disabled={exitBusy != null}
+              onClick={() => onExitWithoutSave?.()}
+            >
+              {exitBusy === 'leave' ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+              ) : (
+                <X className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+              )}
+              Exit Prep
+            </PrepChip>
+          </>
+        )}
+      </div>
+      <div
+        className={cn(pillClass, prepChromeClass(bookOpen, 'checks'))}
+        role="toolbar"
+        aria-label="Reading checks prep"
+      >
+        <PrepChip
+          bookOpen={bookOpen}
+          title="Reading checks prep"
+          pressed={checksPrepOpen}
+          active={checksPrepOpen}
+          onClick={onOpenChecksPrep}
+        >
+          <ListChecks className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+          Checks
         </PrepChip>
-      ) : (
-        <>
-          <PrepChip
-            bookOpen={bookOpen}
-            title="Save & exit"
-            disabled={exitBusy != null}
-            onClick={() => onSaveAndExit?.()}
-          >
-            {exitBusy === 'save' ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-            ) : (
-              <Check className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
-            )}
-          </PrepChip>
-          <PrepChip
-            bookOpen={bookOpen}
-            title="Leave without saving"
-            disabled={exitBusy != null}
-            onClick={() => onExitWithoutSave?.()}
-          >
-            {exitBusy === 'leave' ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-            ) : (
-              <X className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
-            )}
-          </PrepChip>
-        </>
-      )}
-    </div>
+      </div>
+    </>
   )
 }
 

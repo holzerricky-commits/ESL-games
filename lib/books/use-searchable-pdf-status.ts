@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   fetchSearchablePdfPlan,
   type SearchablePdfRangeStatus,
+  type SearchablePdfScope,
 } from '@/lib/books/searchable-pdf-client'
 import { SEARCHABLE_PDF_UPDATED_EVENT } from '@/lib/books/searchable-pdf-events'
 
@@ -15,6 +16,7 @@ export type UseSearchablePdfStatusInput = {
   partId?: string | null
   title?: string
   totalPdfPages?: number | null
+  scope?: SearchablePdfScope
   /** When false, skip fetching (e.g. pages not set yet). */
   enabled?: boolean
   /** Bump after a successful stamp/redo to refresh. */
@@ -25,12 +27,14 @@ export function useSearchablePdfStatus(input: UseSearchablePdfStatusInput) {
   const [status, setStatus] = useState<SearchablePdfRangeStatus>('unknown')
   const [loading, setLoading] = useState(false)
   const [filePath, setFilePath] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   const refresh = useCallback(() => {
     const storyId = input.storyId.trim()
     if (!storyId || input.enabled === false) {
       setStatus('unknown')
       setFilePath(null)
+      setError(null)
       return
     }
     let cancelled = false
@@ -43,14 +47,18 @@ export function useSearchablePdfStatus(input: UseSearchablePdfStatusInput) {
       partId: input.partId,
       title: input.title,
       totalPdfPages: input.totalPdfPages,
+      scope: input.scope,
     })
       .then((plan) => {
         if (cancelled) return
         setStatus(plan.status)
         setFilePath(plan.filePath)
+        setError(null)
       })
-      .catch(() => {
-        if (!cancelled) setStatus('unknown')
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setStatus('unknown')
+        setError(err instanceof Error ? err.message : 'Could not check selectable pages.')
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -66,6 +74,7 @@ export function useSearchablePdfStatus(input: UseSearchablePdfStatusInput) {
     input.partId,
     input.title,
     input.totalPdfPages,
+    input.scope,
     input.enabled,
     input.refreshKey,
   ])
@@ -90,5 +99,5 @@ export function useSearchablePdfStatus(input: UseSearchablePdfStatusInput) {
     return () => window.removeEventListener(SEARCHABLE_PDF_UPDATED_EVENT, onUpdated)
   }, [filePath, refresh])
 
-  return { status, loading, filePath, refresh }
+  return { status, loading, filePath, error, refresh }
 }

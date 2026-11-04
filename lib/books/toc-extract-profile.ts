@@ -109,7 +109,8 @@ Return only valid JSON with this shape:
 }
 
 Rules:
-- Unit heading appears near top and each unit spans a 2-page TOC spread.
+- Unit heading appears near top and each unit spans a 2-page TOC spread. Always set unitNumber.
+- If the second page of a spread continues lessons without repeating the Unit heading, keep those lessons under the same unit — do not invent a new unit from a lesson or story title.
 - Lessons are indicated by red shield lesson markers.
 - Include visible section rows and story/title rows in order. When a row has a printed page number (dotted leaders or a clear page column), set startPrintedPage to that number. When it has no usable page number, set startPrintedPage to null — still include the title.
 - Keep exact visible order.
@@ -150,18 +151,22 @@ Return only valid JSON with this shape:
 
 Rules:
 - This is Wonders Workshop (NOT Journeys). There are no red lesson shields.
-- Units are labeled Unit 1–6 (often with a Big Idea / essential question). Use the unit theme as title when visible.
+- Units are labeled Unit 1–6 (often with a Big Idea / essential question). Use the unit theme as title when visible. Always set unitNumber to that Unit N.
+- A single unit often spans TWO TOC pages: page 1 has the Unit heading + Week 1–2; page 2 continues Week 3–5 with NO repeated Unit heading. Those later weeks still belong to the SAME unit — never invent a new unit from a week theme (e.g. do not turn "Week 3 – Great Inventions" into a unit titled "Great Inventions").
 - Chunks under a unit are WEEKS (Week 1, Week 2, …), not "Lesson N". Put the week number in lessonNumber and the weekly concept / week theme in title (e.g. "Pedal Power", "Friends Help Friends").
-- Inside each week, include visible rows in order. Typical week parts:
-  1) Vocabulary (or Words to Know)
-  2) Shared Read story title (short main selection — use the story title as the entry title)
+- Inside each week, include every visible row in order, using the printed wording. A usual Grade 2–6 week is:
+  1) Vocabulary (or Words to Know / High-Frequency Words)
+  2) Shared Read — the story title only, as its own entry
   3) Comprehension Strategy: …
   4) Comprehension Skill: …
   5) Genre: …
   6) Vocabulary Strategy: … (or Literary Element: … on poetry weeks)
   7) Writing: …
+- Some grades add rows that are not in that list. Grade 1 often has Phonics, High-Frequency Words, Fluency, and Structural Analysis (sometimes before the story). Each of those is its own entry. Do not rename it to Vocabulary, the story title, Comprehension, Genre, or Writing, and do not drop it.
+- If you see any other TOC row that is not one of the usual parts, still include it as its own entry with the exact printed title. Never fold an unknown section into the shared read or into Comprehension.
+- The shared-read entry title is the story title (often the same as the week theme). It is not a skill label such as Phonics.
 - When a row has a printed page number, set startPrintedPage to that number. When it has no usable page number, set startPrintedPage to null — still include the title.
-- Keep exact visible wording for strategy/skill/genre/writing lines when possible.
+- Keep exact visible wording for strategy/skill/genre/writing/phonics/fluency lines when possible.
 - Unit special sections outside weeks: Grammar Handbook (and similar end-matter). Put them in specialSections.
 - Never invent printed page numbers.
 - Do not invent Journeys labels (Vocabulary in Context, Your Turn, Making Connections, READING POWER, Unit Wrap-Up) unless those exact words appear on the page.
@@ -192,7 +197,8 @@ Return only valid JSON with this shape:
 
 Rules:
 - This is Wonders Literature Anthology (NOT Journeys, NOT Workshop). There are no red lesson shields and almost no skill/grammar rows.
-- Units are labeled Unit 1–6. Use the unit theme as title when visible.
+- Units are labeled Unit 1–6. Use the unit theme as title when visible. Always set unitNumber to that Unit N.
+- A unit may continue onto the next TOC page without repeating the Unit heading. Weeks that start mid-spread still belong to the previous unit — do not create a new unit from a week theme or story title.
 - Chunks under a unit are WEEKS (Week 1, Week 2, …). Put the week number in lessonNumber and the weekly concept / week theme in title when shown; if only story titles appear under a week, use the first (anchor) story title as the week title.
 - Each week usually has TWO reading selections:
   1) Anchor / main selection (longer) — first story title
@@ -234,7 +240,8 @@ Return only valid JSON with this shape:
 
 Rules:
 - This is NOT Journeys and NOT Wonders. Do not invent red lesson shields, Week recipes, Vocabulary in Context, READING POWER, Shared Read skill rows, or other series-specific labels unless those exact words appear with a page number.
-- Prefer real unit / chapter / module headings from the TOC as unit titles (Unit 1, Chapter 1, Theme 1, etc.).
+- Prefer real unit / chapter / module headings from the TOC as unit titles (Unit 1, Chapter 1, Theme 1, etc.). Set unitNumber when a number is visible.
+- If a TOC page continues an open unit (more lessons/weeks, no new Unit/Chapter heading), keep the same unit — do not promote a lesson/week theme into a new unit title.
 - Mid-level groups (Lesson, Week, Reading A/B, Part) are OPTIONAL:
   - If the TOC clearly groups rows under lessons/weeks/readings, put each group in "lessons" with a sensible lessonNumber and title.
   - If the TOC is a flat list under a unit, use ONE lesson per unit (lessonNumber 1, title matching the unit or "Contents") and put all visible entry rows in that lesson's entries.

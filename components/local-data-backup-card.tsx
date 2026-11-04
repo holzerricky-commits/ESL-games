@@ -86,7 +86,7 @@ export function LocalDataBackupCard() {
       <section className="ui-section">
         <h3 className="text-sm font-medium text-foreground">Data backup</h3>
         <p className="text-sm text-muted-foreground">
-          Export before clearing browser data or switching machines.
+          Export before clearing browser data or switching machines. Includes vault pictures.
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <Button

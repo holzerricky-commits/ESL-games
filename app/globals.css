@@ -119,7 +119,6 @@
   --chrome-search-bg: rgba(237, 243, 255, 0.06);
   --chrome-search-bg-focus: rgba(29, 40, 68, 0.92);
 }
-
 @font-face {
   font-family: 'DS SweetKiss Light';
   src: url('/fonts/ds-sweetkiss-light.woff2') format('woff2');
@@ -211,6 +210,7 @@
 @theme inline {
   --font-sans: var(--font-inter), 'Inter', system-ui, sans-serif;
   --font-mono: var(--font-space-mono), 'Space Mono', monospace;
+  --font-condensed: var(--font-barlow-condensed), 'Barlow Condensed', 'Arial Narrow', sans-serif;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);

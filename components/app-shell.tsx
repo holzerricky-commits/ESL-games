@@ -5,6 +5,7 @@ import { AppSidebar } from '@/components/app-sidebar'
 import { AppTopbar } from '@/components/app-topbar'
 import { ClassUpcomingReminder } from '@/components/class-upcoming-reminder'
 import { ClassAutoStartReconciler } from '@/components/class-auto-start-reconciler'
+import { LessonAutoPrepWatcher } from '@/components/lesson-auto-prep-watcher'
 import { LocalStudentDataHydrator } from '@/components/local-student-data-hydrator'
 
 interface AppShellProps {
@@ -29,6 +30,7 @@ export function AppShell({ children }: AppShellProps) {
       </div>
       <LocalStudentDataHydrator />
       <ClassAutoStartReconciler />
+      <LessonAutoPrepWatcher />
       <Suspense fallback={null}>
         <ClassUpcomingReminder />
       </Suspense>

@@ -25,10 +25,12 @@ export interface BookLessonShelfCard {
   /** Short label e.g. L1, U1 */
   indexLabel: string
   unitId: string
+  /** Lesson that owns the cover story (unit cards with lessons). */
   lessonId?: string
   /**
    * Printed/effective start for PDF thumb mapping.
-   * Prefers main_story (then paired_story) over bare lesson start.
+   * Unit covers: first page of the unit (startPageHint / pdf range start).
+   * Lesson helpers still prefer main_story → paired_story → lesson start.
    */
   printedStart: number | null
 }
@@ -51,17 +53,25 @@ export function bookHasBrowsablePdf(book: BookRecord): boolean {
   return book.units.some((unit) => Boolean(unit.filePath?.trim()))
 }
 
-function unitShelfCard(unit: BookUnitRecord, unitIndex: number): BookLessonShelfCard {
+function unitOpenerPrintedStart(unit: BookUnitRecord): number | null {
+  if (typeof unit.startPageHint === 'number') return Math.round(unit.startPageHint)
+  if (typeof unit.pdfPageRange?.start === 'number') return unit.pdfPageRange.start
+  return null
+}
+
+function unitShelfCard(
+  unit: BookUnitRecord,
+  unitIndex: number,
+  opts?: { printedStart?: number | null; lessonId?: string },
+): BookLessonShelfCard {
   return {
     kind: 'unit',
     id: unit.id,
     title: unit.title,
     indexLabel: `U${unitIndex + 1}`,
     unitId: unit.id,
-    printedStart:
-      typeof unit.startPageHint === 'number'
-        ? Math.round(unit.startPageHint)
-        : unit.pdfPageRange?.start ?? 1,
+    ...(opts?.lessonId ? { lessonId: opts.lessonId } : {}),
+    printedStart: opts?.printedStart ?? unitOpenerPrintedStart(unit) ?? 1,
   }
 }
 
@@ -88,10 +98,16 @@ function rowsForUnits(book: BookRecord, units: BookUnitRecord[]): BookLessonShel
       }
       continue
     }
-    const cards: BookLessonShelfCard[] = lessons.map((lesson, lessonIndex) =>
-      lessonToShelfCard(unit, lesson, lessonIndex, profile),
-    )
-    rows.push({ unit, cards })
+    const cover = resolveUnitShelfThumb(unit, profile)
+    rows.push({
+      unit,
+      cards: [
+        unitShelfCard(unit, unitIndex >= 0 ? unitIndex : 0, {
+          printedStart: cover.printedStart,
+          lessonId: cover.lessonId,
+        }),
+      ],
+    })
   }
   return rows
 }
@@ -188,21 +204,34 @@ export function resolveLessonShelfThumbPrintedStart(
   return lessonRange.start
 }
 
-function lessonToShelfCard(
+export type UnitShelfThumb = {
+  printedStart: number | null
+  /** First lesson — used when opening the unit cover into the lesson desk. */
+  lessonId?: string
+}
+
+/**
+ * Unit cover face: always the first page of the unit (not the first story).
+ * `profile` is unused; kept so existing callers stay typed the same.
+ */
+export function resolveUnitShelfThumb(
   unit: BookUnitRecord,
-  lesson: BookLessonRecord,
-  lessonIndex: number,
-  profile: TocExtractProfileId = 'journeys',
-): BookLessonShelfCard {
+  _profile: TocExtractProfileId = 'journeys',
+): UnitShelfThumb {
+  void _profile
+  const lessons = unit.lessons ?? []
   return {
-    kind: 'lesson',
-    id: lesson.id,
-    title: lesson.title,
-    indexLabel: `L${lessonIndex + 1}`,
-    unitId: unit.id,
-    lessonId: lesson.id,
-    printedStart: resolveLessonShelfThumbPrintedStart(unit, lesson, lessonIndex, profile),
+    printedStart: unitOpenerPrintedStart(unit) ?? (lessons[0] ? pageRangeForIndex(lessons, 0).start : null),
+    lessonId: lessons[0]?.id,
   }
+}
+
+/** Printed start for a unit cover thumb (first page of the unit). */
+export function resolveUnitShelfThumbPrintedStart(
+  unit: BookUnitRecord,
+  profile: TocExtractProfileId = 'journeys',
+): number | null {
+  return resolveUnitShelfThumb(unit, profile).printedStart
 }
 
 /** PDF page for a shelf card thumb — outline start through hidden/not-counted alignment. */
@@ -212,9 +241,6 @@ export function resolveLessonShelfCardPdfPage(
   card: BookLessonShelfCard,
   totalPdfPages: number | null,
 ): number {
-  if (card.kind === 'unit') {
-    return resolveUnitCoverThumbPdfPage(unit, book, totalPdfPages)
-  }
   return (
     resolveOutlinePrintedStartPdfPage(card.printedStart, book, unit, totalPdfPages) ??
     resolveUnitCoverThumbPdfPage(unit, book, totalPdfPages)

@@ -1,11 +1,12 @@
 import { useEffect, useRef } from 'react'
 import {
   ANNOTATION_INK_THICKNESS_STEP_MAX,
+  ANNOTATION_STAMP_THICKNESS_STEP_MAX,
   type AnnotationStrokeThicknessStep,
   type BookAnnotationInteractionMode,
 } from '@/lib/books/annotation-storage'
 import { TEXT_THICKNESS_STEP_MAX } from '@/lib/books/text-font-size-steps'
-import type { StampVariant, WritableStickerVariant } from '@/lib/books/annotation-command-types'
+import type { StampVariant } from '@/lib/books/annotation-command-types'
 import { isQuickStickerInteraction, type StickerKind } from '@/lib/books/sticker-tool'
 import {
   commitBookOverlayTypingTarget,
@@ -18,18 +19,24 @@ import {
   shouldDeferBookOverlayToolShortcuts,
 } from '@/lib/books/book-overlay-keyboard-guards'
 import { requestSpreadSessionFlush } from '@/lib/books/spread-session-events'
+import { isLessonVaultPasteZoneActive } from '@/lib/lesson-vault/paste-zone'
 import {
+  BOOK_OVERLAY_DEFAULT_LINE_MODE,
   BOOK_OVERLAY_DEFAULT_SHAPE_MODE,
   BOOK_OVERLAY_ERASER_MODES,
+  BOOK_OVERLAY_LINE_MODES,
   BOOK_OVERLAY_SHAPE_MODES,
   BOOK_OVERLAY_STAMP_VARIANTS,
   ANNOTATION_KEYBOARD_NUDGE_NORM,
   ANNOTATION_KEYBOARD_NUDGE_SHIFT_MULTIPLIER,
   BOOK_OVERLAY_STAMP_VARIANT_BY_DIGIT,
   INITIAL_SHORTCUT_TAP_STATE,
+  isBookOverlayLineMode,
   isBookOverlayShapeMode,
+  isBookOverlayShapeStrokeMode,
   resolveQuickStampShortcut,
   resolveShortcutTapIndex,
+  type BookOverlayLineMode,
   type BookOverlayShapeMode,
   type ShortcutTapState,
 } from '@/lib/books/book-overlay-keyboard-shortcuts'
@@ -59,16 +66,12 @@ interface UseBookOverlayKeyboardShortcutsArgs {
   pulseStampIndicator?: () => void
   stickerKind: StickerKind
   setStickerKind: (k: StickerKind) => void
-  writableStickerVariant: WritableStickerVariant
-  setWritableStickerVariant: (v: WritableStickerVariant) => void
   eyedropperVariant: EyedropperVariant
   setEyedropperVariant: (v: EyedropperVariant) => void
   isAnnotationRailVisible: boolean
   toggleAnnotationRailKeyboard: () => void
   isPageListOpen: boolean
   setIsPageListOpen: (v: boolean) => void
-  pageListRailTab: 'book' | 'board'
-  setPageListRailTab: (tab: 'book' | 'board') => void
   isWhiteboardOpen: boolean
   isWhiteboardSessionOpen: boolean
   isWhiteboardMinimized: boolean
@@ -96,8 +99,6 @@ interface UseBookOverlayKeyboardShortcutsArgs {
   setShapeThicknessStep: (s: AnnotationStrokeThicknessStep) => void
   textThicknessStep: AnnotationStrokeThicknessStep
   setTextThicknessStep: (s: AnnotationStrokeThicknessStep) => void
-  stickyThicknessStep: AnnotationStrokeThicknessStep
-  setStickyThicknessStep: (s: AnnotationStrokeThicknessStep) => void
   stampThicknessStep: AnnotationStrokeThicknessStep
   setStampThicknessStep: (s: AnnotationStrokeThicknessStep) => void
   eraserPixelThicknessStep: AnnotationStrokeThicknessStep
@@ -182,16 +183,12 @@ export function useBookOverlayKeyboardShortcuts({
   pulseStampIndicator,
   stickerKind,
   setStickerKind,
-  writableStickerVariant,
-  setWritableStickerVariant,
   eyedropperVariant,
   setEyedropperVariant,
   isAnnotationRailVisible,
   toggleAnnotationRailKeyboard,
   isPageListOpen,
   setIsPageListOpen,
-  pageListRailTab,
-  setPageListRailTab,
   isWhiteboardOpen,
   isWhiteboardSessionOpen,
   isWhiteboardMinimized,
@@ -219,8 +216,6 @@ export function useBookOverlayKeyboardShortcuts({
   setShapeThicknessStep,
   textThicknessStep,
   setTextThicknessStep,
-  stickyThicknessStep,
-  setStickyThicknessStep,
   stampThicknessStep,
   setStampThicknessStep,
   eraserPixelThicknessStep,
@@ -245,8 +240,10 @@ export function useBookOverlayKeyboardShortcuts({
 }: UseBookOverlayKeyboardShortcutsArgs) {
   const studentRewardBurst = useStudentRewardBurstOptional()
   const lastShapeRef = useRef<BookOverlayShapeMode>(BOOK_OVERLAY_DEFAULT_SHAPE_MODE)
+  const lastLineRef = useRef<BookOverlayLineMode>(BOOK_OVERLAY_DEFAULT_LINE_MODE)
   const stampTapRef = useRef<ShortcutTapState>(INITIAL_SHORTCUT_TAP_STATE)
   const shapeTapRef = useRef<ShortcutTapState>(INITIAL_SHORTCUT_TAP_STATE)
+  const lineTapRef = useRef<ShortcutTapState>(INITIAL_SHORTCUT_TAP_STATE)
   const penTapRef = useRef<ShortcutTapState>(INITIAL_SHORTCUT_TAP_STATE)
   const eyedropperTapRef = useRef<ShortcutTapState>(INITIAL_SHORTCUT_TAP_STATE)
   const eraserTapRef = useRef<ShortcutTapState>(INITIAL_SHORTCUT_TAP_STATE)
@@ -354,6 +351,9 @@ export function useBookOverlayKeyboardShortcuts({
     if (isBookOverlayShapeMode(annotationMode)) {
       lastShapeRef.current = annotationMode
     }
+    if (isBookOverlayLineMode(annotationMode)) {
+      lastLineRef.current = annotationMode
+    }
   }, [annotationMode])
 
   useEffect(() => {
@@ -371,6 +371,11 @@ export function useBookOverlayKeyboardShortcuts({
 
     function activateShape(mode: BookOverlayShapeMode) {
       lastShapeRef.current = mode
+      setAnnotationMode(mode)
+    }
+
+    function activateLine(mode: BookOverlayLineMode) {
+      lastLineRef.current = mode
       setAnnotationMode(mode)
     }
 
@@ -401,6 +406,15 @@ export function useBookOverlayKeyboardShortcuts({
         return idx >= 0 ? idx : 0
       }
       const idx = BOOK_OVERLAY_SHAPE_MODES.indexOf(lastShapeRef.current)
+      return idx >= 0 ? idx : 0
+    }
+
+    function lineCurrentIndex(): number {
+      if (isBookOverlayLineMode(annotationMode)) {
+        const idx = BOOK_OVERLAY_LINE_MODES.indexOf(annotationMode)
+        return idx >= 0 ? idx : 0
+      }
+      const idx = BOOK_OVERLAY_LINE_MODES.indexOf(lastLineRef.current)
       return idx >= 0 ? idx : 0
     }
 
@@ -435,20 +449,14 @@ export function useBookOverlayKeyboardShortcuts({
         setMarkerThicknessStep(clampThicknessStep(markerThicknessStep + delta))
         return
       }
-      if (annotationMode === 'sticky') {
-        setStickyThicknessStep(clampThicknessStep(stickyThicknessStep + delta, TEXT_THICKNESS_STEP_MAX))
-        return
-      }
-      if (annotationMode === 'sticker' && stickerKind === 'writable') {
-        setStickyThicknessStep(clampThicknessStep(stickyThicknessStep + delta, TEXT_THICKNESS_STEP_MAX))
-        return
-      }
-      if (isBookOverlayShapeMode(annotationMode)) {
+      if (isBookOverlayShapeStrokeMode(annotationMode)) {
         setShapeThicknessStep(clampThicknessStep(shapeThicknessStep + delta))
         return
       }
       if (annotationMode === 'stamp' || annotationMode === 'callout' || isQuickStickerInteraction(annotationMode, stickerKind)) {
-        setStampThicknessStep(clampThicknessStep(stampThicknessStep + delta))
+        setStampThicknessStep(
+          clampThicknessStep(stampThicknessStep + delta, ANNOTATION_STAMP_THICKNESS_STEP_MAX),
+        )
         return
       }
       if (annotationMode === 'eraser') {
@@ -616,6 +624,7 @@ export function useBookOverlayKeyboardShortcuts({
           return
         } else if (keyLower === 'v') {
           if (shouldDeferClipboardPasteToBrowser()) return
+          if (isLessonVaultPasteZoneActive()) return
           if (ann.pasteFromClipboard?.()) {
             e.preventDefault()
             return
@@ -714,13 +723,7 @@ export function useBookOverlayKeyboardShortcuts({
 
       if (keyLower === 'l') {
         e.preventDefault()
-        if (!isPageListOpen) {
-          setIsPageListOpen(true)
-          if (isWhiteboardOpen) setPageListRailTab('board')
-          else setPageListRailTab('book')
-        } else {
-          setIsPageListOpen(false)
-        }
+        setIsPageListOpen(!isPageListOpen)
         return
       }
 
@@ -805,6 +808,20 @@ export function useBookOverlayKeyboardShortcuts({
         setAnnotationMode('marker')
         return
       }
+      if (key === '/') {
+        if (e.repeat) return
+        e.preventDefault()
+        const idx = tapIndex(lineTapRef, BOOK_OVERLAY_LINE_MODES.length, lineCurrentIndex())
+        activateLine(BOOK_OVERLAY_LINE_MODES[idx]!)
+        return
+      }
+      if (keyLower === 'a') {
+        if (e.repeat) return
+        e.preventDefault()
+        lineTapRef.current = INITIAL_SHORTCUT_TAP_STATE
+        activateLine('arrow')
+        return
+      }
       if (keyLower === 'e') {
         if (e.repeat) return
         e.preventDefault()
@@ -843,12 +860,6 @@ export function useBookOverlayKeyboardShortcuts({
         setAnnotationMode('text')
         return
       }
-      if (keyLower === 'n') {
-        e.preventDefault()
-        setStickerKind('writable')
-        setAnnotationMode('sticker')
-        return
-      }
       if (keyLower === 'k') {
         e.preventDefault()
         setAnnotationMode('callout')
@@ -863,7 +874,6 @@ export function useBookOverlayKeyboardShortcuts({
       const shapeByKey: Record<string, BookOverlayShapeMode> = {
         r: 'rect',
         o: 'ellipse',
-        a: 'arrow',
       }
       if (shapeByKey[keyLower]) {
         e.preventDefault()
@@ -886,16 +896,12 @@ export function useBookOverlayKeyboardShortcuts({
     pulseStampIndicator,
     stickerKind,
     setStickerKind,
-    writableStickerVariant,
-    setWritableStickerVariant,
     eyedropperVariant,
     setEyedropperVariant,
     isAnnotationRailVisible,
     toggleAnnotationRailKeyboard,
     isPageListOpen,
     setIsPageListOpen,
-    pageListRailTab,
-    setPageListRailTab,
     isWhiteboardOpen,
     isWhiteboardSessionOpen,
     isWhiteboardMinimized,
@@ -923,8 +929,6 @@ export function useBookOverlayKeyboardShortcuts({
     setShapeThicknessStep,
     textThicknessStep,
     setTextThicknessStep,
-    stickyThicknessStep,
-    setStickyThicknessStep,
     stampThicknessStep,
     setStampThicknessStep,
     eraserPixelThicknessStep,

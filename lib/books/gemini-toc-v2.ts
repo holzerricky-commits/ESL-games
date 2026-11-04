@@ -237,7 +237,7 @@ function lessonFromAi(
     },
     [],
   )
-  const tags = computeStructureTagsForParts(entries, profile)
+  const tags = computeStructureTagsForParts(entries, profile, lesson.title)
   const parts: BookLessonPartRecord[] = entries.map((entry, partIndex) => ({
     id: `part-${randomUUID().slice(0, 8)}`,
     title: entry.title,
@@ -303,10 +303,15 @@ export function normalizeTocV2ToDrafts(
     const polished = polishTocLessonsForUnit(unit.title.trim(), lessons, profile)
 
     const unitStart = polished.find((lesson) => lesson.startPageHint != null)?.startPageHint
+    const unitNumber =
+      typeof unit.unitNumber === 'number' && Number.isFinite(unit.unitNumber) && unit.unitNumber >= 1
+        ? Math.floor(unit.unitNumber)
+        : null
     const draft: TocUnitDraft = {
       id: `unit-${unitIdx + 1}-${randomUUID().slice(0, 8)}`,
       title: unit.title.trim(),
       needsReview: polished.length === 0,
+      ...(unitNumber != null ? { unitNumber } : {}),
       ...(unitStart ? { startPageHint: unitStart } : {}),
       ...(unitStart ? { anchorSource: 'toc' as const } : {}),
       ...(unitStart ? { anchorConfidence: 'high' as const } : {}),
@@ -345,11 +350,18 @@ export function normalizeTocV2ToDrafts(
   return { drafts, lessonsByUnit }
 }
 
+export type TocExtractContinuationHint = {
+  unitNumber?: number | null
+  title: string
+  lastLessonNumber?: number | null
+}
+
 export async function extractTocWithGeminiV2(
   images: TocV2ImagePart[],
   totalPdfPages: number,
   notCountedPdfPagesInput: number[] = [],
   profileInput: TocExtractProfileId | string = 'generic',
+  continuationHint?: TocExtractContinuationHint | null,
 ): Promise<GeminiTocV2Result> {
   try {
     const profile = normalizeTocExtractProfile(profileInput)
@@ -363,6 +375,25 @@ export async function extractTocWithGeminiV2(
       },
       { text: `Globally not counted PDF pages: ${notCountedPdfPages.join(', ') || '(none)'}` },
     ]
+    if (continuationHint?.title?.trim()) {
+      const openNum =
+        typeof continuationHint.unitNumber === 'number' && continuationHint.unitNumber >= 1
+          ? continuationHint.unitNumber
+          : null
+      const lastLesson =
+        typeof continuationHint.lastLessonNumber === 'number' && continuationHint.lastLessonNumber >= 1
+          ? continuationHint.lastLessonNumber
+          : null
+      userParts.push({
+        text: [
+          'CONTINUATION CONTEXT from the previous TOC extract pass:',
+          `- An open unit may continue on the first image(s): ${openNum != null ? `Unit ${openNum} — ` : ''}"${continuationHint.title.trim()}"${lastLesson != null ? ` (last week/lesson seen: ${lastLesson})` : ''}.`,
+          '- If early pages start with Week/Lesson rows and NO new Unit/Chapter heading, they belong to that open unit.',
+          '- Reuse the same unitNumber and the same unit theme title. Do NOT invent a new unit from a week theme (e.g. "Great Inventions" under Week 3).',
+          '- Only start a new unit object when a new Unit/Chapter heading is visible.',
+        ].join('\n'),
+      })
+    }
     for (const image of images) {
       userParts.push({ text: `Image source PDF page ${image.pdfPage}:` })
       userParts.push({

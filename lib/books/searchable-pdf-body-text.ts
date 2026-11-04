@@ -47,6 +47,27 @@ export function filterBodyOcrWords<T extends OcrWordBox>(words: readonly T[]): T
   })
 }
 
+/** Taller than this × the median box is art (huge letters in a picture), not text. */
+const SELECTABLE_MAX_HEIGHT_RATIO = 4
+const SINGLE_CHAR_WORD = /^[AaI]$/
+
+/**
+ * Words teachers can select: everything confident that looks like a word,
+ * including titles and captions. Only junk and giant art glyphs are dropped.
+ */
+export function filterSelectableOcrWords<T extends OcrWordBox>(words: readonly T[]): T[] {
+  const viable = words.filter((w) => {
+    if (isGarbageWord(w)) return false
+    const text = w.text.trim()
+    if (!/[\p{L}\p{N}]/u.test(text)) return false
+    if (text.length === 1 && !SINGLE_CHAR_WORD.test(text)) return false
+    return true
+  })
+  const medH = median(viable.map(wordHeight))
+  if (!(medH > 0)) return viable
+  return viable.filter((w) => wordHeight(w) <= medH * SELECTABLE_MAX_HEIGHT_RATIO)
+}
+
 /**
  * Drop short, oversized lines (story titles) after grouping.
  * Body median is taken from lines that are not short+tall.

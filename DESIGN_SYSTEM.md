@@ -1,132 +1,65 @@
-# DESIGN_SYSTEM
+# TUTO — DESIGN SYSTEM
 
-## Overall Design Philosophy
+## 1. Overall Design Philosophy
 
-The app is a **light-first, teacher-led classroom interface** optimized for calm prep and clarity during live sessions.
+The app is a **light-first, teacher-led classroom interface** optimized for calm preparation, clarity during live sessions, and efficient daily use.
 
-- **Light is default**: warm off-white page background, white panels, hairline borders only where structure is needed.
-- **Flat over nested**: one surface level per view block; spacing and typography replace box-in-box layouts.
-- **Icons over paragraphs**: secondary actions use subtle icon buttons with tooltips; text labels reserved for primary CTAs (Start, Save, Stop).
-- **Color as meaning**: blue = primary flow, green = success, red = incorrect/destructive, amber = highlight/wallet.
-- **Readable at distance**: timers, scores, and question prompts stay large during quiz/play (screen-share rule).
-- **Minimal motion**: no decorative glows or gradient blobs on prep screens; quiz outcome FX may animate.
+The goal is to create a beautiful, understated, thoughtfully designed educational productivity app.
+
+The interface should feel:
+
+- Minimalist, but not boring.
+- Modern, but not trendy.
+- Friendly, but not childish.
+- Functional, but not overly corporate.
+- Visually interesting through thoughtful details rather than decorative effects.
+
+### Core Principles
+
+- **Light is default**: Warm off-white page background, white panels, hairline borders only where structure is needed.
+- **Flat over nested**: One surface level per view block; spacing and typography replace box-in-box layouts.
+- **Icons over paragraphs**: Secondary actions use subtle icon buttons with tooltips; text labels reserved for primary CTAs (Start, Save, Stop).
+- **Color as meaning**: Blue = primary flow, green = success, red = incorrect/destructive, amber = highlight/wallet.
+- **Readable at distance**: Timers, scores, and question prompts stay large during quiz/play (screen-share rule).
+- **Minimal motion**: No decorative glows or gradient blobs on prep screens; quiz outcome effects may animate.
+- **Intentional over conventional**: Do not default to familiar SaaS dashboard patterns. Every component should have a reason to look and behave the way it does.
+- **Distinctive through restraint**: The app should feel recognizable through its proportions, typography, spacing and details, not decorative effects.
+- **Content before containers**: Organize information through hierarchy, alignment and whitespace rather than putting everything inside cards.
+- **Natural visual hierarchy**: Not every element deserves equal visual attention. Important information should stand out; secondary information should remain quiet.
+- **Functional beauty**: Interactions, controls and information architecture should feel as carefully designed as the visual appearance.
+- **Consistency without uniformity**: Components should belong to the same design language without forcing every page into the same layout or component structure.
+- **Avoid design trends for their own sake**: Do not introduce visual patterns simply because they are common in modern AI-generated interfaces.
 
 **Exception:** Fullscreen book / class session overlay keeps its own dark glass + golden mat aesthetic — independent of the teacher shell.
 
 ---
 
-## Color Palette
+## 2. Design Anti-Patterns & Visual Restraint
 
-### Active Design Tokens (single source of truth)
+Avoid the following patterns unless there is a clear functional or aesthetic reason to use them.
 
-Only tokens below are considered active design-system color tokens (`app/globals.css` `:root` for light; `.dark` block preserved for future toggle).
+### Unnecessary UI Decoration
 
-| Token | Light hex | Semantic Use |
-|---|---|---|
-| `--background` | `#F7F7F5` | Page canvas (warm off-white) |
-| `--foreground` | `#1A1A18` | Primary readable text |
-| `--card` | `#FFFFFF` | Card and modal panel background |
-| `--card-foreground` | `#1A1A18` | Text on card surfaces |
-| `--popover` | `#FFFFFF` | Floating panel surface |
-| `--primary` | `#3B6FD4` | Primary interactive color |
-| `--primary-foreground` | `#FFFFFF` | Text/icon on primary |
-| `--secondary` | `#F0F0EC` | Secondary surface/action |
-| `--muted` | `#F0F0EC` | Quiet UI regions |
-| `--muted-foreground` | `#6B6B63` | Secondary/meta text |
-| `--accent` | `#EEF3FB` | Subtle highlight surface |
-| `--destructive` | `#D64555` | Destructive/error base |
-| `--border` | `#E8E8E4` | Hairline borders (sidebar, inputs, tables) |
-| `--input` | `#E8E8E4` | Input baseline border |
-| `--ring` | `#3B6FD4` | Focus ring |
-| `--brand-blue` | `#3B6FD4` | Primary CTA color |
-| `--brand-green` | `#2D9B78` | Success/Correct |
-| `--brand-yellow` | `#C4923A` | Celebration/highlight |
-| `--brand-red` | `#D64555` | Incorrect/danger |
-| `--surface-1` | `#F7F7F5` | Page canvas |
-| `--surface-2` | `#FFFFFF` | Primary panel |
-| `--surface-3` | `#F0F0EC` | Nested tone (no extra border) |
-| `--surface-4` | `#E8E8E4` | Strong hover/elevated tone |
+- No decorative gradient blobs, glows or mesh gradients.
+- No glassmorphism or backdrop blur on ordinary application surfaces.
+- No decorative illustrations or floating 3D elements.
+- No unnecessary icon circles or colored icon backgrounds.
+- No shadows on every container.
+- No decorative elements that compete with actual content.
 
-Dark palette values live in `.dark { ... }` (legacy storybook-night).
+### Over-Containerization
 
----
+- Do not turn every content group into a card.
+- Avoid nested cards and unnecessary bordered sections.
+- Do not use a card grid when a simple list, table or structured layout would work better.
+- Avoid excessive rounded containers and pill-shaped elements.
+- Do not create separate boxes for information that naturally belongs together.
 
-## Typography
+### Excessive Visual Noise
 
-- **Primary sans**: Inter (`--font-inter`) mapped to `--font-sans`.
-- **Monospace**: Space Mono for timers and tabular metrics only.
-- **Weight**: `font-semibold` for section titles; `font-black` reserved for quiz timer, score, and countdown hero.
-
----
-
-## Spacing & Layout Rules
-
-### Container and rhythm
-
-- Primary layouts: centered `max-w-7xl`, horizontal padding `px-4 sm:px-6 lg:px-8`.
-- Section spacing: `space-y-6` between major blocks; `gap-3` within rows.
-
-### Radius
-
-- Token base: `--radius: 0.5rem`.
-- `rounded-lg` for controls; `rounded-xl` for modals only when needed.
-
-### Layout simplification (strict)
-
-1. **One bordered container per view block** — never border inside border.
-2. Use `.ui-section`, `.ui-row`, `.ui-section-title`, `.ui-icon-btn` utilities from `globals.css`.
-3. Prefer `space-y-*` and muted text over helper paragraphs.
-4. Stat displays: inline icon + value row, not framed mini-cards.
-5. No decorative gradient blobs or glow on dashboard/shell pages.
-
----
-
-## Component Style Guidelines
-
-### Buttons
-
-- **Primary CTA**: `primary` fill, white text, semibold label.
-- **Secondary**: ghost or outline; icon-only with `title` for utility actions.
-- **Danger**: `destructive` variant only for irreversible actions.
-
-### Cards
-
-- Default Card has light border + subtle shadow; avoid nesting Card inside bordered sections.
-- Prefer flat `.ui-section` for list pages.
-
-### Tabs
-
-- Underline or minimal pill style; avoid boxed TabsList on profile/plan pages.
-
-### Modals
-
-- White shell on blurred backdrop; sticky footer for primary action.
-
-### Icons
-
-- `lucide-react` only; size 16–18 for shell controls.
-
----
-
-## Theme Rules
-
-- App opens **light** by default (`:root` tokens).
-- `.dark` class + block preserved for future user toggle.
-- Fullscreen book overlay CSS is scoped and does not depend on shell theme.
-
----
-
-## Classroom Screen-Share Optimization
-
-- Timer, score, question prompt, and answer controls stay large and high contrast during quiz/play.
-- One primary action per decision area (Start, Save, Retry, Back).
-- Modal spacing adequate for projected screens.
-
----
-
-## Implementation Rules
-
-1. **No new hex in feature components** without adding a named token in `app/globals.css` and documenting here.
-2. **No nested bordered containers** in new work.
-3. **Icon + tooltip** for secondary actions; text label for classroom-critical primary actions.
-4. **Feature additions** that introduce a new visual pattern must update this file in the same change.
+- Avoid unnecessary status badges, tags and labels.
+- Avoid excessive uppercase section labels.
+- Avoid too many competing accent colors.
+- Avoid unnecessary dividers between every item.
+- Avoid excessive use of decorative icons.
+- Avoid unnecessary visual effects that add complexity without improving usabilit

@@ -7,8 +7,10 @@ export type SearchablePdfProgress = {
   totalCount: number
   percent: number
   activeLabel: string | null
-  /** `Date.now()` when the active page request started; null when no page is in flight. */
+  /** `Date.now()` when the active page (or the save) started; null when nothing is in flight. */
   activeStartedAt: number | null
+  /** `saving` while the finished pages are written into the book file in one pass. */
+  phase: 'reading' | 'saving'
   message: string
 }
 
@@ -23,6 +25,9 @@ export type SearchablePdfRangeStatus =
   | 'native-text'
   | 'empty'
   | 'unknown'
+
+/** `story` plans the story's pages; `lesson` plans every page of the lesson. */
+export type SearchablePdfScope = 'story' | 'lesson'
 
 export type SearchablePdfPlanSummary = {
   filePath: string | null
@@ -42,21 +47,34 @@ type PlanResponse = {
 type PageResponse = {
   ok?: boolean
   error?: string
-  status?: 'stamped' | 'skipped'
+  status?: 'read' | 'skipped'
   pdfPage?: number
   filePath?: string
+}
+
+type FinalizeResponse = {
+  ok?: boolean
+  error?: string
+  stamped?: number[]
+  missing?: number[]
 }
 
 function buildProgress(
   pages: SearchablePdfProgress['pages'],
   message: string,
-  activeLabel: string | null = null,
+  options?: { activeLabel?: string | null; phase?: SearchablePdfProgress['phase'] },
 ): SearchablePdfProgress {
   const doneCount = pages.filter((p) => p.status === 'done' || p.status === 'skipped').length
   const totalCount = pages.length
   const percent = totalCount === 0 ? 0 : Math.round((doneCount / totalCount) * 100)
-  const activeStartedAt = activeLabel ? Date.now() : null
-  return { pages, doneCount, totalCount, percent, activeLabel, activeStartedAt, message }
+  const activeLabel = options?.activeLabel ?? null
+  const phase = options?.phase ?? 'reading'
+  const activeStartedAt = activeLabel || phase === 'saving' ? Date.now() : null
+  return { pages, doneCount, totalCount, percent, activeLabel, activeStartedAt, phase, message }
+}
+
+function pagesLabel(n: number): string {
+  return `${n} page${n === 1 ? '' : 's'}`
 }
 
 export function deriveSearchablePdfRangeStatus(
@@ -80,6 +98,7 @@ export async function fetchSearchablePdfPlan(input: {
   partId?: string | null
   title?: string
   totalPdfPages?: number | null
+  scope?: SearchablePdfScope
   signal?: AbortSignal
 }): Promise<SearchablePdfPlanSummary> {
   const res = await fetch('/api/books/searchable-text', {
@@ -87,6 +106,7 @@ export async function fetchSearchablePdfPlan(input: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       action: 'plan',
+      scope: input.scope ?? 'story',
       bookId: input.bookId,
       unitId: input.unitId,
       storyId: input.storyId,
@@ -117,6 +137,7 @@ export async function runSearchablePdfForStory(input: {
   partId?: string | null
   title?: string
   totalPdfPages?: number | null
+  scope?: SearchablePdfScope
   /** Restamp pages that already have our sidecar text. */
   force?: boolean
   signal?: AbortSignal
@@ -124,6 +145,7 @@ export async function runSearchablePdfForStory(input: {
 }): Promise<SearchablePdfJobResult> {
   const force = Boolean(input.force)
   const baseBody = {
+    scope: input.scope ?? 'story',
     bookId: input.bookId,
     unitId: input.unitId,
     storyId: input.storyId,
@@ -188,30 +210,71 @@ export async function runSearchablePdfForStory(input: {
     buildProgress(
       pages,
       force
-        ? `Redoing ${toOcr.length} page${toOcr.length === 1 ? '' : 's'}…`
-        : `Making ${toOcr.length} page${toOcr.length === 1 ? '' : 's'} selectable…`,
+        ? `Redoing ${pagesLabel(toOcr.length)}…`
+        : `Making ${pagesLabel(toOcr.length)} selectable…`,
     ),
   )
 
-  let stamped = 0
+  const readPages: number[] = []
   let skipped = pages.filter((p) => p.status === 'skipped').length
 
-  for (const item of toOcr) {
-    if (input.signal?.aborted) {
-      input.onProgress?.(
-        buildProgress(
-          pages,
-          `Stopped — ${stamped} page${stamped === 1 ? '' : 's'} done.`,
-        ),
-      )
-      if (stamped > 0 && filePath) notifySearchablePdfUpdated(filePath)
-      return {
-        ok: false,
-        error: stamped > 0 ? 'Stopped. Finished pages were kept.' : 'Stopped.',
-        filePath,
-        stamped,
-      }
+  /**
+   * Write every page read so far into the book file in one pass.
+   * Runs after Stop and after a page failure too, so finished reads are kept.
+   */
+  const finalize = async (): Promise<{ ok: true; stamped: number } | { ok: false; error: string }> => {
+    if (readPages.length === 0) return { ok: true, stamped: 0 }
+    input.onProgress?.(
+      buildProgress(pages, `Saving selectable text for ${pagesLabel(readPages.length)} into the book…`, {
+        phase: 'saving',
+      }),
+    )
+    try {
+      const res = await fetch('/api/books/searchable-text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bookId: input.bookId,
+          unitId: input.unitId,
+          action: 'finalize',
+          pdfPages: readPages,
+          force,
+        }),
+      })
+      const data = (await res.json()) as FinalizeResponse
+      if (!data.ok) return { ok: false, error: data.error ?? 'Could not save the selectable text.' }
+      if (filePath) notifySearchablePdfUpdated(filePath)
+      return { ok: true, stamped: data.stamped?.length ?? 0 }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : 'Could not save the selectable text.' }
     }
+  }
+
+  const stoppedResult = async (): Promise<SearchablePdfJobResult> => {
+    const saved = await finalize()
+    const stamped = saved.ok ? saved.stamped : 0
+    input.onProgress?.(buildProgress(pages, `Stopped — ${pagesLabel(stamped)} done.`))
+    return {
+      ok: false,
+      error: saved.ok
+        ? stamped > 0
+          ? 'Stopped. Finished pages were kept.'
+          : 'Stopped.'
+        : saved.error,
+      filePath,
+      stamped,
+    }
+  }
+
+  const failedResult = async (error: string): Promise<SearchablePdfJobResult> => {
+    const saved = await finalize()
+    const stamped = saved.ok ? saved.stamped : 0
+    input.onProgress?.(buildProgress(pages, error))
+    return { ok: false, error, filePath, stamped }
+  }
+
+  for (const item of toOcr) {
+    if (input.signal?.aborted) return stoppedResult()
 
     pages = pages.map((p) =>
       p.pdfPage === item.pdfPage ? { ...p, status: 'active' } : p,
@@ -220,7 +283,7 @@ export async function runSearchablePdfForStory(input: {
       buildProgress(
         pages,
         force ? `Redoing page ${item.pdfPage}…` : `Reading page ${item.pdfPage}…`,
-        String(item.pdfPage),
+        { activeLabel: String(item.pdfPage) },
       ),
     )
 
@@ -235,6 +298,7 @@ export async function runSearchablePdfForStory(input: {
           action: 'page',
           pdfPage: item.pdfPage,
           force,
+          planned: true,
         }),
         signal: input.signal,
       })
@@ -242,23 +306,8 @@ export async function runSearchablePdfForStory(input: {
       pages = pages.map((p) =>
         p.pdfPage === item.pdfPage && p.status === 'active' ? { ...p, status: 'failed' } : p,
       )
-      if (input.signal?.aborted) {
-        if (stamped > 0 && filePath) notifySearchablePdfUpdated(filePath)
-        return {
-          ok: false,
-          error: stamped > 0 ? 'Stopped. Finished pages were kept.' : 'Stopped.',
-          filePath,
-          stamped,
-        }
-      }
-      input.onProgress?.(buildProgress(pages, 'Could not finish this page.'))
-      if (stamped > 0 && filePath) notifySearchablePdfUpdated(filePath)
-      return {
-        ok: false,
-        error: err instanceof Error ? err.message : 'Could not make this page selectable.',
-        filePath,
-        stamped,
-      }
+      if (input.signal?.aborted) return stoppedResult()
+      return failedResult(err instanceof Error ? err.message : 'Could not make this page selectable.')
     }
 
     const pageData = (await pageRes.json()) as PageResponse
@@ -266,17 +315,10 @@ export async function runSearchablePdfForStory(input: {
       pages = pages.map((p) =>
         p.pdfPage === item.pdfPage ? { ...p, status: 'failed' } : p,
       )
-      input.onProgress?.(buildProgress(pages, pageData.error ?? 'This page failed.'))
-      if (stamped > 0 && filePath) notifySearchablePdfUpdated(filePath)
-      return {
-        ok: false,
-        error: pageData.error ?? 'Could not make this page selectable.',
-        filePath,
-        stamped,
-      }
+      return failedResult(pageData.error ?? 'Could not make this page selectable.')
     }
 
-    if (pageData.status === 'stamped') stamped += 1
+    if (pageData.status === 'read') readPages.push(item.pdfPage)
     else skipped += 1
 
     pages = pages.map((p) =>
@@ -284,10 +326,15 @@ export async function runSearchablePdfForStory(input: {
         ? { ...p, status: pageData.status === 'skipped' ? 'skipped' : 'done' }
         : p,
     )
-    input.onProgress?.(
-      buildProgress(pages, `Saved page ${item.pdfPage}.`),
-    )
+    input.onProgress?.(buildProgress(pages, `Read page ${item.pdfPage}.`))
   }
+
+  const saved = await finalize()
+  if (!saved.ok) {
+    input.onProgress?.(buildProgress(pages, saved.error))
+    return { ok: false, error: saved.error, filePath, stamped: 0 }
+  }
+  const stamped = saved.stamped
 
   input.onProgress?.(
     buildProgress(
@@ -297,8 +344,8 @@ export async function runSearchablePdfForStory(input: {
           ? 'Nothing to redo — these pages already have text in the book.'
           : 'These pages already have selectable text.'
         : force
-          ? `Done — ${stamped} page${stamped === 1 ? '' : 's'} redone.`
-          : `Done — ${stamped} page${stamped === 1 ? '' : 's'} now selectable.`,
+          ? `Done — ${pagesLabel(stamped)} redone.`
+          : `Done — ${pagesLabel(stamped)} now selectable.`,
     ),
   )
 

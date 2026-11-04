@@ -1025,6 +1025,7 @@ export function useBookPageAnnotationLayer(
     applyHoldSnapRef.current = () => {
       const draft = draftStrokeRef.current
       if (!draft || gestureRef.current !== 'stroke') return
+      if (mode === 'freehand-line') return
       const tracker = holdStraightRef.current
       if (!tracker.holdStraightActive || !tracker.lastSample) return
       const canSnap =
@@ -1917,8 +1918,7 @@ export function useBookPageAnnotationLayer(
       mode === 'text' ||
       mode === 'sticky' ||
       mode === 'eyedropper'
-    const writableDomTool =
-      mode === 'sticky' || isWritableStickerInteraction(mode, stickerKind)
+    const writableDomTool = isWritableStickerInteraction(mode, stickerKind)
     const textToolHoverViaSessionLayer =
       (spreadInkDelegated || whiteboardInkDelegated) && (mode === 'text' || writableDomTool)
 
@@ -1984,6 +1984,19 @@ export function useBookPageAnnotationLayer(
     }, [])
 
     function makeStrokeDraft(tool: StrokeTool, p: [number, number]): StrokeAnnotationCommand {
+      if (mode === 'freehand-line' && tool === 'pen') {
+        return {
+          kind: 'stroke',
+          id: newAnnotationId(),
+          tool: 'pen',
+          points: [p],
+          widthScale: shapeStrokeWidthScale,
+          color: shapeColor,
+          lineDashStyle: shapeLineDashStyle,
+          penStrokeProfile: 'pen',
+          arrowTip: 'open-v',
+        }
+      }
       const base: StrokeAnnotationCommand = {
         kind: 'stroke',
         id: newAnnotationId(),
@@ -2018,7 +2031,7 @@ export function useBookPageAnnotationLayer(
           ? stampPenStrokeOnCommit({ ...draft, points: commitPoints })
           : { ...draft, points: commitPoints }
       let next = [...commandsRef.current, cmd]
-      if (cmd.tool === 'pen') {
+      if (cmd.tool === 'pen' && mode !== 'freehand-line') {
         next = applyPenAutoGroupAfterAppend(next, cmd.id)
       }
       setCommands(next)
@@ -2681,9 +2694,10 @@ export function useBookPageAnnotationLayer(
             penStrokeWidthScale,
           },
           {
-            color: strokeColor,
+            color: mode === 'freehand-line' ? shapeColor : strokeColor,
             penStrokeProfile: penStrokeProfile as PenStrokeProfile | undefined,
             eyedropperVariant,
+            shapeStrokeWidthScale,
           },
         ),
       [
@@ -2692,6 +2706,8 @@ export function useBookPageAnnotationLayer(
         eraserLineStrokeWidthScale,
         penStrokeWidthScale,
         strokeColor,
+        shapeColor,
+        shapeStrokeWidthScale,
         penStrokeProfile,
         eyedropperVariant,
       ],

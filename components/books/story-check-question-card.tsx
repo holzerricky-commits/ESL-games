@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Check, Copy, Ellipsis, MapPin, Play, Quote, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ReadingCheckGamePopup } from '@/components/books/reading-check-game-popup'
+import { BOOK_CLASS_CHROME_THEME_VARS } from '@/components/students/fullscreen-book-overlay/constants'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -95,7 +96,14 @@ export function StoryCheckQuestionCard({
     <div className="grid w-full grid-cols-1 gap-y-4">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--brand-blue)_12%,var(--surface-3))] text-[12px] font-semibold tabular-nums text-[var(--brand-blue)]">
+          <span
+            className={cn(
+              'flex h-7 w-7 shrink-0 items-center justify-center text-[12px] font-semibold tabular-nums',
+              compact
+                ? 'rounded-md bg-[var(--surface-4)] text-foreground'
+                : 'rounded-full bg-[color-mix(in_srgb,var(--brand-blue)_12%,var(--surface-3))] text-[var(--brand-blue)]',
+            )}
+          >
             {index + 1}
           </span>
           <span className="text-[12px] font-medium text-muted-foreground">
@@ -107,8 +115,9 @@ export function StoryCheckQuestionCard({
             type="button"
             size="sm"
             variant="ghost"
-            className="h-8 w-8 rounded-full p-0 text-muted-foreground"
+            className={cn('h-8 w-8 p-0 text-muted-foreground', compact ? 'rounded-lg' : 'rounded-full')}
             onClick={onDuplicate}
+            title="Duplicate check"
           >
             <Copy className="size-3.5" aria-hidden />
             <span className="sr-only">Duplicate</span>
@@ -117,8 +126,9 @@ export function StoryCheckQuestionCard({
             type="button"
             size="sm"
             variant="ghost"
-            className="h-8 w-8 rounded-full p-0 text-muted-foreground"
+            className={cn('h-8 w-8 p-0 text-muted-foreground', compact ? 'rounded-lg' : 'rounded-full')}
             onClick={onDelete}
+            title="Delete check"
           >
             <Trash2 className="size-3.5" aria-hidden />
             <span className="sr-only">Delete</span>
@@ -136,7 +146,7 @@ export function StoryCheckQuestionCard({
           className={cn(
             'col-span-full min-h-0 w-full resize-none overflow-y-auto border-0 bg-transparent p-0 font-bold leading-[1.15] tracking-tight text-foreground shadow-none placeholder:font-semibold placeholder:text-muted-foreground/40 focus-visible:ring-0',
             compact
-              ? 'max-h-[6.5rem] text-[22px]'
+              ? 'max-h-[6.5rem] text-[18px]'
               : 'max-h-[5.5rem] text-[34px] sm:max-h-[6.5rem] sm:text-[40px] md:text-[40px]',
           )}
           onChange={(e) => patchQuestion({ prompt: e.target.value })}
@@ -151,9 +161,12 @@ export function StoryCheckQuestionCard({
                   key={String(value)}
                   type="button"
                   className={cn(
-                    'flex min-w-0 items-center justify-center gap-2 rounded-2xl border px-4 py-3.5 text-center text-[15px] font-medium transition-colors sm:text-base',
+                    'flex min-w-0 items-center justify-center gap-2 border text-center font-medium transition-colors',
+                    compact
+                      ? 'rounded-lg px-3 py-2.5 text-[14px]'
+                      : 'rounded-2xl px-4 py-3.5 text-[15px] sm:text-base',
                     selected
-                      ? 'border-[color-mix(in_srgb,var(--brand-green)_45%,var(--border))] bg-[color-mix(in_srgb,var(--brand-green)_10%,white)] text-foreground'
+                      ? 'border-[color-mix(in_srgb,var(--brand-green)_45%,var(--border))] bg-[color-mix(in_srgb,var(--brand-green)_12%,transparent)] text-foreground'
                       : 'border-border/70 bg-[var(--surface-2)] text-muted-foreground hover:border-border hover:text-foreground',
                   )}
                   onClick={() => patchQuestion({ correctTrue: value })}
@@ -175,9 +188,12 @@ export function StoryCheckQuestionCard({
                 <li key={ci} className="min-w-0">
                   <div
                     className={cn(
-                      'grid w-full grid-cols-[2.75rem_minmax(0,1fr)] overflow-hidden rounded-2xl border transition-colors',
+                      'grid w-full overflow-hidden border transition-colors',
+                      compact
+                        ? 'grid-cols-[2.25rem_minmax(0,1fr)] rounded-lg'
+                        : 'grid-cols-[2.75rem_minmax(0,1fr)] rounded-2xl',
                       selected
-                        ? 'border-[color-mix(in_srgb,var(--brand-green)_45%,var(--border))] bg-[color-mix(in_srgb,var(--brand-green)_10%,white)]'
+                        ? 'border-[color-mix(in_srgb,var(--brand-green)_45%,var(--border))] bg-[color-mix(in_srgb,var(--brand-green)_12%,transparent)]'
                         : 'border-border/70 bg-[var(--surface-2)]',
                     )}
                   >
@@ -198,7 +214,10 @@ export function StoryCheckQuestionCard({
                     <Input
                       value={choice}
                       placeholder={`Option ${letter}`}
-                      className="h-11 min-w-0 rounded-none border-0 bg-transparent px-3.5 text-[15px] text-foreground shadow-none placeholder:text-muted-foreground/50 focus-visible:ring-0"
+                      className={cn(
+                        'min-w-0 rounded-none border-0 bg-transparent text-foreground shadow-none placeholder:text-muted-foreground/50 focus-visible:ring-0',
+                        compact ? 'h-9 px-3 text-[14px]' : 'h-11 px-3.5 text-[15px]',
+                      )}
                       onChange={(e) => {
                         const next = [...q.choices]
                         next[ci] = e.target.value
@@ -214,12 +233,22 @@ export function StoryCheckQuestionCard({
       </div>
 
       <div className="flex flex-wrap items-center gap-1 border-t border-border/40 pt-3">
+        {compact ? (
+          <label htmlFor={`check-page-${stop.id}`} className="pl-1 text-[12px] text-muted-foreground">
+            Page
+          </label>
+        ) : null}
         <Input
           id={`check-page-${stop.id}`}
-          className="h-8 w-12 border-0 bg-transparent px-1 text-center text-[13px] tabular-nums text-muted-foreground shadow-none focus-visible:ring-0"
+          className={cn(
+            'h-8 w-12 px-1 text-center text-[13px] tabular-nums shadow-none focus-visible:ring-0',
+            compact
+              ? 'rounded-lg border-0 bg-[var(--surface-3)] text-foreground'
+              : 'border-0 bg-transparent text-muted-foreground',
+          )}
           inputMode="numeric"
           title="Page"
-          placeholder="pg"
+          placeholder={compact ? '–' : 'pg'}
           value={stop.displayPage ?? ''}
           onChange={(e) => {
             const n = Math.floor(Number(e.target.value))
@@ -237,13 +266,16 @@ export function StoryCheckQuestionCard({
           type="button"
           size="sm"
           variant="ghost"
-          className="h-8 w-8 rounded-full p-0 text-muted-foreground"
+          className={cn(
+            'h-8 text-muted-foreground',
+            compact ? 'gap-1.5 rounded-lg px-2 text-[12px]' : 'w-8 rounded-full p-0',
+          )}
           onClick={startPlaceOnBook}
           disabled={stop.displayPage == null && !stop.hotspot}
           title={stop.hotspot ? 'Move pin' : 'Place pin'}
         >
           <MapPin className="size-3.5" aria-hidden />
-          <span className="sr-only">{stop.hotspot ? 'Move pin' : 'Pin'}</span>
+          <span className={compact ? undefined : 'sr-only'}>{stop.hotspot ? 'Move pin' : 'Place pin'}</span>
         </Button>
 
         {stop.hotspot ? (
@@ -251,7 +283,7 @@ export function StoryCheckQuestionCard({
             type="button"
             size="sm"
             variant="ghost"
-            className="h-8 rounded-full px-2 text-[12px] text-muted-foreground"
+            className={cn('h-8 px-2 text-[12px] text-muted-foreground', compact ? 'rounded-lg' : 'rounded-full')}
             onClick={() => onChange({ ...stop, hotspot: null })}
           >
             Unpin
@@ -262,13 +294,16 @@ export function StoryCheckQuestionCard({
           type="button"
           size="sm"
           variant="ghost"
-          className="h-8 w-8 rounded-full p-0 text-muted-foreground"
+          className={cn(
+            'h-8 text-muted-foreground',
+            compact ? 'gap-1.5 rounded-lg px-2 text-[12px]' : 'w-8 rounded-full p-0',
+          )}
           disabled={!canTry}
           title={canTry ? 'Try this check' : 'Write a question first'}
           onClick={() => setTryoutOpen(true)}
         >
           <Play className="size-3.5" aria-hidden />
-          <span className="sr-only">Try</span>
+          <span className={compact ? undefined : 'sr-only'}>Try</span>
         </Button>
 
         {evidenceSnippet ? (
@@ -278,14 +313,18 @@ export function StoryCheckQuestionCard({
                 type="button"
                 size="sm"
                 variant="ghost"
-                className="h-8 gap-1.5 rounded-full px-2.5 text-[12px] text-muted-foreground"
+                className={cn(
+                  'h-8 gap-1.5 px-2.5 text-[12px] text-muted-foreground',
+                  compact ? 'rounded-lg' : 'rounded-full',
+                )}
               >
                 <Quote className="size-3.5" aria-hidden />
                 In the story
               </Button>
             </PopoverTrigger>
             <PopoverContent
-              className="z-[120] w-96 max-w-[min(24rem,90vw)] p-4"
+              className={cn('z-[120] w-96 max-w-[min(24rem,90vw)] p-4', compact && 'dark text-foreground')}
+              style={compact ? BOOK_CLASS_CHROME_THEME_VARS : undefined}
               align="start"
               side="top"
               onOpenAutoFocus={(e) => e.preventDefault()}
@@ -317,7 +356,7 @@ export function StoryCheckQuestionCard({
               type="button"
               size="sm"
               variant="ghost"
-              className="h-8 w-8 rounded-full p-0 text-muted-foreground"
+              className={cn('h-8 w-8 p-0 text-muted-foreground', compact ? 'rounded-lg' : 'rounded-full')}
               title="Beat label & note"
             >
               <Ellipsis className="size-3.5" aria-hidden />
@@ -325,7 +364,8 @@ export function StoryCheckQuestionCard({
             </Button>
           </PopoverTrigger>
           <PopoverContent
-            className="z-[120] w-72 space-y-3 p-3"
+            className={cn('z-[120] w-72 space-y-3 p-3', compact && 'dark text-foreground')}
+            style={compact ? BOOK_CLASS_CHROME_THEME_VARS : undefined}
             align="end"
             side="top"
             onOpenAutoFocus={(e) => e.preventDefault()}

@@ -57,6 +57,8 @@ export interface ReadingCheckPack {
   stops: ReadingCheckStop[]
   updatedAt: string
   approvedAt: string | null
+  /** Set when lesson prep approved the pack without a teacher review. */
+  autoApprovedAt?: string | null
 }
 
 function newId(prefix: string): string {
@@ -473,6 +475,10 @@ export function sanitizeReadingCheckPack(
       : status === 'approved'
         ? updatedAt
         : null
+  const autoApprovedAt =
+    status === 'approved' && typeof input.autoApprovedAt === 'string' && input.autoApprovedAt.trim()
+      ? input.autoApprovedAt.trim()
+      : null
 
   return {
     storyId,
@@ -482,6 +488,7 @@ export function sanitizeReadingCheckPack(
     stops,
     updatedAt,
     approvedAt,
+    ...(autoApprovedAt ? { autoApprovedAt } : {}),
   }
 }
 
@@ -531,17 +538,23 @@ export function demoteReadingCheckPackToDraft(pack: ReadingCheckPack): ReadingCh
     ...pack,
     status: 'draft',
     approvedAt: null,
+    autoApprovedAt: null,
     updatedAt: new Date().toISOString(),
   }
 }
 
-export function approveReadingCheckPack(pack: ReadingCheckPack): ReadingCheckPack | null {
+/** `auto` marks packs approved by lesson prep so the teacher can spot unreviewed ones. */
+export function approveReadingCheckPack(
+  pack: ReadingCheckPack,
+  options?: { auto?: boolean },
+): ReadingCheckPack | null {
   if (!readingCheckPackCanApprove(pack)) return null
   const now = new Date().toISOString()
   return {
     ...pack,
     status: 'approved',
     approvedAt: now,
+    autoApprovedAt: options?.auto ? now : null,
     updatedAt: now,
   }
 }

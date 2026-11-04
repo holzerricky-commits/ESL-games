@@ -10,19 +10,20 @@ import {
 describe('structure-wizard-steps', () => {
   it('opens Review when an outline already exists', () => {
     expect(initialStructureWizardStep(true)).toBe('review')
-    expect(initialStructureWizardStep(false)).toBe('toc')
+    expect(initialStructureWizardStep(false)).toBe('align')
   })
 
   it('only allows clicking up to furthest unlocked step', () => {
-    expect(isStructureWizardStepReachable('toc', 'align')).toBe(true)
     expect(isStructureWizardStepReachable('align', 'align')).toBe(true)
-    expect(isStructureWizardStepReachable('extract', 'align')).toBe(false)
+    expect(isStructureWizardStepReachable('toc', 'align')).toBe(false)
+    expect(isStructureWizardStepReachable('toc', 'toc')).toBe(true)
+    expect(isStructureWizardStepReachable('extract', 'toc')).toBe(false)
     expect(isStructureWizardStepReachable('review', 'extract')).toBe(false)
   })
 
   it('advances furthest after completing a step', () => {
-    expect(advanceFurthestStructureWizardStep('toc', 'toc')).toBe('align')
-    expect(advanceFurthestStructureWizardStep('align', 'align')).toBe('extract')
+    expect(advanceFurthestStructureWizardStep('align', 'align')).toBe('toc')
+    expect(advanceFurthestStructureWizardStep('toc', 'toc')).toBe('extract')
     expect(advanceFurthestStructureWizardStep('extract', 'extract')).toBe('review')
     expect(advanceFurthestStructureWizardStep('review', 'extract')).toBe('review')
   })

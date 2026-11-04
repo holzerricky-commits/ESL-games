@@ -43,6 +43,9 @@ const PART_KIND_LABEL: Partial<Record<BookLessonPartTag, string>> = {
   genre: 'Genre',
   vocabulary_strategy: 'Vocab strategy',
   literary_element: 'Literary element',
+  phonics: 'Phonics',
+  fluency: 'Fluency',
+  structural_analysis: 'Structural analysis',
 }
 
 export function todaysClassPartKindLabel(tag: BookLessonPartTag | null | undefined): string | null {

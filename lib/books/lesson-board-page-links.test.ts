@@ -73,7 +73,7 @@ describe('lesson-board-page-links', () => {
       {
         pdfPage: 5,
         center: [0.8, 0.2],
-        boardPage: { id: 'p2', orientation: 'wide' },
+        boardPage: { id: 'p2', orientation: 'standard' },
         ordinal: 1,
       },
       storage,
@@ -168,8 +168,8 @@ describe('lesson-board-page-links', () => {
       storage,
     )
     const pages = [
-      createLessonBoardPage('standard', { id: 'ws-p1', sourceBookId: 'workshop', sourceUnitId: 'u1' }),
-      createLessonBoardPage('standard', { id: 'blank' }),
+      createLessonBoardPage({ id: 'ws-p1', sourceBookId: 'workshop', sourceUnitId: 'u1' }),
+      createLessonBoardPage({ id: 'blank' }),
     ]
     const stamped = stampLegacyBoardLinksOntoPages('s1', pages, storage)
     expect(stamped.changed).toBe(true)
@@ -185,11 +185,11 @@ describe('lesson-board-page-links', () => {
 
   it('lists notebook-derived links only for the cited book', () => {
     const pages = [
-      createLessonBoardPage('standard', {
+      createLessonBoardPage({
         id: 'p1',
         primaryLink: { bookId: 'lit', pdfPage: 18, center: [0.4, 0.5] },
       }),
-      createLessonBoardPage('standard', {
+      createLessonBoardPage({
         id: 'p2',
         primaryLink: { bookId: 'ws', pdfPage: 18, center: [0.1, 0.1] },
       }),

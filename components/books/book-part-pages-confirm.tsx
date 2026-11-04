@@ -59,6 +59,10 @@ interface BookPartPagesConfirmProps {
   rail?: boolean
   /** Notify parent when the display page range changes (for live right-panel preview). */
   onDisplayRangeChange?: (range: BookPartPagesDisplayRange | null) => void
+  /** Fired after the page range is saved (including the quiet outline auto-confirm). */
+  onRangeSaved?: () => void
+  /** Rail: printed pages on the reader's open spread, for "Use p. N" shortcuts. */
+  spreadDisplayPages?: { left: number | null; right: number | null } | null
   className?: string
 }
 
@@ -78,6 +82,8 @@ export function BookPartPagesConfirm({
   layout = 'card',
   rail = false,
   onDisplayRangeChange,
+  spreadDisplayPages = null,
+  onRangeSaved,
   className,
 }: BookPartPagesConfirmProps) {
   const controlsOnly = layout === 'controls'
@@ -153,6 +159,7 @@ export function BookPartPagesConfirm({
           resolveReadingStoryRange(story, book, unit, totalPdfPages, data.override),
         )
         setEditing(false)
+        onRangeSaved?.()
         if (!quiet) toast.success('Pages saved')
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Could not save pages'
@@ -162,7 +169,7 @@ export function BookPartPagesConfirm({
         setSaving(false)
       }
     },
-    [story, book, unit, totalPdfPages, hydrateDraftFromResolved],
+    [story, book, unit, totalPdfPages, hydrateDraftFromResolved, onRangeSaved],
   )
 
   useEffect(() => {
@@ -493,24 +500,122 @@ export function BookPartPagesConfirm({
     )
   }
 
+  if (controlsOnly && rail) {
+    const savedStart = resolved.source !== 'none' ? resolved.startDisplayPage : null
+    const savedEnd = resolved.source !== 'none' ? resolved.endDisplayPage : null
+    const dirty = hasDraftRange
+      ? Math.min(draftStart, draftEnd) !== savedStart || Math.max(draftStart, draftEnd) !== savedEnd
+      : false
+    const pageCount = hasDraftRange ? Math.abs(draftEnd - draftStart) + 1 : null
+    const spreadLeft = spreadDisplayPages?.left ?? spreadDisplayPages?.right ?? null
+    const spreadRight = spreadDisplayPages?.right ?? spreadDisplayPages?.left ?? null
+
+    const field = (args: {
+      id: string
+      label: string
+      value: string
+      onChange: (value: string) => void
+      spreadPage: number | null
+    }) => (
+      <div className="min-w-0 space-y-1.5">
+        <Label htmlFor={args.id} className="text-[11px] font-medium text-muted-foreground">
+          {args.label}
+        </Label>
+        <Input
+          id={args.id}
+          className="h-9 rounded-lg border-0 bg-[var(--surface-3)] text-center text-[15px] font-semibold tabular-nums shadow-none"
+          inputMode="numeric"
+          value={args.value}
+          onChange={(e) => {
+            args.onChange(e.target.value)
+            setEditing(true)
+          }}
+          disabled={saving}
+        />
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-7 w-full rounded-lg px-2 text-[12px] text-muted-foreground hover:text-foreground"
+          disabled={saving || args.spreadPage == null}
+          onClick={() => {
+            if (args.spreadPage == null) return
+            args.onChange(String(args.spreadPage))
+            setEditing(true)
+          }}
+        >
+          {args.spreadPage != null ? `Use p. ${args.spreadPage}` : 'Use this spread'}
+        </Button>
+      </div>
+    )
+
+    return (
+      <div className={cn('flex flex-col gap-4', className)}>
+        <div className="space-y-0.5">
+          <p className="text-[22px] font-semibold tabular-nums tracking-tight text-foreground">{rangeLabel}</p>
+          <p className="text-[12px] text-muted-foreground">
+            {pageCount != null ? `${pageCount} printed page${pageCount === 1 ? '' : 's'}` : 'No pages set'}
+            {dirty ? ' · unsaved' : ''}
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          {field({
+            id: `part-shell-start-${part.id}`,
+            label: 'Start',
+            value: startPage,
+            onChange: setStartPage,
+            spreadPage: spreadLeft,
+          })}
+          {field({
+            id: `part-shell-end-${part.id}`,
+            label: 'End',
+            value: endPage,
+            onChange: setEndPage,
+            spreadPage: spreadRight,
+          })}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            className="h-8 rounded-lg px-4"
+            disabled={!dirty || saving || !fileUrl}
+            onClick={() => void saveEdits()}
+          >
+            {saving ? 'Saving…' : 'Save pages'}
+          </Button>
+          {dirty ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-8 rounded-lg px-3"
+              disabled={saving}
+              onClick={() => {
+                hydrateDraftFromResolved(resolved)
+                setEditing(false)
+              }}
+            >
+              Reset
+            </Button>
+          ) : null}
+        </div>
+        <p className="text-[12px] leading-relaxed text-muted-foreground">
+          Turn the book to the story&apos;s first or last page, then use the page buttons above.
+        </p>
+      </div>
+    )
+  }
+
   if (controlsOnly) {
     return (
       <div
         className={cn(
-          rail
-            ? 'flex flex-col gap-3'
-            : 'flex h-full flex-col gap-6 rounded-[28px] bg-[var(--surface-2)] p-6 shadow-[0_12px_40px_-24px_rgba(0,0,0,0.2)] sm:p-8',
+          'flex h-full flex-col gap-6 rounded-[28px] bg-[var(--surface-2)] p-6 shadow-[0_12px_40px_-24px_rgba(0,0,0,0.2)] sm:p-8',
           className,
         )}
       >
-        {rail ? (
-          <div className="space-y-0.5">
-            <p className="text-[13px] font-semibold tracking-tight text-foreground">Page range</p>
-            <p className="text-[12px] text-muted-foreground">Confirm these pages match the story</p>
-          </div>
-        ) : (
-          titleBlock
-        )}
+        {titleBlock}
         {pagesControls}
         {statusSlot ? <div className="mt-auto pt-2">{statusSlot}</div> : null}
       </div>

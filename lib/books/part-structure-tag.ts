@@ -17,6 +17,9 @@ export const BOOK_LESSON_PART_TAG_LABELS: Record<BookLessonPartTag, string> = {
   genre: 'Genre',
   vocabulary_strategy: 'Vocab · strategy',
   literary_element: 'Literary element',
+  phonics: 'Phonics',
+  fluency: 'Fluency',
+  structural_analysis: 'Structural analysis',
 }
 
 export function isBookLessonPartTag(value: unknown): value is BookLessonPartTag {
@@ -77,14 +80,46 @@ export function templateTagForPartIndex(
   return template[index]!
 }
 
+function normalizeSectionKey(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, ' ').trim()
+}
+
+/** Week theme used as the shared-read title, without a "Week N:" prefix. */
+function weekThemeKey(lessonTitle: string | undefined): string {
+  const raw = (lessonTitle ?? '').replace(/^week\s*\d+\s*:\s*/i, '').trim()
+  return normalizeSectionKey(raw)
+}
+
 /**
- * Tag all parts in a lesson: title heuristics first; bare Literature selection titles
- * get main_story / paired_story by **story ordinal** (not raw part index), so a Respond
- * row between stories does not steal the paired slot.
+ * TOC row that is its own section, not a reading selection.
+ * Known extra heads ("Phonics", "Spelling: …") and any short "Label: detail" row
+ * stay out of the story slots. Bare story titles are left for the week matcher.
+ */
+export function isOwnSectionTitle(title: string): boolean {
+  const n = normalizeSectionKey(title)
+  if (!n) return false
+  if (
+    /^(spelling|handwriting|word work|oral vocabulary|oral language|decodable(?:\s+(?:reader|text|passage))?|high-frequency words|high frequency words|phonics|fluency|structural analysis)(?:\s*:\s*.+)?$/.test(
+      n,
+    )
+  ) {
+    return true
+  }
+  const labeled = n.match(/^([^:]{1,48}):\s+\S/)
+  if (!labeled) return false
+  const words = (labeled[1] ?? '').trim().split(' ').filter(Boolean)
+  return words.length > 0 && words.length <= 4
+}
+
+/**
+ * Tag all parts in a lesson: title heuristics first.
+ * Literature and Workshop assign main/paired only among real selection titles, so an
+ * extra TOC section (Phonics, Fluency, or any unknown labeled row) does not steal the story slot.
  */
 export function computeStructureTagsForParts(
   parts: Array<Pick<BookLessonPartRecord, 'title'>>,
   profile: TocExtractProfileId = 'journeys',
+  lessonTitle?: string,
 ): BookLessonPartTag[] {
   if (profile === 'wonders_literature') {
     let storyOrdinal = 0
@@ -94,7 +129,38 @@ export function computeStructureTagsForParts(
       return templateTagForPartIndex(storyOrdinal++, profile)
     })
   }
+  if (profile === 'wonders_workshop') {
+    return computeWorkshopStructureTags(parts, lessonTitle)
+  }
   return parts.map((part, i) => computeStructureTagFromTitleAndIndex(part, i, profile))
+}
+
+function computeWorkshopStructureTags(
+  parts: Array<Pick<BookLessonPartRecord, 'title'>>,
+  lessonTitle?: string,
+): BookLessonPartTag[] {
+  const themeKey = weekThemeKey(lessonTitle)
+  const inferred = parts.map((part) => inferStructureTagFromTitle(part.title, 'wonders_workshop'))
+  const isWeekStory = parts.map((part, index) => {
+    if (inferred[index] !== 'unspecified') return false
+    if (isOwnSectionTitle(part.title)) return false
+    const key = normalizeSectionKey(part.title)
+    return themeKey.length > 0 && key === themeKey
+  })
+  const weekStoryExists = isWeekStory.some(Boolean)
+  let bareStoryCount = 0
+  return parts.map((part, index) => {
+    const tag = inferred[index]!
+    if (tag !== 'unspecified') return tag
+    if (isOwnSectionTitle(part.title)) return 'unspecified'
+    if (isWeekStory[index]) return 'main_story'
+    if (!weekStoryExists && bareStoryCount === 0) {
+      bareStoryCount += 1
+      return 'main_story'
+    }
+    bareStoryCount += 1
+    return 'paired_story'
+  })
 }
 
 /** Tag from title heuristics, then template slot; used when `structureTag` is not stored. */
@@ -105,6 +171,7 @@ export function computeStructureTagFromTitleAndIndex(
 ): BookLessonPartTag {
   const inferred = inferStructureTagFromTitle(part.title, profile)
   if (inferred !== 'unspecified') return inferred
+  if (profile === 'wonders_workshop' && isOwnSectionTitle(part.title)) return 'unspecified'
   return templateTagForPartIndex(partIndexInLesson, profile)
 }
 
@@ -170,6 +237,10 @@ export function inferStructureTagFromTitle(
   if (/^connect\b|\bconnect to\b|\bconnect\s*to\b/.test(n)) return 'making_connections'
 
   if (/\bgrammar\b/.test(n)) return 'grammar'
+  if (/\bphonics\b/.test(n)) return 'phonics'
+  if (/\bfluency\b/.test(n)) return 'fluency'
+  if (/\bstructural\s+analysis\b/.test(n)) return 'structural_analysis'
+  if (/\bhigh[-\s]?frequency\s+words\b/.test(n)) return 'vocabulary_in_context'
 
   if (
     /\bpaired selection\b/.test(n) ||
@@ -203,7 +274,7 @@ export function inferStructureTagFromTitle(
   // the profile template can assign main_story vs paired_story by story ordinal / index.
   if (profile === 'wonders_literature' || profile === 'wonders_workshop') {
     const looksLikeSkillRow =
-      /\b(vocabulary|comprehension|genre|writing|grammar|strategy|skill|literary|words to know|respond|connect)\b/.test(
+      /\b(vocabulary|comprehension|genre|writing|grammar|strategy|skill|literary|words to know|respond|connect|phonics|fluency|structural|spelling|handwriting)\b/.test(
         n,
       )
     if (!looksLikeSkillRow && n.length >= 2) {

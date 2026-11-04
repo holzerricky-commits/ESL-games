@@ -107,12 +107,12 @@ describe('student-notebook-merge', () => {
 
   it('copy-merges assigned boards and stamps source hints', () => {
     const storage = createMemoryWhiteboardSessionStorage()
-    const wsPage = createLessonBoardPage('standard', {
+    const wsPage = createLessonBoardPage({
       id: 'ws-p1',
       bookPageHint: 12,
       commands: [stroke('ws-ink')],
     })
-    const litPage = createLessonBoardPage('standard', {
+    const litPage = createLessonBoardPage({
       id: 'lit-p1',
       commands: [stroke('lit-ink')],
     })
@@ -158,7 +158,7 @@ describe('student-notebook-merge', () => {
 
   it('leaves old book/unit keys in place and does not re-merge after first save', () => {
     const storage = createMemoryWhiteboardSessionStorage()
-    const wsPage = createLessonBoardPage('standard', {
+    const wsPage = createLessonBoardPage({
       id: 'ws-p1',
       commands: [stroke('ws-ink')],
     })
@@ -184,7 +184,7 @@ describe('student-notebook-merge', () => {
     }
     expect(storage.readRoot()[`${oldKey.studentId}::${oldKey.bookId}::${oldKey.unitId}::wb::${oldKey.storagePageKey}`]).toBeTruthy()
 
-    const litPage = createLessonBoardPage('standard', {
+    const litPage = createLessonBoardPage({
       id: 'lit-p1',
       commands: [stroke('lit-ink')],
     })
@@ -215,7 +215,7 @@ describe('student-notebook-merge', () => {
       bookId: 'ws',
       unitId: 'u1',
       pages: [
-        createLessonBoardPage('standard', { id: 'other', commands: [stroke('x')] }),
+        createLessonBoardPage({ id: 'other', commands: [stroke('x')] }),
       ],
       updatedAt: 1,
     })
@@ -242,7 +242,7 @@ describe('student-notebook-merge', () => {
       studentId: 'stu-1',
       bookId: 'ws',
       unitId: 'u1',
-      pages: [createLessonBoardPage('standard', { id: 'keep', commands: [stroke('ink')] })],
+      pages: [createLessonBoardPage({ id: 'keep', commands: [stroke('ink')] })],
       updatedAt: 50,
     })
     const merged = mergeStudentNotebookFromBookUnitBoards({
@@ -263,7 +263,7 @@ describe('student-notebook-merge', () => {
       studentId: 'stu-1',
       bookId: 'ws',
       unitId: 'u1',
-      pages: [createLessonBoardPage('standard', { id: 'assigned', commands: [stroke('a')] })],
+      pages: [createLessonBoardPage({ id: 'assigned', commands: [stroke('a')] })],
       updatedAt: 10,
     })
     saveBookUnitBoard({
@@ -271,7 +271,7 @@ describe('student-notebook-merge', () => {
       studentId: 'stu-1',
       bookId: 'lit',
       unitId: 'u1',
-      pages: [createLessonBoardPage('standard', { id: 'leftover', commands: [stroke('b')] })],
+      pages: [createLessonBoardPage({ id: 'leftover', commands: [stroke('b')] })],
       updatedAt: 20,
     })
     const merged = mergeStudentNotebookFromBookUnitBoards({
@@ -290,7 +290,7 @@ describe('student-notebook-merge', () => {
       studentId: 'stu-1',
       bookId: 'ws',
       unitId: 'u1',
-      pages: [createLessonBoardPage('standard', { id: 'ws-p1', commands: [stroke('ws-ink')] })],
+      pages: [createLessonBoardPage({ id: 'ws-p1', commands: [stroke('ws-ink')] })],
       updatedAt: 100,
     })
     const loaded = loadStudentNotebookSession(

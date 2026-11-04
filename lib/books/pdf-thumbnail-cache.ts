@@ -9,6 +9,8 @@ export const PDF_HERO_THUMB_WIDTH = 240
 const dataUrlCache = new Map<string, string>()
 const inflightThumbs = new Map<string, Promise<string>>()
 const pdfLoadCache = new Map<string, Promise<PDFDocumentProxy>>()
+/** Settled docs for sync strip swaps — filled when `loadCachedPdfDocument` resolves. */
+const resolvedPdfCache = new Map<string, PDFDocumentProxy>()
 const PDFJS_WASM_URL = '/wasm/'
 
 let queueRunning = 0
@@ -62,9 +64,27 @@ export function clearThumbnailCacheForUnit(unitId: string): void {
 /** Drop cached docs for this URL and any cache-busted variants (`&v=` / `?v=`). */
 export function clearPdfLoadCacheForFileUrl(fileUrl: string): void {
   pdfLoadCache.delete(fileUrl)
+  resolvedPdfCache.delete(fileUrl)
   for (const key of [...pdfLoadCache.keys()]) {
     if (key.startsWith(fileUrl)) pdfLoadCache.delete(key)
   }
+  for (const key of [...resolvedPdfCache.keys()]) {
+    if (key.startsWith(fileUrl)) resolvedPdfCache.delete(key)
+  }
+}
+
+/** Sync lookup for a PDF already loaded this session (strip tab warm swaps). */
+export function peekCachedPdfDocument(fileUrl: string): PDFDocumentProxy | null {
+  return resolvedPdfCache.get(fileUrl) ?? null
+}
+
+/** Test helper — seed / clear the resolved-doc map without loading PDF.js. */
+export function __setResolvedPdfDocumentForTests(
+  fileUrl: string,
+  doc: PDFDocumentProxy | null,
+): void {
+  if (doc == null) resolvedPdfCache.delete(fileUrl)
+  else resolvedPdfCache.set(fileUrl, doc)
 }
 
 /** Append a version query so the browser cannot reuse a pre-stamp PDF body. */
@@ -79,6 +99,8 @@ export function withPdfFileCacheBust(fileUrl: string, epoch: number): string {
  * `react-pdf` `<Document file={url}>` would call `getDocument` again — use `PdfPage pdf={await loadCachedPdfDocument(url)}` instead.
  */
 export async function loadCachedPdfDocument(fileUrl: string): Promise<PDFDocumentProxy> {
+  const settled = resolvedPdfCache.get(fileUrl)
+  if (settled) return settled
   let p = pdfLoadCache.get(fileUrl)
   if (!p) {
     await ensureReactPdfWorker()
@@ -86,7 +108,15 @@ export async function loadCachedPdfDocument(fileUrl: string): Promise<PDFDocumen
     p = pdfjs.getDocument({ url: fileUrl, wasmUrl: PDFJS_WASM_URL }).promise as Promise<PDFDocumentProxy>
     pdfLoadCache.set(fileUrl, p)
   }
-  return await p
+  try {
+    const doc = await p
+    resolvedPdfCache.set(fileUrl, doc)
+    return doc
+  } catch (e) {
+    pdfLoadCache.delete(fileUrl)
+    resolvedPdfCache.delete(fileUrl)
+    throw e
+  }
 }
 
 async function loadPdf(fileUrl: string): Promise<PDFDocumentProxy> {

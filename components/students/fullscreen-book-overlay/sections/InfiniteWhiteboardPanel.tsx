@@ -13,7 +13,6 @@ import {
 } from '@/components/students/book-page-annotation-layer'
 import type { BookPageAnnotationLayerProps } from '@/components/students/book-page-annotation-layer'
 import { inkSessionReactBoundaryEnabled, whiteboardInkSessionEnabled } from '@/lib/books/feature-flags'
-import { lessonBoardAllowsRunwayGrowth, type LessonBoardPageOrientation } from '@/lib/books/lesson-board-types'
 import type { WhiteboardSessionDocument } from '@/lib/books/whiteboard-session-types'
 import type { WhiteboardSessionStore } from '@/lib/books/whiteboard-session-store'
 import {
@@ -66,6 +65,7 @@ import type { WhiteboardSlotMotionApi } from '../hooks/useWhiteboardSlotMotion'
 import { WhiteboardHeader } from './WhiteboardChrome'
 import { LessonBoardFooter } from './LessonBoardFooter'
 import { LessonBoardNextUnitPrompt } from './LessonBoardNextUnitPrompt'
+import { NotebookPageListPanel } from './NotebookPageListPanel'
 import type { SpreadSessionDomConfig } from '@/components/students/fullscreen-book-overlay/hooks/useSpreadSessionDomInteraction'
 import type {
   StickyAnnotationCommand,
@@ -141,10 +141,6 @@ export interface InfiniteWhiteboardPanelProps extends LayerProps {
   widthPx: number
   /** Ink coordinate width; defaults to panel width when omitted. */
   logicalCanvasWidthPx?: number
-  /** Wide-board width used for paste sizing on standard notebook pages. */
-  widePasteImageSizingWidthPx?: number
-  /** Wide-board viewport height used for paste sizing on standard notebook pages. */
-  widePasteImageSizingViewportHeightPx?: number
   viewportHeightPx: number
   contentHeightPx: number
   storagePageKey: string
@@ -188,7 +184,9 @@ export interface InfiniteWhiteboardPanelProps extends LayerProps {
   onEyedropperPick: (clientX: number, clientY: number) => void
   /** Keep ~one clean screen below the current scroll view (standard pages). */
   onEnsureRunwayBelowView?: (scrollTopPx: number) => void
-  onNewLessonBoardPage?: (orientation: LessonBoardPageOrientation) => void
+  onNewLessonBoardPage?: () => void
+  onSelectLessonBoardPage?: (pageId: string) => void
+  onRenameLessonBoardPage?: (pageId: string, title: string | undefined) => void
   onSaveLessonBoard?: () => void
   onDeleteLessonBoardPage?: () => void
   canDeleteLessonBoardPage?: boolean
@@ -220,8 +218,6 @@ export interface InfiniteWhiteboardPanelProps extends LayerProps {
 export function InfiniteWhiteboardPanel({
   widthPx,
   logicalCanvasWidthPx: logicalCanvasWidthPxProp,
-  widePasteImageSizingWidthPx,
-  widePasteImageSizingViewportHeightPx,
   viewportHeightPx,
   contentHeightPx,
   storagePageKey,
@@ -263,6 +259,8 @@ export function InfiniteWhiteboardPanel({
   onEyedropperPick,
   onEnsureRunwayBelowView,
   onNewLessonBoardPage,
+  onSelectLessonBoardPage,
+  onRenameLessonBoardPage,
   onSaveLessonBoard,
   onDeleteLessonBoardPage,
   canDeleteLessonBoardPage,
@@ -298,6 +296,7 @@ export function InfiniteWhiteboardPanel({
   const pasteAnchorNormRef = useRef<{ x: number; y: number } | null>(null)
   const [scrollTopPx, setScrollTopPx] = useState(0)
   const [imageDragActive, setImageDragActive] = useState(false)
+  const [notebookPageListOpen, setNotebookPageListOpen] = useState(false)
   const [wbEraserLineDraft, setWbEraserLineDraft] = useState<LiveEraserLineDraft | null>(null)
   const [wbMarkerStrokeDraft, setWbMarkerStrokeDraft] = useState<LiveStrokeDraft | null>(null)
   const [wbSessionSelectedIds, setWbSessionSelectedIds] = useState<string[]>([])
@@ -612,31 +611,12 @@ export function InfiniteWhiteboardPanel({
   }, [whiteboardSessionStoreRef])
 
   const getImagePastePlacement = useCallback(
-    () => {
-      const orientation = lessonBoardPageNav.page?.orientation ?? 'standard'
-      const useWideSizing =
-        orientation === 'standard' &&
-        widePasteImageSizingWidthPx != null &&
-        widePasteImageSizingWidthPx > 0
-      return {
-        scrollTopPx: scrollRef.current?.scrollTop ?? scrollTopPx,
-        viewportHeightPx: canvasViewportHeightPx,
-        anchorNorm: pasteAnchorNormRef.current,
-        ...(useWideSizing
-          ? {
-              sizingWidthPx: widePasteImageSizingWidthPx,
-              sizingViewportHeightPx: widePasteImageSizingViewportHeightPx,
-            }
-          : {}),
-      }
-    },
-    [
-      canvasViewportHeightPx,
-      lessonBoardPageNav.page?.orientation,
-      scrollTopPx,
-      widePasteImageSizingViewportHeightPx,
-      widePasteImageSizingWidthPx,
-    ],
+    () => ({
+      scrollTopPx: scrollRef.current?.scrollTop ?? scrollTopPx,
+      viewportHeightPx: canvasViewportHeightPx,
+      anchorNorm: pasteAnchorNormRef.current,
+    }),
+    [canvasViewportHeightPx, scrollTopPx],
   )
 
   useEffect(() => {
@@ -854,9 +834,8 @@ export function InfiniteWhiteboardPanel({
     [whiteboardInkRevision, whiteboardSessionDoc, whiteboardSessionStoreRef],
   )
 
-  const activePageOrientation = lessonBoardPageNav.page?.orientation ?? 'standard'
-  const slotDragEnabled = layoutMode === 'slot' && activePageOrientation !== 'wide'
-  const floatDragEnabled = layoutMode === 'floating' && activePageOrientation !== 'wide'
+  const slotDragEnabled = layoutMode === 'slot'
+  const floatDragEnabled = layoutMode === 'floating'
   const handlePrevLessonBoardPage = useCallback(() => {
     whiteboardSessionStoreRef?.current?.goToAdjacentLessonBoardPage(-1)
   }, [whiteboardSessionStoreRef])
@@ -883,7 +862,6 @@ export function InfiniteWhiteboardPanel({
   const useLessonBoardSessionInk = whiteboardSessionActive && viewportInk != null
   const boardScrollable =
     viewportInk != null && isWhiteboardViewportInkActive(viewportInk)
-  const wideFixedCanvas = activePageOrientation === 'wide'
 
   const {
     panelRef,
@@ -914,17 +892,12 @@ export function InfiniteWhiteboardPanel({
     const onScroll = () => {
       const top = el.scrollTop
       setScrollTopPx(top)
-      if (
-        onEnsureRunwayBelowView &&
-        lessonBoardAllowsRunwayGrowth(activePageOrientation)
-      ) {
-        onEnsureRunwayBelowView(top)
-      }
+      onEnsureRunwayBelowView?.(top)
     }
     onScroll()
     el.addEventListener('scroll', onScroll, { passive: true })
     return () => el.removeEventListener('scroll', onScroll)
-  }, [activePageOrientation, lessonBoardActivePageId, onEnsureRunwayBelowView])
+  }, [lessonBoardActivePageId, onEnsureRunwayBelowView])
 
   return (
     <div
@@ -947,7 +920,6 @@ export function InfiniteWhiteboardPanel({
         suppressChrome={suppressChrome}
         deferChromeActions={deferHeaderChromeActions}
         layoutMode={layoutMode}
-        pageOrientation={activePageOrientation}
         onFloat={onFloat}
         onDock={onDock}
         swapSlotSide={() => moveTo(slotSide === 'left' ? 'right' : 'left')}
@@ -976,7 +948,7 @@ export function InfiniteWhiteboardPanel({
           <BoardImageSearchPanel
             onInsertImage={handleInsertSearchImage}
             disabled={deferHeaderChromeActions}
-            compact={activePageOrientation !== 'wide'}
+            compact
           />
         }
         boardFooterLabel={boardFooterLabel}
@@ -1023,7 +995,7 @@ export function InfiniteWhiteboardPanel({
         }}
         className={cn(
           'relative z-0 min-h-0 flex-1 overflow-x-hidden outline-none',
-          wideFixedCanvas || !boardScrollable ? 'overflow-y-hidden' : SCROLLBAR_HIDDEN,
+          !boardScrollable ? 'overflow-y-hidden' : SCROLLBAR_HIDDEN,
           imageDragActive && 'ring-2 ring-inset ring-sky-400',
         )}
         style={{
@@ -1041,7 +1013,7 @@ export function InfiniteWhiteboardPanel({
             ...surfaceStyle,
           }}
           data-whiteboard-content=""
-          data-lesson-board-orientation={activePageOrientation}
+          data-lesson-board-orientation="standard"
         >
           {useLessonBoardSessionInk && whiteboardSessionDoc ? (
             <div
@@ -1179,15 +1151,30 @@ export function InfiniteWhiteboardPanel({
         </div>
       ) : null}
 
+      {whiteboardSessionActive && whiteboardSessionDoc && onSelectLessonBoardPage ? (
+        <NotebookPageListPanel
+          open={notebookPageListOpen}
+          onClose={() => setNotebookPageListOpen(false)}
+          whiteboardSessionDoc={whiteboardSessionDoc}
+          onSelectPage={onSelectLessonBoardPage}
+          onRenamePage={onRenameLessonBoardPage}
+        />
+      ) : null}
+
       <LessonBoardFooter
         suppressChrome={suppressChrome}
         deferChromeActions={deferHeaderChromeActions}
-        pageOrientation={activePageOrientation}
         lessonBoardPageIndex={lessonBoardPageNav.index}
         lessonBoardPageCount={lessonBoardPageNav.total}
         onNewLessonBoardPage={whiteboardSessionActive ? onNewLessonBoardPage : undefined}
         onPrevLessonBoardPage={whiteboardSessionActive ? handlePrevLessonBoardPage : undefined}
         onNextLessonBoardPage={whiteboardSessionActive ? handleNextLessonBoardPage : undefined}
+        onTogglePageList={
+          whiteboardSessionActive && onSelectLessonBoardPage
+            ? () => setNotebookPageListOpen((open) => !open)
+            : undefined
+        }
+        pageListOpen={notebookPageListOpen}
       />
 
       {layoutMode === 'floating' && floatDragEnabled ? (

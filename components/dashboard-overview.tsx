@@ -3,171 +3,86 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Check, ChevronDown, Clock3, MoreHorizontal, Play, RefreshCw } from 'lucide-react'
+import { ChevronLeft, ChevronRight, NotebookPen, Play } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { MoveClassDialog } from '@/components/schedule/move-class-dialog'
-import { ReadingCheckPrepareGlanceLink } from '@/components/books/reading-check-prepare-glance-link'
-import { ensureStudentRecordsHydrated } from '@/lib/local-data/student-records-client'
-import { canMoveClassSessionStatus } from '@/lib/schedule/move-class-targets'
 import {
-  canOpenClassPrep,
+  teacherFieldClass,
+  teacherFocusRingClass,
+  teacherGhostBtnClass,
+  teacherPrimaryBtnClass,
+  teacherQuietBtnClass,
+} from '@/components/teacher-chrome'
+import { ensureStudentRecordsHydrated } from '@/lib/local-data/student-records-client'
+import {
+  addWeeks,
+  getWeekDays,
+  getWeekStart,
+  isSameLocalDay,
+} from '@/lib/schedule/week-view-layout'
+import { canMoveClassSessionStatus } from '@/lib/schedule/move-class-targets'
+import { fmtScheduleMinute } from '@/lib/schedule/schedule-time-labels'
+import {
   classEntryActionLabel,
   formatClassCountdown,
   resolveClassEntryAction,
   resolveTodayClassTeachingState,
   todayClassStateLabel,
-  type TodayClassTeachingState,
 } from '@/lib/students/class-schedule-lifecycle'
+import { computeClassEffectiveEndMs } from '@/lib/students/class-session-timer'
 import { clearMapBookOverlayOpenSession } from '@/lib/students/map-book-overlay-session'
+import { resolveStudentAvatarUrl } from '@/lib/students/student-avatar-url'
 import {
   buildPrepareLessonMapHref,
   dismissPostClassRecapPrompt,
   getClassSessionsForDateRange,
-  getDashboardStillOpenItems,
+  getDashboardDaySessions,
+  getDashboardOffDayLeftovers,
   getLocalDayBoundsMs,
-  getTodaysClassSessionsForTeacher,
-  getTodaysCompletedClassSessionsForTeacher,
   markMissedClassTaughtAnyway,
-  pickDashboardNowRow,
   sessionNeedsPostClassRecap,
   startStudentClassSession,
   STUDENT_LOCAL_DATA_CHANGED_EVENT,
   updateStudentClassEndNote,
-  type DashboardStillOpenItem,
-  type TodaysClassSessionRow,
+  type DashboardDaySessionRow,
+  type DashboardOffDayLeftover,
 } from '@/lib/students/selectors'
 import { cn } from '@/lib/utils'
 
-const RECAP_PREVIEW_COUNT = 2
-
-type StatusTone = 'neutral' | 'attention' | 'urgent' | 'success' | 'danger' | 'prep' | 'recap'
-
-function toneForTeachingState(state: TodayClassTeachingState): StatusTone {
-  switch (state) {
-    case 'live':
-      return 'attention'
-    case 'grace':
-    case 'ending':
-      return 'urgent'
-    case 'missed':
-      return 'danger'
-    case 'done':
-      return 'success'
-    case 'starting':
-    case 'cancelled':
-      return 'neutral'
-    default:
-      return 'neutral'
-  }
+function rowKey(row: Pick<DashboardDaySessionRow, 'studentId' | 'session'>): string {
+  return `${row.studentId}:${row.session.id}`
 }
 
-function toneForStillOpenKind(kind: DashboardStillOpenItem['kind']): StatusTone {
-  switch (kind) {
-    case 'missed':
-      return 'danger'
-    case 'needs_recap':
-      return 'recap'
-    case 'needs_prep':
-      return 'prep'
-  }
+function startOfLocalDay(day: Date): Date {
+  return new Date(day.getFullYear(), day.getMonth(), day.getDate())
 }
 
-function statusPillClass(tone: StatusTone): string {
-  switch (tone) {
-    case 'attention':
-      return 'bg-[color-mix(in_srgb,var(--brand-yellow)_18%,white)] text-[color-mix(in_srgb,var(--brand-yellow)_85%,#1a1a18)]'
-    case 'urgent':
-      return 'bg-[color-mix(in_srgb,var(--brand-red)_14%,white)] text-[var(--brand-red)]'
-    case 'success':
-      return 'bg-[color-mix(in_srgb,var(--brand-green)_14%,white)] text-[var(--brand-green)]'
-    case 'danger':
-      return 'bg-[color-mix(in_srgb,var(--brand-red)_14%,white)] text-[var(--brand-red)]'
-    case 'prep':
-      return 'bg-[color-mix(in_srgb,var(--brand-blue)_12%,white)] text-[var(--brand-blue)]'
-    case 'recap':
-      return 'bg-[color-mix(in_srgb,var(--brand-yellow)_16%,white)] text-[color-mix(in_srgb,var(--brand-yellow)_80%,#1a1a18)]'
-    default:
-      return 'bg-muted text-muted-foreground'
-  }
-}
-
-function rowRailClass(tone: StatusTone): string {
-  switch (tone) {
-    case 'attention':
-      return 'border-l-[3px] border-l-[var(--brand-yellow)]'
-    case 'urgent':
-    case 'danger':
-      return 'border-l-[3px] border-l-[var(--brand-red)]'
-    case 'success':
-      return 'border-l-[3px] border-l-[var(--brand-green)]'
-    case 'prep':
-      return 'border-l-[3px] border-l-[var(--brand-blue)]'
-    case 'recap':
-      return 'border-l-[3px] border-l-[var(--brand-yellow)]'
-    default:
-      return 'border-l-[3px] border-l-transparent'
-  }
-}
-
-function StatusPill({ label, tone }: { label: string; tone: StatusTone }) {
-  return (
-    <span
-      className={cn(
-        'inline-flex shrink-0 items-center rounded-md px-1.5 py-0.5 text-[11px] font-semibold leading-none',
-        statusPillClass(tone),
-      )}
-    >
-      {label}
-    </span>
-  )
+function formatDayTitle(day: Date): string {
+  return day.toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+  })
 }
 
 function formatClock(d: Date): string {
-  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 }
 
-function formatSessionTime(scheduledFor: string): string {
-  const t = new Date(scheduledFor)
-  if (!Number.isFinite(t.getTime())) return scheduledFor
-  return formatClock(t)
-}
-
-function itemAnchorDate(session: TodaysClassSessionRow['session']): Date | null {
-  const ended = session.classEndedAt ? new Date(session.classEndedAt) : null
-  if (ended && Number.isFinite(ended.getTime())) return ended
+function formatWhenLabel(session: DashboardDaySessionRow['session'], nowMs: number): string {
   const scheduled = new Date(session.scheduledFor)
-  return Number.isFinite(scheduled.getTime()) ? scheduled : null
-}
-
-/** Human when-label for leftovers (never time-only for other days). */
-function formatWhenLabel(session: TodaysClassSessionRow['session'], nowMs: number): string {
-  const anchor = itemAnchorDate(session)
-  if (!anchor) return formatSessionTime(session.scheduledFor)
-  const scheduled = new Date(session.scheduledFor)
-  const displayTime = Number.isFinite(scheduled.getTime()) ? formatClock(scheduled) : formatClock(anchor)
-
+  if (!Number.isFinite(scheduled.getTime())) return session.scheduledFor
+  const displayTime = formatClock(scheduled)
   const today = getLocalDayBoundsMs(new Date(nowMs))
   const yesterday = getLocalDayBoundsMs(new Date(nowMs - 86_400_000))
   const tomorrow = getLocalDayBoundsMs(new Date(nowMs + 86_400_000))
-  const anchorMs = anchor.getTime()
-
-  if (anchorMs >= today.startMs && anchorMs < today.endMs) {
-    return `Today · ${displayTime}`
-  }
-  if (anchorMs >= yesterday.startMs && anchorMs < yesterday.endMs) {
-    return `Yesterday · ${displayTime}`
-  }
-  if (anchorMs >= tomorrow.startMs && anchorMs < tomorrow.endMs) {
-    return `Tomorrow · ${displayTime}`
-  }
-  const dayLabel = anchor.toLocaleDateString('en-US', {
+  const ms = scheduled.getTime()
+  if (ms >= today.startMs && ms < today.endMs) return `Today · ${displayTime}`
+  if (ms >= yesterday.startMs && ms < yesterday.endMs) return `Yesterday · ${displayTime}`
+  if (ms >= tomorrow.startMs && ms < tomorrow.endMs) return `Tomorrow · ${displayTime}`
+  const dayLabel = scheduled.toLocaleDateString('en-US', {
     weekday: 'short',
     month: 'short',
     day: 'numeric',
@@ -175,176 +90,244 @@ function formatWhenLabel(session: TodaysClassSessionRow['session'], nowMs: numbe
   return `${dayLabel} · ${displayTime}`
 }
 
-function stillOpenKindLabel(kind: DashboardStillOpenItem['kind']): string {
-  switch (kind) {
-    case 'missed':
-      return 'Missed'
-    case 'needs_recap':
-      return 'Needs recap'
-    case 'needs_prep':
-      return 'Needs prep'
-  }
+function placeLine(row: DashboardDaySessionRow): string {
+  const section = row.session.selectedSection?.title?.trim()
+  if (section) return section
+  return row.session.title?.trim() || 'Class'
 }
 
-function rowKey(row: Pick<TodaysClassSessionRow, 'studentId' | 'session'>): string {
-  return `${row.studentId}:${row.session.id}`
+function initialsFromName(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '?'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
 }
 
-function sessionSortMs(session: TodaysClassSessionRow['session']): number {
-  const ended = session.classEndedAt ? new Date(session.classEndedAt).getTime() : NaN
-  if (Number.isFinite(ended)) return ended
-  const scheduled = new Date(session.scheduledFor).getTime()
-  return Number.isFinite(scheduled) ? scheduled : 0
+function sessionStartMs(session: DashboardDaySessionRow['session']): number {
+  const t = new Date(session.scheduledFor).getTime()
+  return Number.isFinite(t) ? t : 0
 }
 
-/** Cross-day leftovers; same-day missed is merged separately into To clear. */
-function filterCrossDayLeftovers(
-  items: DashboardStillOpenItem[],
-  todaySessionIds: Set<string>,
-  todayStartMs: number,
-  todayEndMs: number,
-): DashboardStillOpenItem[] {
-  return items.filter((item) => {
-    if (todaySessionIds.has(item.session.id)) return false
-    if (item.kind === 'needs_prep') {
-      const t = new Date(item.session.scheduledFor).getTime()
-      if (Number.isFinite(t) && t >= todayStartMs && t < todayEndMs) return false
+function sessionEndMs(session: DashboardDaySessionRow['session']): number {
+  return (
+    computeClassEffectiveEndMs(
+      session.scheduledFor,
+      session.durationMin,
+      session.extendedMinutesTotal ?? 0,
+    ) ?? sessionStartMs(session) + session.durationMin * 60_000
+  )
+}
+
+function StudentFace({
+  studentId,
+  name,
+  avatarUrl,
+}: {
+  studentId: string
+  name: string
+  avatarUrl?: string
+}) {
+  const [failed, setFailed] = useState(false)
+  const src = resolveStudentAvatarUrl(studentId, avatarUrl)
+  return (
+    <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full bg-[var(--surface-3)] ring-2 ring-[var(--surface-2)]">
+      {!failed ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={src} alt="" className="h-full w-full object-cover" onError={() => setFailed(true)} />
+      ) : (
+        <div className="chrome-avatar flex h-full w-full items-center justify-center text-[11px]" aria-hidden>
+          {initialsFromName(name)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function StatusChip({
+  label,
+  tone,
+}: {
+  label: string
+  tone: 'live' | 'soon' | 'missed' | 'done' | 'quiet'
+}) {
+  return (
+    <span
+      className={cn(
+        'inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-semibold tracking-tight',
+        tone === 'live' &&
+          'bg-[color-mix(in_srgb,var(--brand-yellow)_16%,transparent)] text-[color-mix(in_srgb,var(--brand-yellow)_88%,#1a1a18)]',
+        tone === 'soon' &&
+          'bg-[color-mix(in_srgb,var(--brand-blue)_12%,transparent)] text-[var(--brand-blue)]',
+        tone === 'missed' &&
+          'bg-[color-mix(in_srgb,var(--brand-red)_12%,transparent)] text-[var(--brand-red)]',
+        tone === 'done' &&
+          'bg-[color-mix(in_srgb,var(--brand-green)_12%,transparent)] text-[var(--brand-green)]',
+        tone === 'quiet' && 'bg-[var(--surface-3)] text-muted-foreground',
+      )}
+    >
+      <span
+        aria-hidden
+        className={cn(
+          'size-1.5 shrink-0 rounded-full',
+          tone === 'live' && 'bg-[var(--brand-yellow)]',
+          tone === 'soon' && 'bg-[var(--brand-blue)]',
+          tone === 'missed' && 'bg-[var(--brand-red)]',
+          tone === 'done' && 'bg-[var(--brand-green)]',
+          tone === 'quiet' && 'bg-muted-foreground/45',
+        )}
+      />
+      {label}
+    </span>
+  )
+}
+
+function statusChipTone(
+  state: ReturnType<typeof resolveTodayClassTeachingState>,
+): 'live' | 'soon' | 'missed' | 'done' | 'quiet' {
+  if (state === 'live' || state === 'grace' || state === 'ending') return 'live'
+  if (state === 'starting') return 'soon'
+  if (state === 'missed') return 'missed'
+  if (state === 'done') return 'done'
+  return 'quiet'
+}
+
+const LEFTOVER_PREVIEW = 3
+
+type AgendaItem =
+  | { kind: 'gap'; id: string; minutes: number }
+  | { kind: 'now'; id: string }
+  | { kind: 'class'; id: string; row: DashboardDaySessionRow }
+
+function buildAgendaItems(
+  rows: DashboardDaySessionRow[],
+  nowMs: number,
+  viewingToday: boolean,
+): AgendaItem[] {
+  const sorted = [...rows].sort((a, b) => sessionStartMs(a.session) - sessionStartMs(b.session))
+  const items: AgendaItem[] = []
+  let prevEnd = 0
+  let nowPlaced = false
+
+  for (let i = 0; i < sorted.length; i += 1) {
+    const row = sorted[i]!
+    const start = sessionStartMs(row.session)
+    const end = sessionEndMs(row.session)
+
+    if (viewingToday && !nowPlaced && nowMs < start) {
+      if (i === 0 || nowMs >= prevEnd) {
+        items.push({ kind: 'now', id: 'now' })
+        nowPlaced = true
+      }
     }
-    return true
-  })
-}
 
-function pickNextUpRow(nowMs: number, excludeSessionId?: string | null): TodaysClassSessionRow | null {
-  const now = new Date(nowMs)
-  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7)
-  const rows = getClassSessionsForDateRange(now, end)
-  const upcoming = rows
-    .filter((row) => {
-      if (excludeSessionId && row.session.id === excludeSessionId) return false
-      const status = row.session.status
-      if (status !== 'planned' && status !== 'prepared') return false
-      const start = new Date(row.session.scheduledFor).getTime()
-      return Number.isFinite(start) && start >= nowMs
-    })
-    .sort((a, b) => new Date(a.session.scheduledFor).getTime() - new Date(b.session.scheduledFor).getTime())
-  return upcoming[0] ?? null
+    if (i > 0 && start - prevEnd >= 20 * 60_000) {
+      const gapMin = Math.round((start - prevEnd) / 60_000)
+      items.push({ kind: 'gap', id: `gap-${row.session.id}`, minutes: gapMin })
+    }
+
+    items.push({ kind: 'class', id: rowKey(row), row })
+    prevEnd = Math.max(prevEnd, end)
+
+    if (viewingToday && !nowPlaced && nowMs >= start && nowMs < end) {
+      // Now is inside this class — mark after the row via a trailing flag on next iteration; skip
+      nowPlaced = true
+    }
+  }
+
+  if (viewingToday && !nowPlaced && sorted.length > 0) {
+    const lastEnd = sessionEndMs(sorted[sorted.length - 1]!.session)
+    if (nowMs >= lastEnd) items.push({ kind: 'now', id: 'now' })
+  }
+
+  return items
 }
 
 export function DashboardOverview() {
   const router = useRouter()
-  const [todaysOpen, setTodaysOpen] = useState<TodaysClassSessionRow[]>([])
-  const [todaysDone, setTodaysDone] = useState<TodaysClassSessionRow[]>([])
-  const [stillOpen, setStillOpen] = useState<DashboardStillOpenItem[]>([])
+  const [selectedDay, setSelectedDay] = useState(() => startOfLocalDay(new Date()))
+  const [dayRows, setDayRows] = useState<DashboardDaySessionRow[]>([])
+  const [weekSummaries, setWeekSummaries] = useState<
+    Array<{ day: Date; count: number; hasMissed: boolean }>
+  >([])
+  const [leftovers, setLeftovers] = useState<DashboardOffDayLeftover[]>([])
+  const [nextAfterEmpty, setNextAfterEmpty] = useState<DashboardDaySessionRow | null>(null)
   const [nowMs, setNowMs] = useState(() => Date.now())
   const [startBusyId, setStartBusyId] = useState<string | null>(null)
   const [taughtBusyId, setTaughtBusyId] = useState<string | null>(null)
-  const [moveRow, setMoveRow] = useState<TodaysClassSessionRow | null>(null)
+  const [moveRow, setMoveRow] = useState<DashboardDaySessionRow | null>(null)
   const [recapOpenKey, setRecapOpenKey] = useState<string | null>(null)
   const [recapDraft, setRecapDraft] = useState('')
-  const [doneExpanded, setDoneExpanded] = useState(false)
-  const [recapsExpanded, setRecapsExpanded] = useState(false)
+  const [leftoversExpanded, setLeftoversExpanded] = useState(false)
+
+  const weekStart = useMemo(() => getWeekStart(selectedDay), [selectedDay])
+  const weekDays = useMemo(() => getWeekDays(weekStart), [weekStart])
+  const viewingToday = isSameLocalDay(selectedDay, new Date(nowMs))
 
   const refreshBoard = useCallback(() => {
     const nextNow = Date.now()
     setNowMs(nextNow)
-    setTodaysOpen(getTodaysClassSessionsForTeacher())
-    setTodaysDone(getTodaysCompletedClassSessionsForTeacher())
-    setStillOpen(getDashboardStillOpenItems(nextNow))
-  }, [])
+    const rows = getDashboardDaySessions(selectedDay)
+    setDayRows(rows)
+    setLeftovers(getDashboardOffDayLeftovers(selectedDay, nextNow))
+
+    setWeekSummaries(
+      weekDays.map((day) => {
+        const daySessions = getDashboardDaySessions(day)
+        return {
+          day,
+          count: daySessions.filter((r) => r.session.status !== 'cancelled').length,
+          hasMissed: daySessions.some((r) => r.session.status === 'missed'),
+        }
+      }),
+    )
+
+    if (rows.length === 0) {
+      const rangeEnd = new Date(selectedDay)
+      rangeEnd.setDate(rangeEnd.getDate() + 14)
+      const upcoming = getClassSessionsForDateRange(selectedDay, rangeEnd).filter((row) => {
+        const s = row.session.status
+        if (s !== 'planned' && s !== 'prepared') return false
+        const t = new Date(row.session.scheduledFor).getTime()
+        const { endMs } = getLocalDayBoundsMs(selectedDay)
+        return Number.isFinite(t) && t >= endMs
+      })
+      setNextAfterEmpty(upcoming[0] ?? null)
+    } else {
+      setNextAfterEmpty(null)
+    }
+  }, [selectedDay, weekDays])
 
   const needsFastTick = useMemo(
     () =>
-      todaysOpen.some((row) => {
+      dayRows.some((row) => {
         const state = resolveTodayClassTeachingState(row.session, nowMs)
         return state === 'live' || state === 'grace' || state === 'ending' || state === 'starting'
       }),
-    [todaysOpen, nowMs],
+    [dayRows, nowMs],
   )
 
   useEffect(() => {
+    let cancelled = false
+    void ensureStudentRecordsHydrated().then(() => {
+      if (!cancelled) refreshBoard()
+    })
     refreshBoard()
     const id = window.setInterval(refreshBoard, needsFastTick ? 15_000 : 60_000)
     const onChanged = () => refreshBoard()
     window.addEventListener(STUDENT_LOCAL_DATA_CHANGED_EVENT, onChanged)
     return () => {
+      cancelled = true
       window.clearInterval(id)
       window.removeEventListener(STUDENT_LOCAL_DATA_CHANGED_EVENT, onChanged)
     }
   }, [refreshBoard, needsFastTick])
 
-  const todayLabel = useMemo(
-    () =>
-      new Date().toLocaleDateString('en-US', {
-        weekday: 'long',
-        month: 'short',
-        day: 'numeric',
-      }),
-    [],
+  const agenda = useMemo(
+    () => buildAgendaItems(dayRows, nowMs, viewingToday),
+    [dayRows, nowMs, viewingToday],
   )
 
-  const nowRow = useMemo(() => pickDashboardNowRow(todaysOpen, nowMs), [todaysOpen, nowMs])
-  const nowKey = nowRow ? rowKey(nowRow) : null
-
-  const { upcomingRows, doneRows, todayMissed } = useMemo(() => {
-    const openSansSpotlight = todaysOpen.filter((row) => rowKey(row) !== nowKey)
-    const doneSansSpotlight = todaysDone.filter((row) => rowKey(row) !== nowKey)
-    const missed: TodaysClassSessionRow[] = []
-    const upcoming: TodaysClassSessionRow[] = []
-    for (const row of openSansSpotlight) {
-      const state = resolveTodayClassTeachingState(row.session, nowMs)
-      if (state === 'missed') missed.push(row)
-      else if (state !== 'done' && state !== 'cancelled') upcoming.push(row)
-    }
-    upcoming.sort((a, b) => sessionSortMs(a.session) - sessionSortMs(b.session))
-    missed.sort((a, b) => sessionSortMs(a.session) - sessionSortMs(b.session))
-    const done = [...doneSansSpotlight].sort((a, b) => sessionSortMs(a.session) - sessionSortMs(b.session))
-    return { upcomingRows: upcoming, doneRows: done, todayMissed: missed }
-  }, [todaysOpen, todaysDone, nowKey, nowMs])
-
-  const toClearItems = useMemo(() => {
-    const todayIds = new Set([
-      ...todaysOpen.map((r) => r.session.id),
-      ...todaysDone.map((r) => r.session.id),
-    ])
-    const { startMs, endMs } = getLocalDayBoundsMs(new Date(nowMs))
-    const crossDay = filterCrossDayLeftovers(stillOpen, todayIds, startMs, endMs)
-    const todayMissedItems: DashboardStillOpenItem[] = todayMissed.map((row) => ({
-      ...row,
-      kind: 'missed' as const,
-    }))
-    const merged = [...todayMissedItems, ...crossDay]
-    const kindRank: Record<DashboardStillOpenItem['kind'], number> = {
-      missed: 0,
-      needs_recap: 1,
-      needs_prep: 2,
-    }
-    merged.sort((a, b) => {
-      const kr = kindRank[a.kind] - kindRank[b.kind]
-      if (kr !== 0) return kr
-      return sessionSortMs(a.session) - sessionSortMs(b.session)
-    })
-    return merged
-  }, [stillOpen, todaysOpen, todaysDone, todayMissed, nowMs])
-
-  const toClearGroups = useMemo(() => {
-    const missed = toClearItems.filter((i) => i.kind === 'missed')
-    const recaps = toClearItems.filter((i) => i.kind === 'needs_recap')
-    const prep = toClearItems.filter((i) => i.kind === 'needs_prep')
-    return { missed, recaps, prep }
-  }, [toClearItems])
-
-  const nextUp = useMemo(() => {
-    if (nowRow) return null
-    const row = pickNextUpRow(nowMs, null)
-    if (!row) return null
-    // Don't repeat a student already listed under To clear (e.g. tomorrow prep).
-    if (toClearItems.some((item) => item.session.id === row.session.id)) return null
-    return row
-  }, [nowRow, nowMs, toClearItems])
-
-  const leadWithToClear = !nowRow && toClearItems.length > 0
-
-  async function handleStartClass(row: TodaysClassSessionRow) {
+  async function handleStartClass(row: DashboardDaySessionRow) {
     const { studentId, session } = row
     if (session.status === 'completed' || session.status === 'cancelled' || session.status === 'missed') {
       toast.error(
@@ -375,7 +358,7 @@ export function DashboardOverview() {
     }
   }
 
-  async function handleMarkTaught(row: TodaysClassSessionRow) {
+  async function handleMarkTaught(row: DashboardDaySessionRow) {
     setTaughtBusyId(row.session.id)
     try {
       await ensureStudentRecordsHydrated()
@@ -393,8 +376,13 @@ export function DashboardOverview() {
     }
   }
 
-  function openRecapEditor(studentId: string, sessionId: string) {
-    setRecapOpenKey(`${studentId}:${sessionId}`)
+  function openRecapEditor(row: DashboardDaySessionRow) {
+    setRecapOpenKey(rowKey(row))
+    setRecapDraft(row.session.classEndNote?.trim() ?? '')
+  }
+
+  function closeRecapEditor() {
+    setRecapOpenKey(null)
     setRecapDraft('')
   }
 
@@ -404,9 +392,8 @@ export function DashboardOverview() {
       toast.error(r.error)
       return
     }
-    setRecapOpenKey(null)
-    setRecapDraft('')
-    toast.success('Recap saved')
+    closeRecapEditor()
+    toast.success('Note saved')
     refreshBoard()
   }
 
@@ -416,45 +403,124 @@ export function DashboardOverview() {
       toast.error(r.error)
       return
     }
-    setRecapOpenKey(null)
-    setRecapDraft('')
+    closeRecapEditor()
     refreshBoard()
   }
 
-  function renderMoveMenu(row: TodaysClassSessionRow, label = 'Move') {
-    if (!canMoveClassSessionStatus(row.session.status)) return null
+  function renderNoteIcon(row: DashboardDaySessionRow) {
+    const key = rowKey(row)
+    const existing = row.session.classEndNote?.trim() ?? ''
+    const hasNote = existing.length > 0
+    const needsPrompt = sessionNeedsPostClassRecap(row.session)
+    const open = recapOpenKey === key
+
     return (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button type="button" variant="ghost" size="icon" className="ui-icon-btn" title="More">
-            <MoreHorizontal className="h-4 w-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => setMoveRow(row)}>{label}</DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <Popover
+        open={open}
+        onOpenChange={(next) => {
+          if (next) openRecapEditor(row)
+          else closeRecapEditor()
+        }}
+      >
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            title={hasNote ? 'Class note' : 'Leave a class note'}
+            aria-label={hasNote ? 'View or edit class note' : 'Leave a class note'}
+            className={cn(
+              'chrome-icon-btn relative h-9 w-9',
+              teacherFocusRingClass,
+              hasNote && 'text-[var(--brand-green)]',
+              !hasNote && needsPrompt && 'text-[color-mix(in_srgb,var(--brand-yellow)_85%,#1a1a18)]',
+            )}
+          >
+            <NotebookPen className="h-4 w-4" strokeWidth={1.75} />
+            {hasNote || needsPrompt ? (
+              <span
+                className={cn(
+                  'absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full',
+                  hasNote ? 'bg-[var(--brand-green)]' : 'bg-[var(--brand-yellow)]',
+                )}
+                aria-hidden
+              />
+            ) : null}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="end"
+          className="w-80 space-y-3 rounded-2xl border-0 p-4 shadow-[0_8px_32px_rgba(0,0,0,0.12)] ring-1 ring-[var(--chrome-frost-border)]"
+        >
+          <div>
+            <p className="text-[15px] font-semibold tracking-tight text-foreground">
+              {hasNote ? 'Class note' : 'Leave a note'}
+            </p>
+            <p className="mt-0.5 text-[13px] text-muted-foreground">
+              {row.studentName}
+              {row.session.title ? ` · ${row.session.title}` : ''}
+            </p>
+          </div>
+          <textarea
+            className={cn(teacherFieldClass, 'min-h-[88px] resize-none')}
+            placeholder="What helped, what to repeat next class…"
+            value={recapDraft}
+            onChange={(e) => setRecapDraft(e.target.value)}
+            autoFocus
+          />
+          <div className="flex flex-wrap items-center justify-end gap-1.5">
+            {needsPrompt && !hasNote ? (
+              <Button
+                type="button"
+                variant="ghost"
+                className={teacherGhostBtnClass}
+                onClick={() => dismissRecap(row.studentId, row.session.id)}
+              >
+                Not now
+              </Button>
+            ) : (
+              <Button type="button" variant="ghost" className={teacherGhostBtnClass} onClick={closeRecapEditor}>
+                Cancel
+              </Button>
+            )}
+            <Button
+              type="button"
+              className={cn(teacherPrimaryBtnClass, 'bg-[var(--brand-green)] text-white hover:bg-[var(--brand-green-bright)]')}
+              onClick={() => saveRecap(row.studentId, row.session.id)}
+            >
+              Save
+            </Button>
+          </div>
+        </PopoverContent>
+      </Popover>
     )
   }
 
-  function renderPrimaryActions(
-    row: TodaysClassSessionRow,
-    options?: { spotlight?: boolean },
-  ) {
+  function goToday() {
+    setSelectedDay(startOfLocalDay(new Date()))
+  }
+
+  function shiftWeek(delta: number) {
+    setSelectedDay(startOfLocalDay(addWeeks(selectedDay, delta)))
+  }
+
+  function selectDay(day: Date) {
+    setSelectedDay(startOfLocalDay(day))
+  }
+
+  function renderRowActions(row: DashboardDaySessionRow) {
     const state = resolveTodayClassTeachingState(row.session, nowMs)
     const entry = resolveClassEntryAction(row.session, nowMs)
-    const isLiveBand = state === 'live' || state === 'grace' || state === 'ending'
+    const canMove = canMoveClassSessionStatus(row.session.status)
 
     if (state === 'missed' || entry === 'reschedule') {
       return (
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-          <Button type="button" size="sm" onClick={() => setMoveRow(row)}>
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+          <Button type="button" className={teacherPrimaryBtnClass} onClick={() => setMoveRow(row)}>
             Reschedule
           </Button>
           <Button
             type="button"
-            size="sm"
             variant="ghost"
+            className={teacherGhostBtnClass}
             disabled={taughtBusyId === row.session.id}
             onClick={() => void handleMarkTaught(row)}
           >
@@ -464,29 +530,28 @@ export function DashboardOverview() {
       )
     }
 
+    if (state === 'done') {
+      return renderNoteIcon(row)
+    }
+
+    if (state === 'cancelled' || entry === 'none') {
+      return null
+    }
+
     if (entry === 'enter' || entry === 'continue') {
-      // Enter window still allows Prep; hide Prep only once the class is actually live.
-      const showPrep = entry === 'enter' || canOpenClassPrep(row.session)
       return (
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-          {showPrep ? (
-            <Button asChild variant="outline" size="sm">
-              <Link href={buildPrepareLessonMapHref(row.studentId, row.session.id)}>Prepare</Link>
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+          {canMove ? (
+            <Button type="button" variant="ghost" className={teacherGhostBtnClass} onClick={() => setMoveRow(row)}>
+              Move
             </Button>
           ) : null}
-          {isLiveBand || options?.spotlight ? (
-            canMoveClassSessionStatus(row.session.status) ? (
-              <Button type="button" variant="ghost" size="sm" onClick={() => setMoveRow(row)}>
-                Move
-              </Button>
-            ) : null
-          ) : (
-            renderMoveMenu(row)
-          )}
           <Button
             type="button"
-            size="sm"
-            className="bg-[var(--brand-green)] text-white hover:bg-[var(--brand-green-bright)]"
+            className={cn(
+              teacherPrimaryBtnClass,
+              'bg-[var(--brand-green)] text-white hover:bg-[var(--brand-green-bright)]',
+            )}
             disabled={startBusyId === row.session.id}
             onClick={() => void handleStartClass(row)}
           >
@@ -494,7 +559,7 @@ export function DashboardOverview() {
               '…'
             ) : (
               <>
-                <Play className="h-4 w-4" />
+                <Play className="h-3.5 w-3.5" strokeWidth={2.25} />
                 {classEntryActionLabel(entry)}
               </>
             )}
@@ -504,446 +569,306 @@ export function DashboardOverview() {
     }
 
     return (
-      <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-        <Button asChild variant="secondary" size="sm">
+      <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+        {canMove ? (
+          <Button type="button" variant="ghost" className={teacherGhostBtnClass} onClick={() => setMoveRow(row)}>
+            Move
+          </Button>
+        ) : null}
+        <Button asChild className={teacherQuietBtnClass}>
           <Link href={buildPrepareLessonMapHref(row.studentId, row.session.id)}>Prepare</Link>
         </Button>
-        {renderMoveMenu(row)}
       </div>
     )
   }
 
-  function renderRecapActions(row: TodaysClassSessionRow) {
-    const key = rowKey(row)
-    const needsRecap = sessionNeedsPostClassRecap(row.session)
-    if (!needsRecap) {
-      const note = row.session.classEndNote?.trim()
-      const checks = row.session.readingCheckWrapLine?.trim()
-      if (note || checks) {
-        const line = [note, checks].filter(Boolean).join(' · ')
-        return (
-          <p className="max-w-xs truncate text-xs text-muted-foreground" title={line}>
-            {line}
-          </p>
-        )
-      }
-      return <StatusPill label="Done" tone="success" />
-    }
-
-    if (recapOpenKey === key) {
-      return (
-        <div className="w-full space-y-2 sm:w-72">
-          <textarea
-            className="min-h-[64px] w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground"
-            placeholder="What helped, what to repeat next class…"
-            value={recapDraft}
-            onChange={(e) => setRecapDraft(e.target.value)}
-          />
-          <div className="flex flex-wrap gap-1">
-            <Button type="button" size="sm" onClick={() => saveRecap(row.studentId, row.session.id)}>
-              Save recap
-            </Button>
-            <Button type="button" size="sm" variant="ghost" onClick={() => dismissRecap(row.studentId, row.session.id)}>
-              Not now
-            </Button>
-            <Button type="button" size="sm" variant="outline" onClick={() => setRecapOpenKey(null)}>
-              Cancel
-            </Button>
-          </div>
-        </div>
-      )
-    }
-
-    return (
-      <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-        <Button
-          type="button"
-          size="sm"
-          className="bg-[color-mix(in_srgb,var(--brand-yellow)_18%,white)] text-[color-mix(in_srgb,var(--brand-yellow)_85%,#1a1a18)] hover:bg-[color-mix(in_srgb,var(--brand-yellow)_26%,white)]"
-          onClick={() => openRecapEditor(row.studentId, row.session.id)}
-        >
-          Add recap
-        </Button>
-        <Button type="button" size="sm" variant="ghost" onClick={() => dismissRecap(row.studentId, row.session.id)}>
-          Not now
-        </Button>
-      </div>
-    )
-  }
-
-  function renderClassRow(row: TodaysClassSessionRow, options?: { done?: boolean }) {
+  function renderClassRow(row: DashboardDaySessionRow) {
     const state = resolveTodayClassTeachingState(row.session, nowMs)
-    const tone = options?.done ? 'success' : toneForTeachingState(state)
-    const label = options?.done ? 'Done' : todayClassStateLabel(state)
+    const start = new Date(row.session.scheduledFor)
+    const startLabel = Number.isFinite(start.getTime())
+      ? fmtScheduleMinute(start.getHours() * 60 + start.getMinutes())
+      : '—'
     const countdown = formatClassCountdown(row.session.scheduledFor, nowMs)
-    const timeStr = formatSessionTime(row.session.scheduledFor)
+    const status = todayClassStateLabel(state)
+    const isCancelled = state === 'cancelled'
+    const chipTone = statusChipTone(state)
+    const place = placeLine(row)
 
     return (
-      <li
+      <article
         key={rowKey(row)}
-        className={cn('ui-row flex-wrap sm:flex-nowrap pl-2.5', rowRailClass(tone))}
+        className={cn(
+          'rounded-[18px] bg-[var(--surface-2)] ring-1 ring-[var(--chrome-frost-border)]',
+          isCancelled && 'opacity-55',
+        )}
       >
-        <div className="flex min-w-0 flex-1 items-center gap-3">
-          <span className="inline-flex shrink-0 items-center gap-1 font-mono text-xs font-medium tabular-nums text-foreground/80">
-            <Clock3 className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
-            {timeStr}
-          </span>
-          <div className="min-w-0">
-            <p className="flex flex-wrap items-center gap-2 truncate text-sm font-medium text-foreground">
-              <span className="truncate">{row.studentName}</span>
-              <StatusPill label={label} tone={tone} />
-            </p>
-            <p className="truncate text-xs text-muted-foreground">
-              {row.session.title}
-              {!options?.done && countdown ? ` · ${countdown}` : ''}
-            </p>
-            {!options?.done &&
-            row.session.selectedSection?.bookId &&
-            row.session.selectedSection?.unitId ? (
-              <ReadingCheckPrepareGlanceLink
-                bookId={row.session.selectedSection.bookId}
-                unitId={row.session.selectedSection.unitId}
-                lessonId={row.session.selectedSection.lessonId}
-                partId={row.session.selectedSection.partId}
-                studentId={row.studentId}
-                classSessionId={row.session.id}
-              />
-            ) : null}
+        <div className="flex flex-col gap-3 px-3.5 py-3 sm:flex-row sm:items-center sm:gap-4 sm:px-4 sm:py-3.5">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <StudentFace studentId={row.studentId} name={row.studentName} avatarUrl={row.avatarUrl} />
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <Link
+                  href={`/students/${row.studentId}`}
+                  className={cn(
+                    'truncate text-[15px] font-semibold tracking-tight text-foreground hover:underline',
+                    isCancelled && 'line-through decoration-foreground/30',
+                  )}
+                >
+                  {row.studentName}
+                </Link>
+                <StatusChip label={status} tone={chipTone} />
+              </div>
+              <p className="mt-0.5 truncate text-[13px] text-muted-foreground">
+                <span className="font-medium tabular-nums text-foreground/80">{startLabel}</span>
+                <span className="text-muted-foreground/80"> · {row.session.durationMin}m</span>
+                {` · ${place}`}
+                {countdown ? ` · ${countdown}` : ''}
+              </p>
+            </div>
           </div>
+          <div className="flex shrink-0 justify-end sm:pl-2">{renderRowActions(row)}</div>
         </div>
-        {options?.done ? renderRecapActions(row) : renderPrimaryActions(row)}
-      </li>
+      </article>
     )
   }
 
-  function renderToClearItem(item: DashboardStillOpenItem) {
-    const key = rowKey(item)
-    const tone = toneForStillOpenKind(item.kind)
-    const when = formatWhenLabel(item.session, nowMs)
-
+  function renderLeftover(item: DashboardOffDayLeftover) {
+    const key = `off-${item.kind}-${rowKey(item)}`
     return (
       <li
-        key={`clear-${item.kind}-${key}`}
-        className={cn('ui-row flex-wrap sm:flex-nowrap pl-2.5', rowRailClass(tone))}
+        key={key}
+        className="flex flex-wrap items-center justify-between gap-3 rounded-[18px] bg-[var(--surface-2)] px-3.5 py-2.5 ring-1 ring-[var(--chrome-frost-border)]"
       >
-        <div className="flex min-w-0 flex-1 items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <StudentFace studentId={item.studentId} name={item.studentName} avatarUrl={item.avatarUrl} />
           <div className="min-w-0">
-            <p className="flex flex-wrap items-center gap-2 truncate text-sm font-medium text-foreground">
-              <span className="truncate">{item.studentName}</span>
-              <StatusPill label={stillOpenKindLabel(item.kind)} tone={tone} />
-            </p>
-            <p className="truncate text-xs text-muted-foreground">
-              {when}
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <p className="truncate text-[15px] font-semibold tracking-tight text-foreground">{item.studentName}</p>
+              <StatusChip
+                label={item.kind === 'missed' ? 'Missed' : 'Needs note'}
+                tone={item.kind === 'missed' ? 'missed' : 'live'}
+              />
+            </div>
+            <p className="mt-0.5 truncate text-[13px] text-muted-foreground">
+              {formatWhenLabel(item.session, nowMs)}
               {item.session.title ? ` · ${item.session.title}` : ''}
             </p>
           </div>
         </div>
-        {item.kind === 'needs_prep' ? (
-          <div className="flex shrink-0 items-center justify-end">
-            <Button asChild variant="secondary" size="sm">
-              <Link href={buildPrepareLessonMapHref(item.studentId, item.session.id)}>Prepare</Link>
-            </Button>
-          </div>
-        ) : null}
         {item.kind === 'missed' ? (
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-            <Button type="button" size="sm" onClick={() => setMoveRow(item)}>
+          <div className="flex shrink-0 flex-wrap gap-1.5">
+            <Button type="button" className={teacherPrimaryBtnClass} onClick={() => setMoveRow(item)}>
               Reschedule
             </Button>
             <Button
               type="button"
-              size="sm"
               variant="ghost"
+              className={teacherGhostBtnClass}
               disabled={taughtBusyId === item.session.id}
               onClick={() => void handleMarkTaught(item)}
             >
               {taughtBusyId === item.session.id ? '…' : 'Mark taught'}
             </Button>
           </div>
-        ) : null}
-        {item.kind === 'needs_recap' ? (
-          recapOpenKey === key ? (
-            <div className="w-full space-y-2 sm:w-72">
-              <textarea
-                className="min-h-[64px] w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground"
-                placeholder="What helped, what to repeat next class…"
-                value={recapDraft}
-                onChange={(e) => setRecapDraft(e.target.value)}
-              />
-              <div className="flex flex-wrap gap-1">
-                <Button type="button" size="sm" onClick={() => saveRecap(item.studentId, item.session.id)}>
-                  Save recap
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => dismissRecap(item.studentId, item.session.id)}
-                >
-                  Not now
-                </Button>
-                <Button type="button" size="sm" variant="outline" onClick={() => setRecapOpenKey(null)}>
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-              <Button
-                type="button"
-                size="sm"
-                className="bg-[color-mix(in_srgb,var(--brand-yellow)_18%,white)] text-[color-mix(in_srgb,var(--brand-yellow)_85%,#1a1a18)] hover:bg-[color-mix(in_srgb,var(--brand-yellow)_26%,white)]"
-                onClick={() => openRecapEditor(item.studentId, item.session.id)}
-              >
-                Add recap
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                onClick={() => dismissRecap(item.studentId, item.session.id)}
-              >
-                Not now
-              </Button>
-            </div>
-          )
-        ) : null}
+        ) : (
+          renderNoteIcon(item)
+        )}
       </li>
     )
   }
 
-  function renderToClearSection() {
-    const { missed, recaps, prep } = toClearGroups
-    const visibleRecaps = recapsExpanded ? recaps : recaps.slice(0, RECAP_PREVIEW_COUNT)
-    const hiddenRecapCount = Math.max(0, recaps.length - RECAP_PREVIEW_COUNT)
-
-    return (
-      <section className="ui-section">
-        <div className="flex items-baseline justify-between gap-3">
-          <div>
-            <h3 className="ui-section-title">To clear</h3>
-            <p className="text-xs text-muted-foreground">Follow-ups with a date — not today’s live schedule.</p>
-          </div>
-        </div>
-        {toClearItems.length === 0 ? (
-          <p className="flex items-center gap-1.5 text-sm text-[var(--brand-green)]">
-            <Check className="h-3.5 w-3.5" aria-hidden />
-            You’re clear.
-          </p>
-        ) : (
-          <div className="space-y-4">
-            {missed.length > 0 ? (
-              <div className="space-y-1">
-                <p className="text-xs font-medium text-[var(--brand-red)]">Missed ({missed.length})</p>
-                <ul className="space-y-1">{missed.map(renderToClearItem)}</ul>
-              </div>
-            ) : null}
-
-            {recaps.length > 0 ? (
-              <div className="space-y-1">
-                <p className="text-xs font-medium text-[color-mix(in_srgb,var(--brand-yellow)_80%,#1a1a18)]">
-                  Needs recap ({recaps.length})
-                </p>
-                <ul className="space-y-1">{visibleRecaps.map(renderToClearItem)}</ul>
-                {hiddenRecapCount > 0 && !recapsExpanded ? (
-                  <button
-                    type="button"
-                    className="text-sm text-muted-foreground hover:text-foreground"
-                    onClick={() => setRecapsExpanded(true)}
-                  >
-                    Show {hiddenRecapCount} more
-                  </button>
-                ) : null}
-                {recapsExpanded && recaps.length > RECAP_PREVIEW_COUNT ? (
-                  <button
-                    type="button"
-                    className="text-sm text-muted-foreground hover:text-foreground"
-                    onClick={() => setRecapsExpanded(false)}
-                  >
-                    Show less
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
-
-            {prep.length > 0 ? (
-              <div className="space-y-1">
-                <p className="text-xs font-medium text-[var(--brand-blue)]">Needs prep ({prep.length})</p>
-                <ul className="space-y-1">{prep.map(renderToClearItem)}</ul>
-              </div>
-            ) : null}
-          </div>
-        )}
-      </section>
-    )
-  }
-
-  function renderTodaySection() {
-    const hasRestOfToday = upcomingRows.length > 0 || doneRows.length > 0
-
-    return (
-      <section className="ui-section">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="ui-section-title">Today</p>
-            <h3 className="text-lg font-semibold text-foreground">{todayLabel}</h3>
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="ui-icon-btn h-8 w-8"
-            onClick={() => refreshBoard()}
-            title="Refresh"
-          >
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-        </div>
-
-        {!hasRestOfToday && !nowRow ? (
-          <p className="text-sm text-muted-foreground">
-            {todayMissed.length > 0
-              ? 'No more upcoming classes today. Missed ones are under To clear.'
-              : 'No classes today.'}
-          </p>
-        ) : !hasRestOfToday && nowRow ? (
-          <p className="text-sm text-muted-foreground">No other classes today.</p>
-        ) : (
-          <div className="space-y-3">
-            {upcomingRows.length > 0 ? (
-              <ul className="space-y-1">{upcomingRows.map((row) => renderClassRow(row))}</ul>
-            ) : null}
-
-            {doneRows.length > 0 ? (
-              <div className="space-y-1">
-                <button
-                  type="button"
-                  className="flex items-center gap-1.5 rounded-md px-1 py-0.5 text-sm text-[var(--brand-green)] hover:bg-[color-mix(in_srgb,var(--brand-green)_10%,transparent)]"
-                  onClick={() => setDoneExpanded((v) => !v)}
-                  aria-expanded={doneExpanded}
-                >
-                  <ChevronDown
-                    className={cn('h-4 w-4 transition-transform', doneExpanded ? 'rotate-0' : '-rotate-90')}
-                    aria-hidden
-                  />
-                  <Check className="h-3.5 w-3.5" aria-hidden />
-                  Done today ({doneRows.length})
-                </button>
-                {doneExpanded ? (
-                  <ul className="space-y-1">{doneRows.map((row) => renderClassRow(row, { done: true }))}</ul>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-        )}
-      </section>
-    )
-  }
-
-  function renderNowSection() {
-    const nowState = nowRow ? resolveTodayClassTeachingState(nowRow.session, nowMs) : null
-    const nowTone = nowState ? toneForTeachingState(nowState) : 'neutral'
-    const nowCountdown = nowRow ? formatClassCountdown(nowRow.session.scheduledFor, nowMs) : null
-    // Yellow “live” band only after the class is actually in progress — not in the soon window.
-    const nowIsLiveBand = nowState === 'live' || nowState === 'grace' || nowState === 'ending'
-
-    if (!nowRow) {
-      // Quiet empty: no duplicate sidebar buttons. Optional next-up one-liner.
-      if (leadWithToClear) {
-        return nextUp ? (
-          <p className="text-sm text-muted-foreground">
-            Next up:{' '}
-            <span className="font-medium text-foreground">{nextUp.studentName}</span>
-            {' · '}
-            {formatWhenLabel(nextUp.session, nowMs)}
-          </p>
-        ) : null
-      }
-
-      return (
-        <section className="ui-section border-b border-border pb-4">
-          <p className="ui-section-title">Now</p>
-          <p className="text-sm text-muted-foreground">
-            Nothing live right now
-            {nextUp ? (
-              <>
-                {' · '}
-                next is <span className="font-medium text-foreground">{nextUp.studentName}</span>
-                {' · '}
-                {formatWhenLabel(nextUp.session, nowMs)}
-              </>
-            ) : (
-              '.'
-            )}
-          </p>
-        </section>
-      )
-    }
-
-    return (
-      <section
-        className={cn(
-          'ui-section border-b border-border pb-6',
-          nowIsLiveBand &&
-            'rounded-lg bg-[color-mix(in_srgb,var(--brand-yellow)_8%,transparent)] px-3 pt-3 -mx-1',
-        )}
-      >
-        <p className="ui-section-title">Now</p>
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0 space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-xl font-semibold text-foreground">{nowRow.studentName}</h2>
-              {nowState ? <StatusPill label={todayClassStateLabel(nowState)} tone={nowTone} /> : null}
-              {nowCountdown ? (
-                <span className="inline-flex items-center rounded-md bg-background/80 px-1.5 py-0.5 font-mono text-[11px] font-semibold tabular-nums text-foreground ring-1 ring-border/70">
-                  {nowCountdown}
-                </span>
-              ) : null}
-            </div>
-            <p className="text-sm text-muted-foreground">
-              <span className="font-mono tabular-nums text-foreground/80">
-                {formatSessionTime(nowRow.session.scheduledFor)}
-              </span>
-              {' · '}
-              {nowRow.session.title}
-            </p>
-            {nowRow.session.selectedSection?.bookId && nowRow.session.selectedSection?.unitId ? (
-              <ReadingCheckPrepareGlanceLink
-                bookId={nowRow.session.selectedSection.bookId}
-                unitId={nowRow.session.selectedSection.unitId}
-                lessonId={nowRow.session.selectedSection.lessonId}
-                partId={nowRow.session.selectedSection.partId}
-                studentId={nowRow.studentId}
-                classSessionId={nowRow.session.id}
-              />
-            ) : null}
-          </div>
-          {renderPrimaryActions(nowRow, { spotlight: true })}
-        </div>
-      </section>
-    )
-  }
-
   return (
-    <div className="space-y-8">
-      {leadWithToClear ? (
-        <>
-          {renderToClearSection()}
-          {renderNowSection()}
-          {renderTodaySection()}
-        </>
+    <div className="flex w-full flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
+          <button
+            type="button"
+            onClick={goToday}
+            data-active={viewingToday}
+            className="chrome-nav-pill px-3.5 py-1.5 text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)]/35"
+          >
+            Today
+          </button>
+          <div className="flex items-center">
+            <button
+              type="button"
+              className={cn('chrome-icon-btn h-9 w-9', teacherFocusRingClass)}
+              aria-label="Previous week"
+              onClick={() => shiftWeek(-1)}
+            >
+              <ChevronLeft className="h-4 w-4" strokeWidth={1.75} aria-hidden />
+            </button>
+            <button
+              type="button"
+              className={cn('chrome-icon-btn h-9 w-9', teacherFocusRingClass)}
+              aria-label="Next week"
+              onClick={() => shiftWeek(1)}
+            >
+              <ChevronRight className="h-4 w-4" strokeWidth={1.75} aria-hidden />
+            </button>
+          </div>
+          <div className="min-w-0 pl-0.5">
+            <h1 className="truncate text-[17px] font-semibold tracking-tight text-foreground sm:text-[22px]">
+              {formatDayTitle(selectedDay)}
+            </h1>
+          </div>
+        </div>
+        <Link
+          href="/schedule"
+          className="chrome-nav-pill px-3.5 py-1.5 text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-blue)]/35"
+        >
+          Full schedule
+        </Link>
+      </div>
+
+      <div className="rounded-[22px] bg-[var(--surface-2)] p-1.5 ring-1 ring-[var(--chrome-frost-border)] sm:p-2">
+        <div className="grid grid-cols-7 gap-0.5 sm:gap-1">
+          {weekSummaries.map(({ day, count, hasMissed }) => {
+            const isSelected = isSameLocalDay(day, selectedDay)
+            const isToday = isSameLocalDay(day, new Date(nowMs))
+            const weekday = day.toLocaleDateString('en-US', { weekday: 'short' })
+            return (
+              <button
+                key={day.toISOString()}
+                type="button"
+                onClick={() => selectDay(day)}
+                aria-pressed={isSelected}
+                aria-current={isToday ? 'date' : undefined}
+                aria-label={`${weekday} ${day.getDate()}${count > 0 ? `, ${count} ${count === 1 ? 'class' : 'classes'}` : ''}${hasMissed ? ', has missed class' : ''}`}
+                className={cn(
+                  'relative flex flex-col items-center gap-1 rounded-[16px] px-1 py-2.5 text-center chrome-motion',
+                  teacherFocusRingClass,
+                  isSelected
+                    ? 'bg-[var(--chrome-pill-active)] text-[var(--chrome-pill-active-fg)]'
+                    : 'text-foreground hover:bg-[var(--chrome-pill-hover)]',
+                )}
+              >
+                <span
+                  className={cn(
+                    'text-[11px] font-medium tracking-tight',
+                    isSelected
+                      ? 'text-[var(--chrome-pill-active-fg)]'
+                      : isToday
+                        ? 'text-[var(--brand-blue)]'
+                        : 'text-muted-foreground',
+                  )}
+                >
+                  {weekday}
+                </span>
+                <span
+                  className={cn(
+                    'flex h-8 w-8 items-center justify-center rounded-full text-[15px] font-semibold tabular-nums tracking-tight',
+                    isToday && !isSelected && 'bg-[color-mix(in_srgb,var(--brand-blue)_12%,transparent)] text-[var(--brand-blue)]',
+                    isToday && isSelected && 'bg-[color-mix(in_srgb,var(--brand-blue)_18%,transparent)]',
+                  )}
+                >
+                  {day.getDate()}
+                </span>
+                <span
+                  className={cn(
+                    'min-h-[1rem] text-[11px] font-medium tabular-nums tracking-tight',
+                    count === 0 && 'text-muted-foreground/35',
+                    count > 0 && isSelected && 'text-[var(--chrome-pill-active-fg)]/80',
+                    count > 0 && !isSelected && hasMissed && 'text-[var(--brand-red)]',
+                    count > 0 && !isSelected && !hasMissed && 'text-muted-foreground',
+                  )}
+                >
+                  {count}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {leftovers.length > 0 ? (
+        <section className="space-y-2">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Still open
+            <span className="ml-1 font-normal normal-case tracking-normal">({leftovers.length})</span>
+          </p>
+          <ul className="space-y-1.5">
+            {(leftoversExpanded ? leftovers : leftovers.slice(0, LEFTOVER_PREVIEW)).map(renderLeftover)}
+          </ul>
+          {leftovers.length > LEFTOVER_PREVIEW ? (
+            <button
+              type="button"
+              className="text-sm text-muted-foreground hover:text-foreground"
+              onClick={() => setLeftoversExpanded((v) => !v)}
+            >
+              {leftoversExpanded
+                ? 'Show less'
+                : `Show ${leftovers.length - LEFTOVER_PREVIEW} more`}
+            </button>
+          ) : null}
+        </section>
+      ) : null}
+
+      {dayRows.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-border/80 bg-[var(--card)]/60 px-5 py-12 text-center">
+          <p className="text-sm font-medium text-foreground">No classes this day</p>
+          {nextAfterEmpty ? (
+            <div className="mt-3 space-y-2">
+              <p className="text-sm text-muted-foreground">
+                Next: {nextAfterEmpty.studentName} · {formatWhenLabel(nextAfterEmpty.session, nowMs)}
+              </p>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  const when = new Date(nextAfterEmpty.session.scheduledFor)
+                  if (!Number.isFinite(when.getTime())) return
+                  const target = startOfLocalDay(when)
+                  const inStrip = weekSummaries.find((s) => isSameLocalDay(s.day, target))
+                  selectDay(inStrip?.day ?? target)
+                }}
+              >
+                Open that day
+              </Button>
+            </div>
+          ) : (
+            <p className="mt-2 text-sm text-muted-foreground">
+              Add classes on{' '}
+              <Link href="/schedule" className="underline underline-offset-2">
+                Schedule
+              </Link>
+              .
+            </p>
+          )}
+        </div>
       ) : (
-        <>
-          {renderNowSection()}
-          {renderTodaySection()}
-          {renderToClearSection()}
-        </>
+        <div className="space-y-3">
+          {agenda.map((item) => {
+            if (item.kind === 'gap') {
+              return (
+                <p key={item.id} className="px-1 text-[12px] text-muted-foreground">
+                  {item.minutes >= 60
+                    ? `${Math.floor(item.minutes / 60)}h${item.minutes % 60 ? ` ${item.minutes % 60}m` : ''} free`
+                    : `${item.minutes}m free`}
+                </p>
+              )
+            }
+            if (item.kind === 'now') {
+              return (
+                <div key={item.id} className="flex items-center gap-2 px-1">
+                  <span className="text-[11px] font-semibold tabular-nums text-[var(--brand-red)]">
+                    {formatClock(new Date(nowMs))}
+                  </span>
+                  <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--brand-red)]" aria-hidden />
+                  <span className="h-px flex-1 bg-[var(--brand-red)]/70" />
+                </div>
+              )
+            }
+            return renderClassRow(item.row)
+          })}
+        </div>
       )}
 
       <MoveClassDialog
-        open={moveRow != null}
-        onOpenChange={(next) => {
-          if (!next) setMoveRow(null)
+        open={!!moveRow}
+        onOpenChange={(open) => {
+          if (!open) setMoveRow(null)
         }}
         studentId={moveRow?.studentId ?? ''}
         studentName={moveRow?.studentName ?? ''}

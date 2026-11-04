@@ -1,0 +1,170 @@
+{
+  "storyId": "other-g1-workshop::unit-1-9105c41b::lesson-d2d5691d::part-711daf79",
+  "bookId": "other-g1-workshop",
+  "unitId": "unit-1-9105c41b",
+  "status": "approved",
+  "stops": [
+    {
+      "id": "stop-3a45dcd9",
+      "label": "Where fish swim",
+      "displayPage": 41,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 48,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-cd373c8f",
+          "kind": "true_false",
+          "prompt": "True or False: Fish only swim in oceans.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "Fish swim in lakes and creeks. Fish swim in deep blue seas or oceans.",
+          "evidenceHighlight": "Fish swim in lakes and creeks. Fish swim in deep blue seas or oceans."
+        }
+      ]
+    },
+    {
+      "id": "stop-0bcace01",
+      "label": "What is a school?",
+      "displayPage": 42,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 49,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-ad4f4eeb",
+          "kind": "mcq",
+          "prompt": "What is a 'school' of fish?",
+          "choices": [
+            "A place where fish learn",
+            "A type of fish",
+            "A bunch of fish swimming together",
+            "A big fish"
+          ],
+          "correctIndex": 2,
+          "correctTrue": null,
+          "evidenceSnippet": "Fish can swim in a bunch, too. A bunch of fish is called a school.",
+          "evidenceHighlight": "A bunch of fish is called a school."
+        }
+      ]
+    },
+    {
+      "id": "stop-964de308",
+      "label": "Why fish form schools",
+      "displayPage": 43,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 50,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-f0afac24",
+          "kind": "true_false",
+          "prompt": "True or False: Fish in a school do not help each other.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": false,
+          "evidenceSnippet": "A school has lots of fish. They are a team. The fish help each other. They look for food together.",
+          "evidenceHighlight": "The fish help each other."
+        }
+      ]
+    },
+    {
+      "id": "stop-5f195154",
+      "label": "Danger of swimming alone",
+      "displayPage": 45,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 52,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-8ae71c80",
+          "kind": "mcq",
+          "prompt": "What is the danger for a fish swimming alone?",
+          "choices": [
+            "It might get lost.",
+            "It might get snapped up!",
+            "It might get tired.",
+            "It might get bored."
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "It can be unsafe to swim alone. What is the chief reason? Danger! A fish can get snapped up!",
+          "evidenceHighlight": "A fish can get snapped up!"
+        }
+      ]
+    },
+    {
+      "id": "stop-9a85a776",
+      "label": "How schools trick big fish",
+      "displayPage": 46,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 53,
+        "pageSide": "left",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-8f543472",
+          "kind": "true_false",
+          "prompt": "True or False: Fish in a school look like one huge fish to scare big fish away.",
+          "choices": [],
+          "correctIndex": null,
+          "correctTrue": true,
+          "evidenceSnippet": "The fish swim close together. Big fish will not mess with them because they look like one huge fish.",
+          "evidenceHighlight": "they look like one huge fish."
+        }
+      ]
+    },
+    {
+      "id": "stop-00e154d0",
+      "label": "Big fish reaction",
+      "displayPage": 47,
+      "midPageNote": null,
+      "hotspot": {
+        "pdfPage": 54,
+        "pageSide": "right",
+        "x": 0.5,
+        "y": 0.9
+      },
+      "questions": [
+        {
+          "id": "q-c31ed4a9",
+          "kind": "mcq",
+          "prompt": "Why does the big fish stay away from the school?",
+          "choices": [
+            "It is not hungry.",
+            "It thinks the school is one huge fish.",
+            "It is scared of small fish.",
+            "It wants to play."
+          ],
+          "correctIndex": 1,
+          "correctTrue": null,
+          "evidenceSnippet": "This big fish wants to eat. But it stays away. The school looks like a huge fish that may eat him!",
+          "evidenceHighlight": "The school looks like a huge fish that may eat him!"
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-10-30T13:20:42.361Z",
+  "approvedAt": "2026-10-30T13:20:42.361Z",
+  "autoApprovedAt": "2026-10-30T13:20:42.361Z"
+}

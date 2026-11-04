@@ -1,10 +1,30 @@
 import { describe, expect, it } from 'vitest'
-import { buildSectionPathLabel, getPartPrimaryLabel } from '@/lib/books/part-section-display'
+import {
+  buildSectionPathLabel,
+  getPartPrimaryLabel,
+  stripLessonPartTypePrefix,
+} from '@/lib/books/part-section-display'
 
 describe('part-section-display', () => {
+  it('strips Shared Read / selection type prefixes from story titles', () => {
+    expect(stripLessonPartTypePrefix('Shared Read Eagles and Eaglets')).toBe('Eagles and Eaglets')
+    expect(stripLessonPartTypePrefix('Shared Read: Dive Teams')).toBe('Dive Teams')
+    expect(stripLessonPartTypePrefix('Main Selection Little Flap Learns to Fly')).toBe(
+      'Little Flap Learns to Fly',
+    )
+    expect(stripLessonPartTypePrefix('Shared Read')).toBe('')
+    expect(stripLessonPartTypePrefix('From the tide pool')).toBe('From the tide pool')
+  })
+
   it('uses fixed labels for stable tags', () => {
     expect(getPartPrimaryLabel('vocabulary_in_context', 'Vocabulary in Context')).toBe('Vocabulary')
     expect(getPartPrimaryLabel('your_turn', 'Your Turn: Foo')).toBe('Your Turn')
+  })
+
+  it('keeps story name without Shared Read for main/paired tags', () => {
+    expect(getPartPrimaryLabel('main_story', 'Shared Read Eagles and Eaglets')).toBe(
+      'Eagles and Eaglets',
+    )
   })
 
   it('surfaces comprehension detail from title', () => {

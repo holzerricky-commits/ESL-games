@@ -16,6 +16,7 @@ import type { ReadingCheckClassWrapSummary } from '@/lib/books/reading-check-liv
 import { ensureReactPdfWorker } from '@/lib/books/ensure-react-pdf-worker'
 import { challengeMapLayerEnabled } from '@/lib/books/feature-flags'
 import { resolveLauncherBookCovers } from '@/lib/books/resolve-initial-book-reader-selection'
+import { inClassBookIds } from '@/lib/students/book-assignment-status'
 import { fetchBooksLibraryCached, getBooksLibraryCached } from '@/lib/books/fetch-books-library-cached'
 import { warmMapInitialBookSpreadPrefetch } from '@/lib/books/map-initial-book-spread-warmup'
 import { classroomHomeLessonLabel } from '@/lib/students/classroom-home-covers'
@@ -200,7 +201,7 @@ function StudentFullscreenMapRouteClientContent({
       : undefined
     const isPrep =
       Boolean(session) && (session?.status === 'planned' || session?.status === 'prepared')
-    const hasAssignedBook = (student.assignedBookIds?.length ?? 0) > 0
+    const hasAssignedBook = inClassBookIds(student.assignedBookIds, student.bookAssignmentStatus).length > 0
     const autoOpen = openBookOnEnter || (isPrep && hasAssignedBook)
     const savedBookSession =
       !activeClassSessionId ? readMapBookOverlaySession(studentId) : null
@@ -286,17 +287,22 @@ function StudentFullscreenMapRouteClientContent({
       const student = getStudentProfileView(studentId)
       if (!student) return
       void fetchBooksLibraryCached()
-        .then((lib) =>
-          warmMapInitialBookSpreadPrefetch({
+        .then((lib) => {
+          const openTarget = getStudentOpenTargetForBook(studentId, bookId, lib)
+          const resumeUnitId = openTarget?.unitId ?? unitId
+          const resumePage =
+            openTarget?.pdfPage ??
+            getStudentTeachingOpenPdfPageForBookUnit(studentId, bookId, resumeUnitId, lib)
+          return warmMapInitialBookSpreadPrefetch({
             library: lib,
             assignedBookIds: student.assignedBookIds ?? [],
             assignedUnitRefs: student.assignedUnitRefs ?? [],
             curriculumHistory: student.curriculumHistory ?? [],
             preferBookId: bookId,
-            preferUnitId: unitId,
-          preferResumePage: getStudentTeachingOpenPdfPageForBookUnit(studentId, bookId, unitId, lib),
-          }),
-        )
+            preferUnitId: resumeUnitId,
+            preferResumePage: resumePage,
+          })
+        })
         .catch(() => {})
     },
     [studentId],
@@ -323,16 +329,18 @@ function StudentFullscreenMapRouteClientContent({
 
   const handleSwitchTeachingBook = useCallback(
     (bookId: string, unitId: string) => {
+      const openTarget = getStudentOpenTargetForBook(studentId, bookId, getBooksLibraryCached())
+      const nextUnitId = openTarget?.unitId ?? unitId
       if (!bookOpenPresented) {
-        handleOpenBook(bookId, unitId)
+        handleOpenBook(bookId, nextUnitId)
         return
       }
-      if (teachingBookId === bookId && teachingUnitId === unitId) return
+      if (teachingBookId === bookId && teachingUnitId === nextUnitId) return
       setChosenBookId(bookId)
-      setChosenUnitId(unitId)
-      rewarmTeachingTarget(bookId, unitId)
+      setChosenUnitId(nextUnitId)
+      // Mid-class strip swaps stay quiet — overlay already keeps unit PDFs warm.
     },
-    [bookOpenPresented, handleOpenBook, rewarmTeachingTarget, teachingBookId, teachingUnitId],
+    [bookOpenPresented, handleOpenBook, studentId, teachingBookId, teachingUnitId],
   )
 
   const handleOpenDefaultBook = useCallback(() => {
@@ -504,17 +512,18 @@ function StudentFullscreenMapRouteClientContent({
           activeClassSessionId != null
             ? resolveClassTeachingBookUnit(studentId, activeClassSessionId, lib)
             : null
-        const upNext = planned ? null : getStudentDefaultBookUnitForReader(studentId, lib)
-        const todayBookId = planned?.bookId || preferBookId?.trim() || upNext?.bookId || null
+        const classBookIds = inClassBookIds(student.assignedBookIds, student.bookAssignmentStatus)
+        const plannedOnDesk = Boolean(planned?.bookId && classBookIds.includes(planned.bookId))
+        const upNext = plannedOnDesk ? null : getStudentDefaultBookUnitForReader(studentId, lib)
+        const todayBookId = (plannedOnDesk ? planned?.bookId : null) || preferBookId?.trim() || upNext?.bookId || null
         const todayUnitId =
-          planned?.unitId ||
+          (plannedOnDesk ? planned?.unitId : null) ||
           preferUnitId?.trim() ||
           (todayBookId === upNext?.bookId ? upNext?.unitId : null) ||
           null
-
         const covers = resolveLauncherBookCovers({
           library: lib,
-          assignedBookIds: student.assignedBookIds ?? [],
+          assignedBookIds: classBookIds,
           assignedUnitRefs: student.assignedUnitRefs ?? [],
         }).map((entry) => {
           const openTarget = getStudentOpenTargetForBook(studentId, entry.bookId, lib)
@@ -553,7 +562,7 @@ function StudentFullscreenMapRouteClientContent({
 
         return warmMapInitialBookSpreadPrefetch({
           library: lib,
-          assignedBookIds: student.assignedBookIds ?? [],
+          assignedBookIds: classBookIds,
           assignedUnitRefs: student.assignedUnitRefs ?? [],
           curriculumHistory: student.curriculumHistory ?? [],
           preferBookId: warmBookId,
@@ -635,11 +644,18 @@ function StudentFullscreenMapRouteClientContent({
     }
   }
 
-  function handleExitPrepWithoutSave() {
+  async function handleExitPrepWithoutSave() {
     if (prepExitBusy) return
     setPrepExitBusy('leave')
-    clearMapBookOverlayOpenSession(studentId)
-    router.push(`/students/${encodeURIComponent(studentId)}?tab=classes`)
+    try {
+      // Durability is unconditional on prep exit; this path does not discard marks.
+      await flushAnnotationsForClassEnd()
+      clearMapBookOverlayOpenSession(studentId)
+      router.push(`/students/${encodeURIComponent(studentId)}?tab=classes`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not save annotations before leaving.')
+      setPrepExitBusy(null)
+    }
   }
 
   const teachingTarget =
@@ -728,7 +744,7 @@ function StudentFullscreenMapRouteClientContent({
           onOpenChecksPrep={() => setChecksPrepOpen(true)}
           exitBusy={prepExitBusy}
           onSaveAndExit={() => void handleSaveAndExitPrep()}
-          onExitWithoutSave={handleExitPrepWithoutSave}
+          onExitWithoutSave={() => void handleExitPrepWithoutSave()}
         />
       ) : null}
       {challengeMapLayerEnabled && !showClassWrap ? (
@@ -790,6 +806,7 @@ function StudentFullscreenMapRouteClientContent({
         studentId={student.id}
         activeClassSessionId={bookOverlayClassSessionId}
         assignedBookIds={student.assignedBookIds}
+        bookAssignmentStatus={student.bookAssignmentStatus}
         assignedUnitRefs={student.assignedUnitRefs}
         curriculumHistory={student.curriculumHistory}
         studentName={student.name}

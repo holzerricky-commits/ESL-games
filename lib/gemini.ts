@@ -14,6 +14,30 @@ import type {
 } from '@/lib/students/class-prep-signals'
 import { getVocabSuggestions } from '@/lib/helpers'
 import {
+  buildPicturePlanPrompt,
+  MAX_PICTURE_PLAN_ITEMS,
+  normalizePlanWord,
+  parsePicturePlans,
+  VAULT_PICTURE_PLAN_SYSTEM,
+  type VaultPicturePlan,
+  type VaultPicturePlanItem,
+} from '@/lib/lesson-vault/picture-plan'
+import {
+  buildGrammarGeneratePrompt,
+  GRAMMAR_GENERATE_SYSTEM,
+  parseGeneratedGrammar,
+  type GeneratedGrammar,
+  type GrammarGenerateInput,
+} from '@/lib/lesson-grammar/generate'
+import {
+  buildVaultCardTextPrompt,
+  parseVaultCardTextGenerate,
+  vaultCardTextGenerateIsEmpty,
+  VAULT_CARD_TEXT_SYSTEM,
+  type VaultCardTextGenerateInput,
+  type VaultCardTextGenerateResult,
+} from '@/lib/lesson-vault/generate-card-text'
+import {
   getSuggestionFetchCount,
   MAX_DISPLAY_PER_DIFFICULTY,
   MAX_FETCH_PER_DIFFICULTY,
@@ -253,11 +277,14 @@ Difficulty levels (for category-style quizzes, interpret as familiarity/rarity o
 - Generate exactly the requested number of words per level.
 - If quizName is empty or very short (< 4 characters), return empty arrays for all levels.`
 
+type GeminiGenerationOptions = { temperature?: number; maxOutputTokens?: number }
+
 async function callGeminiJson(
   key: string,
   userText: string,
   model: string,
-  systemPrompt: string = SYSTEM_PROMPT
+  systemPrompt: string = SYSTEM_PROMPT,
+  options: GeminiGenerationOptions = {}
 ): Promise<{ ok: true; text: string } | { ok: false; status: number }> {
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,
@@ -268,9 +295,9 @@ async function callGeminiJson(
         systemInstruction: { parts: [{ text: systemPrompt }] },
         contents: [{ role: 'user', parts: [{ text: userText }] }],
         generationConfig: {
-          temperature: 0.2,
+          temperature: options.temperature ?? 0.2,
           responseMimeType: 'application/json',
-          maxOutputTokens: 1536,
+          maxOutputTokens: options.maxOutputTokens ?? 1536,
         },
       }),
     }
@@ -334,11 +361,12 @@ async function callGeminiWithFallback(
   key: string,
   userText: string,
   modelCandidates: string[],
-  systemPrompt: string = SYSTEM_PROMPT
+  systemPrompt: string = SYSTEM_PROMPT,
+  options: GeminiGenerationOptions = {}
 ): Promise<GeminiResult> {
   let lastStatus = 404
   for (const model of modelCandidates) {
-    const r = await callGeminiJson(key, userText, model, systemPrompt)
+    const r = await callGeminiJson(key, userText, model, systemPrompt, options)
     if (r.ok) return { ok: true, text: r.text, model }
     lastStatus = r.status
     if (r.status === 404 || isTransientGeminiStatus(r.status)) continue
@@ -1217,6 +1245,89 @@ Return only valid JSON: {"phrases":{"lemma":"phrase",...}} with every lemma abov
   const expected = new Set(normalized)
   const parsed = parseImagePhrases(result.text, expected)
   return parsed
+}
+
+/**
+ * One Gemini call for vault cards: is each word picturable, and which cartoon search phrase
+ * matches the sense used in its book sentence. Empty object when Gemini is unavailable.
+ */
+export async function planVaultPictures(items: VaultPicturePlanItem[]): Promise<Record<string, VaultPicturePlan>> {
+  const list = items.filter((item) => normalizePlanWord(item.word)).slice(0, MAX_PICTURE_PLAN_ITEMS)
+  if (list.length === 0) return {}
+  const key = await resolveGeminiApiKey()
+  if (!key) return {}
+  const modelCandidates = await resolveModelCandidates(key)
+  const result = await callGeminiWithFallback(
+    key,
+    buildPicturePlanPrompt(list),
+    modelCandidates,
+    VAULT_PICTURE_PLAN_SYSTEM,
+  )
+  if (!result.ok) return {}
+  return parsePicturePlans(
+    result.text,
+    list.map((item) => item.word),
+  )
+}
+
+export type LessonGrammarDraftResult =
+  | { ok: true; draft: GeneratedGrammar }
+  | { ok: false; reason: 'no-key' | 'model-failed' | 'empty' }
+
+export type VaultCardTextDraftResult =
+  | { ok: true; draft: VaultCardTextGenerateResult }
+  | { ok: false; reason: 'no-key' | 'model-failed' | 'empty' }
+
+/** One Gemini call: example sentence and/or short meaning for a vault vocab card. */
+export async function generateVaultCardTextDraft(
+  input: VaultCardTextGenerateInput,
+): Promise<VaultCardTextDraftResult> {
+  const word = input.word.replace(/\s+/g, ' ').trim()
+  if (!word) return { ok: false, reason: 'empty' }
+  const key = await resolveGeminiApiKey()
+  if (!key) return { ok: false, reason: 'no-key' }
+  const modelCandidates = await resolveModelCandidates(key)
+  const result = await callGeminiWithFallback(
+    key,
+    buildVaultCardTextPrompt({ ...input, word }),
+    modelCandidates,
+    VAULT_CARD_TEXT_SYSTEM,
+    { temperature: input.regenerate ? 0.7 : 0.4, maxOutputTokens: 512 },
+  )
+  if (!result.ok) {
+    console.warn(`[Gemini] Vault card text generation failed (${result.status}).`)
+    return { ok: false, reason: 'model-failed' }
+  }
+  const draft = parseVaultCardTextGenerate(result.text, { ...input, word })
+  if (vaultCardTextGenerateIsEmpty(draft, input.fields)) {
+    console.warn(`[Gemini] Vault card text generation returned nothing usable (${result.model}).`)
+    return { ok: false, reason: 'empty' }
+  }
+  return { ok: true, draft }
+}
+
+/** One Gemini call: the page's grammar point plus checked practice sentences. */
+export async function generateLessonGrammarDraft(input: GrammarGenerateInput): Promise<LessonGrammarDraftResult> {
+  const key = await resolveGeminiApiKey()
+  if (!key) return { ok: false, reason: 'no-key' }
+  const modelCandidates = await resolveModelCandidates(key)
+  const result = await callGeminiWithFallback(
+    key,
+    buildGrammarGeneratePrompt(input),
+    modelCandidates,
+    GRAMMAR_GENERATE_SYSTEM,
+    { temperature: 0.4, maxOutputTokens: 8192 },
+  )
+  if (!result.ok) {
+    console.warn(`[Gemini] Grammar generation failed (${result.status}).`)
+    return { ok: false, reason: 'model-failed' }
+  }
+  const draft = parseGeneratedGrammar(result.text, input.existingSentences)
+  if (draft.items.length === 0) {
+    console.warn(`[Gemini] Grammar generation returned no usable items (${result.model}).`)
+    return { ok: false, reason: 'empty' }
+  }
+  return { ok: true, draft }
 }
 
 export interface ClassPrepSuggestionInput {

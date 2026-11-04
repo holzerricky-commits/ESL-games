@@ -28,7 +28,6 @@ import {
   Sparkles,
   Square,
   Star,
-  StickyNote,
   Triangle,
   Type,
   Volume2,
@@ -44,7 +43,6 @@ import {
   ANNOTATION_SHAPE_FILL_SWATCHES,
   ANNOTATION_SOLID_PEN_SWATCHES,
   ANNOTATION_STAMP_QUESTION_SWATCHES,
-  ANNOTATION_STICKY_FILL_SWATCHES,
   ANNOTATION_TEXT_FILL_SWATCHES,
   ANNOTATION_TEXT_STROKE_SWATCHES,
   STAMP_COLOR_CHECK,
@@ -109,24 +107,17 @@ import { TextFontPicker } from '@/components/students/text-font-picker'
 import { TextFontWeightPicker } from '@/components/students/text-font-weight-picker'
 import { TextStyleCirclePicker } from '@/components/students/text-style-circle-picker'
 import { ShapeKindCirclePicker } from '@/components/students/shape-kind-circle-picker'
-import { StickerKindCirclePicker } from '@/components/students/sticker-kind-circle-picker'
 import { StampVariantCirclePicker } from '@/components/students/stamp-variant-circle-picker'
-import { WritableStickerCirclePicker } from '@/components/students/writable-sticker-circle-picker'
 import { EraserModeCirclePicker } from '@/components/students/eraser-mode-circle-picker'
 import { EyedropperVariantCirclePicker } from '@/components/students/eyedropper-variant-circle-picker'
 import { MarqueeRuleCirclePicker } from '@/components/students/marquee-rule-circle-picker'
 import { ShapeToolPreview } from '@/components/students/tool-previews/shape-tool-preview'
 import { MarkerToolPreview } from '@/components/students/tool-previews/marker-tool-preview'
-import { WritableStickerPreview } from '@/components/students/tool-previews/writable-sticker-preview'
 import {
   STICKER_QUICK_LABEL,
   STICKER_QUICK_VARIANTS,
-  WRITABLE_STICKER_LABEL,
-  WRITABLE_STICKER_VARIANTS,
   type StickerKind,
 } from '@/lib/books/sticker-tool'
-import { writableStickerIcon } from '@/components/students/annotation-sticker-icons'
-import { defaultWritableStickerFill } from '@/lib/books/writable-sticker-visuals'
 import { shapeFillModeHasFill } from '@/lib/books/annotation-command-types'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -149,23 +140,34 @@ import {
   type PenStrokeProfile,
 } from '@/lib/books/pen-stroke-profile'
 
-const SHAPE_TOOLBAR_MODES = ['line', 'rect', 'ellipse', 'triangle', 'arrow'] as const
+const SHAPE_TOOLBAR_MODES = ['rect', 'ellipse', 'triangle'] as const
 type ShapeToolbarMode = (typeof SHAPE_TOOLBAR_MODES)[number]
 
+const LINE_TOOLBAR_MODES = ['line', 'freehand-line', 'arrow'] as const
+type LineToolbarMode = (typeof LINE_TOOLBAR_MODES)[number]
+
 const SHAPE_LABEL: Record<ShapeToolbarMode, string> = {
-  line: 'Line',
   rect: 'Rectangle',
   ellipse: 'Ellipse',
   triangle: 'Triangle',
+}
+
+const LINE_LABEL: Record<LineToolbarMode, string> = {
+  line: 'Line',
+  'freehand-line': 'Freehand arrow',
   arrow: 'Arrow',
 }
 
 function shapeIconForMode(mode: ShapeToolbarMode): typeof Minus {
-  if (mode === 'line') return Minus
   if (mode === 'rect') return Square
   if (mode === 'ellipse') return Circle
-  if (mode === 'triangle') return Triangle
-  return MoveUpRight
+  return Triangle
+}
+
+function lineIconForMode(mode: LineToolbarMode): typeof Minus {
+  if (mode === 'arrow') return MoveUpRight
+  if (mode === 'freehand-line') return PenLine
+  return Minus
 }
 
 /** Pixel/rub eraser – pen stylus with round nib. */
@@ -217,11 +219,9 @@ const SHAPE_ICON_OPTIONS = SHAPE_TOOLBAR_MODES.map((mode) => ({
 }))
 
 const SHAPE_KIND_SUBTITLE: Record<ShapeToolbarMode, string> = {
-  line: 'Line',
   rect: 'Rectangle',
   ellipse: 'Ellipse',
   triangle: 'Triangle',
-  arrow: 'Arrow',
 }
 
 const SHAPE_CIRCLE_OPTIONS = SHAPE_TOOLBAR_MODES.map((mode) => ({
@@ -230,6 +230,25 @@ const SHAPE_CIRCLE_OPTIONS = SHAPE_TOOLBAR_MODES.map((mode) => ({
   subtitle: SHAPE_KIND_SUBTITLE[mode],
   icon: (() => {
     const Icon = shapeIconForMode(mode)
+    return <Icon className={iconCls} strokeWidth={1.75} aria-hidden />
+  })(),
+}))
+
+const LINE_ICON_OPTIONS = LINE_TOOLBAR_MODES.map((mode) => ({
+  value: mode,
+  ariaLabel: LINE_LABEL[mode],
+  icon: (() => {
+    const Icon = lineIconForMode(mode)
+    return <Icon className={iconCls} strokeWidth={1.75} aria-hidden />
+  })(),
+}))
+
+const LINE_CIRCLE_OPTIONS = LINE_TOOLBAR_MODES.map((mode) => ({
+  value: mode,
+  label: LINE_LABEL[mode],
+  subtitle: LINE_LABEL[mode],
+  icon: (() => {
+    const Icon = lineIconForMode(mode)
     return <Icon className={iconCls} strokeWidth={1.75} aria-hidden />
   })(),
 }))
@@ -278,16 +297,6 @@ const STAMP_ICON_OPTIONS: { value: StampVariant; ariaLabel: string; icon: ReactN
     icon: stampIconForVariant(value, value === 'question' ? '#c4b5a8' : ''),
   }))
 
-const WRITABLE_STICKER_ICON_OPTIONS: {
-  value: WritableStickerVariant
-  ariaLabel: string
-  icon: ReactNode
-}[] = WRITABLE_STICKER_VARIANTS.map((value) => ({
-  value,
-  ariaLabel: WRITABLE_STICKER_LABEL[value],
-  icon: writableStickerIcon(value),
-}))
-
 export interface BookAnnotationToolbarProps {
   annotationMode: BookAnnotationInteractionMode
   setAnnotationMode: (m: BookAnnotationInteractionMode) => void
@@ -295,8 +304,10 @@ export interface BookAnnotationToolbarProps {
   setStampVariant: (v: StampVariant) => void
   stickerKind: StickerKind
   setStickerKind: (k: StickerKind) => void
-  writableStickerVariant: WritableStickerVariant
-  setWritableStickerVariant: (v: WritableStickerVariant) => void
+  /** @deprecated Writable stickers retired — accepted for call-site compatibility. */
+  writableStickerVariant?: WritableStickerVariant
+  /** @deprecated Writable stickers retired — accepted for call-site compatibility. */
+  setWritableStickerVariant?: (v: WritableStickerVariant) => void
   stampQuestionColor: string
   setStampQuestionColor: (c: string) => void
   stampEffectsEnabled: boolean
@@ -312,8 +323,10 @@ export interface BookAnnotationToolbarProps {
   setTextColor: (c: string) => void
   shapeStrokeSwatchId: string
   pickShapeStrokeSwatch: (id: string) => void
-  stickyFillColor: string
-  setStickyFillColor: (c: string) => void
+  /** @deprecated Writable stickers retired — accepted for call-site compatibility. */
+  stickyFillColor?: string
+  /** @deprecated Writable stickers retired — accepted for call-site compatibility. */
+  setStickyFillColor?: (c: string) => void
   markerColor: string
   markerColorSource: AnnotationColorSource
   markerCustomHex: string
@@ -327,8 +340,10 @@ export interface BookAnnotationToolbarProps {
   setShapeThicknessStep: (s: AnnotationStrokeThicknessStep) => void
   textThicknessStep: AnnotationStrokeThicknessStep
   setTextThicknessStep: (s: AnnotationStrokeThicknessStep) => void
-  stickyThicknessStep: AnnotationStrokeThicknessStep
-  setStickyThicknessStep: (s: AnnotationStrokeThicknessStep) => void
+  /** @deprecated Writable stickers retired — accepted for call-site compatibility. */
+  stickyThicknessStep?: AnnotationStrokeThicknessStep
+  /** @deprecated Writable stickers retired — accepted for call-site compatibility. */
+  setStickyThicknessStep?: (s: AnnotationStrokeThicknessStep) => void
   stampThicknessStep: AnnotationStrokeThicknessStep
   setStampThicknessStep: (s: AnnotationStrokeThicknessStep) => void
   eraserPixelThicknessStep: AnnotationStrokeThicknessStep
@@ -371,6 +386,7 @@ export interface BookAnnotationToolbarProps {
   setPenAutoGroupConnected?: (v: boolean) => void
   marqueeSelectRule?: MarqueeSelectRule
   setMarqueeSelectRule?: (r: MarqueeSelectRule) => void
+  /** @deprecated Writable stickers retired — accepted for call-site compatibility. */
   stickySelectionActive?: boolean
   shapeSelectionActive?: boolean
   penStrokeSelectionActive?: boolean
@@ -515,10 +531,8 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
     setAnnotationMode,
     stampVariant,
     setStampVariant,
-    stickerKind,
+    stickerKind: _stickerKind,
     setStickerKind,
-    writableStickerVariant,
-    setWritableStickerVariant,
     stampQuestionColor,
     setStampQuestionColor,
     stampEffectsEnabled,
@@ -534,8 +548,6 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
     setTextColor,
     shapeStrokeSwatchId,
     pickShapeStrokeSwatch,
-    stickyFillColor,
-    setStickyFillColor,
     markerColor,
     pickMarkerSwatchColor,
     penThicknessStep,
@@ -546,8 +558,6 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
     setShapeThicknessStep,
     textThicknessStep,
     setTextThicknessStep,
-    stickyThicknessStep,
-    setStickyThicknessStep,
     stampThicknessStep,
     setStampThicknessStep,
     eraserPixelThicknessStep,
@@ -587,7 +597,6 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
     setPenAutoGroupConnected,
     marqueeSelectRule = 'follow-drag',
     setMarqueeSelectRule,
-    stickySelectionActive = false,
     shapeSelectionActive = false,
     penStrokeSelectionActive = false,
     markerStrokeSelectionActive = false,
@@ -612,9 +621,13 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
   const resolvedToolBtnActiveClass = toolButtonActiveClassName ?? toolBtnActiveClass
 
   const [shapeToolbarIcon, setShapeToolbarIcon] = useState<ShapeToolbarMode>('rect')
+  const [lineToolbarIcon, setLineToolbarIcon] = useState<LineToolbarMode>('line')
   useEffect(() => {
     if (SHAPE_TOOLBAR_MODES.includes(annotationMode as ShapeToolbarMode)) {
       setShapeToolbarIcon(annotationMode as ShapeToolbarMode)
+    }
+    if (LINE_TOOLBAR_MODES.includes(annotationMode as LineToolbarMode)) {
+      setLineToolbarIcon(annotationMode as LineToolbarMode)
     }
   }, [annotationMode])
 
@@ -622,6 +635,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
   const [penSpectrumOpen, setPenSpectrumOpen] = useState(false)
   const [markerOpen, setMarkerOpen] = useState(false)
   const [eraserOpen, setEraserOpen] = useState(false)
+  const [linesOpen, setLinesOpen] = useState(false)
   const [shapesOpen, setShapesOpen] = useState(false)
   const [stickersOpen, setStickersOpen] = useState(false)
   const [textOpen, setTextOpen] = useState(false)
@@ -648,7 +662,17 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
   }
 
   function closeAllExcept(
-    which: 'pen' | 'marker' | 'eraser' | 'shapes' | 'stickers' | 'text' | 'eyedropper' | 'select' | 'callout',
+    which:
+      | 'pen'
+      | 'marker'
+      | 'eraser'
+      | 'lines'
+      | 'shapes'
+      | 'stickers'
+      | 'text'
+      | 'eyedropper'
+      | 'select'
+      | 'callout',
   ) {
     if (which !== 'pen') {
       setPenOpen(false)
@@ -656,6 +680,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
     }
     if (which !== 'marker') setMarkerOpen(false)
     if (which !== 'eraser') setEraserOpen(false)
+    if (which !== 'lines') setLinesOpen(false)
     if (which !== 'shapes') setShapesOpen(false)
     if (which !== 'stickers') setStickersOpen(false)
     if (which !== 'text') setTextOpen(false)
@@ -669,6 +694,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
     setPenSpectrumOpen(false)
     setMarkerOpen(false)
     setEraserOpen(false)
+    setLinesOpen(false)
     setShapesOpen(false)
     setStickersOpen(false)
     setTextOpen(false)
@@ -697,7 +723,6 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
   const showPenCreationOptions = !penStrokeSelectionActive
   const showMarkerCreationOptions = !markerStrokeSelectionActive
   const showShapeCreationOptions = !shapeSelectionActive
-  const showStickyCreationOptions = !stickySelectionActive
   const isFilledShape =
     annotationMode === 'rect' || annotationMode === 'ellipse' || annotationMode === 'triangle'
   const activeShapeKind: ShapeToolbarMode = SHAPE_TOOLBAR_MODES.includes(
@@ -705,6 +730,11 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
   )
     ? (annotationMode as ShapeToolbarMode)
     : shapeToolbarIcon
+  const activeLineKind: LineToolbarMode = LINE_TOOLBAR_MODES.includes(
+    annotationMode as LineToolbarMode,
+  )
+    ? (annotationMode as LineToolbarMode)
+    : lineToolbarIcon
 
   useEffect(() => {
     if (!onSettingsPanelOpenChange) return
@@ -712,6 +742,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
       penOpen ||
       markerOpen ||
       eraserOpen ||
+      linesOpen ||
       shapesOpen ||
       stickersOpen ||
       textOpen ||
@@ -723,6 +754,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
     penOpen,
     markerOpen,
     eraserOpen,
+    linesOpen,
     shapesOpen,
     stickersOpen,
     textOpen,
@@ -742,28 +774,12 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
       : `Eyedropper — sample color (${SC.eyedropper}, press ${SC.eyedropperCycle}). Hold for types.`
   const markerActive = annotationMode === 'marker'
   const eraserActive = annotationMode === 'eraser' || annotationMode === 'eraser-line'
+  const linesActive = LINE_TOOLBAR_MODES.includes(annotationMode as LineToolbarMode)
   const shapesActive = SHAPE_TOOLBAR_MODES.includes(annotationMode as ShapeToolbarMode)
   const stickerActive =
     annotationMode === 'sticker' || annotationMode === 'stamp' || annotationMode === 'sticky'
-  const stickerToolbarIcon =
-    stickerKind === 'writable' || annotationMode === 'sticky' ? (
-      <span className="relative inline-flex">
-        {writableStickerIcon(writableStickerVariant)}
-        <span
-          className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-black/20"
-          style={{
-            backgroundColor: defaultWritableStickerFill(writableStickerVariant, stickyFillColor),
-          }}
-          aria-hidden
-        />
-      </span>
-    ) : (
-      stampIconForVariant(stampVariant, stampQuestionColor)
-    )
-  const stickerToolbarLabel =
-    stickerKind === 'writable'
-      ? WRITABLE_STICKER_LABEL[writableStickerVariant]
-      : STAMP_LABEL[stampVariant]
+  const stickerToolbarIcon = stampIconForVariant(stampVariant, stampQuestionColor)
+  const stickerToolbarLabel = STAMP_LABEL[stampVariant]
   const textActive = annotationMode === 'text'
   const calloutActive = annotationMode === 'callout'
   const selectActive = annotationMode === 'select'
@@ -790,9 +806,21 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
     closeAllPopovers()
   }
 
+  function pickLine(m: LineToolbarMode) {
+    setLineToolbarIcon(m)
+    setAnnotationMode(m)
+    closeAllPopovers()
+  }
+
   function activateShapeTool() {
     if (!SHAPE_TOOLBAR_MODES.includes(annotationMode as ShapeToolbarMode)) {
       setAnnotationMode(shapeToolbarIcon)
+    }
+  }
+
+  function activateLineTool() {
+    if (!LINE_TOOLBAR_MODES.includes(annotationMode as LineToolbarMode)) {
+      setAnnotationMode(lineToolbarIcon)
     }
   }
 
@@ -808,6 +836,19 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
       setEyedropperOpen(true)
     },
     () => setEyedropperOpen(false),
+  )
+  const linesRailPress = useRailToolSettingsPress(
+    linesActive,
+    linesOpen,
+    () => {
+      closeAllPopovers()
+      activateLineTool()
+    },
+    () => {
+      closeAllExcept('lines')
+      setLinesOpen(true)
+    },
+    () => setLinesOpen(false),
   )
   const shapesRailPress = useRailToolSettingsPress(
     shapesActive,
@@ -1386,6 +1427,154 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
       </Popover>
 
       <Popover
+        open={linesOpen}
+        modal={isRailMode ? false : undefined}
+        onOpenChange={(o) => {
+          handleRailToolSettingsOpenChange(isRailMode, setLinesOpen, o, () => {
+            closeAllExcept('lines')
+            activateLineTool()
+          })
+        }}
+      >
+        {isRailMode ? (
+          <>
+            <RailSettingsPopoverAnchor />
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              aria-expanded={linesOpen}
+              aria-haspopup="dialog"
+              aria-label={`${LINE_LABEL[lineToolbarIcon]}`}
+              title={`${LINE_LABEL[lineToolbarIcon]} (${SC.lines})${railSettingsTitleSuffix}`}
+              className={cn(resolvedToolBtnClass, (linesOpen || linesActive) && resolvedToolBtnActiveClass)}
+              {...railSlotAttrs(useContextStrip, layout, 'lines')}
+              {...linesRailPress}
+            >
+              <ToolbarIcon icon={lineIconForMode(lineToolbarIcon)} colorDot={shapeStrokeSwatch.color} />
+            </Button>
+          </>
+        ) : (
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              aria-expanded={linesOpen}
+              aria-haspopup="dialog"
+              aria-label={`${LINE_LABEL[lineToolbarIcon]}`}
+              title={`${LINE_LABEL[lineToolbarIcon]} (${SC.lines}, press ${SC.lineCycle})`}
+              className={cn(resolvedToolBtnClass, (linesOpen || linesActive) && resolvedToolBtnActiveClass)}
+            >
+              <ToolbarIcon icon={lineIconForMode(lineToolbarIcon)} colorDot={shapeStrokeSwatch.color} />
+            </Button>
+          </PopoverTrigger>
+        )}
+        <PopoverContent
+          {...toolSettingsPopoverContentProps(isRailMode, layout, closeAllPopovers)}
+          className={cn(toolSettingsPanelClass(useContextStrip, layout), !isRailMode && 'w-[min(22rem,calc(100vw-2rem))]')}
+        >
+          <div className={settingsPanelStackClass(isRailMode)}>
+            {showShapeCreationOptions ? (
+              isRailMode ? (
+                <>
+                  <ToolSettingsPreviewBox label="Preview" ariaLabel="Line preview">
+                    {activeLineKind === 'freehand-line' ? (
+                      <PenToolStrokePreview
+                        penStrokeProfile="pen"
+                        penThicknessStep={shapeThicknessStep}
+                        penLineDashStyle={shapeLineDashStyle}
+                        penSwatch={shapeStrokeSwatch}
+                        penColorSource="swatch"
+                        penCustomHex={shapeStrokeSwatch.color}
+                      />
+                    ) : (
+                      <ShapeToolPreview
+                        shapeKind={activeLineKind}
+                        shapeStrokeSwatch={shapeStrokeSwatch}
+                        shapeThicknessStep={shapeThicknessStep}
+                        shapeLineDashStyle={shapeLineDashStyle}
+                        shapeStrokeEnabled={shapeStrokeEnabled}
+                        shapeFillMode={shapeFillMode}
+                        shapeFillColor={shapeFillColor}
+                        shapeRoundedCorners={shapeRoundedCorners}
+                      />
+                    )}
+                  </ToolSettingsPreviewBox>
+                  <ToolSettingsSection label="Type">
+                    <ShapeKindCirclePicker
+                      value={activeLineKind}
+                      onChange={(m) => pickLine(m as LineToolbarMode)}
+                      options={LINE_CIRCLE_OPTIONS}
+                      idPrefix="line-kind"
+                    />
+                  </ToolSettingsSection>
+                  <ToolSettingsSection label="Stroke color">
+                    <PenSwatchRow
+                      swatchId={shapeStrokeSwatchId}
+                      onPick={pickAndClose(pickShapeStrokeSwatch)}
+                      idPrefix="line-stroke"
+                      labelHidden
+                      swatches={ANNOTATION_SOLID_PEN_SWATCHES}
+                    />
+                  </ToolSettingsSection>
+                  <LineDashStyleIconRow
+                    value={shapeLineDashStyle}
+                    onChange={pickAndClose(setShapeLineDashStyle)}
+                    idPrefix="line"
+                    surface="rail"
+                    label="Outline"
+                  />
+                  <ThicknessSliderRow
+                    value={shapeThicknessStep}
+                    onChange={setShapeThicknessStep}
+                    idPrefix="line"
+                    previewDots={ANNOTATION_FINE_INK_THICKNESS_PREVIEW_DOTS}
+                    ariaLabel="Line stroke width"
+                    surface="rail"
+                  />
+                </>
+              ) : (
+                <>
+                  <PopoverIconGridRow
+                    label="Type"
+                    value={activeLineKind}
+                    onChange={(m) => pickLine(m as LineToolbarMode)}
+                    idPrefix="line-kind"
+                    options={LINE_ICON_OPTIONS}
+                  />
+                  <PenSwatchRow
+                    swatchId={shapeStrokeSwatchId}
+                    onPick={pickAndClose(pickShapeStrokeSwatch)}
+                    idPrefix="line-stroke"
+                    label="Stroke color"
+                    swatches={ANNOTATION_SOLID_PEN_SWATCHES}
+                  />
+                  <LineDashStyleIconRow
+                    value={shapeLineDashStyle}
+                    onChange={pickAndClose(setShapeLineDashStyle)}
+                    idPrefix="line"
+                    surface="default"
+                    label="Line style"
+                  />
+                  <ThicknessSliderRow
+                    value={shapeThicknessStep}
+                    onChange={setShapeThicknessStep}
+                    idPrefix="line"
+                    previewDots={ANNOTATION_FINE_INK_THICKNESS_PREVIEW_DOTS}
+                    ariaLabel="Line stroke width"
+                    surface="default"
+                  />
+                </>
+              )
+            ) : (
+              <PopoverHint>Use the selection bar to adjust the selected line.</PopoverHint>
+            )}
+          </div>
+        </PopoverContent>
+      </Popover>
+
+      <Popover
         open={shapesOpen}
         modal={isRailMode ? false : undefined}
         onOpenChange={(o) => {
@@ -1655,7 +1844,7 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
               aria-expanded={stickersOpen}
               aria-haspopup="dialog"
               aria-label={`Sticker: ${stickerToolbarLabel}`}
-              title={`Sticker – ${stickerToolbarLabel} (${SC.sticker}, ${SC.stickerVariants}; ${SC.stickyWritable} for writable)`}
+              title={`Sticker – ${stickerToolbarLabel} (${SC.sticker}, ${SC.stickerVariants})`}
               className={cn(resolvedToolBtnClass, (stickersOpen || stickerActive) && resolvedToolBtnActiveClass)}
             >
               {stickerToolbarIcon}
@@ -1669,214 +1858,103 @@ export function BookAnnotationToolbar(props: BookAnnotationToolbarProps) {
           <div className={settingsPanelStackClass(isRailMode)}>
             {isRailMode ? (
               <>
-                {stickerKind === 'writable' && showStickyCreationOptions ? (
-                  <ToolSettingsPreviewBox label="Preview" ariaLabel="Writable sticker preview">
-                    <WritableStickerPreview
-                      writableStickerVariant={writableStickerVariant}
-                      stickyFillColor={stickyFillColor}
-                      stickyThicknessStep={stickyThicknessStep}
-                      pageHeightPx={textPageHeightPx}
-                    />
-                  </ToolSettingsPreviewBox>
-                ) : null}
-                <ToolSettingsSection label="Kind">
-                  <StickerKindCirclePicker
-                    value={stickerKind}
-                    onChange={pickAndClose((kind) => {
-                      setStickerKind(kind)
-                      setAnnotationMode('sticker')
-                    })}
-                    quickIcon={stampIconForVariant(stampVariant, stampQuestionColor)}
-                    writableIcon={writableStickerIcon(writableStickerVariant)}
-                    idPrefix="sticker-kind"
-                  />
-                </ToolSettingsSection>
-                {stickerKind === 'quick' ? (
-                  <>
-                    <ToolSettingsSection label="Sticker">
-                      <StampVariantCirclePicker
-                        value={stampVariant}
-                        onChange={pickAndClose((v) => {
-                          setStampVariant(v)
-                          setStickerKind('quick')
-                          setAnnotationMode('sticker')
-                        })}
-                        iconForVariant={(v) =>
-                          stampIconForVariant(v, v === 'question' ? stampQuestionColor : '')
-                        }
-                        idPrefix="sticker-quick-variant"
-                      />
-                    </ToolSettingsSection>
-                    {stampVariant === 'question' ? (
-                      <ToolSettingsSection label="Question color">
-                        <ColorSwatchRow
-                          colors={ANNOTATION_STAMP_QUESTION_SWATCHES}
-                          current={stampQuestionColor}
-                          onPick={pickAndClose(setStampQuestionColor)}
-                          idPrefix="stamp-question"
-                          labelHidden
-                        />
-                      </ToolSettingsSection>
-                    ) : null}
-                    <ThicknessSliderRow
-                      value={stampThicknessStep}
-                      onChange={setStampThicknessStep}
-                      idPrefix="stamp"
-                      previewDots={ANNOTATION_STAMP_THICKNESS_PREVIEW_DOTS}
-                      ariaLabel="Sticker size"
-                      surface="rail"
-                    />
-                    <ToolSettingsAdvancedSection>
-                      <ToolSettingsCheckboxRow
-                        id="stamp-panel-effects"
-                        checked={stampEffectsEnabled}
-                        onCheckedChange={setStampEffectsEnabled}
-                        label="Sound and motion"
-                        description="Play effects when placing stamps"
-                      />
-                    </ToolSettingsAdvancedSection>
-                  </>
-                ) : showStickyCreationOptions ? (
-                  <>
-                    <ToolSettingsSection label="Type">
-                      <WritableStickerCirclePicker
-                        value={writableStickerVariant}
-                        onChange={pickAndClose((v) => {
-                          setWritableStickerVariant(v)
-                          setStickerKind('writable')
-                          setAnnotationMode('sticker')
-                        })}
-                        iconForVariant={writableStickerIcon}
-                        idPrefix="sticker-writable-variant"
-                      />
-                    </ToolSettingsSection>
-                    <ToolSettingsSection label="Fill color">
-                      <ColorSwatchRow
-                        colors={ANNOTATION_STICKY_FILL_SWATCHES}
-                        current={stickyFillColor}
-                        onPick={pickAndClose(setStickyFillColor)}
-                        idPrefix="sticky"
-                        labelHidden
-                      />
-                    </ToolSettingsSection>
-                    <ThicknessSliderRow
-                      value={stickyThicknessStep}
-                      onChange={setStickyThicknessStep}
-                      idPrefix="sticky"
-                      previewDots={textThicknessPreviewDots}
-                      ariaLabel="Text size"
-                      surface="rail"
-                    />
-                  </>
-                ) : (
-                  <PopoverHint>Use the selection bar to adjust the selected note.</PopoverHint>
-                )}
-              </>
-            ) : (
-              <>
-            <PopoverIconSegmentRow
-                label="Kind"
-                value={stickerKind}
-                onChange={pickAndClose((v) => {
-                  if (v === 'quick' || v === 'writable') {
-                    setStickerKind(v)
-                    setAnnotationMode('sticker')
-                  }
-                })}
-                idPrefix="sticker-kind"
-                options={[
-                  { value: 'quick', ariaLabel: 'Quick', icon: stampIconForVariant(stampVariant, stampQuestionColor) },
-                  { value: 'writable', ariaLabel: 'Writable', icon: writableStickerIcon(writableStickerVariant) },
-                ]}
-              />
-            {stickerKind === 'quick' ? (
-              <>
-                  <PopoverIconGridRow
-                    label="Quick sticker"
-                    labelHidden
+                <ToolSettingsSection label="Sticker">
+                  <StampVariantCirclePicker
                     value={stampVariant}
                     onChange={pickAndClose((v) => {
-                      setStampVariant(v as StampVariant)
+                      setStampVariant(v)
                       setStickerKind('quick')
                       setAnnotationMode('sticker')
                     })}
+                    iconForVariant={(v) =>
+                      stampIconForVariant(v, v === 'question' ? stampQuestionColor : '')
+                    }
                     idPrefix="sticker-quick-variant"
-                    options={STAMP_ICON_OPTIONS}
                   />
+                </ToolSettingsSection>
                 {stampVariant === 'question' ? (
+                  <ToolSettingsSection label="Question color">
                     <ColorSwatchRow
                       colors={ANNOTATION_STAMP_QUESTION_SWATCHES}
                       current={stampQuestionColor}
                       onPick={pickAndClose(setStampQuestionColor)}
                       idPrefix="stamp-question"
-                      label="Question color"
+                      labelHidden
                     />
+                  </ToolSettingsSection>
                 ) : null}
                 <ThicknessSliderRow
                   value={stampThicknessStep}
                   onChange={setStampThicknessStep}
                   idPrefix="stamp"
-                  previewDots={ANNOTATION_MARKER_THICKNESS_PREVIEW_DOTS}
+                  previewDots={ANNOTATION_STAMP_THICKNESS_PREVIEW_DOTS}
                   ariaLabel="Sticker size"
-                  surface="default"
+                  label="Size"
+                  surface="rail"
                 />
-                  <button
-                    type="button"
-                    className={cn(
-                      'flex h-8 w-full items-center justify-center gap-2 rounded-md border border-white/12 bg-white/5 px-2 text-xs transition-colors hover:bg-white/10',
-                      'text-[#faf6ef]/90',
-                      stampEffectsEnabled && 'border-amber-400/40 bg-amber-400/10',
-                    )}
-                    aria-pressed={stampEffectsEnabled}
-                    aria-label={
-                      stampEffectsEnabled ? 'Stamp sound and motion on' : 'Stamp sound and motion off'
-                    }
-                    title={stampEffectsEnabled ? 'Stamp effects on' : 'Stamp effects off'}
-                    onClick={() => setStampEffectsEnabled(!stampEffectsEnabled)}
-                  >
-                    {stampEffectsEnabled ? (
-                      <Volume2 className="h-3.5 w-3.5" aria-hidden />
-                    ) : (
-                      <VolumeX className="h-3.5 w-3.5" aria-hidden />
-                    )}
-                    <span>{stampEffectsEnabled ? 'Effects on' : 'Effects off'}</span>
-                  </button>
-              </>
-            ) : showStickyCreationOptions ? (
-              <>
-                    <PopoverHint>
-                      Tap the page to place. Notes use your pick color; captions default to dark; speech and thinking bubbles default to white with an outline.
-                    </PopoverHint>
-                    <PopoverIconGridRow
-                      label="Writable sticker"
-                      labelHidden
-                      value={writableStickerVariant}
-                      onChange={pickAndClose((v) => {
-                        setWritableStickerVariant(v as WritableStickerVariant)
-                        setStickerKind('writable')
-                        setAnnotationMode('sticker')
-                      })}
-                      idPrefix="sticker-writable-variant"
-                      options={WRITABLE_STICKER_ICON_OPTIONS}
-                    />
-                    <ColorSwatchRow
-                      colors={ANNOTATION_STICKY_FILL_SWATCHES}
-                      current={stickyFillColor}
-                      onPick={pickAndClose(setStickyFillColor)}
-                      idPrefix="sticky"
-                      label="Fill color"
-                    />
-                    <ThicknessSliderRow
-                      value={stickyThicknessStep}
-                      onChange={setStickyThicknessStep}
-                      idPrefix="sticky"
-                      previewDots={textThicknessPreviewDots}
-                      ariaLabel="Text size"
-                    />
+                <ToolSettingsAdvancedSection>
+                  <ToolSettingsCheckboxRow
+                    id="stamp-panel-effects"
+                    checked={stampEffectsEnabled}
+                    onCheckedChange={setStampEffectsEnabled}
+                    label="Sound and motion"
+                    description="Play effects when placing stamps"
+                  />
+                </ToolSettingsAdvancedSection>
               </>
             ) : (
-              <PopoverHint>Use the selection bar to adjust the selected note.</PopoverHint>
-            )}
+              <>
+                <PopoverIconGridRow
+                  label="Quick sticker"
+                  labelHidden
+                  value={stampVariant}
+                  onChange={pickAndClose((v) => {
+                    setStampVariant(v as StampVariant)
+                    setStickerKind('quick')
+                    setAnnotationMode('sticker')
+                  })}
+                  idPrefix="sticker-quick-variant"
+                  options={STAMP_ICON_OPTIONS}
+                />
+                {stampVariant === 'question' ? (
+                  <ColorSwatchRow
+                    colors={ANNOTATION_STAMP_QUESTION_SWATCHES}
+                    current={stampQuestionColor}
+                    onPick={pickAndClose(setStampQuestionColor)}
+                    idPrefix="stamp-question"
+                    label="Question color"
+                  />
+                ) : null}
+                <ThicknessSliderRow
+                  value={stampThicknessStep}
+                  onChange={setStampThicknessStep}
+                  idPrefix="stamp"
+                  previewDots={ANNOTATION_STAMP_THICKNESS_PREVIEW_DOTS}
+                  ariaLabel="Sticker size"
+                  label="Size"
+                  surface="default"
+                />
+                <button
+                  type="button"
+                  className={cn(
+                    'flex h-8 w-full items-center justify-center gap-2 rounded-md border border-white/12 bg-white/5 px-2 text-xs transition-colors hover:bg-white/10',
+                    'text-[#faf6ef]/90',
+                    stampEffectsEnabled && 'border-amber-400/40 bg-amber-400/10',
+                  )}
+                  aria-pressed={stampEffectsEnabled}
+                  aria-label={
+                    stampEffectsEnabled ? 'Stamp sound and motion on' : 'Stamp sound and motion off'
+                  }
+                  title={stampEffectsEnabled ? 'Stamp effects on' : 'Stamp effects off'}
+                  onClick={() => setStampEffectsEnabled(!stampEffectsEnabled)}
+                >
+                  {stampEffectsEnabled ? (
+                    <Volume2 className="h-3.5 w-3.5" aria-hidden />
+                  ) : (
+                    <VolumeX className="h-3.5 w-3.5" aria-hidden />
+                  )}
+                  <span>{stampEffectsEnabled ? 'Effects on' : 'Effects off'}</span>
+                </button>
               </>
             )}
           </div>

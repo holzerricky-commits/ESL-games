@@ -397,7 +397,7 @@ export function BookSpreadSessionLayer({
   const domTextTool = domMode === 'text'
   const domWritableStickerTool =
     domMode === 'sticky' ||
-    (domMode === 'sticker' && isWritableStickerInteraction(domMode, domConfig?.stickerKind ?? 'writable'))
+    (domMode === 'sticker' && isWritableStickerInteraction(domMode, domConfig?.stickerKind ?? 'quick'))
 
   const hasSelection = selectedIds.length > 0
   const strokeGroupToggleLabel = useMemo((): 'group' | 'ungroup' | undefined => {

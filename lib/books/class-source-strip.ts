@@ -117,7 +117,7 @@ export function resolveClassSourceNotebookPresence(args: {
   return 'off'
 }
 
-/** Exactly one strip Focus. Notebook Tab outranks the teaching book chip. */
+/** Exactly one material Focus (books vs Notebook Tab). Review is a separate mode, not Focus. Notebook Tab outranks the teaching book chip. */
 export function resolveClassSourceStripSelection(args: {
   focusedBookId: string | null
   notebookFocus: boolean
@@ -137,15 +137,23 @@ export function classSourceBookForDigitKey(
   return books[Number(key) - 1] ?? null
 }
 
+export type ClassSourceBookPlace = { unitId: string; pdfPage: number }
+
 function resolveUnitIdForBook(args: {
   book: BookLibraryPayload['books'][number]
   assignedUnitRefs: readonly { bookId: string; unitId: string }[]
   openBookId: string | null
   openUnitId: string | null
+  placeUnitId?: string | null
 }): string | null {
   if (args.openBookId === args.book.id && args.openUnitId) {
     const openUnit = args.book.units.find((unit) => unit.id === args.openUnitId)
     if (openUnit) return openUnit.id
+  }
+  const placeUnitId = args.placeUnitId?.trim()
+  if (placeUnitId) {
+    const placeUnit = args.book.units.find((unit) => unit.id === placeUnitId)
+    if (placeUnit) return placeUnit.id
   }
   for (const ref of args.assignedUnitRefs) {
     if (ref.bookId !== args.book.id) continue
@@ -158,6 +166,7 @@ function resolveUnitIdForBook(args: {
 /**
  * Assigned books (assignment order) as class source chips.
  * Always includes the currently open book even if it is not assigned.
+ * Prefer `getPlaceForBook` (session / student place) over assignment defaults for unit + page.
  */
 export function listClassSourceBooks(args: {
   library: Pick<BookLibraryPayload, 'books'>
@@ -167,12 +176,15 @@ export function listClassSourceBooks(args: {
   openUnitId?: string | null
   openPage?: number | null
   getSavedPage?: (bookId: string, unitId: string) => number | null
+  /** Student / session place for a book — wins unit + page when the book is not focused. */
+  getPlaceForBook?: (bookId: string) => ClassSourceBookPlace | null
 }): ClassSourceBookChip[] {
   const booksById = new Map(args.library.books.map((book) => [book.id, book]))
   const assignedUnitRefs = args.assignedUnitRefs ?? []
   const openBookId = args.openBookId?.trim() || null
   const openUnitId = args.openUnitId?.trim() || null
   const getSavedPage = args.getSavedPage
+  const getPlaceForBook = args.getPlaceForBook
   const seen = new Set<string>()
   const chips: ClassSourceBookChip[] = []
 
@@ -181,21 +193,27 @@ export function listClassSourceBooks(args: {
     if (!id || seen.has(id)) return
     const book = booksById.get(id)
     if (!book) return
+    const place = getPlaceForBook?.(id) ?? null
     const unitId = resolveUnitIdForBook({
       book,
       assignedUnitRefs,
       openBookId,
       openUnitId,
+      placeUnitId: place?.unitId,
     })
     if (!unitId) return
     seen.add(id)
     const isOpen = openBookId === id
+    const placePage =
+      place && place.unitId === unitId && Number.isFinite(place.pdfPage) && place.pdfPage >= 1
+        ? Math.floor(place.pdfPage)
+        : null
     const saved = getSavedPage?.(id, unitId) ?? null
     const page = isOpen
       ? (args.openPage != null && Number.isFinite(args.openPage) && args.openPage >= 1
           ? Math.floor(args.openPage)
-          : saved)
-      : saved
+          : placePage ?? saved)
+      : (placePage ?? saved)
     chips.push({
       bookId: id,
       unitId,

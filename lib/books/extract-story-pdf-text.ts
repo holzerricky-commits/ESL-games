@@ -5,6 +5,7 @@ import {
   pdfTextItemsHaveSelectableText,
 } from '@/lib/books/pdf-page-text-probe'
 import { mergePdfTextItemsToLines, type PdfTextItem } from '@/lib/books/toc-import'
+import { withCachedPdfDocument } from '@/lib/books/generate-book-cover-server'
 
 let pdfWorkerConfigured = false
 
@@ -101,7 +102,10 @@ export async function pdfFilePageHasSelectableText(
   return found.has(Math.max(1, Math.floor(pageNumber)))
 }
 
-/** Pages in the inclusive range that already have selectable text (one PDF open). */
+/**
+ * Pages in the inclusive range that already have selectable text.
+ * Uses the shared pdf.js document cache so a large unit PDF is parsed once, not per call.
+ */
 export async function pdfFilePagesWithSelectableText(
   absFilePath: string,
   startPdfPage: number,
@@ -109,9 +113,8 @@ export async function pdfFilePagesWithSelectableText(
 ): Promise<Set<number>> {
   const start = Math.max(1, Math.floor(startPdfPage))
   const end = Math.max(start, Math.floor(endPdfPage))
-  const found = new Set<number>()
-  const doc = await openPdfDocument(absFilePath)
-  try {
+  return withCachedPdfDocument(absFilePath, async (doc) => {
+    const found = new Set<number>()
     const hi = Math.min(end, doc.numPages)
     for (let pageNo = start; pageNo <= hi; pageNo += 1) {
       const page = await doc.getPage(pageNo)
@@ -129,14 +132,8 @@ export async function pdfFilePagesWithSelectableText(
       }
       if (pdfTextItemsHaveSelectableText(items)) found.add(pageNo)
     }
-  } finally {
-    try {
-      await doc.destroy()
-    } catch {
-      // ignore
-    }
-  }
-  return found
+    return found
+  })
 }
 
 /** Page count only — for accurate printed→PDF mapping before extract. */

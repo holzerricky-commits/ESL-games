@@ -5,7 +5,7 @@ import type { StackedPdfCutInput } from '@/lib/books/split-stacked-pdf-ranges'
 export const runtime = 'nodejs'
 
 /**
- * Cut a stacked (concatenated) unit PDF into one file per unit on disk.
+ * Cut a stacked (concatenated) PDF into one file per volume on disk.
  * Body: { bookId, sourceFilePath, cuts: [{ title, startPage }] }
  */
 export async function POST(req: Request) {

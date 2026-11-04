@@ -1,12 +1,16 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { ScrollText } from 'lucide-react'
+import { Check, Loader2, RotateCcw, Sparkles, Undo2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { StoryScanProgressBar } from '@/components/books/story-scan-progress-bar'
 import {
-  StoryTextFuelPanel,
-  type StoryTextFuelBusy,
-} from '@/components/books/story-text-fuel-panel'
+  DeskOverflowMenu,
+  type DeskOverflowMenuItem,
+} from '@/components/students/fullscreen-book-overlay/sections/DeskOverflowMenu'
+import { DeskStatusChip } from '@/components/students/fullscreen-book-overlay/sections/DeskStatusChip'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
 import {
   readingStoryPartKey,
   resolveReadingStoryRange,
@@ -26,12 +30,8 @@ import {
   subscribeStoryTextScan,
 } from '@/lib/books/story-text-scan-manager'
 import type { StoryScanProgress, StoryTextScanMode } from '@/lib/books/story-text-scan-client'
-import { useSearchablePdfJob } from '@/lib/books/use-searchable-pdf-job'
-import { useSearchablePdfStatus } from '@/lib/books/use-searchable-pdf-status'
 import type { BookLessonPartRecord, BookLessonRecord, BookRecord, BookUnitRecord } from '@/lib/books/types'
 import { cn } from '@/lib/utils'
-
-export type BookPartStoryTextPrepLayout = 'section' | 'panel'
 
 interface BookPartStoryTextPrepProps {
   book: BookRecord
@@ -40,15 +40,22 @@ interface BookPartStoryTextPrepProps {
   part: BookLessonPartRecord
   partIndex?: number
   totalPdfPages: number | null
-  /** Notify parent when text readiness changes (for header chips). */
+  /** Notify parent when text readiness changes (for the checklist row). */
   onTextReadyChange?: (ready: boolean) => void
-  /** `section` = stacked card; `panel` = left desk column. */
-  layout?: BookPartStoryTextPrepLayout
-  /** Shown in panel layout to return to Pages controls. */
-  onBackToPages?: () => void
+  /** Notify parent when a saved scan stopped part way (for the checklist row). */
+  onPartialChange?: (partial: boolean) => void
+  /** Bump when the story page range is saved so the range is re-read. */
+  refreshKey?: number
   className?: string
 }
 
+function wordCount(text: string): number {
+  const t = text.trim()
+  if (!t) return 0
+  return t.split(/\s+/).length
+}
+
+/** Story desk step: scan the story text from the PDF, or paste and save it. */
 export function BookPartStoryTextPrep({
   book,
   unit,
@@ -57,11 +64,10 @@ export function BookPartStoryTextPrep({
   partIndex = 0,
   totalPdfPages,
   onTextReadyChange,
-  layout = 'section',
-  onBackToPages,
+  onPartialChange,
+  refreshKey = 0,
   className,
 }: BookPartStoryTextPrepProps) {
-  const panel = layout === 'panel'
   const story = useMemo<ReadingStoryMap>(() => {
     const kind = resolvePartStoryKind(part, partIndex, resolveTocExtractProfileForBook(book))
     return {
@@ -76,24 +82,14 @@ export function BookPartStoryTextPrep({
     }
   }, [book, unit.id, lesson.id, lesson.title, part, partIndex])
 
-  const {
-    selectableRunning,
-    selectableProgress,
-    selectableNotice,
-    startSelectable,
-    stopSelectable,
-    dismissSelectableNotice,
-  } = useSearchablePdfJob(story.id)
-
   const [override, setOverride] = useState<ReadingStoryRangeOverride | null>(null)
   const [textRecord, setTextRecord] = useState<ReadingStoryTextRecord | null>(null)
   const [textDraft, setTextDraft] = useState('')
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [busy, setBusy] = useState<Exclude<StoryTextFuelBusy, 'scan'> | null>(null)
+  const [saving, setSaving] = useState(false)
   const [scanProgress, setScanProgress] = useState<StoryScanProgress | null>(null)
   const [scanRunning, setScanRunning] = useState(false)
-  const [textDialogOpen, setTextDialogOpen] = useState(false)
 
   const resolved = useMemo(
     () => resolveReadingStoryRange(story, book, unit, totalPdfPages, override),
@@ -101,29 +97,26 @@ export function BookPartStoryTextPrep({
   )
 
   const pagesReady = resolved.source !== 'none'
-  const { status: selectableStatus } = useSearchablePdfStatus({
-    bookId: story.bookId,
-    unitId: story.unitId,
-    storyId: story.id,
-    lessonId: story.lessonId,
-    partId: story.partId,
-    title: story.title,
-    totalPdfPages,
-    enabled: pagesReady,
-    refreshKey: selectableRunning ? 1 : 0,
-  })
-  const pageRangeLabel =
-    pagesReady ? `p${resolved.startDisplayPage}–${resolved.endDisplayPage}` : null
-  const hasStoryText = readingStoryTextStatus(textRecord?.text ?? textDraft) === 'ready'
-  const canContinueScan = storyTextScanCanContinue({
-    text: textDraft,
-    startPdfPage: textRecord?.startPdfPage,
-    endPdfPage: textRecord?.endPdfPage,
-  })
+  const savedText = textRecord?.text ?? ''
+  const hasStoryText = readingStoryTextStatus(savedText || textDraft) === 'ready'
+  const savedReady = readingStoryTextStatus(savedText) === 'ready'
+  const dirty = textDraft !== savedText
+  const partial =
+    savedReady &&
+    storyTextScanCanContinue({
+      text: textDraft,
+      startPdfPage: textRecord?.startPdfPage,
+      endPdfPage: textRecord?.endPdfPage,
+    })
+  const words = wordCount(textDraft)
 
   useEffect(() => {
     onTextReadyChange?.(hasStoryText)
   }, [hasStoryText, onTextReadyChange])
+
+  useEffect(() => {
+    onPartialChange?.(partial)
+  }, [partial, onPartialChange])
 
   useEffect(() => {
     return subscribeStoryTextScan(story.id, (snap) => {
@@ -142,37 +135,15 @@ export function BookPartStoryTextPrep({
     setLoadError(null)
     void (async () => {
       try {
-        const [storiesRes, textRes] = await Promise.all([
-          fetch(
-            `/api/reading-stories?bookId=${encodeURIComponent(book.id)}&unitId=${encodeURIComponent(unit.id)}`,
-          ),
-          fetch(`/api/reading-stories/text?storyId=${encodeURIComponent(story.id)}`),
-        ])
-        const storiesData = (await storiesRes.json()) as {
-          ok?: boolean
-          error?: string
-          overrides?: ReadingStoryRangeOverride[]
-        }
-        const textData = (await textRes.json()) as {
+        const res = await fetch(`/api/reading-stories/text?storyId=${encodeURIComponent(story.id)}`)
+        const data = (await res.json()) as {
           ok?: boolean
           error?: string
           text?: ReadingStoryTextRecord | null
         }
-        if (!storiesRes.ok || !storiesData.ok) {
-          throw new Error(storiesData.error || 'Could not load page range')
-        }
-        if (!textRes.ok || !textData.ok) {
-          throw new Error(textData.error || 'Could not load story text')
-        }
+        if (!res.ok || !data.ok) throw new Error(data.error || 'Could not load story text')
         if (cancelled) return
-        const match =
-          storiesData.overrides?.find(
-            (row) =>
-              row.storyId === story.id ||
-              (row.partId != null && row.partId === part.id && row.lessonId === lesson.id),
-          ) ?? null
-        setOverride(match)
-        const record = textData.text ?? null
+        const record = data.text ?? null
         setTextRecord(record)
         setTextDraft(record?.text ?? '')
       } catch (err) {
@@ -186,18 +157,40 @@ export function BookPartStoryTextPrep({
     return () => {
       cancelled = true
     }
-  }, [book.id, unit.id, story.id, part.id, lesson.id])
+  }, [story.id])
 
-  function scanText(opts?: { mode?: StoryTextScanMode }) {
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/reading-stories?bookId=${encodeURIComponent(book.id)}&unitId=${encodeURIComponent(unit.id)}`,
+        )
+        const data = (await res.json()) as { ok?: boolean; overrides?: ReadingStoryRangeOverride[] }
+        if (cancelled || !res.ok || !data.ok) return
+        setOverride(
+          data.overrides?.find(
+            (row) =>
+              row.storyId === story.id ||
+              (row.partId != null && row.partId === part.id && row.lessonId === lesson.id),
+          ) ?? null,
+        )
+      } catch {
+        // Falls back to the outline range.
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [book.id, unit.id, story.id, part.id, lesson.id, refreshKey])
+
+  function scanText(mode: StoryTextScanMode) {
     if (!pagesReady) {
       toast.error('Set pages for this story first.')
       return
     }
-    const mode = opts?.mode ?? 'full'
     const existing =
-      mode === 'continue' && textRecord
-        ? { ...textRecord, text: textDraft || textRecord.text }
-        : null
+      mode === 'continue' && textRecord ? { ...textRecord, text: textDraft || textRecord.text } : null
     startStoryTextScan({
       storyId: story.id,
       bookId: story.bookId,
@@ -211,12 +204,8 @@ export function BookPartStoryTextPrep({
     })
   }
 
-  function stopScan() {
-    stopStoryTextScan(story.id)
-  }
-
-  async function saveTextPaste(): Promise<boolean> {
-    setBusy('saveText')
+  async function saveText() {
+    setSaving(true)
     try {
       const res = await fetch('/api/reading-stories/text', {
         method: 'POST',
@@ -238,121 +227,121 @@ export function BookPartStoryTextPrep({
       }
       if (!data.ok || !data.text) {
         toast.error(data.error ?? 'Could not save text.')
-        return false
+        return
       }
       setTextRecord(data.text)
       setTextDraft(data.text.text)
       toast.success('Story text saved.')
-      return true
     } catch {
       toast.error('Could not save text.')
-      return false
     } finally {
-      setBusy(null)
+      setSaving(false)
     }
   }
 
-  const fuelBusy: StoryTextFuelBusy =
-    busy === 'saveText' ? 'saveText' : scanRunning ? 'scan' : null
-
-  const fuel = loading ? (
-    <p className="text-[14px] text-muted-foreground">Loading…</p>
-  ) : loadError ? (
-    <p className="text-[14px] text-destructive">{loadError}</p>
-  ) : (
-    <StoryTextFuelPanel
-      storyTitle={story.title}
-      pageRangeLabel={pageRangeLabel}
-      textDraft={textDraft}
-      onTextDraftChange={setTextDraft}
-      hasStoryText={hasStoryText}
-      busy={fuelBusy}
-      scanProgress={scanProgress}
-      onScan={(opts) => scanText(opts)}
-      onStopScan={stopScan}
-      onSave={() => saveTextPaste()}
-      scanDisabled={!pagesReady}
-      canContinueScan={canContinueScan}
-      onMakeSelectable={() => {
-        if (!pagesReady) {
-          toast.error('Set pages for this story first.')
-          return
-        }
-        startSelectable({
-          bookId: story.bookId,
-          unitId: story.unitId,
-          lessonId: story.lessonId,
-          partId: story.partId,
-          title: story.title,
-          totalPdfPages,
-        })
-      }}
-      onRedoSelectable={() => {
-        if (!pagesReady) {
-          toast.error('Set pages for this story first.')
-          return
-        }
-        startSelectable({
-          bookId: story.bookId,
-          unitId: story.unitId,
-          lessonId: story.lessonId,
-          partId: story.partId,
-          title: story.title,
-          totalPdfPages,
-          force: true,
-        })
-      }}
-      onStopMakeSelectable={stopSelectable}
-      selectableProgress={selectableProgress}
-      selectableRunning={selectableRunning}
-      selectableNotice={selectableNotice}
-      onDismissSelectableNotice={dismissSelectableNotice}
-      selectableStatus={selectableStatus}
-      dialogOpen={panel ? undefined : textDialogOpen}
-      onDialogOpenChange={panel ? undefined : setTextDialogOpen}
-      hideRowLabel
-      chrome="soft"
-      presentation={panel ? 'inline' : 'dialog'}
-      hideCollapsedRow={panel}
-      omitInlineHeader={panel}
-    />
-  )
-
-  if (panel) {
-    return (
-      <div className={cn('flex flex-col gap-3', className)}>
-        <div className="space-y-0.5">
-          <p className="text-[13px] font-semibold tracking-tight text-foreground">Story text</p>
-          <p className="text-[12px] text-muted-foreground">Scan from the PDF or paste</p>
-        </div>
-        <div className="min-h-0 flex-1">{fuel}</div>
-      </div>
-    )
+  if (loading) {
+    return <p className={cn('text-[13px] text-muted-foreground', className)}>Loading…</p>
+  }
+  if (loadError) {
+    return <p className={cn('text-[13px] text-destructive', className)}>{loadError}</p>
   }
 
+  const chip = scanRunning
+    ? { status: 'running' as const, label: 'Scanning' }
+    : partial
+      ? { status: 'attention' as const, label: 'Partial scan' }
+      : savedReady
+        ? { status: 'done' as const, label: 'Saved' }
+        : { status: 'todo' as const, label: 'No text yet' }
+
+  const meta = [
+    words > 0 ? `${words.toLocaleString()} word${words === 1 ? '' : 's'}` : null,
+    pagesReady ? `pp. ${resolved.startDisplayPage}–${resolved.endDisplayPage}` : null,
+    dirty && savedReady ? 'unsaved' : null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
+  const menuItems: DeskOverflowMenuItem[] = []
+  if (savedReady) {
+    menuItems.push({
+      id: 'rescan',
+      label: 'Re-scan from start',
+      icon: RotateCcw,
+      onSelect: () => scanText('full'),
+      disabled: scanRunning || saving || !pagesReady,
+    })
+  }
+  if (dirty && savedReady) {
+    menuItems.push({
+      id: 'discard',
+      label: 'Discard changes',
+      icon: Undo2,
+      onSelect: () => setTextDraft(savedText),
+      disabled: scanRunning || saving,
+    })
+  }
+
+  let primary: { label: string; onClick: () => void; disabled?: boolean; icon?: 'scan' | 'saved' }
+  if (scanRunning) {
+    primary = { label: 'Scanning…', onClick: () => {}, disabled: true }
+  } else if (dirty) {
+    primary = { label: saving ? 'Saving…' : 'Save text', onClick: () => void saveText(), disabled: saving }
+  } else if (partial) {
+    primary = { label: 'Continue scan', onClick: () => scanText('continue'), disabled: !pagesReady, icon: 'scan' }
+  } else if (!savedReady) {
+    primary = { label: 'Scan text', onClick: () => scanText('full'), disabled: !pagesReady, icon: 'scan' }
+  } else {
+    primary = { label: 'Saved', onClick: () => {}, disabled: true, icon: 'saved' }
+  }
+
+  const help = !pagesReady
+    ? 'Set the story pages first.'
+    : partial
+      ? 'The scan stopped part way. Continue picks up after the saved pages.'
+      : savedReady
+        ? 'Reading checks are written from this text. Edit it here if the scan made mistakes.'
+        : 'Scan reads the story pages for you, or paste the story text yourself.'
+
   return (
-    <div
-      id="part-prep-story-text"
-      className={cn(
-        'scroll-mt-6 overflow-hidden rounded-[28px] bg-[var(--surface-2)] shadow-[0_12px_40px_-24px_rgba(0,0,0,0.2)]',
-        className,
-      )}
-    >
-      <div className="space-y-4 px-6 py-5 sm:px-8 sm:py-6">
-        <div className="flex items-start gap-3.5">
-          <span
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-[linear-gradient(160deg,color-mix(in_srgb,var(--brand-blue)_72%,white),var(--brand-blue))] text-white shadow-[0_10px_24px_-14px_rgba(0,0,0,0.35)]"
-            aria-hidden
-          >
-            <ScrollText className="h-5 w-5 stroke-[1.75]" />
-          </span>
-          <div className="min-w-0 space-y-0.5 pt-0.5">
-            <p className="text-[17px] font-semibold tracking-tight text-foreground">Story text</p>
-            <p className="text-[14px] text-muted-foreground">Scan from the PDF or paste</p>
-          </div>
+    <div className={cn('flex flex-col gap-3', className)}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <DeskStatusChip status={chip.status} label={chip.label} />
+          {meta ? <span className="truncate text-[12px] text-muted-foreground">{meta}</span> : null}
         </div>
-        {fuel}
+        <DeskOverflowMenu label="More text actions" items={menuItems} />
       </div>
+
+      {scanProgress ? (
+        <StoryScanProgressBar progress={scanProgress} onCancel={() => stopStoryTextScan(story.id)} />
+      ) : null}
+
+      <Textarea
+        value={textDraft}
+        onChange={(e) => setTextDraft(e.target.value)}
+        placeholder="Scan from the PDF, or paste the story here."
+        className="min-h-[280px] resize-none rounded-lg border-0 bg-[var(--surface-3)] font-sans text-[13px] leading-relaxed text-foreground shadow-none"
+        disabled={scanRunning}
+      />
+
+      <div className="flex items-center gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant={primary.icon === 'saved' ? 'secondary' : 'default'}
+          className="h-8 gap-1.5 rounded-lg px-4"
+          disabled={primary.disabled}
+          onClick={primary.onClick}
+        >
+          {scanRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
+          {primary.icon === 'scan' ? <Sparkles className="h-3.5 w-3.5" aria-hidden /> : null}
+          {primary.icon === 'saved' ? <Check className="h-3.5 w-3.5" aria-hidden /> : null}
+          {primary.label}
+        </Button>
+      </div>
+
+      <p className="text-[12px] leading-relaxed text-muted-foreground">{help}</p>
     </div>
   )
 }

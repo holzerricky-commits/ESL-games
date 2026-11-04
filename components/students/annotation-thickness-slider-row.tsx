@@ -62,6 +62,7 @@ export function ThicknessSliderRow({
   idPrefix,
   previewDots = ANNOTATION_FINE_INK_THICKNESS_PREVIEW_DOTS,
   ariaLabel = 'Thickness',
+  label = 'Thickness',
   compact = false,
   surface = 'default',
 }: {
@@ -70,6 +71,8 @@ export function ThicknessSliderRow({
   idPrefix: string
   previewDots?: readonly number[]
   ariaLabel?: string
+  /** Visible section label (e.g. "Size" for stickers). */
+  label?: string
   compact?: boolean
   surface?: PopoverControlSurface
 }) {
@@ -131,7 +134,7 @@ export function ThicknessSliderRow({
       aria-valuemin={0}
       aria-valuemax={stepMax}
       aria-valuenow={value}
-      aria-valuetext={`Stroke size ${value + 1}`}
+      aria-valuetext={`${ariaLabel} ${value + 1}`}
       className={cn(
         'relative flex w-full cursor-pointer touch-none items-center select-none',
         compact ? 'h-6' : 'h-8',
@@ -182,10 +185,10 @@ export function ThicknessSliderRow({
 
   return (
     <div className="min-w-0 space-y-2.5">
-      <p className={labelClass}>Thickness</p>
+      <p className={labelClass}>{label}</p>
       {rail}
       <div
-        className="relative mt-1 w-full overflow-hidden px-5"
+        className="relative mt-1 w-full overflow-visible px-5"
         style={{ minHeight: maxDotPx }}
       >
         {previewDots.map((dotPx, i) => {
@@ -196,7 +199,7 @@ export function ThicknessSliderRow({
               key={step}
               type="button"
               id={`${idPrefix}-thick-${i}`}
-              aria-label={`Stroke size ${i + 1}`}
+              aria-label={`${ariaLabel} ${i + 1}`}
               aria-pressed={active}
               onClick={() => onChange(step)}
               className="absolute bottom-0 z-[1] flex h-10 w-10 -translate-x-1/2 items-end justify-center rounded-md"

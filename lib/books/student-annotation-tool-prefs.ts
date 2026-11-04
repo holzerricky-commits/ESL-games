@@ -41,9 +41,10 @@ import {
   isValidTextStrokeColor,
   migrateTextStrokeColor,
 } from '@/lib/books/annotation-palettes'
-import type {
-  AnnotationStrokeThicknessStep,
-  BookAnnotationInteractionMode,
+import {
+  DEFAULT_STAMP_THICKNESS_STEP,
+  type AnnotationStrokeThicknessStep,
+  type BookAnnotationInteractionMode,
 } from '@/lib/books/annotation-storage'
 import { DEFAULT_TEXT_THICKNESS_STEP, TEXT_THICKNESS_STEP_MAX } from '@/lib/books/text-font-size-steps'
 import {
@@ -138,6 +139,7 @@ const ANNOTATION_MODES: BookAnnotationInteractionMode[] = [
   'eraser',
   'eraser-line',
   'line',
+  'freehand-line',
   'rect',
   'ellipse',
   'triangle',
@@ -175,10 +177,11 @@ function isSmoothingLevel(v: unknown): v is number {
 function resolveThicknessStep(
   dedicated: unknown,
   legacyFallback: unknown,
+  fallback: AnnotationStrokeThicknessStep = 3,
 ): AnnotationStrokeThicknessStep {
   if (isThicknessStep(dedicated)) return dedicated
   if (isThicknessStep(legacyFallback)) return legacyFallback
-  return 3
+  return fallback
 }
 
 function resolveTextLikeThicknessStep(
@@ -442,7 +445,8 @@ export function resolveMarkerToolPrefsFromStorage(studentId: string): {
     markerCustomHex,
     markerThicknessStep: isThicknessStep(saved.markerThicknessStep) ? saved.markerThicknessStep : 3,
     markerLineDashStyle: isLineDash(saved.markerLineDashStyle) ? saved.markerLineDashStyle : 'solid',
-    markerStraightStroke: saved.markerStraightStroke !== false,
+    /** Opt-in: freehand / text-snap is the default highlighter feel. */
+    markerStraightStroke: saved.markerStraightStroke === true,
     markerDecoratedEdge: saved.markerDecoratedEdge === true,
   }
 }
@@ -471,7 +475,11 @@ export function resolveStampToolPrefsFromStorage(studentId: string): {
   const saved = readStudentAnnotationToolPrefs(studentId)
   return {
     stampVariant: 'check',
-    stampThicknessStep: resolveThicknessStep(saved.stampThicknessStep, saved.markerThicknessStep),
+    stampThicknessStep: resolveThicknessStep(
+      saved.stampThicknessStep,
+      saved.markerThicknessStep,
+      DEFAULT_STAMP_THICKNESS_STEP,
+    ),
     stampQuestionColor: isValidStampQuestionColor(saved.stampQuestionColor)
       ? saved.stampQuestionColor!
       : DEFAULT_STAMP_QUESTION_COLOR,

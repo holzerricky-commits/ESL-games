@@ -85,10 +85,11 @@ function arrowHeadPadNorm(
   widthPx: number,
   heightPx: number,
 ): number {
-  const headLen = (cmd.headLengthNorm ?? 0.035) * Math.min(widthPx, heightPx)
   const minDim = Math.min(widthPx, heightPx)
   if (!(minDim > 0)) return 0
-  return headLen / minDim
+  // Match drawSolidArrow: tip can extend sideways ~0.6× length.
+  const headLen = (cmd.headLengthNorm ?? 0.035) * minDim
+  return (headLen * 1.15) / minDim
 }
 
 export function orientedSelectionFrameForCommand(
@@ -218,10 +219,14 @@ export function strokePadNorm(cmd: StrokeAnnotationCommand, widthPx: number, hei
       widthFactor = Math.max(widthFactor, pass.widthFactor)
     }
   }
-  return (
+  let pad =
     halfLineWidthNorm(linePx * widthFactor, widthPx, heightPx) +
     selectionChromeBorderPadNorm(widthPx, heightPx)
-  )
+  if (cmd.arrowTip === 'open-v') {
+    // Open-V wings extend ~4.6× stroke width back from the tip.
+    pad += halfLineWidthNorm(linePx * 4.6, widthPx, heightPx)
+  }
+  return pad
 }
 
 function strokeHitAtPoint(
