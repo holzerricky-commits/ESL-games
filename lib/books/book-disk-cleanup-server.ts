@@ -5,6 +5,7 @@ import {
   planBookDiskCleanup,
   type BookDiskCleanupPlan,
 } from '@/lib/books/book-disk-naming'
+import { renameSearchableArtifactsForPdfRename } from '@/lib/books/searchable-pdf-rename'
 import { getBookLibraryRoot, loadBookLibrary, saveBookLibraryManifest } from '@/lib/books/server'
 import type { BookLibraryPayload, BookRecord } from '@/lib/books/types'
 
@@ -213,6 +214,14 @@ export async function runBookDiskCleanup(options: {
         error: error instanceof Error ? error.message : 'PDF rename failed.',
         plan,
       }
+    }
+
+    try {
+      // The reader serves `.searchable/<same file name>`. Leave the old name
+      // behind and selectable text disappears after this rename.
+      await renameSearchableArtifactsForPdfRename(activeFolderAbs, fromName, toName)
+    } catch (error) {
+      console.error('[book-cleanup] selectable text copy was not renamed', fromName, error)
     }
   }
 
