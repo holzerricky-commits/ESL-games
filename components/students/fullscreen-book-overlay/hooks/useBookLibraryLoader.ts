@@ -3,6 +3,7 @@ import { fetchBooksLibraryCached, getBooksLibraryCached } from '@/lib/books/fetc
 import type { BookLibraryPayload } from '@/lib/books/types'
 import { nextNumPagesAfterSelectionChange } from '@/lib/books/book-reader-selection-num-pages'
 import {
+  preferResumePageForResolvedUnit,
   resolveInitialBookReaderSelection,
   shouldApplyInitialReaderSelection,
   type BookReaderCurriculumHistoryEntry,
@@ -85,13 +86,19 @@ export function useBookLibraryLoader({
         const sid = studentId?.trim() ?? ''
         const bid = preferBookId?.trim() ?? ''
         const preferredUnit = preferUnitId?.trim() ?? ''
-        // Student place for this book wins unit + page (chip preferUnitId is only a fallback).
+        // A real saved place / last stop / plan pin wins. Null means "no signal" —
+        // keep the caller's unit (prep desk, shelf volume, class chip).
         const openTarget = sid && bid ? getStudentOpenTargetForBook(sid, bid, lib) : null
         let uid = openTarget?.unitId ?? preferredUnit
         let teachingPage: number | null = openTarget?.pdfPage ?? null
         if (teachingPage == null && sid && bid && uid) {
           teachingPage = getStudentTeachingOpenPdfPageForBookUnit(sid, bid, uid, lib)
         }
+        const resumePage = preferResumePageForResolvedUnit({
+          requestedUnitId: preferredUnit,
+          resolvedUnitId: uid,
+          preferResumePage,
+        })
         const { selectedBookId, selectedUnitId, pageNumber } = resolveInitialBookReaderSelection({
           library: lib,
           assignedBookIds,
@@ -99,8 +106,8 @@ export function useBookLibraryLoader({
           curriculumHistory,
           preferBookId: bid || preferBookId,
           preferUnitId: uid || preferUnitId,
-          // Explicit resume (session memory) beats stored place when returning to a book this visit.
-          preferResumePage: preferResumePage ?? teachingPage,
+          // Same-unit resume (session memory or an explicit prep page) beats the stored page.
+          preferResumePage: resumePage ?? teachingPage,
         })
         const nextBookId = selectedBookId ?? null
         const nextUnitId = selectedUnitId ?? null

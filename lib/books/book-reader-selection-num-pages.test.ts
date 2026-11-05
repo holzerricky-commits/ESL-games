@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { nextNumPagesAfterSelectionChange } from './book-reader-selection-num-pages'
-import { shouldApplyInitialReaderSelection } from './resolve-initial-book-reader-selection'
+import {
+  preferResumePageForResolvedUnit,
+  shouldApplyInitialReaderSelection,
+} from './resolve-initial-book-reader-selection'
 
 describe('nextNumPagesAfterSelectionChange', () => {
   it('keeps current numPages when no cache helper is provided', () => {
@@ -20,6 +23,38 @@ describe('nextNumPagesAfterSelectionChange', () => {
   it('treats blank unit ids as keep', () => {
     expect(nextNumPagesAfterSelectionChange(null, () => 12)).toBe('keep')
     expect(nextNumPagesAfterSelectionChange('  ', () => 12)).toBe('keep')
+  })
+})
+
+describe('preferResumePageForResolvedUnit', () => {
+  it('keeps an explicit page when the requested unit is the one that opens', () => {
+    expect(
+      preferResumePageForResolvedUnit({
+        requestedUnitId: 'vol-2',
+        resolvedUnitId: 'vol-2',
+        preferResumePage: 12,
+      }),
+    ).toBe(12)
+  })
+
+  it('drops a resume page that belongs to a different unit than the saved place', () => {
+    expect(
+      preferResumePageForResolvedUnit({
+        requestedUnitId: 'vol-1',
+        resolvedUnitId: 'vol-2',
+        preferResumePage: 40,
+      }),
+    ).toBeNull()
+  })
+
+  it('keeps the resume page when no unit was requested', () => {
+    expect(
+      preferResumePageForResolvedUnit({
+        requestedUnitId: null,
+        resolvedUnitId: 'vol-2',
+        preferResumePage: 8.8,
+      }),
+    ).toBe(8)
   })
 })
 

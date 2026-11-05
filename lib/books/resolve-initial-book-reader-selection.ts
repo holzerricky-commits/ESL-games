@@ -46,6 +46,25 @@ export function shouldApplyInitialReaderSelection(
 }
 
 /**
+ * A resume page was computed for the unit the caller asked to open.
+ * When a saved place moves the reader onto a different unit, that page must
+ * stay behind — otherwise unit 2's page 40 is applied to unit 1 and the next
+ * turn stores it.
+ */
+export function preferResumePageForResolvedUnit(args: {
+  requestedUnitId?: string | null
+  resolvedUnitId?: string | null
+  preferResumePage?: number | null
+}): number | null {
+  const requested = args.requestedUnitId?.trim() || null
+  const resolved = args.resolvedUnitId?.trim() || null
+  if (requested && resolved && requested !== resolved) return null
+  const page = args.preferResumePage
+  if (page == null || !Number.isFinite(page) || page < 1) return null
+  return Math.floor(page)
+}
+
+/**
  * Picks default book/unit/page for the fullscreen reader — must stay aligned with
  * `useBookLibraryLoader` behaviour (single source for product rules).
  */
