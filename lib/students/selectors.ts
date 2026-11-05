@@ -3650,8 +3650,10 @@ function legacyTeachingOpenPdfPageForBookUnit(
 }
 
 /**
- * Best unit + PDF page when opening a book without an explicit unit.
- * Saved place wins; otherwise last stop / plan pin / first unit.
+ * Saved unit + PDF page for a book, or null when the student has no place,
+ * last stop, or plan pin on a unit that still exists.
+ * Callers that have an explicit unit (prep desk, shelf pick, class chip) must
+ * keep that unit when this returns null. Do not guess the book's first PDF.
  */
 export function getStudentOpenTargetForBook(
   studentId: string,
@@ -3669,7 +3671,7 @@ export function getStudentOpenTargetForBook(
 
   const last = getStudentLastViewedForBook(studentId, bid)
   if (last) {
-    const unit = book.units.find((u) => u.id === last.unitId) ?? book.units[0] ?? null
+    const unit = book.units.find((u) => u.id === last.unitId)
     if (unit) {
       const pdf =
         getStudentTeachingOpenPdfPageForBookUnit(studentId, bid, unit.id, library, totalPdfPages) ??
@@ -3680,7 +3682,7 @@ export function getStudentOpenTargetForBook(
 
   const bookStart = getStudentCurriculumBookStart(studentId, bid, library)
   if (bookStart) {
-    const unit = book.units.find((u) => u.id === bookStart.unitId) ?? book.units[0]
+    const unit = book.units.find((u) => u.id === bookStart.unitId)
     if (unit) {
       const pdf =
         getStudentTeachingOpenPdfPageForBookUnit(studentId, bid, unit.id, library, totalPdfPages) ??
@@ -3690,10 +3692,7 @@ export function getStudentOpenTargetForBook(
     }
   }
 
-  const first = book.units[0]
-  if (!first) return null
-  const pdf = getStudentTeachingOpenPdfPageForBookUnit(studentId, bid, first.id, library, totalPdfPages) ?? 1
-  return { unitId: first.id, pdfPage: pdf }
+  return null
 }
 
 /** Book + unit for a class session: saved section → last viewed place → assignment default. */

@@ -4,6 +4,7 @@ import type { BookLibraryPayload } from '@/lib/books/types'
 import type { StudentRecord } from '@/lib/types'
 import {
   getStudentBookPlaces,
+  getStudentOpenTargetForBook,
   getStudentSectionOptions,
   getStudentTeachingOpenPdfPageForBookUnit,
   getStudentUpNextBookId,
@@ -149,6 +150,29 @@ describe('student book places', () => {
     updateStudentCurriculumBookStart('student-1', { bookId: 'literature', sectionId: story.id, mappedPage: 5 }, library)
     expect(getStudentBookPlaces('student-1').literature).toMatchObject({ unitId: 'l-u1', pdfPage: 5 })
     expect(getStudentUpNextBookId('student-1', library)).toBe('literature')
+  })
+
+  it('does not invent the first PDF when the student has no place on a multi-volume book', () => {
+    const volumes: BookLibraryPayload = {
+      books: [
+        {
+          id: 'journeys',
+          title: 'Journeys',
+          units: [
+            { id: 'vol-1', title: 'Volume 1', filePath: '/v1.pdf' },
+            { id: 'vol-2', title: 'Volume 2', filePath: '/v2.pdf' },
+          ],
+        },
+      ],
+    }
+    saveStudents([
+      seed({
+        assignedBookIds: ['journeys'],
+        assignedUnitRefs: [{ bookId: 'journeys', unitId: 'vol-2' }],
+      }),
+    ])
+    expect(getStudentOpenTargetForBook('student-1', 'journeys', volumes)).toBeNull()
+    expect(getStudentOpenTargetForBook('__books_workshop__', 'journeys', volumes)).toBeNull()
   })
 
   it('Books tab pin stores the picked PDF page for the next open', () => {
