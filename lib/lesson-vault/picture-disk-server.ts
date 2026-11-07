@@ -23,15 +23,42 @@ export async function listCardFiles(dir: string, cardId: string): Promise<string
   }
 }
 
-/** Writes the card's picture, replacing any file with another extension. */
-export async function writeVaultPictureFile(dir: string, cardId: string, bytes: Uint8Array, ext: string): Promise<void> {
+/**
+ * Writes the card's picture, replacing any file with another extension.
+ * `onlyIfEmpty` keeps a picture that landed while this one was being prepared
+ * (a teacher drop during automatic copy). The check is immediately before the rename.
+ */
+export async function writeVaultPictureFile(
+  dir: string,
+  cardId: string,
+  bytes: Uint8Array,
+  ext: string,
+  options?: { onlyIfEmpty?: boolean },
+): Promise<boolean> {
   await mkdir(dir, { recursive: true })
   const fileName = `${cardId}${ext}`
   const absFile = path.join(dir, fileName)
-  const tmpFile = `${absFile}.${Date.now()}.tmp`
+  const tmpFile = `${absFile}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`
   await writeFile(tmpFile, bytes)
-  for (const old of await listCardFiles(dir, cardId)) {
-    if (old !== fileName) await unlink(path.join(dir, old)).catch(() => {})
+  try {
+    const existing = await listCardFiles(dir, cardId)
+    if (options?.onlyIfEmpty) {
+      if (existing.length > 0) return false
+    } else {
+      for (const old of existing) {
+        if (old !== fileName) await unlink(path.join(dir, old)).catch(() => {})
+      }
+    }
+    await rename(tmpFile, absFile)
+    if (options?.onlyIfEmpty) {
+      const extras = (await listCardFiles(dir, cardId)).filter((name) => name !== fileName)
+      if (extras.length > 0) {
+        await unlink(absFile).catch(() => {})
+        return false
+      }
+    }
+    return true
+  } finally {
+    await unlink(tmpFile).catch(() => {})
   }
-  await rename(tmpFile, absFile)
 }

@@ -4,7 +4,7 @@ import { INTERACTIVE_VOCAB_PACKS } from '@/lib/books/interactive-vocab'
 import { getContextStore } from '@/lib/context/file-store'
 import { planVaultPictures } from '@/lib/gemini'
 import { preferPartEntries, preparedMeaningFromEntries } from '@/lib/lesson-vault/prepared-meaning'
-import { listCardFiles, vaultDirFor, writeVaultPictureFile } from '@/lib/lesson-vault/picture-disk-server'
+import { vaultDirFor, writeVaultPictureFile } from '@/lib/lesson-vault/picture-disk-server
 import { vaultPictureUrl } from '@/lib/lesson-vault/picture-paths'
 import {
   normalizePlanWord,
@@ -197,11 +197,11 @@ export async function findAndStoreAutoPicture(input: {
   for (let i = 0; i < found.choices.length; i++) {
     const file = await downloadPictureChoice(found.choices[i]!.full)
     if (!file) continue
-    if ((await listCardFiles(dir, input.cardId)).length > 0) {
+    const wrote = await writeVaultPictureFile(dir, input.cardId, file.bytes, file.ext, { onlyIfEmpty: true })
+    if (!wrote) {
       log('skipped (card already has a picture)')
       return { status: 'skipped', choices: found.choices, choiceIndex: i, gloss }
     }
-    await writeVaultPictureFile(dir, input.cardId, file.bytes, file.ext)
     log(`found #${i + 1}`)
     return {
       status: 'found',
