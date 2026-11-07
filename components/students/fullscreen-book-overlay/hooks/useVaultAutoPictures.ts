@@ -85,8 +85,25 @@ export function useVaultAutoPictures() {
     try {
       const res = await fetch(donor.imageUrl)
       if (!res.ok) return false
-      if (findCard(job.studentId, job.cardId)?.imageUrl) return true
-      const url = await uploadLessonVaultPicture(job.studentId, job.cardId, await res.blob())
+      if (findCard(job.studentId, job.cardId)?.imageUrl.trim()) return true
+      const blob = await res.blob()
+      // The teacher may have dropped a photo while the donor picture was loading.
+      if (findCard(job.studentId, job.cardId)?.imageUrl.trim()) return true
+      const url = await uploadLessonVaultPicture(job.studentId, job.cardId, blob, { onlyIfEmpty: true })
+      const current = findCard(job.studentId, job.cardId)
+      if (!current) {
+        // Only remove a file this copy just wrote. A picture already on disk belongs to the card's undo window.
+        if (url) void deleteLessonVaultPicture(job.studentId, job.cardId)
+        return true
+      }
+      if (!url || current.imageUrl.trim()) {
+        // Skipped, or the teacher attached a picture while this copy was uploading.
+        // Remove the file we just wrote only when the card is showing a different picture.
+        if (url && !isLocalVaultPictureUrl(current.imageUrl)) {
+          void deleteLessonVaultPicture(job.studentId, job.cardId)
+        }
+        return true
+      }
       if (!setLessonVaultCardPicture(job.studentId, job.cardId, url, undefined, 'auto')) {
         void deleteLessonVaultPicture(job.studentId, job.cardId)
         return true
@@ -138,7 +155,7 @@ export function useVaultAutoPictures() {
             gloss = result.gloss ?? ''
             meaningSettled = true
           }
-          if (!now.imageUrl) {
+          if (!now.imageUrl.trim()) {
             if (!result || result.status === 'skipped') {
               if (!result) patchLessonVaultCardPicture(job.studentId, job.cardId, { autoPicture: 'not-found' })
             } else if (result.status === 'found' && result.url) {
@@ -151,6 +168,8 @@ export function useVaultAutoPictures() {
             } else {
               patchLessonVaultCardPicture(job.studentId, job.cardId, { autoPicture: result.status, pictureChoices: [] })
             }
+          } else if (result?.status === 'found' && !isLocalVaultPictureUrl(now.imageUrl)) {
+            void deleteLessonVaultPicture(job.studentId, job.cardId)
           }
         }
       }

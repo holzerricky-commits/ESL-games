@@ -428,6 +428,10 @@ export function useLessonVault({
       }
       try {
         const url = await uploadLessonVaultPicture(studentId, cardId, file)
+        if (!url) {
+          toast.error('Could not save the picture.')
+          return false
+        }
         const ok = applyCardPicture(cardId, url, 'own')
         if (ok) toast.success('Picture added to the card.')
         return ok
