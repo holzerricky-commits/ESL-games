@@ -55,6 +55,19 @@ export function seedVaultCardsFromInteractiveVocab(
       const existing = findLessonCard(next, ref, word)
       if (existing && existing.meaning.trim() && existing.sentence.trim()) continue
       if (existing && !meaning && !sentence) continue
+      // A story sentence the teacher already saved must survive a later meaning fill.
+      // upsert would replace it with the vocab example and move the card onto that part.
+      if (existing?.sentence.trim()) {
+        if (!existing.meaning.trim() && meaning) {
+          const index = next.findIndex((card) => card.id === existing.id)
+          if (index >= 0) {
+            const updated = [...next]
+            updated[index] = { ...existing, meaning, updatedAt: options.now }
+            next = updated
+          }
+        }
+        continue
+      }
       const pdfPage =
         entry.tapSpot && Number.isFinite(entry.tapSpot.pdfPage) && entry.tapSpot.pdfPage > 0
           ? Math.floor(entry.tapSpot.pdfPage)

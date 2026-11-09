@@ -112,6 +112,50 @@ describe('seedVaultCardsFromInteractiveVocab', () => {
     expect(result.cards[0]!.partId).toBe('vocab')
   })
 
+  it('fills an empty meaning without replacing the saved sentence or moving the card', () => {
+    const existing = upsertLessonVaultCard(
+      [],
+      {
+        ...ref,
+        partId: 'story',
+        partTitle: 'Story',
+        word: 'feather',
+        sentence: 'The feather floated down.',
+        pdfPage: 8,
+      },
+      opts('feather'),
+    )
+    const result = seedVaultCardsFromInteractiveVocab(
+      existing.cards,
+      {
+        ...ref,
+        parts: [
+          {
+            partId: 'vocab',
+            partTitle: 'Vocabulary',
+            pdfPage: 10,
+            words: [
+              {
+                id: 'w3',
+                word: 'feather',
+                definition: 'a light growth that covers a bird',
+                examples: ['Birds have feathers.'],
+              },
+            ],
+          },
+        ],
+      },
+      opts('dup'),
+    )
+    expect(result.added).toHaveLength(0)
+    expect(result.cards).toHaveLength(1)
+    expect(result.cards[0]!.id).toBe('feather')
+    expect(result.cards[0]!.sentence).toBe('The feather floated down.')
+    expect(result.cards[0]!.meaning).toBe('a light growth that covers a bird')
+    expect(result.cards[0]!.partId).toBe('story')
+    expect(result.cards[0]!.pdfPage).toBe(8)
+  })
+
   it('prefers tapSpot pdf page when present', () => {
     const result = seedVaultCardsFromInteractiveVocab(
       [],
