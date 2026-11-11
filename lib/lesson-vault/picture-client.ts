@@ -7,8 +7,17 @@ import { LESSON_VAULT_PICTURE_ROUTE } from '@/lib/lesson-vault/picture-paths'
 const VAULT_PICTURE_MAX_DIMENSION_PX = 800
 const VAULT_PICTURE_MAX_BYTES = 600_000
 
-/** Shrinks the picture, saves it as this card's file and returns the local url. */
-export async function uploadLessonVaultPicture(studentId: string, cardId: string, file: Blob): Promise<string> {
+/**
+ * Shrinks the picture and saves it as this card's file.
+ * Returns the local url. With `onlyIfEmpty`, returns null when the card already has a file
+ * (the existing picture is left in place).
+ */
+export async function uploadLessonVaultPicture(
+  studentId: string,
+  cardId: string,
+  file: Blob,
+  options?: { onlyIfEmpty?: boolean },
+): Promise<string | null> {
   const asFile = file instanceof File ? file : new File([file], 'vault-picture', { type: file.type })
   const shrunk = await downscaleImageFile(asFile, {
     maxDimensionPx: VAULT_PICTURE_MAX_DIMENSION_PX,
@@ -21,10 +30,21 @@ export async function uploadLessonVaultPicture(studentId: string, cardId: string
   form.set('studentId', studentId)
   form.set('cardId', cardId)
   form.set('file', blob, 'picture')
+  if (options?.onlyIfEmpty) form.set('onlyIfEmpty', '1')
   const res = await fetch(LESSON_VAULT_PICTURE_ROUTE, { method: 'POST', body: form })
-  const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string }
+  const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string; skipped?: boolean }
+  if (data.skipped) return null
   if (!res.ok || !data.url) throw new Error(data.error ?? `Could not save the picture (${res.status}).`)
   return data.url
+}
+
+/** Fetches a web picture without writing it. Null when it cannot be fetched. */
+export async function loadRemotePictureFile(remoteUrl: string): Promise<File | null> {
+  try {
+    return await fetchPlacedImageAsFile(remoteUrl)
+  } catch {
+    return null
+  }
 }
 
 export async function deleteLessonVaultPicture(studentId: string, cardId: string): Promise<void> {
@@ -32,16 +52,17 @@ export async function deleteLessonVaultPicture(studentId: string, cardId: string
   await fetch(`${LESSON_VAULT_PICTURE_ROUTE}?${params.toString()}`, { method: 'DELETE' }).catch(() => {})
 }
 
-/** Downloads a web picture into this card's file. Null when the picture cannot be fetched. */
+/** Downloads a web picture into this card's file. Null when the picture cannot be fetched or the card already had a file and `onlyIfEmpty` was set. */
 export async function storeRemotePictureForCard(
   studentId: string,
   cardId: string,
   remoteUrl: string,
+  options?: { onlyIfEmpty?: boolean },
 ): Promise<string | null> {
   try {
-    const file = await fetchPlacedImageAsFile(remoteUrl)
+    const file = await loadRemotePictureFile(remoteUrl)
     if (!file) return null
-    return await uploadLessonVaultPicture(studentId, cardId, file)
+    return await uploadLessonVaultPicture(studentId, cardId, file, options)
   } catch {
     return null
   }

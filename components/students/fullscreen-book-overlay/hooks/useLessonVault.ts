@@ -26,10 +26,11 @@ import {
 import type { SeedInteractiveVocabPart } from '@/lib/lesson-vault/seed-from-interactive-vocab'
 import {
   deleteLessonVaultPicture,
-  storeRemotePictureForCard,
+  loadRemotePictureFile,
   uploadLessonVaultPicture,
 } from '@/lib/lesson-vault/picture-client'
 import { isLocalVaultPictureUrl } from '@/lib/lesson-vault/picture-paths'
+import { decideRemotePictureSave } from '@/lib/lesson-vault/remote-picture-save'
 import {
   cardsForLessons,
   cardsMissingPicture,
@@ -300,6 +301,47 @@ export function useLessonVault({
     setViewedPartId(partId)
   }, [])
 
+  const applyCardPicture = useCallback(
+    (cardId: string, imageUrl: string, source: 'search' | 'own'): boolean => {
+      const card = setLessonVaultCardPicture(studentId, cardId, imageUrl, (message) => toast.error(message), source)
+      if (!card) toast.error('Could not add the picture to that card.')
+      return card != null
+    },
+    [studentId],
+  )
+
+  /**
+   * Download a web picture, then point the card at the local file.
+   * If the card's picture changes while the download is in flight, leave that picture in place.
+   * `onlyIfEmpty` also refuses to replace a file that landed during the upload.
+   */
+  const copyRemotePictureOntoCard = useCallback(
+    async (cardId: string, requestedUrl: string, beforeUrl: string, onlyIfEmpty: boolean): Promise<boolean> => {
+      const file = await loadRemotePictureFile(requestedUrl)
+      const mid = getLessonVaultCardsForStudent(studentId).find((c) => c.id === cardId)?.imageUrl ?? ''
+      if (mid.trim() !== beforeUrl.trim()) return true
+      let uploaded: string | null = null
+      if (file) {
+        try {
+          uploaded = await uploadLessonVaultPicture(studentId, cardId, file, { onlyIfEmpty })
+        } catch {
+          uploaded = null
+        }
+      }
+      const now = getLessonVaultCardsForStudent(studentId).find((c) => c.id === cardId)?.imageUrl ?? ''
+      const decision = decideRemotePictureSave({
+        beforeUrl,
+        nowUrl: now,
+        uploadedUrl: uploaded,
+        requestedUrl,
+      })
+      if (decision.action === 'keep') return true
+      if (now.trim() === decision.url.trim()) return true
+      return applyCardPicture(cardId, decision.url, 'search')
+    },
+    [studentId, applyCardPicture],
+  )
+
   const saveFromPage = useCallback(
     (input: { pdfPage: number; word: string; sentence: string; from?: { x: number; y: number } }) => {
       if (!studentId.trim()) {
@@ -343,12 +385,7 @@ export function useLessonVault({
       }
       const remoteUrl = result.card.imageUrl
       if (remoteUrl && !isLocalVaultPictureUrl(remoteUrl)) {
-        const cardId = result.card.id
-        void storeRemotePictureForCard(studentId, cardId, remoteUrl).then((localUrl) => {
-          if (!localUrl) return
-          const current = getLessonVaultCardsForStudent(studentId).find((c) => c.id === cardId)
-          if (current?.imageUrl === remoteUrl) setLessonVaultCardPicture(studentId, cardId, localUrl, undefined, 'search')
-        })
+        void copyRemotePictureOntoCard(result.card.id, remoteUrl, remoteUrl, true)
       }
       if (!result.card.imageUrl) queueAutoPictures(studentId, [result.card], { retry: result.mode === 'updated' })
       else if (!result.card.meaning.trim()) queueAutoMeanings(studentId, [result.card])
@@ -370,6 +407,7 @@ export function useLessonVault({
       queueAutoPictures,
       queueAutoMeanings,
       queueAutoChinese,
+      copyRemotePictureOntoCard,
     ],
   )
 
@@ -399,25 +437,15 @@ export function useLessonVault({
     [studentId, chooseAutoPicture],
   )
 
-  const applyCardPicture = useCallback(
-    (cardId: string, imageUrl: string, source: 'search' | 'own'): boolean => {
-      const card = setLessonVaultCardPicture(studentId, cardId, imageUrl, (message) => toast.error(message), source)
-      if (!card) toast.error('Could not add the picture to that card.')
-      return card != null
-    },
-    [studentId],
-  )
-
   /** Web pictures are downloaded into the card's file; the link is kept if that fails. */
   const setCardPicture = useCallback(
     async (cardId: string, imageUrl: string): Promise<boolean> => {
       if (!imageUrl.trim()) return false
-      const stored = isLocalVaultPictureUrl(imageUrl)
-        ? imageUrl
-        : await storeRemotePictureForCard(studentId, cardId, imageUrl)
-      return applyCardPicture(cardId, stored ?? imageUrl, 'search')
+      if (isLocalVaultPictureUrl(imageUrl)) return applyCardPicture(cardId, imageUrl, 'search')
+      const before = getLessonVaultCardsForStudent(studentId).find((c) => c.id === cardId)?.imageUrl ?? ''
+      return copyRemotePictureOntoCard(cardId, imageUrl, before, !isLocalVaultPictureUrl(before))
     },
-    [studentId, applyCardPicture],
+    [studentId, applyCardPicture, copyRemotePictureOntoCard],
   )
 
   const setCardPictureFromFile = useCallback(
@@ -428,6 +456,10 @@ export function useLessonVault({
       }
       try {
         const url = await uploadLessonVaultPicture(studentId, cardId, file)
+        if (!url) {
+          toast.error('Could not save the picture.')
+          return false
+        }
         const ok = applyCardPicture(cardId, url, 'own')
         if (ok) toast.success('Picture added to the card.')
         return ok

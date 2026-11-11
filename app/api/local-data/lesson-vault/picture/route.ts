@@ -74,7 +74,11 @@ export async function POST(req: NextRequest) {
 
   const dir = vaultDirFor(studentId)
   if (!dir) return NextResponse.json({ error: 'Invalid path.' }, { status: 400 })
-  await writeVaultPictureFile(dir, cardId, new Uint8Array(await file.arrayBuffer()), ext)
+  const onlyIfEmpty = form.get('onlyIfEmpty') === '1'
+  const wrote = await writeVaultPictureFile(dir, cardId, new Uint8Array(await file.arrayBuffer()), ext, {
+    onlyIfEmpty,
+  })
+  if (!wrote) return NextResponse.json({ ok: true, skipped: true })
 
   return NextResponse.json({ ok: true, url: vaultPictureUrl(studentId, cardId, Date.now()) })
 }

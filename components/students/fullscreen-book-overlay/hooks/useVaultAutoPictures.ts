@@ -87,6 +87,7 @@ export function useVaultAutoPictures() {
       if (!res.ok) return false
       if (findCard(job.studentId, job.cardId)?.imageUrl) return true
       const url = await uploadLessonVaultPicture(job.studentId, job.cardId, await res.blob())
+      if (!url) return false
       if (!setLessonVaultCardPicture(job.studentId, job.cardId, url, undefined, 'auto')) {
         void deleteLessonVaultPicture(job.studentId, job.cardId)
         return true
