@@ -1,4 +1,5 @@
-import { getStudents, saveStudent, saveStudents } from '@/lib/storage'
+import { rememberStudentAvatarUrls } from '@/lib/local-data/student-records-client'
+import { getStudents, saveStudent } from '@/lib/storage'
 import {
   buildStudentAvatarDiceBearSpec,
   buildStudentAvatarDiceBearUrl,
@@ -81,15 +82,8 @@ export async function backfillStudentAvatarsOnServer(): Promise<void> {
     const students = payload.students ?? []
     if (students.length === 0) return
 
-    const { getStudents, saveStudents } = await import('@/lib/storage')
-    const current = getStudents()
     const avatarById = new Map(students.map((s) => [s.id, s.avatarUrl]))
-    const merged = current.map((student) => {
-      const avatarUrl = avatarById.get(student.id)
-      if (!avatarUrl || student.avatarUrl === avatarUrl) return student
-      return { ...student, avatarUrl, updatedAt: new Date().toISOString() }
-    })
-    saveStudents(merged)
+    rememberStudentAvatarUrls(avatarById)
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent(STUDENT_LOCAL_DATA_CHANGED_EVENT))
     }

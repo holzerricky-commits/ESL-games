@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { readStudentsFromDisk, writeStudentsToDisk } from '@/lib/local-data/student-records-server'
+import { readStudentsFromDisk, updateStudentsOnDisk } from '@/lib/local-data/student-records-server'
 import {
   applyAvatarUrlToStudents,
   ensureAllStudentAvatars,
@@ -28,8 +28,9 @@ export async function POST(req: NextRequest) {
       const students = await readStudentsFromDisk()
       const { updatedStudentIds } = await ensureAllStudentAvatars(students)
       if (updatedStudentIds.length > 0) {
-        const patched = applyAvatarUrlToStudents(students, updatedStudentIds)
-        await writeStudentsToDisk(patched)
+        // Re-read inside the write queue. `students` is from before the downloads,
+        // and a book-place save during that time must not be replaced by it.
+        await updateStudentsOnDisk((latest) => applyAvatarUrlToStudents(latest, updatedStudentIds))
       }
       return NextResponse.json({
         ok: true,
@@ -51,17 +52,18 @@ export async function POST(req: NextRequest) {
   try {
     const result = await ensureStudentAvatarFile(studentId, name)
 
-    const students = await readStudentsFromDisk()
-    const idx = students.findIndex((s) => s.id === studentId)
-    if (idx >= 0) {
-      const now = new Date().toISOString()
-      students[idx] = {
+    const now = new Date().toISOString()
+    await updateStudentsOnDisk((students) => {
+      const idx = students.findIndex((s) => s.id === studentId)
+      if (idx < 0) return students
+      const next = students.slice()
+      next[idx] = {
         ...students[idx]!,
         avatarUrl: studentAvatarPublicPath(studentId),
         updatedAt: now,
       }
-      await writeStudentsToDisk(students)
-    }
+      return next
+    })
 
     return NextResponse.json({
       ok: true,
