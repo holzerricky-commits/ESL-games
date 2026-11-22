@@ -152,6 +152,37 @@ export function setCachedStudents(students: StudentRecord[]): void {
   if (diskActive) scheduleStudentsPersist(studentsCache)
 }
 
+/**
+ * Show avatar URLs the server already stored. Does not write the roster:
+ * a full snapshot from this tab would replace saves another tab made while
+ * the pictures were downloading.
+ */
+export function rememberStudentAvatarUrls(avatarById: ReadonlyMap<string, string | undefined>): boolean {
+  if (!studentsCache) return false
+  const applied = mapAvatarUrls(studentsCache, avatarById)
+  if (!applied.changed) return false
+  studentsCache = applied.next
+  if (pendingStudentsFlush) {
+    const pendingApplied = mapAvatarUrls(pendingStudentsFlush, avatarById)
+    if (pendingApplied.changed) pendingStudentsFlush = pendingApplied.next
+  }
+  return true
+}
+
+function mapAvatarUrls(
+  students: StudentRecord[],
+  avatarById: ReadonlyMap<string, string | undefined>,
+): { next: StudentRecord[]; changed: boolean } {
+  let changed = false
+  const next = students.map((student) => {
+    const avatarUrl = avatarById.get(student.id)
+    if (!avatarUrl || student.avatarUrl === avatarUrl) return student
+    changed = true
+    return { ...student, avatarUrl }
+  })
+  return { next, changed }
+}
+
 export function setCachedStudentProgress(map: Record<string, StudentProgressRecord>): void {
   progressCache = map
   if (diskActive) scheduleProgressPersist(map)
