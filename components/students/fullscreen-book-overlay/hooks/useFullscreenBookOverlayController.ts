@@ -165,21 +165,37 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
   /** Last unit+page per book during this overlay visit — restores place when switching books. */
   const sessionPlaceByBookRef = useRef<Record<string, SessionBookPlace>>({})
 
-  const preferResumePage = useMemo(() => {
-    if (preferOpenPdfPage != null && Number.isFinite(preferOpenPdfPage)) {
-      return Math.max(1, Math.floor(preferOpenPdfPage))
-    }
+  const teachingOpenResume = useMemo(() => {
+    const explicit =
+      preferOpenPdfPage != null && Number.isFinite(preferOpenPdfPage)
+        ? Math.max(1, Math.floor(preferOpenPdfPage))
+        : null
+    const requestedUnitId = preferUnitId?.trim() || null
     const bookId = preferBookId?.trim()
-    if (!bookId) return null
-    const session = sessionPlaceByBookRef.current[bookId]
-    if (session && Number.isFinite(session.pdfPage) && session.pdfPage >= 1) {
-      return Math.floor(session.pdfPage)
+    const session = bookId ? sessionPlaceByBookRef.current[bookId] : undefined
+    const sessionUnitId = session?.unitId?.trim() || null
+    const sessionPage =
+      session && Number.isFinite(session.pdfPage) && session.pdfPage >= 1
+        ? Math.floor(session.pdfPage)
+        : null
+    // An explicit open (workshop / URL) names its own unit. This visit’s place is
+    // the next choice, and it must stay on the unit where that page was read.
+    if (explicit != null && requestedUnitId) {
+      return { page: explicit, unitId: requestedUnitId, lockUnit: true }
     }
+    if (sessionPage != null && sessionUnitId) {
+      return { page: sessionPage, unitId: sessionUnitId, lockUnit: true }
+    }
+    if (sessionPage != null) return { page: sessionPage, unitId: null, lockUnit: false }
+    if (!bookId) return { page: null as number | null, unitId: null, lockUnit: false }
     const openTarget = getStudentOpenTargetForBook(studentId, bookId, null)
-    if (openTarget) return openTarget.pdfPage
-    const unitId = preferUnitId?.trim()
-    if (!unitId) return null
-    return getStudentTeachingOpenPdfPageForBookUnit(studentId, bookId, unitId, null)
+    if (openTarget) return { page: openTarget.pdfPage, unitId: null, lockUnit: false }
+    if (!requestedUnitId) return { page: null, unitId: null, lockUnit: false }
+    return {
+      page: getStudentTeachingOpenPdfPageForBookUnit(studentId, bookId, requestedUnitId, null),
+      unitId: null,
+      lockUnit: false,
+    }
   }, [preferBookId, preferOpenPdfPage, preferUnitId, studentId])
 
   const userPresented = presentedProp ?? true
@@ -320,8 +336,11 @@ export function useFullscreenBookOverlayController(props: FullscreenBookOverlayP
     assignedUnitRefs,
     curriculumHistory,
     preferBookId,
-    preferUnitId: resolvedPreferUnitId,
-    preferResumePage,
+    preferUnitId: teachingOpenResume.lockUnit
+      ? teachingOpenResume.unitId
+      : resolvedPreferUnitId,
+    preferResumePage: teachingOpenResume.page,
+    lockPreferredUnit: teachingOpenResume.lockUnit,
     getCachedNumPages,
     setLoading,
     setError,

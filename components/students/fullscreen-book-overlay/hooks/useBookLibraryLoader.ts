@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import { fetchBooksLibraryCached, getBooksLibraryCached } from '@/lib/books/fetch-books-library-cached'
 import type { BookLibraryPayload } from '@/lib/books/types'
 import { nextNumPagesAfterSelectionChange } from '@/lib/books/book-reader-selection-num-pages'
+import { resolveLoaderTeachingUnitAndPage } from '@/lib/books/resolve-loader-teaching-selection'
 import {
   resolveInitialBookReaderSelection,
   shouldApplyInitialReaderSelection,
@@ -25,6 +26,11 @@ interface UseBookLibraryLoaderArgs {
   preferUnitId?: string | null
   /** Optional precomputed page; teaching open is recomputed with the loaded library when student+book+unit are set. */
   preferResumePage?: number | null
+  /**
+   * When true, `preferUnitId` and `preferResumePage` are one place (this visit, or an
+   * explicit open). The saved place must not take the unit and leave that page behind.
+   */
+  lockPreferredUnit?: boolean
   getCachedNumPages?: (unitId: string) => number | null | undefined
   setLoading: (v: boolean) => void
   setError: (v: string | null) => void
@@ -44,6 +50,7 @@ export function useBookLibraryLoader({
   preferBookId,
   preferUnitId,
   preferResumePage,
+  lockPreferredUnit = false,
   getCachedNumPages,
   setLoading,
   setError,
@@ -84,14 +91,16 @@ export function useBookLibraryLoader({
         setLibrary(lib)
         const sid = studentId?.trim() ?? ''
         const bid = preferBookId?.trim() ?? ''
-        const preferredUnit = preferUnitId?.trim() ?? ''
-        // Student place for this book wins unit + page (chip preferUnitId is only a fallback).
         const openTarget = sid && bid ? getStudentOpenTargetForBook(sid, bid, lib) : null
-        let uid = openTarget?.unitId ?? preferredUnit
-        let teachingPage: number | null = openTarget?.pdfPage ?? null
-        if (teachingPage == null && sid && bid && uid) {
-          teachingPage = getStudentTeachingOpenPdfPageForBookUnit(sid, bid, uid, lib)
-        }
+        const picked = resolveLoaderTeachingUnitAndPage({
+          preferredUnitId: preferUnitId,
+          preferResumePage,
+          lockPreferredUnit,
+          openTarget,
+          pageForUnit: (unitId) =>
+            sid && bid ? getStudentTeachingOpenPdfPageForBookUnit(sid, bid, unitId, lib) : null,
+        })
+        const uid = picked.unitId
         const { selectedBookId, selectedUnitId, pageNumber } = resolveInitialBookReaderSelection({
           library: lib,
           assignedBookIds,
@@ -99,8 +108,7 @@ export function useBookLibraryLoader({
           curriculumHistory,
           preferBookId: bid || preferBookId,
           preferUnitId: uid || preferUnitId,
-          // Explicit resume (session memory) beats stored place when returning to a book this visit.
-          preferResumePage: preferResumePage ?? teachingPage,
+          preferResumePage: picked.resumePage,
         })
         const nextBookId = selectedBookId ?? null
         const nextUnitId = selectedUnitId ?? null
@@ -138,6 +146,7 @@ export function useBookLibraryLoader({
     assignedUnitRefsKey,
     curriculumHistoryKey,
     open,
+    lockPreferredUnit,
     preferBookId,
     preferUnitId,
     preferResumePage,
